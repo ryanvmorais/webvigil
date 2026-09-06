@@ -42,6 +42,7 @@ uv run webvigil report <scan.json> --format html
 uv run webvigil-web serve            # Web API (extra `web`) — /docs em http://127.0.0.1:8000
 uv run webvigil-web migrate
 uv run python scripts/dump-openapi.py  # regenera web/openapi.json após mudar a API
+uv run python scripts/update-retirejs-db.py  # atualiza a base Retire.js vendorada (spec 004)
 ```
 
 Web UI (`web/`, gerido por `pnpm`):
@@ -65,7 +66,10 @@ Camadas, de cima para baixo:
    `Orchestrator`, `Target`/escopo/política, HTTP layer (`webvigil.http`), crawler leve
    (`webvigil.crawler`), registry de checks, modelo de `Finding`/`Severity`.
 3. **Checks** (`webvigil.checks`) — plugins `PASSIVE`/`ACTIVE`, registrados por decorator +
-   entry points. Contrato: `Check.run(ctx: ScanContext) -> list[Finding]`.
+   entry points. Contrato: `Check.run(ctx: ScanContext) -> list[Finding]`. `webvigil.checks.deps`
+   (spec 004) faz fingerprint passivo de libs JS do front + match com uma base Retire.js
+   vendorada (offline); o passo de fingerprint roda no `Orchestrator`, não como check.
+   Detalhes em [`docs/dependency-fingerprinting.md`](docs/dependency-fingerprinting.md).
 4. **Reporting** (`webvigil.reporting`) — JSON (canônico), SARIF 2.1.0, HTML (Jinja2), Markdown.
 5. **Persistência** (só Web, `webvigil.api.db`) — SQLite via SQLModel + Alembic; scans
    executados por um `ScanRunner` in-process (1 por vez, fila).
@@ -88,6 +92,6 @@ no CI. `webvigil.cli` e `webvigil.api` não se importam. A Web UI só fala com a
 ## Fluxo de trabalho
 
 - **Spec-driven development** via `/spec`. Specs em `specs/NNN-nome/` (requirements → design → tasks → implementação), com portão de aprovação humana em cada fase. Convenções e roadmap em [`specs/README.md`](specs/README.md).
-- Estado: `001-foundation` (CLI `v0.1`), `002-web-api` (API `v0.2`) e `003-web-ui` (dashboard `v0.3`) **concluídas**. Nenhuma spec em andamento — a próxima é `004-deps-fingerprint`.
+- Estado: `001-foundation` (CLI `v0.1`), `002-web-api` (API `v0.2`), `003-web-ui` (dashboard `v0.3`) e `004-deps-fingerprint` (`v0.4`) **concluídas**. Nenhuma spec em andamento — a próxima é `005-info-disclosure`.
 - Ao fim de cada sessão: `/preparar-commits` (Conventional Commits) e `/atualizar-docs`.
 - Commits em inglês, padrão Conventional Commits.

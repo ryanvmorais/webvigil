@@ -66,6 +66,11 @@ collapses to one finding.
 An exception raised from `run` is caught by the orchestrator, recorded as a `CheckError`,
 and does not abort the scan — but prefer to handle expected failures yourself.
 
+`ctx.observations` is an advanced, opt-in side channel: a check may call
+`ctx.observations.add_technology(...)` / `add_warning(...)` to contribute to the scan
+result beyond its findings. Only the `deps.*` checks use it (spec 004); most checks should
+not touch it.
+
 ## Registration
 
 - **First-party:** the `@register` decorator plus an import from the relevant

@@ -31,14 +31,15 @@ be illegal. See [SECURITY.md](SECURITY.md).
 
 ## Planned coverage
 
-| Version | Focus |
-|---|---|
-| `v0.1` | Security headers, technology-disclosure headers, cookie flags, TLS/HTTPS configuration, CORS misconfiguration (all passive) |
-| `v0.2` | Web dashboard (FastAPI + SQLite + Next.js) |
-| `v0.3` | Dependency / technology fingerprinting and known-CVE matching |
-| `v0.4` | Information disclosure and misconfiguration (exposed files, directory listing, debug endpoints) |
-| `v0.5` | Active Mode: injection testing (XSS, SQLi, SSRF, path traversal, open redirect) |
-| `v0.6` | Authenticated scanning and session/CSRF checks |
+| Version | Focus | Status |
+|---|---|---|
+| `v0.1` | Security headers, technology-disclosure headers, cookie flags, TLS/HTTPS configuration, CORS misconfiguration (all passive) | shipped |
+| `v0.2` | Web API (FastAPI + SQLite, persistent scans, queued execution) | shipped |
+| `v0.3` | Web dashboard (Next.js) | shipped |
+| `v0.4` | Passive dependency fingerprinting: client-side JS libraries + known-vulnerability matching against a vendored Retire.js database ([docs](docs/dependency-fingerprinting.md)) | shipped |
+| `v0.5` | Information disclosure and misconfiguration (exposed files, directory listing, debug endpoints) | planned |
+| `v0.6` | Active Mode: injection testing (XSS, SQLi, SSRF, path traversal, open redirect) | planned |
+| `v0.7` | Authenticated scanning and session/CSRF checks | planned |
 
 ---
 

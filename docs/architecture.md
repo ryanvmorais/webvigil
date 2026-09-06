@@ -19,6 +19,11 @@ Persistence       webvigil.api.db  (SQLite via SQLModel + Alembic, web only)
   or argon2 — a CI `import-linter` contract enforces this. `webvigil.cli` and
   `webvigil.api` do not import each other.
 - The CLI and the Web API are thin clients of the same `Orchestrator`.
+- `webvigil.checks.deps` adds passive dependency fingerprinting: the orchestrator runs a
+  fingerprint pass (not a check) that identifies client-side JS libraries and matches them
+  against a vendored Retire.js database; two `deps.*` checks turn the result into findings
+  and a technology inventory on the `ScanResult`. Offline; see
+  [dependency-fingerprinting.md](dependency-fingerprinting.md).
 - The Web API adds persistence and a single-slot in-process `ScanRunner` (one scan runs at
   a time; the rest queue). It never reimplements crawling, checks, or reporting.
 - The Next.js web UI (`web/`) talks only to the Web API, never to the engine directly. In
@@ -45,4 +50,5 @@ See [writing-checks.md](writing-checks.md) for the check plugin contract and
 [web-api.md](web-api.md) for running the Web API.
 
 The authoritative designs live under [`specs/`](../specs/) — `001-foundation` (engine + CLI),
-`002-web-api` (persistence + API), and `003-web-ui` (the Next.js dashboard).
+`002-web-api` (persistence + API), `003-web-ui` (the Next.js dashboard), and
+`004-deps-fingerprint` (passive dependency fingerprinting).
