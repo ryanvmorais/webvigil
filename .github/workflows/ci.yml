@@ -13,15 +13,19 @@ jobs:
       matrix:
         python-version: ["3.12", "3.13"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@v6
         with:
           python-version: ${{ matrix.python-version }}
+          enable-cache: true
 
       - name: Install dependencies
         run: uv sync --all-extras
+
+      - name: Show Python version
+        run: uv run python -c "import sys; print(sys.version)"
 
       - name: Ruff
         run: uv run ruff check .
@@ -41,7 +45,7 @@ jobs:
   docker:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Build the CLI image
         run: docker build -t webvigil:ci .
