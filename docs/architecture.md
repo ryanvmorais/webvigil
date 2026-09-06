@@ -24,6 +24,13 @@ Persistence       webvigil.api.db  (SQLite via SQLModel + Alembic, web only)
   against a vendored Retire.js database; two `deps.*` checks turn the result into findings
   and a technology inventory on the `ScanResult`. Offline; see
   [dependency-fingerprinting.md](dependency-fingerprinting.md).
+- `webvigil.checks.disclosure` adds information-disclosure detection: two passive checks
+  read already-crawled responses (stack traces, directory listings), and — only when
+  `[disclosure] probe` / `--probe` is on — the orchestrator runs a probe pass that requests
+  a curated catalogue of well-known sensitive paths (`.git`, `.env`, backups, debug
+  endpoints), content-validates each, and feeds six probe-fed `disclosure.*` checks.
+  GET-only, in-scope, off by default; see
+  [information-disclosure.md](information-disclosure.md).
 - The Web API adds persistence and a single-slot in-process `ScanRunner` (one scan runs at
   a time; the rest queue). It never reimplements crawling, checks, or reporting.
 - The Next.js web UI (`web/`) talks only to the Web API, never to the engine directly. In
@@ -50,5 +57,6 @@ See [writing-checks.md](writing-checks.md) for the check plugin contract and
 [web-api.md](web-api.md) for running the Web API.
 
 The authoritative designs live under [`specs/`](../specs/) — `001-foundation` (engine + CLI),
-`002-web-api` (persistence + API), `003-web-ui` (the Next.js dashboard), and
-`004-deps-fingerprint` (passive dependency fingerprinting).
+`002-web-api` (persistence + API), `003-web-ui` (the Next.js dashboard),
+`004-deps-fingerprint` (passive dependency fingerprinting), and `005-info-disclosure`
+(exposed files, directory listing, stack traces, debug endpoints).

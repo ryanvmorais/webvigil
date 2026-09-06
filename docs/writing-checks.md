@@ -66,10 +66,19 @@ collapses to one finding.
 An exception raised from `run` is caught by the orchestrator, recorded as a `CheckError`,
 and does not abort the scan — but prefer to handle expected failures yourself.
 
-`ctx.observations` is an advanced, opt-in side channel: a check may call
-`ctx.observations.add_technology(...)` / `add_warning(...)` to contribute to the scan
-result beyond its findings. Only the `deps.*` checks use it (spec 004); most checks should
-not touch it.
+`ctx.observations` is an advanced, opt-in side channel. The `deps.*` checks (spec 004) call
+`add_technology(...)` / `add_warning(...)` to contribute to the scan result beyond their
+findings; the probe-fed `disclosure.*` checks (spec 005) read `ctx.observations.probe_hits`,
+which the orchestrator fills from a bounded probe pass. Both `detections` and `probe_hits`
+are populated *before* checks run and are read-only during the run. Most checks should not
+touch `observations` at all.
+
+An orchestrator pass (like the dependency fingerprinter or the disclosure probe) may issue
+its own `ctx.http` requests — always in-scope, bounded by a documented cap, and best-effort
+(swallow failures). It first calibrates the target where that matters: the disclosure probe
+requests a few random paths to learn the "not found" shape before trusting any hit. A check
+itself should prefer `ctx.pages`; reach for `ctx.http` only for a single targeted request
+(the CORS probe is the reference example).
 
 ## Registration
 

@@ -70,6 +70,11 @@ Camadas, de cima para baixo:
    (spec 004) faz fingerprint passivo de libs JS do front + match com uma base Retire.js
    vendorada (offline); o passo de fingerprint roda no `Orchestrator`, não como check.
    Detalhes em [`docs/dependency-fingerprinting.md`](docs/dependency-fingerprinting.md).
+   `webvigil.checks.disclosure` (spec 005): dois checks passivos (stack traces, directory
+   listing) + um passo de sondagem opt-in no `Orchestrator` (`--probe` / `[disclosure]
+   probe`, GET-only, sem portão Active) que testa um catálogo curado de paths sensíveis
+   (`.git`, `.env`, backups, endpoints de debug) e alimenta seis checks probe-fed.
+   Detalhes em [`docs/information-disclosure.md`](docs/information-disclosure.md).
 4. **Reporting** (`webvigil.reporting`) — JSON (canônico), SARIF 2.1.0, HTML (Jinja2), Markdown.
 5. **Persistência** (só Web, `webvigil.api.db`) — SQLite via SQLModel + Alembic; scans
    executados por um `ScanRunner` in-process (1 por vez, fila).
@@ -92,6 +97,6 @@ no CI. `webvigil.cli` e `webvigil.api` não se importam. A Web UI só fala com a
 ## Fluxo de trabalho
 
 - **Spec-driven development** via `/spec`. Specs em `specs/NNN-nome/` (requirements → design → tasks → implementação), com portão de aprovação humana em cada fase. Convenções e roadmap em [`specs/README.md`](specs/README.md).
-- Estado: `001-foundation` (CLI `v0.1`), `002-web-api` (API `v0.2`), `003-web-ui` (dashboard `v0.3`) e `004-deps-fingerprint` (`v0.4`) **concluídas**. Nenhuma spec em andamento — a próxima é `005-info-disclosure`.
+- Estado: `001-foundation` (CLI `v0.1`), `002-web-api` (API `v0.2`), `003-web-ui` (dashboard `v0.3`), `004-deps-fingerprint` (`v0.4`) e `005-info-disclosure` (`v0.5`) **concluídas**. Nenhuma spec em andamento — a próxima é `006-active-injection`.
 - Ao fim de cada sessão: `/preparar-commits` (Conventional Commits) e `/atualizar-docs`.
 - Commits em inglês, padrão Conventional Commits.
