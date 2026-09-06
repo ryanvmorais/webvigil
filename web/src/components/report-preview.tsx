@@ -1,0 +1,66 @@
+"use client";
+
+import { useEffect, useState } from "react";
+
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { api, errorMessage } from "@/lib/api";
+
+/**
+ * Inline HTML report preview (RF-28): fetch `?format=html&download=false`, render the bytes
+ * in a fully sandboxed iframe via a blob URL, revoke it on close (ADR-7).
+ */
+export function ReportPreview({ scanId, disabled }: { scanId: number; disabled: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setError(null);
+    setBlobUrl(null);
+    let created: string | null = null;
+    api
+      .reportBlob(scanId)
+      .then((blob) => {
+        created = URL.createObjectURL(blob);
+        setBlobUrl(created);
+      })
+      .catch((cause) => setError(errorMessage(cause, "Could not load the report.")));
+    return () => {
+      if (created) URL.revokeObjectURL(created);
+    };
+  }, [open, scanId]);
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm" disabled={disabled}>
+          Preview report
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-4xl">
+        <DialogHeader>
+          <DialogTitle>HTML report</DialogTitle>
+        </DialogHeader>
+        {error ? <p className="text-sm text-destructive">{error}</p> : null}
+        {blobUrl ? (
+          <iframe
+            title="HTML report preview"
+            sandbox=""
+            src={blobUrl}
+            className="h-[70vh] w-full rounded border"
+          />
+        ) : error ? null : (
+          <p className="text-sm text-muted-foreground">Loading…</p>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}

@@ -1,0 +1,10 @@
+.next
+node_modules
+coverage
+playwright-report
+test-results
+.playwright-tmp
+pnpm-lock.yaml
+src/lib/api-types.ts
+openapi.json
+next-env.d.ts
