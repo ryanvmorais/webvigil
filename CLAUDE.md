@@ -75,6 +75,14 @@ Camadas, de cima para baixo:
    probe`, GET-only, sem portão Active) que testa um catálogo curado de paths sensíveis
    (`.git`, `.env`, backups, endpoints de debug) e alimenta seis checks probe-fed.
    Detalhes em [`docs/information-disclosure.md`](docs/information-disclosure.md).
+   `webvigil.checks.injection` (spec 006): os primeiros checks `ACTIVE` — reflected XSS,
+   SQLi (error/boolean/time), path traversal, open redirect. O `Orchestrator` roda um passo
+   `InjectionScanner` (enumera injection points a partir de query params + `<form>`s
+   parseados dos corpos já baixados, baseline por ponto, detectores sob um orçamento de
+   requests compartilhado); seis checks finos viram findings a partir de
+   `ctx.observations.injection_hits`. Portão `--mode active --authorized-by`; só GET/POST;
+   detecção in-band (sem browser headless, sem coletor OAST). `[injection]` afina orçamento
+   e time-based. Detalhes em [`docs/active-injection.md`](docs/active-injection.md).
 4. **Reporting** (`webvigil.reporting`) — JSON (canônico), SARIF 2.1.0, HTML (Jinja2), Markdown.
 5. **Persistência** (só Web, `webvigil.api.db`) — SQLite via SQLModel + Alembic; scans
    executados por um `ScanRunner` in-process (1 por vez, fila).
@@ -97,6 +105,6 @@ no CI. `webvigil.cli` e `webvigil.api` não se importam. A Web UI só fala com a
 ## Fluxo de trabalho
 
 - **Spec-driven development** via `/spec`. Specs em `specs/NNN-nome/` (requirements → design → tasks → implementação), com portão de aprovação humana em cada fase. Convenções e roadmap em [`specs/README.md`](specs/README.md).
-- Estado: `001-foundation` (CLI `v0.1`), `002-web-api` (API `v0.2`), `003-web-ui` (dashboard `v0.3`), `004-deps-fingerprint` (`v0.4`) e `005-info-disclosure` (`v0.5`) **concluídas**. Nenhuma spec em andamento — a próxima é `006-active-injection`.
+- Estado: `001-foundation` (CLI `v0.1`), `002-web-api` (API `v0.2`), `003-web-ui` (dashboard `v0.3`), `004-deps-fingerprint` (`v0.4`), `005-info-disclosure` (`v0.5`) e `006-active-injection` (`v0.6`) **concluídas**. Nenhuma spec em andamento — a próxima é `007-auth-flows`. (Stored XSS e SSRF saíram da linha da 006 para uma spec futura — stored XSS exige crawl de duas fases; SSRF exige coletor OAST, incompatível com "engine só fala com o alvo".)
 - Ao fim de cada sessão: `/preparar-commits` (Conventional Commits) e `/atualizar-docs`.
 - Commits em inglês, padrão Conventional Commits.

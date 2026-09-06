@@ -38,8 +38,12 @@ be illegal. See [SECURITY.md](SECURITY.md).
 | `v0.3` | Web dashboard (Next.js) | shipped |
 | `v0.4` | Passive dependency fingerprinting: client-side JS libraries + known-vulnerability matching against a vendored Retire.js database ([docs](docs/dependency-fingerprinting.md)) | shipped |
 | `v0.5` | Information disclosure: stack traces and directory listings (passive), plus opt-in probing for exposed `.git`/`.env`/backups/debug endpoints ([docs](docs/information-disclosure.md)) | shipped |
-| `v0.6` | Active Mode: injection testing (XSS, SQLi, SSRF, path traversal, open redirect) | planned |
+| `v0.6` | Active Mode: injection testing — reflected XSS, SQL injection (error/boolean/time), path traversal, open redirect ([docs](docs/active-injection.md)) | shipped |
 | `v0.7` | Authenticated scanning and session/CSRF checks | planned |
+
+> Stored XSS and SSRF were on the original `v0.6` line; they moved to a later spec —
+> stored XSS needs a stateful two-phase crawl and SSRF needs an out-of-band collaborator,
+> which the "engine talks only to the target" rule rules out for now.
 
 ---
 
@@ -52,6 +56,7 @@ uv sync
 uv run webvigil scan https://example.com
 uv run webvigil scan https://example.com --format html --output report.html
 uv run webvigil scan https://example.com --probe   # also probe for exposed .git/.env/backups
+uv run webvigil scan https://example.com --mode active --authorized-by "you / engagement"  # injection testing
 uv run webvigil list-checks
 uv run webvigil report report.json --format md      # re-render a saved scan, offline
 ```

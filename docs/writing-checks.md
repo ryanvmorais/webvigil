@@ -68,17 +68,31 @@ and does not abort the scan — but prefer to handle expected failures yourself.
 
 `ctx.observations` is an advanced, opt-in side channel. The `deps.*` checks (spec 004) call
 `add_technology(...)` / `add_warning(...)` to contribute to the scan result beyond their
-findings; the probe-fed `disclosure.*` checks (spec 005) read `ctx.observations.probe_hits`,
-which the orchestrator fills from a bounded probe pass. Both `detections` and `probe_hits`
-are populated *before* checks run and are read-only during the run. Most checks should not
-touch `observations` at all.
+findings; the probe-fed `disclosure.*` checks (spec 005) read `ctx.observations.probe_hits`
+and the `injection.*` checks (spec 006) read `ctx.observations.injection_hits`, both filled
+by the orchestrator from a bounded pass. `detections`, `probe_hits`, and `injection_hits`
+are all populated *before* checks run and are read-only during the run. Most checks should
+not touch `observations` at all.
 
-An orchestrator pass (like the dependency fingerprinter or the disclosure probe) may issue
-its own `ctx.http` requests — always in-scope, bounded by a documented cap, and best-effort
-(swallow failures). It first calibrates the target where that matters: the disclosure probe
-requests a few random paths to learn the "not found" shape before trusting any hit. A check
-itself should prefer `ctx.pages`; reach for `ctx.http` only for a single targeted request
-(the CORS probe is the reference example).
+An orchestrator pass (the dependency fingerprinter, the disclosure probe, the injection
+scanner) may issue its own `ctx.http` requests — always in-scope, bounded by a documented
+budget, and best-effort (swallow failures). It calibrates the target where that matters:
+the disclosure probe learns the "not found" shape first; the injection scanner takes one
+baseline per point and confirms every differential across a second round. A check itself
+should prefer `ctx.pages`; reach for `ctx.http` only for a single targeted request (the
+CORS probe is the reference example).
+
+### Writing an `ACTIVE` check
+
+An `ACTIVE` check sends crafted input and only runs past `--mode active --authorized-by`.
+The spec 006 pattern: the orchestrator's `InjectionScanner` owns the crafted requests — it
+enumerates injection points, baselines each, and runs the per-class detectors under a
+shared request budget — and each `injection.*` check is a ~10-line filter over
+`ctx.observations.injection_hits` for its `kind`. A detector confirms its signal before
+emitting a hit (the reflected characters verbatim, a real DBMS error, a differential that
+reproduces). If a later spec adds **stored** XSS, its natural home is a post-scan re-fetch
+phase after the injection pass — inject via one request, then re-read the discovered pages
+looking for the marker rendered unescaped.
 
 ## Registration
 

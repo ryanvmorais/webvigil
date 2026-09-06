@@ -31,6 +31,16 @@ Persistence       webvigil.api.db  (SQLite via SQLModel + Alembic, web only)
   endpoints), content-validates each, and feeds six probe-fed `disclosure.*` checks.
   GET-only, in-scope, off by default; see
   [information-disclosure.md](information-disclosure.md).
+- `webvigil.checks.injection` adds the first Active-Mode checks (spec 006): reflected XSS,
+  SQL injection (error / boolean / time), path traversal, and open redirect. The
+  orchestrator runs one bounded `InjectionScanner` pass — enumerate injection points (query
+  params + `<form>` fields parsed from crawled bodies), baseline each once, fan the
+  detectors under a shared request budget — and six thin `injection.*` checks turn its hits
+  into findings. Gated by `--mode active --authorized-by`; `GET`/`POST` only; in-band
+  detection (no headless browser, no out-of-band collaborator). See
+  [active-injection.md](active-injection.md).
+- The `webvigil.http` client exposes `request(method, …)` for verbs beyond `GET`; a
+  non-idempotent request is never retried on a `5xx` or read timeout.
 - The Web API adds persistence and a single-slot in-process `ScanRunner` (one scan runs at
   a time; the rest queue). It never reimplements crawling, checks, or reporting.
 - The Next.js web UI (`web/`) talks only to the Web API, never to the engine directly. In
@@ -58,5 +68,6 @@ See [writing-checks.md](writing-checks.md) for the check plugin contract and
 
 The authoritative designs live under [`specs/`](../specs/) — `001-foundation` (engine + CLI),
 `002-web-api` (persistence + API), `003-web-ui` (the Next.js dashboard),
-`004-deps-fingerprint` (passive dependency fingerprinting), and `005-info-disclosure`
-(exposed files, directory listing, stack traces, debug endpoints).
+`004-deps-fingerprint` (passive dependency fingerprinting), `005-info-disclosure`
+(exposed files, directory listing, stack traces, debug endpoints), and
+`006-active-injection` (reflected XSS, SQLi, path traversal, open redirect).
