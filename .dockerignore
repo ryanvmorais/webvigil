@@ -1,0 +1,35 @@
+# The Dockerfile copies only pyproject.toml, uv.lock, README.md and src/ explicitly;
+# this keeps the build context small and reproducible regardless.
+.git
+.github
+.venv
+venv
+.mypy_cache
+.ruff_cache
+.pytest_cache
+__pycache__
+*.pyc
+dist
+build
+htmlcov
+.coverage
+
+tests
+specs
+docs
+web
+node_modules
+
+*.sarif
+scan-*.json
+scan-*.html
+reports
+webvigil.local.toml
+.env
+*.sqlite3
+*.db
+
+.idea
+.vscode
+.DS_Store
+Thumbs.db
