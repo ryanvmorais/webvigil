@@ -5,7 +5,7 @@ import { http, HttpResponse } from "msw";
 import { describe, expect, it, vi } from "vitest";
 
 import ScanDetailPage from "@/app/(app)/scans/[id]/page";
-import { makeFinding, makeScanOut } from "@/test/fixtures";
+import { makeFinding, makeScanOut, makeTechnology } from "@/test/fixtures";
 import { server } from "@/test/msw/server";
 import { renderWithClient } from "@/test/render";
 
@@ -111,6 +111,26 @@ describe("ScanDetailPage", () => {
     await screen.findByRole("heading", { level: 1 });
     await user.click(screen.getByRole("button", { name: "Delete" }));
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/scans"));
+  });
+
+  it("shows the detected-technologies section when the scan has an inventory", async () => {
+    mockScan(
+      makeScanOut({
+        id: 7,
+        status: "completed",
+        technologies: [makeTechnology({ name: "jquery", version: "1.7.1", vulnerable: true })],
+      }),
+    );
+    renderWithClient(<ScanDetailPage />);
+    await screen.findByRole("heading", { name: "Detected technologies" });
+    expect(screen.getByText("jquery")).toBeInTheDocument();
+  });
+
+  it("hides the detected-technologies section when there is no inventory", async () => {
+    mockScan(makeScanOut({ id: 7, status: "completed", technologies: [] }));
+    renderWithClient(<ScanDetailPage />);
+    await screen.findByRole("heading", { level: 1 });
+    expect(screen.queryByText("Detected technologies")).not.toBeInTheDocument();
   });
 
   it("distinguishes 'no match' from 'no findings'", async () => {

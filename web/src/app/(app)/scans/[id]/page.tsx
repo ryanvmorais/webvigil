@@ -14,6 +14,7 @@ import { ReportMenu } from "@/components/report-menu";
 import { ReportPreview } from "@/components/report-preview";
 import { SeveritySummary } from "@/components/severity-summary";
 import { StatusBadge } from "@/components/status-badge";
+import { TechnologiesTable } from "@/components/technologies-table";
 import { useFindings } from "@/hooks/use-findings";
 import { useCancelScan, useDeleteScan, useScan } from "@/hooks/use-scan";
 import { ApiError, REPORTABLE_STATUSES, TERMINAL_STATUSES, errorMessage } from "@/lib/api";
@@ -125,6 +126,8 @@ function ScanDetail({ id }: { id: number }) {
           <Row label="Error" value={<span className="text-destructive">{s.error}</span>} />
         ) : null}
       </dl>
+
+      <TechnologiesTable items={s.technologies ?? []} />
 
       <section className="space-y-3">
         <h2 className="text-lg font-semibold">Findings</h2>

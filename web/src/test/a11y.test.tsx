@@ -3,7 +3,13 @@ import { screen, waitFor } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it, vi } from "vitest";
 
-import { makeCheck, makeFinding, makeScanOut, makeScanSummary } from "@/test/fixtures";
+import {
+  makeCheck,
+  makeFinding,
+  makeScanOut,
+  makeScanSummary,
+  makeTechnology,
+} from "@/test/fixtures";
 import { axe, noSeriousViolations } from "@/test/axe";
 import { server } from "@/test/msw/server";
 import { renderWithClient } from "@/test/render";
@@ -90,7 +96,13 @@ describe("accessibility (no serious/critical axe violations)", () => {
   it("scan detail", async () => {
     server.use(
       http.get("*/api/scans/7", () =>
-        HttpResponse.json(makeScanOut({ id: 7, status: "completed" })),
+        HttpResponse.json(
+          makeScanOut({
+            id: 7,
+            status: "completed",
+            technologies: [makeTechnology()],
+          }),
+        ),
       ),
       http.get("*/api/scans/7/findings", () => HttpResponse.json([makeFinding()])),
       http.get("*/api/checks", () => HttpResponse.json([makeCheck()])),
@@ -98,7 +110,8 @@ describe("accessibility (no serious/critical axe violations)", () => {
     const { default: ScanDetailPage } = await import("@/app/(app)/scans/[id]/page");
     const { container } = renderWithClient(<ScanDetailPage />);
     await screen.findByRole("heading", { level: 1 });
-    await waitFor(() => expect(screen.getByRole("table")).toBeInTheDocument());
+    await screen.findByRole("heading", { name: "Detected technologies" });
+    await waitFor(() => expect(screen.getAllByRole("table").length).toBeGreaterThan(0));
     await assertClean(container);
   });
 

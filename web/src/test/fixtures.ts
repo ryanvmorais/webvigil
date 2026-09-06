@@ -1,4 +1,4 @@
-import type { CheckOut, FindingOut, ScanOut, ScanSummary } from "@/lib/api";
+import type { CheckOut, FindingOut, ScanOut, ScanSummary, TechnologyOut } from "@/lib/api";
 
 let seq = 0;
 const nextId = () => (seq += 1);
@@ -26,6 +26,19 @@ export function makeScanOut(overrides: Partial<ScanOut> = {}): ScanOut {
     error: null,
     pages_scanned: 3,
     options: { max_pages: 50, delay_ms: 200, follow_robots: true },
+    technologies: [],
+    ...overrides,
+  };
+}
+
+export function makeTechnology(overrides: Partial<TechnologyOut> = {}): TechnologyOut {
+  return {
+    name: "jquery",
+    version: "1.7.1",
+    detection: "filename",
+    source_url: "https://example.com/jquery-1.7.1.min.js",
+    vulnerable: true,
+    advisories: ["CVE-2011-4969"],
     ...overrides,
   };
 }

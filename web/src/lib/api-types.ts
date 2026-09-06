@@ -409,6 +409,8 @@ export interface components {
             status: string;
             /** Target */
             target: string;
+            /** Technologies */
+            technologies: components["schemas"]["TechnologyOut"][];
             /** Tool Version */
             tool_version: string | null;
         };
@@ -455,6 +457,24 @@ export interface components {
             password: string;
             /** Username */
             username: string;
+        };
+        /**
+         * TechnologyOut
+         * @description One detected client-side library (spec 004, RF-17). Detail payload only.
+         */
+        TechnologyOut: {
+            /** Advisories */
+            advisories: string[];
+            /** Detection */
+            detection: string;
+            /** Name */
+            name: string;
+            /** Source Url */
+            source_url: string;
+            /** Version */
+            version: string | null;
+            /** Vulnerable */
+            vulnerable: boolean;
         };
         /** UserOut */
         UserOut: {

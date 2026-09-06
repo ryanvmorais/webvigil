@@ -15,6 +15,7 @@ export type ScanDefaults = Schemas["ScanDefaults"];
 export type ScanSummary = Schemas["ScanSummary"];
 export type ScanOut = Schemas["ScanOut"];
 export type FindingOut = Schemas["FindingOut"];
+export type TechnologyOut = Schemas["TechnologyOut"];
 export type LocationOut = Schemas["LocationOut"];
 export type EvidenceOut = Schemas["EvidenceOut"];
 export type ScanCreate = Schemas["ScanCreate"];
