@@ -32,5 +32,24 @@ jobs:
       - name: Mypy
         run: uv run mypy src
 
+      - name: Import contracts
+        run: uv run lint-imports
+
       - name: Pytest
         run: uv run pytest
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the CLI image
+        run: docker build -t webvigil:ci .
+
+      - name: Smoke-test the image
+        run: |
+          docker run --rm webvigil:ci version
+          docker run --rm webvigil:ci list-checks
+          # report re-renders a saved scan offline, exercising the packaged HTML template
+          echo '{"metadata":{"target":"https://example.com/","mode":"passive","scope":"host","tool_version":"0","started_at":"2026-01-01T00:00:00Z","finished_at":"2026-01-01T00:00:01Z","pages_scanned":1,"counts":{"INFO":0,"LOW":0,"MEDIUM":0,"HIGH":0,"CRITICAL":0}},"findings":[],"errors":[],"warnings":[]}' > scan.json
+          docker run --rm -v "$PWD:/work" webvigil:ci report /work/scan.json --format html > /dev/null
