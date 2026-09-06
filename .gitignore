@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+
+# uv
+.uv/
+
+# Tooling caches
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Scan artifacts
+*.sarif
+scan-*.json
+scan-*.html
+reports/
+
+# Web app (Next.js)
+web/node_modules/
+web/.next/
+web/out/
+web/.env*.local
+
+# Local databases
+*.sqlite3
+*.db
+
+# Editor / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Secrets / local config
+.env
+webvigil.local.toml

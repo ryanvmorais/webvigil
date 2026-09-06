@@ -1,0 +1,29 @@
+# WebVigil configuration example.
+# Copy to `webvigil.toml` (or pass with `--config`) and adjust.
+# CLI flags override values set here.
+
+[scan]
+mode = "passive"          # "passive" (default, safe for production) | "active"
+scope = "host"            # "host" | "subdomains"
+max_pages = 50            # crawler page-count limit
+follow_robots = true      # respect robots.txt during crawling
+
+[http]
+concurrency = 8           # max simultaneous requests
+delay_ms = 0             # delay between requests to the same host
+timeout_s = 15
+user_agent = "WebVigil/0.1 (+https://github.com/ryanvmorais/webvigil)"
+verify_tls = true         # set false only for testing against self-signed certs
+
+[report]
+format = "json"           # "json" | "sarif" | "html" | "md"
+# output = "report.json"  # default: stdout
+fail_on = "none"          # "none" | "info" | "low" | "medium" | "high" | "critical"
+
+# Active Mode only — required when mode = "active".
+# [active]
+# authorized_by = "Jane Doe / Engagement #1234"
+
+# Suppress specific checks by id.
+# [checks]
+# disabled = ["http.headers.permissions-policy-missing"]
