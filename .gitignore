@@ -43,3 +43,7 @@ Thumbs.db
 # Secrets / local config
 .env
 webvigil.local.toml
+
+# Local planning / scratch notes (superseded by specs/ once a feature is designed)
+/*.plan.md
+.plans/
