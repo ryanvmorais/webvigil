@@ -18,6 +18,8 @@ from webvigil.checks.deps.rules import RetireJsRules
 from webvigil.checks.deps.staleness import staleness_warning
 from webvigil.checks.disclosure.catalogue import load_catalogue
 from webvigil.checks.disclosure.probe import DisclosureProbe, ProbeHit
+from webvigil.checks.injection.engine import KIND_BY_CHECK_ID, InjectionScanner
+from webvigil.checks.injection.models import InjectionHit
 from webvigil.checks.registry import iter_checks, load_plugins, unknown_check_ids
 from webvigil.core.config import ScanConfig
 from webvigil.core.context import Detection, Observations, Page, ScanContext
@@ -27,6 +29,7 @@ from webvigil.core.result import CheckError, ScanMetadata, ScanResult
 from webvigil.core.target import Target
 from webvigil.core.technology import Technology
 from webvigil.crawler.crawler import Crawler
+from webvigil.crawler.forms import Form, extract_forms
 from webvigil.http.client import HttpClient
 
 _PROBE_FAMILIES = frozenset({"vcs", "config", "manifest", "backup", "debug", "sourcemap"})
@@ -53,16 +56,22 @@ class Orchestrator:
         technologies: tuple[Technology, ...] = ()
         async with HttpClient(target, self._config) as http:
             pages = tuple(await Crawler(http, target, self._config).discover())
+            forms = extract_forms(pages, target)
             check_types = self._select_checks(warnings)
             detections = await self._fingerprint(check_types, http, target, pages, warnings)
             probe_hits = await self._probe_disclosure(check_types, http, target, pages, warnings)
+            injection_hits = await self._inject(check_types, http, target, pages, forms, warnings)
             context = ScanContext(
                 config=self._config,
                 target=target,
                 http=http,
                 pages=pages,
                 entry=pages[0],
-                observations=Observations(detections=detections, probe_hits=probe_hits),
+                observations=Observations(
+                    detections=detections,
+                    probe_hits=probe_hits,
+                    injection_hits=injection_hits,
+                ),
             )
             findings, errors = await self._run_checks(check_types, context)
             warnings.extend(context.observations.warnings)
@@ -119,6 +128,33 @@ class Orchestrator:
         if not any(getattr(check, "family", None) in _PROBE_FAMILIES for check in check_types):
             return ()
         report = await DisclosureProbe(http, target, load_catalogue(), pages).run()
+        warnings.extend(report.warnings)
+        return tuple(report.hits)
+
+    async def _inject(
+        self,
+        check_types: Sequence[type[Check]],
+        http: HttpClient,
+        target: Target,
+        pages: tuple[Page, ...],
+        forms: tuple[Form, ...],
+        warnings: list[str],
+    ) -> tuple[InjectionHit, ...]:
+        """Run the active-injection pass when the scan is Active and a check is selected."""
+        if self._config.scan.mode is not ScanMode.ACTIVE:
+            return ()
+        selected = {
+            KIND_BY_CHECK_ID[check.id] for check in check_types if check.id in KIND_BY_CHECK_ID
+        }
+        if not selected:
+            return ()
+        try:
+            report = await InjectionScanner(
+                http, target, self._config.injection, pages, forms, selected
+            ).run()
+        except Exception as exc:  # a detector bug must not abort the whole scan
+            warnings.append(f"active injection pass failed: {exc or type(exc).__name__}")
+            return ()
         warnings.extend(report.warnings)
         return tuple(report.hits)
 

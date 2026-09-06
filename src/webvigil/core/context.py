@@ -18,6 +18,7 @@ from webvigil.core.technology import DetectionMethod, Technology
 
 if TYPE_CHECKING:
     from webvigil.checks.disclosure.probe import ProbeHit
+    from webvigil.checks.injection.models import InjectionHit
     from webvigil.http.client import HttpClient, RedirectHop, Response
 
 
@@ -86,15 +87,17 @@ class Detection:
 class Observations:
     """A side channel for structured output a check produces besides its findings (ADR-2).
 
-    The dependency fingerprint pass fills ``detections`` once and the disclosure probe pass
-    fills ``probe_hits`` once (both set by the orchestrator); the ``deps.*`` checks call
-    :meth:`add_technology` / :meth:`add_warning`, and the probe-fed ``disclosure.*`` checks
-    read ``probe_hits``. Mutated only from synchronous check code, so a plain dict/list is
-    safe under the single-threaded event loop.
+    The dependency fingerprint pass fills ``detections`` once, the disclosure probe pass
+    fills ``probe_hits`` once, and the active-injection pass fills ``injection_hits`` once
+    (all set by the orchestrator); the ``deps.*`` checks call :meth:`add_technology` /
+    :meth:`add_warning`, the probe-fed ``disclosure.*`` checks read ``probe_hits``, and the
+    ``injection.*`` checks read ``injection_hits``. Mutated only from synchronous check
+    code, so a plain dict/list is safe under the single-threaded event loop.
     """
 
     detections: tuple[Detection, ...] = ()
     probe_hits: tuple[ProbeHit, ...] = ()
+    injection_hits: tuple[InjectionHit, ...] = ()
     _technologies: dict[tuple[str, str | None], Technology] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
 

@@ -59,6 +59,15 @@ class DisclosureSection(_Section):
     probe: bool = False
 
 
+class InjectionSection(_Section):
+    """Active-injection tuning (spec 006). Only consulted on an Active scan."""
+
+    request_budget: int = 500
+    max_injection_points: int = 200
+    time_based_sqli: bool = True
+    time_based_delay_s: int = 5
+
+
 class ScanConfig(_Section):
     """The whole configuration for one scan."""
 
@@ -68,6 +77,7 @@ class ScanConfig(_Section):
     active: ActiveSection | None = None
     checks: ChecksSection = ChecksSection()
     disclosure: DisclosureSection = DisclosureSection()
+    injection: InjectionSection = InjectionSection()
     # Passthrough for the Web API's ``[web]`` table so one ``webvigil.toml`` serves both
     # tools. The engine and CLI never read it; ``webvigil.api`` parses it into its own
     # strict ``WebConfig``. Section-level typos elsewhere are still hard errors.
@@ -99,7 +109,8 @@ class ScanConfig(_Section):
 
         Only keys the caller actually passes are applied, so unset CLI flags never clobber
         file values. ``sections`` maps a section name (``scan``, ``http``, ``report``,
-        ``active``, ``checks``, ``disclosure``) to a dict of the fields to override.
+        ``active``, ``checks``, ``disclosure``, ``injection``) to a dict of the fields to
+        override.
         """
         merged = self.model_dump()
         for name, values in sections.items():

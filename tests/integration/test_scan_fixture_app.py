@@ -21,16 +21,26 @@ _DISABLED = ["tls.https"]
 
 @pytest.fixture
 def scan(monkeypatch: pytest.MonkeyPatch):
-    async def _run(profile: str, *, probe: bool = False) -> ScanResult:
-        transport = httpx.ASGITransport(app=make_app(profile))
+    holder: dict[str, object] = {}
+
+    async def _run(profile: str, *, probe: bool = False, active: bool = False) -> ScanResult:
+        app = make_app(profile)
+        holder["app"] = app
+        transport = httpx.ASGITransport(app=app)
         monkeypatch.setattr(
             orch_mod, "HttpClient", functools.partial(HttpClient, transport=transport)
         )
-        config = ScanConfig.model_validate(
-            {"checks": {"disabled": _DISABLED}, "disclosure": {"probe": probe}}
-        )
-        return await Orchestrator(config).run(_TARGET)
+        raw: dict[str, object] = {
+            "checks": {"disabled": _DISABLED},
+            "disclosure": {"probe": probe},
+        }
+        if active:
+            raw["scan"] = {"mode": "active"}
+            raw["active"] = {"authorized_by": "integration test"}
+            raw["injection"] = {"time_based_delay_s": 2}
+        return await Orchestrator(ScanConfig.model_validate(raw)).run(_TARGET)
 
+    _run.holder = holder  # type: ignore[attr-defined]
     return _run
 
 
@@ -101,4 +111,45 @@ async def test_hardened_profile_reports_nothing(scan) -> None:
 
 async def test_crawler_reaches_the_linked_pages(scan) -> None:
     result = await scan("hardened")
-    assert result.metadata.pages_scanned == 3
+    # /, /about, /contact + the four injectable endpoints linked from the index (spec 006)
+    assert result.metadata.pages_scanned == 7
+
+
+# --- spec 006: active injection -------------------------------------------------
+
+
+async def test_insecure_profile_active_finds_every_injection(scan) -> None:
+    result = await scan("insecure", active=True)
+    reported = {(f.check_id, f.location.param) for f in result.findings}
+    assert ("injection.xss.reflected", "q") in reported
+    assert ("injection.xss.reflected", "body") in reported
+    assert ("injection.sqli.error-based", "id") in reported
+    assert ("injection.sqli.boolean-based", "id") in reported
+    assert ("injection.sqli.time-based", "id") in reported
+    assert ("injection.traversal.path", "file") in reported
+    assert ("injection.redirect.open", "next") in reported
+    assert result.errors == ()
+
+
+async def test_passive_scan_issues_no_crafted_request(scan) -> None:
+    result = await scan("insecure", active=False)
+    assert not any(f.check_id.startswith("injection.") for f in result.findings)
+    log = scan.holder["app"].state.requests  # type: ignore[attr-defined]
+    assert all("SLEEP" not in entry and "etc/passwd" not in entry for entry in log)
+
+
+async def test_hardened_profile_active_reports_nothing(scan) -> None:
+    result = await scan("hardened", active=True)
+    assert not any(f.check_id.startswith("injection.") for f in result.findings)
+
+
+async def test_the_login_form_is_never_fuzzed(scan) -> None:
+    await scan("insecure", active=True)
+    log = scan.holder["app"].state.requests  # type: ignore[attr-defined]
+    assert not any(" /login" in entry for entry in log)
+
+
+async def test_active_injection_scan_is_deterministic(scan) -> None:
+    first = {(f.check_id, f.fingerprint) for f in (await scan("insecure", active=True)).findings}
+    second = {(f.check_id, f.fingerprint) for f in (await scan("insecure", active=True)).findings}
+    assert first == second

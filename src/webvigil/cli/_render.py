@@ -5,7 +5,7 @@ from __future__ import annotations
 from rich.console import Console
 from rich.table import Table
 
-from webvigil.core.findings import Severity
+from webvigil.core.findings import ScanMode, Severity
 from webvigil.core.result import ScanResult
 
 _console = Console(stderr=True)
@@ -68,6 +68,13 @@ def summary(result: ScanResult) -> None:
             f"[yellow]Information disclosure: {exposed} exposed "
             f"path{'' if exposed == 1 else 's'} found[/]"
         )
+
+    if meta.mode is ScanMode.ACTIVE:
+        injected = sum(1 for f in result.findings if f.check_id.startswith("injection."))
+        if injected:
+            _console.print(
+                f"[red]Active injection: {injected} finding{'' if injected == 1 else 's'}[/]"
+            )
 
     for finding in result.findings:
         style = _SEVERITY_STYLE[finding.severity]

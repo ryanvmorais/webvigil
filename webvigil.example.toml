@@ -34,6 +34,14 @@ probe = false            # opt-in: GET a curated list of well-known sensitive pa
                          # Safe (GET only, in scope, good-neighbor policy applies) but
                          # noisier than the default passive scan. Unrelated to Active Mode.
 
+[injection]
+# Active-injection tuning (spec 006). Only consulted on an Active scan
+# (mode = "active"); ignored by a passive scan.
+request_budget = 500      # max crafted requests per scan; hitting it is a warning
+max_injection_points = 200  # max query params / form fields tested; excess is a warning
+time_based_sqli = true    # send time-delay SQLi payloads (slower); --no-time-based-sqli overrides
+time_based_delay_s = 5    # the D in SLEEP(D); keep it below [http] timeout_s
+
 # Web API only (extra `web`). Ignored by the CLI and the engine.
 # Every key can also be set from the environment: WEBVIGIL_DATABASE_PATH,
 # WEBVIGIL_WEB_HOST, WEBVIGIL_WEB_PORT, WEBVIGIL_SESSION_SECRET, WEBVIGIL_COOKIE_SECURE,

@@ -89,3 +89,29 @@ def test_unknown_disclosure_key_is_rejected(tmp_path: Path) -> None:
 def test_disclosure_override_wins_over_file() -> None:
     base = ScanConfig.model_validate({"disclosure": {"probe": False}})
     assert base.with_overrides(disclosure={"probe": True}).disclosure.probe is True
+
+
+def test_injection_section_defaults_and_round_trips(tmp_path: Path) -> None:
+    defaults = ScanConfig().injection
+    assert defaults.request_budget == 500
+    assert defaults.max_injection_points == 200
+    assert defaults.time_based_sqli is True
+    assert defaults.time_based_delay_s == 5
+    path = tmp_path / "webvigil.toml"
+    path.write_text("[injection]\nrequest_budget = 40\ntime_based_sqli = false\n", "utf-8")
+    loaded = ScanConfig.load(path).injection
+    assert loaded.request_budget == 40
+    assert loaded.time_based_sqli is False
+
+
+def test_unknown_injection_key_is_rejected(tmp_path: Path) -> None:
+    path = tmp_path / "webvigil.toml"
+    path.write_text("[injection]\nrequest_budget = 40\nnope = 1\n", "utf-8")
+    with pytest.raises(ConfigError):
+        ScanConfig.load(path)
+
+
+def test_injection_override_wins_over_file() -> None:
+    base = ScanConfig.model_validate({"injection": {"time_based_sqli": True}})
+    merged = base.with_overrides(injection={"time_based_sqli": False})
+    assert merged.injection.time_based_sqli is False

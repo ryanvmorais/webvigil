@@ -81,6 +81,13 @@ def scan(
             help="Probe for well-known exposed paths (.git, .env, backups). Off by default.",
         ),
     ] = None,
+    time_based_sqli: Annotated[
+        bool | None,
+        typer.Option(
+            "--time-based-sqli/--no-time-based-sqli",
+            help="Send time-delay SQLi payloads during an Active scan (slower). On by default.",
+        ),
+    ] = None,
 ) -> None:
     """Scan a target and report findings."""
     if output_format is not None and output_format not in _FORMATS:
@@ -101,6 +108,7 @@ def scan(
             verify_tls=verify_tls,
             authorized_by=authorized_by,
             probe=probe,
+            time_based_sqli=time_based_sqli,
         )
     except ConfigError as exc:
         _render.error(str(exc))
@@ -166,6 +174,7 @@ def _build_config(
     verify_tls: bool,
     authorized_by: str | None,
     probe: bool | None,
+    time_based_sqli: bool | None,
 ) -> ScanConfig:
     base = ScanConfig.load(config)
     scan_overrides: dict[str, object] = {}
@@ -192,12 +201,17 @@ def _build_config(
     if probe is not None:
         disclosure_overrides["probe"] = probe
 
+    injection_overrides: dict[str, object] = {}
+    if time_based_sqli is not None:
+        injection_overrides["time_based_sqli"] = time_based_sqli
+
     return base.with_overrides(
         scan=scan_overrides,
         http=http_overrides,
         report=report_overrides,
         active=active_overrides,
         disclosure=disclosure_overrides,
+        injection=injection_overrides,
     )
 
 

@@ -15,6 +15,9 @@ htmlcov
 .coverage
 
 tests
+# …except the fixture app, packaged by docker/target.Dockerfile as a manual scan target.
+!tests/__init__.py
+!tests/fixtures
 specs
 docs
 web

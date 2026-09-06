@@ -89,10 +89,12 @@ def make_finding(
     severity: Severity = Severity.MEDIUM,
     url: str = "https://example.com/",
     header: str | None = "Content-Security-Policy",
+    param: str | None = None,
+    method: str = "GET",
     dedup_key: str = "missing",
     references: tuple[str, ...] = ("https://owasp.org/www-project-secure-headers/",),
 ) -> Finding:
-    location = Location(url=url, header=header)
+    location = Location(url=url, header=None if param else header, param=param, method=method)
     return Finding(
         check_id=check_id,
         severity=severity,
@@ -113,11 +115,12 @@ def make_result(
     warnings: Sequence[str] = (),
     authorized_by: str | None = None,
     technologies: Sequence[Technology] = (),
+    mode: ScanMode = ScanMode.PASSIVE,
 ) -> ScanResult:
     findings = tuple(findings)
     metadata = ScanMetadata(
         target="https://example.com/",
-        mode=ScanMode.PASSIVE,
+        mode=mode,
         scope=Scope.HOST,
         tool_version="0.0.0.test",
         started_at=datetime(2026, 9, 6, 12, 0, tzinfo=UTC),

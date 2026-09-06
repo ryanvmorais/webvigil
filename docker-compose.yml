@@ -34,5 +34,17 @@ services:
     depends_on:
       - api
 
+  # A deliberately-vulnerable target for manual Active-Mode scans (spec 006). Not started
+  # by `docker compose up`; bring it up explicitly:
+  #   docker compose --profile targets up target
+  #   webvigil scan http://localhost:8080 --mode active --authorized-by me
+  target:
+    profiles: ["targets"]
+    build:
+      context: .
+      dockerfile: docker/target.Dockerfile
+    ports:
+      - "8080:8080"
+
 volumes:
   webvigil-data:

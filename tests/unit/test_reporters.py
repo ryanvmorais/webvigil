@@ -64,6 +64,19 @@ def test_sarif_carries_partial_fingerprints() -> None:
         assert result["partialFingerprints"]["webvigil/v1"]
 
 
+def test_sarif_logical_location_carries_the_parameter() -> None:
+    result = make_result(
+        make_finding(check_id="injection.xss.reflected", param="q", method="GET"),
+        make_finding(check_id="tls.https", header=None, dedup_key="no-loc"),
+    )
+    document = SarifReporter().to_dict(result)
+    jsonschema.validate(document, _SARIF_SCHEMA)
+    by_rule = {r["ruleId"]: r for r in document["runs"][0]["results"]}
+    logical = by_rule["injection.xss.reflected"]["locations"][0]["logicalLocations"][0]
+    assert logical["name"] == "q" and logical["kind"] == "parameter"
+    assert "logicalLocations" not in by_rule["tls.https"]["locations"][0]
+
+
 def test_html_is_self_contained() -> None:
     html = get_reporter("html").render(_result())
     assert "<style>" in html

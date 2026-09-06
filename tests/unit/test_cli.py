@@ -11,7 +11,7 @@ from typer.testing import CliRunner
 from tests.support import make_finding, make_result
 from webvigil.cli import app as app_mod
 from webvigil.cli._exit import ExitCode
-from webvigil.core.findings import Severity
+from webvigil.core.findings import ScanMode, Severity
 from webvigil.core.result import ScanResult
 
 runner = CliRunner()
@@ -150,6 +150,36 @@ def test_scan_summary_reports_exposed_paths() -> None:
     )
     result = runner.invoke(app_mod.app, ["scan", "https://example.com"])
     assert "Information disclosure: 1 exposed path found" in result.stderr
+
+
+def test_list_checks_lists_the_injection_checks() -> None:
+    result = runner.invoke(app_mod.app, ["list-checks"])
+    assert "injection.xss.reflected" in result.stdout
+    assert "injection.sqli.time-based" in result.stdout
+    assert "INJECTION" in result.stdout
+
+
+def test_no_time_based_sqli_flag_disables_it_over_a_config_file(tmp_path: Path) -> None:
+    cfg = tmp_path / "webvigil.toml"
+    cfg.write_text("[injection]\ntime_based_sqli = true\n", "utf-8")
+    runner.invoke(
+        app_mod.app,
+        ["scan", "https://example.com", "--config", str(cfg), "--no-time-based-sqli"],
+    )
+    assert _StubOrchestrator.last_config.injection.time_based_sqli is False  # type: ignore[attr-defined]
+
+
+def test_active_scan_summary_reports_injection_findings() -> None:
+    _StubOrchestrator.result = make_result(
+        make_finding(check_id="injection.xss.reflected", severity=Severity.HIGH),
+        make_finding(check_id="injection.sqli.error-based", severity=Severity.HIGH),
+        mode=ScanMode.ACTIVE,
+    )
+    result = runner.invoke(
+        app_mod.app,
+        ["scan", "https://example.com", "--mode", "active", "--authorized-by", "me"],
+    )
+    assert "Active injection: 2 findings" in result.stderr
 
 
 def test_version_warns_when_the_advisory_database_is_stale(monkeypatch: pytest.MonkeyPatch) -> None:

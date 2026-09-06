@@ -2,6 +2,8 @@
 
 No component talks to ``httpx`` directly — they all go through :class:`HttpClient`, so
 politeness, retries, timeouts, and scope enforcement apply uniformly (RF-05, RF-03, RF-04).
+``request`` carries any HTTP method through the same machinery; ``get`` is a thin wrapper
+over it (spec 006 ADR-9).
 """
 
 from __future__ import annotations
@@ -24,6 +26,11 @@ _MAX_ATTEMPTS = 3
 _MAX_REDIRECT_HOPS = 10
 _RETRY_STATUS = frozenset({500, 502, 503, 504})
 _REDIRECT_STATUS = frozenset({301, 302, 303, 307, 308})
+_IDEMPOTENT = frozenset({"GET", "HEAD", "OPTIONS"})
+# A 307/308 replays the method and body; a 301/302/303 becomes a bodyless GET.
+_REDIRECT_KEEPS_METHOD = frozenset({307, 308})
+
+_Params = dict[str, str] | list[tuple[str, str]]
 
 # Backoff between retries; module-level so tests can shrink them.
 BACKOFF_BASE_S = 0.5
@@ -37,6 +44,7 @@ class HttpStats:
     requests: int = 0
     retries: int = 0
     blocked_out_of_scope: int = 0
+    crafted_requests: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,18 +130,46 @@ class HttpClient:
         headers: dict[str, str] | None = None,
         allow_out_of_scope: bool = False,
     ) -> Response:
-        """Fetch ``url``, following redirects only while they stay in scope."""
+        """Fetch ``url`` with a GET, following redirects only while they stay in scope."""
+        return await self.request(
+            "GET", url, headers=headers, allow_out_of_scope=allow_out_of_scope
+        )
+
+    async def request(
+        self,
+        method: str,
+        url: str,
+        *,
+        params: _Params | None = None,
+        data: _Params | None = None,
+        headers: dict[str, str] | None = None,
+        allow_out_of_scope: bool = False,
+        crafted: bool = False,
+    ) -> Response:
+        """Issue ``method url`` through the scope guard, rate limiter, retries, and the
+        in-scope-only manual redirect loop.
+
+        ``params`` is merged into the query string; ``data`` is a urlencoded form body.
+        A 301/302/303 redirect drops the method to GET and drops both; a 307/308 replays
+        them. ``crafted`` marks an injection request for the ``crafted_requests`` counter.
+        """
+        method = method.upper()
         if not allow_out_of_scope and not self._guard.allows(url):
             self.stats.blocked_out_of_scope += 1
             self._guard.check(url)  # raises OutOfScopeError
 
         requested_url = url
         current_url = url
+        current_method = method
+        current_params = params
+        current_data = data
         hops: list[RedirectHop] = []
         redirected_out = False
         final_location: str | None = None
 
-        raw = await self._request_with_retry(current_url, headers)
+        raw = await self._request_with_retry(
+            current_method, current_url, headers, current_params, current_data, crafted
+        )
         for _ in range(_MAX_REDIRECT_HOPS):
             if raw.status_code not in _REDIRECT_STATUS or "location" not in raw.headers:
                 break
@@ -144,7 +180,11 @@ class HttpClient:
                 break
             hops.append(RedirectHop(current_url, target_url, raw.status_code))
             current_url = target_url
-            raw = await self._request_with_retry(current_url, headers)
+            if raw.status_code not in _REDIRECT_KEEPS_METHOD:
+                current_method, current_params, current_data = "GET", None, None
+            raw = await self._request_with_retry(
+                current_method, current_url, headers, current_params, current_data, crafted
+            )
 
         return Response(
             url=str(raw.url),
@@ -159,7 +199,16 @@ class HttpClient:
             final_location=final_location,
         )
 
-    async def _request_with_retry(self, url: str, headers: dict[str, str] | None) -> httpx.Response:
+    async def _request_with_retry(
+        self,
+        method: str,
+        url: str,
+        headers: dict[str, str] | None,
+        params: _Params | None,
+        data: _Params | None,
+        crafted: bool,
+    ) -> httpx.Response:
+        idempotent = method in _IDEMPOTENT
         last_error: str = "unknown error"
         for attempt in range(_MAX_ATTEMPTS):
             if attempt:
@@ -170,11 +219,25 @@ class HttpClient:
             try:
                 async with self.limiter.slot(_host_of(url)):
                     self.stats.requests += 1
-                    response = await self._active_client.get(url, headers=headers)
+                    if crafted or not idempotent:
+                        self.stats.crafted_requests += 1
+                    # httpx's stubs are narrower than what it accepts at runtime
+                    # (a list of pairs works for both params and a form body).
+                    response = await self._active_client.request(
+                        method,
+                        url,
+                        params=params,  # type: ignore[arg-type]
+                        data=data,  # type: ignore[arg-type]
+                        headers=headers,
+                    )
             except (httpx.TransportError, httpx.TimeoutException) as exc:
                 last_error = f"{type(exc).__name__}: {exc}"
-                continue
-            if response.status_code in _RETRY_STATUS and attempt < _MAX_ATTEMPTS - 1:
+                # A non-idempotent request is only retried when it never reached the
+                # server (a pre-send connect error) — never on a read timeout.
+                if idempotent or isinstance(exc, httpx.ConnectError):
+                    continue
+                raise RequestFailed(url, last_error) from exc
+            if idempotent and response.status_code in _RETRY_STATUS and attempt < _MAX_ATTEMPTS - 1:
                 last_error = f"HTTP {response.status_code}"
                 continue
             return response

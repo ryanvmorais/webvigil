@@ -83,17 +83,25 @@ def _rule(finding: Finding) -> dict[str, Any]:
 
 
 def _result(finding: Finding) -> dict[str, Any]:
+    location: dict[str, Any] = {
+        "physicalLocation": {"artifactLocation": {"uri": finding.location.url}},
+    }
+    if finding.location.key:
+        # The parameter / header / cookie the finding is about (spec 006 ADR-8).
+        location["logicalLocations"] = [
+            {
+                "name": finding.location.key,
+                "kind": "parameter" if finding.location.param else "member",
+                "fullyQualifiedName": (
+                    f"{finding.location.method} {finding.location.url}#{finding.location.key}"
+                ),
+            }
+        ]
     return {
         "ruleId": finding.check_id,
         "level": _LEVEL_BY_SEVERITY[finding.severity],
         "message": {"text": f"{finding.title}. {finding.description}"},
-        "locations": [
-            {
-                "physicalLocation": {
-                    "artifactLocation": {"uri": finding.location.url},
-                }
-            }
-        ],
+        "locations": [location],
         "partialFingerprints": {"webvigil/v1": finding.fingerprint},
     }
 

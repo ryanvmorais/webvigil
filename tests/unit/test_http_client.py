@@ -71,3 +71,62 @@ async def test_redirect_stops_at_cross_scope_hop(httpx_mock: object) -> None:
     assert response.status_code == 302
     assert response.redirected_out_of_scope is True
     assert response.final_location == "https://evil.test/"
+
+
+# --- spec 006: non-GET verbs and the method-aware retry policy (ADR-9, RF-15) ---
+
+
+async def test_post_honours_the_scope_guard(httpx_mock: object) -> None:
+    async with _http() as http:
+        with pytest.raises(OutOfScopeError):
+            await http.request("POST", "https://evil.test/", data={"x": "1"})
+    assert http.stats.requests == 0
+
+
+async def test_post_is_not_retried_on_a_5xx(httpx_mock: object) -> None:
+    httpx_mock.add_response(status_code=503)  # type: ignore[attr-defined]
+    async with _http() as http:
+        response = await http.request("POST", "https://example.com/f", data={"x": "1"})
+    assert response.status_code == 503
+    assert http.stats.retries == 0
+    assert http.stats.crafted_requests == 1
+
+
+async def test_post_is_not_retried_on_a_read_timeout(httpx_mock: object) -> None:
+    httpx_mock.add_exception(httpx.ReadTimeout("slow"))  # type: ignore[attr-defined]
+    async with _http() as http:
+        with pytest.raises(RequestFailed):
+            await http.request("POST", "https://example.com/f", data={"x": "1"})
+    assert http.stats.retries == 0
+
+
+async def test_post_is_retried_on_a_pre_send_connect_error(httpx_mock: object) -> None:
+    httpx_mock.add_exception(httpx.ConnectError("refused"), is_reusable=True)  # type: ignore[attr-defined]
+    async with _http() as http:
+        with pytest.raises(RequestFailed):
+            await http.request("POST", "https://example.com/f", data={"x": "1"})
+    assert http.stats.retries == 2
+
+
+async def test_303_redirect_drops_the_body_and_method(httpx_mock: object) -> None:
+    httpx_mock.add_response(  # type: ignore[attr-defined]
+        url="https://example.com/a", status_code=303, headers={"location": "/done"}
+    )
+    httpx_mock.add_response(url="https://example.com/done", status_code=200)  # type: ignore[attr-defined]
+    async with _http() as http:
+        await http.request("POST", "https://example.com/a", data={"x": "1"})
+    sent = httpx_mock.get_requests()  # type: ignore[attr-defined]
+    assert sent[1].method == "GET"
+    assert sent[1].read() == b""
+
+
+async def test_307_redirect_keeps_the_body_and_method(httpx_mock: object) -> None:
+    httpx_mock.add_response(  # type: ignore[attr-defined]
+        url="https://example.com/a", status_code=307, headers={"location": "/b"}
+    )
+    httpx_mock.add_response(url="https://example.com/b", status_code=200)  # type: ignore[attr-defined]
+    async with _http() as http:
+        await http.request("POST", "https://example.com/a", data={"x": "1"})
+    sent = httpx_mock.get_requests()  # type: ignore[attr-defined]
+    assert sent[1].method == "POST"
+    assert sent[1].read() == b"x=1"
