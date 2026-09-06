@@ -38,6 +38,23 @@ def test_unknown_key_is_rejected(tmp_path: Path) -> None:
         ScanConfig.load(path)
 
 
+def test_web_section_is_tolerated_as_passthrough(tmp_path: Path) -> None:
+    path = tmp_path / "webvigil.toml"
+    path.write_text(
+        "[scan]\nmax_pages = 7\n\n[web]\nport = 9000\ndatabase_path = 'x.db'\n", "utf-8"
+    )
+    config = ScanConfig.load(path)
+    assert config.scan.max_pages == 7
+    assert config.web == {"port": 9000, "database_path": "x.db"}
+
+
+def test_a_misspelled_section_is_still_rejected(tmp_path: Path) -> None:
+    path = tmp_path / "webvigil.toml"
+    path.write_text("[scna]\nmax_pages = 7\n", "utf-8")
+    with pytest.raises(ConfigError):
+        ScanConfig.load(path)
+
+
 def test_missing_file_raises(tmp_path: Path) -> None:
     with pytest.raises(ConfigError):
         ScanConfig.load(tmp_path / "absent.toml")

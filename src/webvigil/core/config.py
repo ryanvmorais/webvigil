@@ -61,6 +61,10 @@ class ScanConfig(_Section):
     report: ReportSection = ReportSection()
     active: ActiveSection | None = None
     checks: ChecksSection = ChecksSection()
+    # Passthrough for the Web API's ``[web]`` table so one ``webvigil.toml`` serves both
+    # tools. The engine and CLI never read it; ``webvigil.api`` parses it into its own
+    # strict ``WebConfig``. Section-level typos elsewhere are still hard errors.
+    web: dict[str, Any] | None = None
 
     @classmethod
     def load(cls, path: str | Path | None) -> ScanConfig:
