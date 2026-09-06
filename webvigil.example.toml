@@ -27,3 +27,17 @@ fail_on = "none"          # "none" | "info" | "low" | "medium" | "high" | "criti
 # Suppress specific checks by id.
 # [checks]
 # disabled = ["http.headers.permissions-policy-missing"]
+
+# Web API only (extra `web`). Ignored by the CLI and the engine.
+# Every key can also be set from the environment: WEBVIGIL_DATABASE_PATH,
+# WEBVIGIL_WEB_HOST, WEBVIGIL_WEB_PORT, WEBVIGIL_SESSION_SECRET, WEBVIGIL_COOKIE_SECURE,
+# WEBVIGIL_AUTO_MIGRATE, WEBVIGIL_CORS_ORIGINS.
+# [web]
+# database_path = "webvigil.db"     # SQLite file; created on first run
+# host = "127.0.0.1"
+# port = 8000
+# session_secret = ""               # unset: generated once and stored in the database
+# session_ttl_hours = 12
+# cookie_secure = false             # set true when served over HTTPS
+# auto_migrate = true               # run "alembic upgrade head" on startup
+# cors_origins = []                 # browser origins allowed to call the API with credentials
