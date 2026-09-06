@@ -1,6 +1,7 @@
-# WebVigil Web API.
+# WebVigil — API + dashboard.
 #   docker compose up --build
-# Then open http://localhost:8000/docs and complete first-run setup.
+# Then open the dashboard at http://localhost:3000 and complete first-run setup.
+# The API's Swagger UI stays at http://localhost:8000/docs.
 services:
   api:
     build:
@@ -14,11 +15,24 @@ services:
       # Pin this in production so sessions survive a rebuild:
       # WEBVIGIL_SESSION_SECRET: "change-me"
       # WEBVIGIL_COOKIE_SECURE: "true"          # when served over HTTPS
-      # WEBVIGIL_CORS_ORIGINS: "http://localhost:3000"
     ports:
       - "8000:8000"
     volumes:
       - webvigil-data:/data
+
+  web:
+    build:
+      context: ./web
+      args:
+        # Next bakes the /api/* proxy target at build time (RNF-06); this is the API
+        # service on the compose network.
+        API_PROXY_TARGET: "http://api:8000"
+    environment:
+      API_PROXY_TARGET: "http://api:8000"
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
 
 volumes:
   webvigil-data:
