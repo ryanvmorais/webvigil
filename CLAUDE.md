@@ -41,6 +41,18 @@ uv run webvigil list-checks
 uv run webvigil report <scan.json> --format html
 uv run webvigil-web serve            # Web API (extra `web`) — /docs em http://127.0.0.1:8000
 uv run webvigil-web migrate
+uv run python scripts/dump-openapi.py  # regenera web/openapi.json após mudar a API
+```
+
+Web UI (`web/`, gerido por `pnpm`):
+
+```bash
+cd web
+pnpm install
+pnpm dev                             # http://localhost:3000 (proxy /api/* → :8000)
+pnpm lint && pnpm format:check && pnpm typecheck && pnpm test && pnpm build
+pnpm gen:api                          # api-types.ts a partir de openapi.json
+pnpm test:e2e                         # Playwright: setup → scan → report → logout, offline
 ```
 
 ## Arquitetura (resumo)
@@ -57,6 +69,11 @@ Camadas, de cima para baixo:
 4. **Reporting** (`webvigil.reporting`) — JSON (canônico), SARIF 2.1.0, HTML (Jinja2), Markdown.
 5. **Persistência** (só Web, `webvigil.api.db`) — SQLite via SQLModel + Alembic; scans
    executados por um `ScanRunner` in-process (1 por vez, fila).
+6. **Web UI** (`web/`) — dashboard Next.js (App Router). Cliente fino da Web API: nunca fala
+   com o engine, não guarda estado além do cache do TanStack Query. Tipos gerados de
+   `openapi.json` (`scripts/dump-openapi.py` → `pnpm gen:api`). O servidor Next faz proxy de
+   `/api/*` para a API (mesma origem, sem CORS); `API_PROXY_TARGET` é lido só no
+   `next.config` (assado no build). Detalhes em [`docs/web-ui.md`](docs/web-ui.md).
 
 Regras: o engine (`core`, `http`, `crawler`, `checks`, `reporting`) nunca importa Typer,
 Rich, FastAPI, SQLModel, Alembic, pyjwt nem argon2 — contrato verificado por `import-linter`
@@ -71,6 +88,6 @@ no CI. `webvigil.cli` e `webvigil.api` não se importam. A Web UI só fala com a
 ## Fluxo de trabalho
 
 - **Spec-driven development** via `/spec`. Specs em `specs/NNN-nome/` (requirements → design → tasks → implementação), com portão de aprovação humana em cada fase. Convenções e roadmap em [`specs/README.md`](specs/README.md).
-- Estado: `001-foundation` (CLI `v0.1`) e `002-web-api` (API `v0.2`) **concluídas**. Nenhuma spec em andamento — a próxima é `003-web-ui` (dashboard Next.js).
+- Estado: `001-foundation` (CLI `v0.1`), `002-web-api` (API `v0.2`) e `003-web-ui` (dashboard `v0.3`) **concluídas**. Nenhuma spec em andamento — a próxima é `004-deps-fingerprint`.
 - Ao fim de cada sessão: `/preparar-commits` (Conventional Commits) e `/atualizar-docs`.
 - Commits em inglês, padrão Conventional Commits.

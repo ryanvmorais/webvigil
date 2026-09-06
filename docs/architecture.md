@@ -3,6 +3,7 @@
 WebVigil is organized in layers. Each layer only depends on the ones below it.
 
 ```
+Web UI            web/  (Next.js dashboard — talks only to the Web API)
 Interfaces        CLI (webvigil.cli)   ·   Web API (webvigil.api, extra `web`)
                         \                        /
 Scan Engine            webvigil.core  (Orchestrator, Target, Finding, config)
@@ -20,7 +21,9 @@ Persistence       webvigil.api.db  (SQLite via SQLModel + Alembic, web only)
 - The CLI and the Web API are thin clients of the same `Orchestrator`.
 - The Web API adds persistence and a single-slot in-process `ScanRunner` (one scan runs at
   a time; the rest queue). It never reimplements crawling, checks, or reporting.
-- The Next.js web UI talks only to the Web API, never to the engine directly.
+- The Next.js web UI (`web/`) talks only to the Web API, never to the engine directly. In
+  every environment the Next server proxies `/api/*` to the API, so the browser stays
+  same-origin and no CORS is involved. See [web-ui.md](web-ui.md).
 
 ## Scan flow
 
@@ -41,5 +44,5 @@ Persistence       webvigil.api.db  (SQLite via SQLModel + Alembic, web only)
 See [writing-checks.md](writing-checks.md) for the check plugin contract and
 [web-api.md](web-api.md) for running the Web API.
 
-The authoritative designs live under [`specs/`](../specs/) — `001-foundation` (engine + CLI)
-and `002-web-api` (persistence + API).
+The authoritative designs live under [`specs/`](../specs/) — `001-foundation` (engine + CLI),
+`002-web-api` (persistence + API), and `003-web-ui` (the Next.js dashboard).

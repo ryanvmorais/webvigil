@@ -74,16 +74,36 @@ bundled image: `docker build -t webvigil . && docker run --rm webvigil scan http
 ## Web API
 
 An optional FastAPI service keeps a history of scans in SQLite and runs them through the
-same engine. It is single-user and local-first; a browser dashboard is planned separately.
+same engine. It is single-user and local-first.
 
 ```bash
 pip install "webvigil[web]"        # or: uv sync --all-extras
 webvigil-web serve                 # http://127.0.0.1:8000  (OpenAPI docs at /docs)
-# or: docker compose up --build
 ```
 
 The database is created and migrated on first start; open `/docs` to create the account.
 See [docs/web-api.md](docs/web-api.md) for configuration, auth, and backup.
+
+---
+
+## Web UI
+
+A Next.js dashboard for the Web API: first-run setup, login, scan history, a new-scan form,
+scan detail with filterable findings, report preview and download, the check catalogue, and
+a settings screen. It is a thin client of the API — it never talks to the engine.
+
+```bash
+# API on :8000 in one shell (see above), then:
+cd web
+pnpm install
+pnpm dev                           # http://localhost:3000
+
+# or the whole stack in containers:
+docker compose up --build          # dashboard on http://localhost:3000
+```
+
+The dashboard calls same-origin `/api/*`; Next proxies that to the API, so no CORS is
+involved. See [docs/web-ui.md](docs/web-ui.md).
 
 ---
 
@@ -96,6 +116,10 @@ uv run black --check .
 uv run mypy src
 uv run lint-imports    # the engine must not import Typer/Rich/FastAPI/SQLModel/Uvicorn
 uv run pytest
+
+# Web UI (in web/):
+pnpm install && pnpm lint && pnpm typecheck && pnpm test && pnpm build
+pnpm test:e2e         # Playwright: setup → scan → report → logout, fully offline
 ```
 
 See [docs/](docs/) for architecture and a guide to writing your own checks.
