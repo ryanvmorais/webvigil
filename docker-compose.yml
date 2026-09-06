@@ -1,0 +1,24 @@
+# WebVigil Web API.
+#   docker compose up --build
+# Then open http://localhost:8000/docs and complete first-run setup.
+services:
+  api:
+    build:
+      context: .
+      args:
+        EXTRAS: "--extra web"
+    entrypoint: ["webvigil-web"]
+    command: ["serve", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      WEBVIGIL_DATABASE_PATH: /data/webvigil.db
+      # Pin this in production so sessions survive a rebuild:
+      # WEBVIGIL_SESSION_SECRET: "change-me"
+      # WEBVIGIL_COOKIE_SECURE: "true"          # when served over HTTPS
+      # WEBVIGIL_CORS_ORIGINS: "http://localhost:3000"
+    ports:
+      - "8000:8000"
+    volumes:
+      - webvigil-data:/data
+
+volumes:
+  webvigil-data:
