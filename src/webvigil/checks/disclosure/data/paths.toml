@@ -1,0 +1,382 @@
+# Curated catalogue of well-known sensitive paths for the information-disclosure probe
+# pass (spec 005, RF-05). Hand-maintained: this file changes only in a commit, never at
+# scan time. It is NOT user-extensible — WebVigil applies exactly what is here.
+#
+# Each [[entry]] is one path probed relative to the target origin. A response counts as a
+# hit only after soft-404 calibration AND the entry's validator passes (RF-06):
+#   content       regex the response body must match (with optional min_matches)
+#   content_type  any of these substrings appears in the Content-Type header
+#   json_keys     the body parses as a JSON object carrying at least one of these keys
+#   magic         the raw body starts with one of these byte prefixes (hex)
+# A hit passes if ANY configured validator passes.
+#
+# severity/confidence override the emitting check's class default. redact selects the
+# evidence redaction strategy (dotenv | json-env | generic | none). ok_status defaults to
+# [200, 206]; directory-index entries add 403.
+
+# --- Version control -----------------------------------------------------------------
+
+[[entry]]
+path = ".git/config"
+family = "vcs"
+check = "disclosure.vcs.exposed"
+severity = "high"
+title = "Git repository configuration exposed"
+content = '\[core\]'
+
+[[entry]]
+path = ".git/HEAD"
+family = "vcs"
+check = "disclosure.vcs.exposed"
+severity = "high"
+title = "Git repository HEAD exposed"
+content = '^ref: refs/'
+
+[[entry]]
+path = ".git/logs/HEAD"
+family = "vcs"
+check = "disclosure.vcs.exposed"
+severity = "high"
+title = "Git reflog exposed"
+content = '[0-9a-f]{40} [0-9a-f]{40}'
+
+[[entry]]
+path = ".git/"
+family = "vcs"
+check = "disclosure.vcs.exposed"
+severity = "high"
+confidence = "medium"
+title = "Git directory browsable"
+content = '(?i)Index of .*/\.git|<a href="config">'
+ok_status = [200, 403]
+
+[[entry]]
+path = ".svn/entries"
+family = "vcs"
+check = "disclosure.vcs.exposed"
+severity = "high"
+title = "Subversion metadata exposed"
+content = '(?m)^(12|10|dir|\d+)$'
+
+[[entry]]
+path = ".svn/wc.db"
+family = "vcs"
+check = "disclosure.vcs.exposed"
+severity = "high"
+title = "Subversion working-copy database exposed"
+magic = ["53514c69746520666f726d6174203300"]  # "SQLite format 3\0"
+
+[[entry]]
+path = ".hg/requires"
+family = "vcs"
+check = "disclosure.vcs.exposed"
+severity = "high"
+title = "Mercurial metadata exposed"
+content = '(?m)^(revlogv1|dotencode|store|fncache)$'
+
+[[entry]]
+path = ".bzr/branch-format"
+family = "vcs"
+check = "disclosure.vcs.exposed"
+severity = "high"
+title = "Bazaar metadata exposed"
+content = 'Bazaar'
+
+# --- Environment / server configuration ---------------------------------------------
+
+[[entry]]
+path = ".env"
+family = "config"
+check = "disclosure.config.dotenv-exposed"
+severity = "high"
+title = "Environment file exposed"
+content = '(?m)^(export[ \t]+)?[A-Za-z_][A-Za-z0-9_]*='
+min_matches = 2
+redact = "dotenv"
+
+[[entry]]
+path = ".env.local"
+family = "config"
+check = "disclosure.config.dotenv-exposed"
+severity = "high"
+title = "Environment file (.env.local) exposed"
+content = '(?m)^(export[ \t]+)?[A-Za-z_][A-Za-z0-9_]*='
+min_matches = 2
+redact = "dotenv"
+
+[[entry]]
+path = ".env.production"
+family = "config"
+check = "disclosure.config.dotenv-exposed"
+severity = "high"
+title = "Environment file (.env.production) exposed"
+content = '(?m)^(export[ \t]+)?[A-Za-z_][A-Za-z0-9_]*='
+min_matches = 2
+redact = "dotenv"
+
+[[entry]]
+path = ".env.development"
+family = "config"
+check = "disclosure.config.dotenv-exposed"
+severity = "high"
+title = "Environment file (.env.development) exposed"
+content = '(?m)^(export[ \t]+)?[A-Za-z_][A-Za-z0-9_]*='
+min_matches = 2
+redact = "dotenv"
+
+[[entry]]
+path = ".htpasswd"
+family = "config"
+check = "disclosure.config.dotenv-exposed"
+severity = "high"
+title = "HTTP Basic-Auth password file exposed"
+content = '(?m)^[^:\s]+:[^:\s]+$'
+redact = "generic"
+
+[[entry]]
+path = ".htaccess"
+family = "config"
+check = "disclosure.config.dotenv-exposed"
+severity = "medium"
+title = "Apache .htaccess exposed"
+content = '(?im)^\s*(RewriteRule|RewriteCond|AuthType|Require|Options|<Files|Deny |Allow )'
+
+[[entry]]
+path = "web.config"
+family = "config"
+check = "disclosure.config.dotenv-exposed"
+severity = "medium"
+title = "ASP.NET web.config exposed"
+content = '<configuration[ >]'
+redact = "generic"
+
+[[entry]]
+path = "appsettings.json"
+family = "config"
+check = "disclosure.config.dotenv-exposed"
+severity = "high"
+title = "ASP.NET Core appsettings.json exposed"
+json_keys = ["ConnectionStrings", "Logging", "AllowedHosts"]
+redact = "json-env"
+
+[[entry]]
+path = "config.php.bak"
+family = "config"
+check = "disclosure.config.dotenv-exposed"
+severity = "high"
+title = "PHP configuration backup exposed"
+content = '<\?php'
+redact = "generic"
+
+[[entry]]
+path = "settings.py.bak"
+family = "config"
+check = "disclosure.config.dotenv-exposed"
+severity = "high"
+title = "Django settings backup exposed"
+content = '(SECRET_KEY|DATABASES)\s*='
+redact = "generic"
+
+[[entry]]
+path = "docker-compose.yml"
+family = "config"
+check = "disclosure.config.dotenv-exposed"
+severity = "medium"
+title = "docker-compose.yml exposed"
+content = '(?m)^services:'
+redact = "generic"
+
+[[entry]]
+path = "Dockerfile"
+family = "config"
+check = "disclosure.config.dotenv-exposed"
+severity = "low"
+title = "Dockerfile exposed"
+content = '(?im)^FROM\s+\S'
+
+# --- Dependency manifests (report-only — spec 005 Resolved decision 3) --------------
+
+[[entry]]
+path = "package.json"
+family = "manifest"
+check = "disclosure.config.manifest-exposed"
+severity = "low"
+title = "npm manifest (package.json) exposed"
+json_keys = ["dependencies", "devDependencies", "name"]
+
+[[entry]]
+path = "composer.json"
+family = "manifest"
+check = "disclosure.config.manifest-exposed"
+severity = "low"
+title = "Composer manifest (composer.json) exposed"
+json_keys = ["require", "require-dev", "name"]
+
+[[entry]]
+path = "composer.lock"
+family = "manifest"
+check = "disclosure.config.manifest-exposed"
+severity = "low"
+title = "Composer lockfile (composer.lock) exposed"
+json_keys = ["packages", "content-hash", "_readme"]
+
+[[entry]]
+path = "Gemfile"
+family = "manifest"
+check = "disclosure.config.manifest-exposed"
+severity = "low"
+title = "Bundler manifest (Gemfile) exposed"
+content = '(?m)^\s*(source\s+["\x27]|gem\s+["\x27])'
+
+[[entry]]
+path = "Gemfile.lock"
+family = "manifest"
+check = "disclosure.config.manifest-exposed"
+severity = "low"
+title = "Bundler lockfile (Gemfile.lock) exposed"
+content = '(?m)^GEM$'
+
+[[entry]]
+path = "yarn.lock"
+family = "manifest"
+check = "disclosure.config.manifest-exposed"
+severity = "low"
+title = "Yarn lockfile (yarn.lock) exposed"
+content = '# yarn lockfile v1'
+
+[[entry]]
+path = "pnpm-lock.yaml"
+family = "manifest"
+check = "disclosure.config.manifest-exposed"
+severity = "low"
+title = "pnpm lockfile (pnpm-lock.yaml) exposed"
+content = '(?m)^lockfileVersion:'
+
+[[entry]]
+path = ".npmrc"
+family = "manifest"
+check = "disclosure.config.manifest-exposed"
+severity = "medium"
+title = "npm configuration (.npmrc) exposed"
+content = '(?m)^(//|_auth|_authToken|registry\s*=)'
+redact = "generic"
+
+[[entry]]
+path = "bower.json"
+family = "manifest"
+check = "disclosure.config.manifest-exposed"
+severity = "low"
+title = "Bower manifest (bower.json) exposed"
+json_keys = ["dependencies", "name"]
+
+# --- Debug / admin endpoints -------------------------------------------------------
+
+[[entry]]
+path = "server-status"
+family = "debug"
+check = "disclosure.debug.endpoint-exposed"
+severity = "medium"
+title = "Apache mod_status (server-status) exposed"
+content = '(?i)Apache Server Status'
+
+[[entry]]
+path = "server-info"
+family = "debug"
+check = "disclosure.debug.endpoint-exposed"
+severity = "medium"
+title = "Apache mod_info (server-info) exposed"
+content = '(?i)Apache Server Information'
+
+[[entry]]
+path = "phpinfo.php"
+family = "debug"
+check = "disclosure.debug.endpoint-exposed"
+severity = "high"
+title = "phpinfo() page exposed"
+content = '(?i)<title>phpinfo\(\)|>phpinfo\(\)<'
+redact = "generic"
+
+[[entry]]
+path = "info.php"
+family = "debug"
+check = "disclosure.debug.endpoint-exposed"
+severity = "high"
+title = "phpinfo() page exposed"
+content = '(?i)<title>phpinfo\(\)|>phpinfo\(\)<'
+redact = "generic"
+
+[[entry]]
+path = "actuator"
+family = "debug"
+check = "disclosure.debug.endpoint-exposed"
+severity = "medium"
+title = "Spring Boot actuator index exposed"
+json_keys = ["_links"]
+
+[[entry]]
+path = "actuator/env"
+family = "debug"
+check = "disclosure.debug.endpoint-exposed"
+severity = "high"
+title = "Spring Boot actuator/env exposed"
+json_keys = ["propertySources", "activeProfiles"]
+redact = "json-env"
+
+[[entry]]
+path = "actuator/health"
+family = "debug"
+check = "disclosure.debug.endpoint-exposed"
+severity = "low"
+title = "Spring Boot actuator/health exposed"
+json_keys = ["status", "components"]
+
+[[entry]]
+path = "actuator/mappings"
+family = "debug"
+check = "disclosure.debug.endpoint-exposed"
+severity = "medium"
+title = "Spring Boot actuator/mappings exposed"
+json_keys = ["contexts", "_links"]
+
+[[entry]]
+path = "actuator/configprops"
+family = "debug"
+check = "disclosure.debug.endpoint-exposed"
+severity = "high"
+title = "Spring Boot actuator/configprops exposed"
+json_keys = ["contexts", "beans"]
+redact = "json-env"
+
+[[entry]]
+path = "_profiler"
+family = "debug"
+check = "disclosure.debug.endpoint-exposed"
+severity = "medium"
+title = "Symfony profiler exposed"
+content = '(?i)Symfony Profiler|sf-profiler'
+
+[[entry]]
+path = "elmah.axd"
+family = "debug"
+check = "disclosure.debug.endpoint-exposed"
+severity = "medium"
+title = "ELMAH error log (elmah.axd) exposed"
+content = '(?i)Error Log for|ELMAH'
+
+[[entry]]
+path = "trace.axd"
+family = "debug"
+check = "disclosure.debug.endpoint-exposed"
+severity = "medium"
+title = "ASP.NET trace viewer (trace.axd) exposed"
+content = '(?i)Application Trace|Requests to this Application'
+
+# --- Backups / archives / dumps ----------------------------------------------------
+#
+# The loader builds one entry per basename x suffix. The target's own host label is
+# appended to `basenames` at scan time. A ".sql" / ".sql.gz" hit is HIGH; the rest MEDIUM.
+
+[backups]
+check = "disclosure.backup.file-exposed"
+basenames = ["index", "db", "backup", "dump", "site", "www"]
+suffixes = [".bak", ".old", "~", ".zip", ".tar.gz", ".sql"]

@@ -10,6 +10,10 @@ from webvigil.core.result import ScanResult
 
 _console = Console(stderr=True)
 
+_PASSIVE_DISCLOSURE_IDS = frozenset(
+    {"disclosure.debug.error-page", "disclosure.listing.directory-index"}
+)
+
 _SEVERITY_STYLE = {
     Severity.CRITICAL: "bold red",
     Severity.HIGH: "red",
@@ -51,6 +55,18 @@ def summary(result: ScanResult) -> None:
             f"[dim]Detected {len(result.technologies)} client-side "
             f"librar{'y' if len(result.technologies) == 1 else 'ies'} "
             f"({vulnerable} with known vulnerabilities)[/]"
+        )
+
+    exposed = sum(
+        1
+        for finding in result.findings
+        if finding.check_id.startswith("disclosure.")
+        and finding.check_id not in _PASSIVE_DISCLOSURE_IDS
+    )
+    if exposed:
+        _console.print(
+            f"[yellow]Information disclosure: {exposed} exposed "
+            f"path{'' if exposed == 1 else 's'} found[/]"
         )
 
     for finding in result.findings:

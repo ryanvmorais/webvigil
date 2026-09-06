@@ -19,9 +19,11 @@ runner = CliRunner()
 
 class _StubOrchestrator:
     result: ScanResult = make_result(make_finding(check_id="http.headers.csp"))
+    last_config: object = None
 
     def __init__(self, config: object) -> None:
         self.config = config
+        type(self).last_config = config
 
     async def run(self, url: str) -> ScanResult:
         return type(self).result
@@ -115,6 +117,39 @@ def test_scan_summary_reports_detected_libraries() -> None:
     )
     result = runner.invoke(app_mod.app, ["scan", "https://example.com"])
     assert "Detected 1 client-side library (1 with known vulnerabilities)" in result.stderr
+
+
+def test_list_checks_lists_the_disclosure_checks() -> None:
+    result = runner.invoke(app_mod.app, ["list-checks"])
+    assert "disclosure.vcs.exposed" in result.stdout
+    assert "disclosure.debug.error-page" in result.stdout
+    assert "DISCLOSURE" in result.stdout
+
+
+def test_probe_flag_enables_the_disclosure_probe_in_the_config() -> None:
+    runner.invoke(app_mod.app, ["scan", "https://example.com", "--probe"])
+    assert _StubOrchestrator.last_config.disclosure.probe is True  # type: ignore[attr-defined]
+
+
+def test_no_probe_flag_disables_it_over_a_config_file(tmp_path: Path) -> None:
+    cfg = tmp_path / "webvigil.toml"
+    cfg.write_text("[disclosure]\nprobe = true\n", "utf-8")
+    runner.invoke(app_mod.app, ["scan", "https://example.com", "--config", str(cfg), "--no-probe"])
+    assert _StubOrchestrator.last_config.disclosure.probe is False  # type: ignore[attr-defined]
+
+
+def test_probe_does_not_trip_the_active_mode_gate() -> None:
+    result = runner.invoke(app_mod.app, ["scan", "https://example.com", "--probe"])
+    assert result.exit_code == 0
+
+
+def test_scan_summary_reports_exposed_paths() -> None:
+    _StubOrchestrator.result = make_result(
+        make_finding(check_id="disclosure.vcs.exposed", severity=Severity.HIGH),
+        make_finding(check_id="disclosure.debug.error-page", severity=Severity.MEDIUM),
+    )
+    result = runner.invoke(app_mod.app, ["scan", "https://example.com"])
+    assert "Information disclosure: 1 exposed path found" in result.stderr
 
 
 def test_version_warns_when_the_advisory_database_is_stale(monkeypatch: pytest.MonkeyPatch) -> None:

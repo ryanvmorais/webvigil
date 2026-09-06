@@ -16,6 +16,8 @@ from webvigil.checks.base import Check
 from webvigil.checks.deps.fingerprint import Fingerprinter
 from webvigil.checks.deps.rules import RetireJsRules
 from webvigil.checks.deps.staleness import staleness_warning
+from webvigil.checks.disclosure.catalogue import load_catalogue
+from webvigil.checks.disclosure.probe import DisclosureProbe, ProbeHit
 from webvigil.checks.registry import iter_checks, load_plugins, unknown_check_ids
 from webvigil.core.config import ScanConfig
 from webvigil.core.context import Detection, Observations, Page, ScanContext
@@ -26,6 +28,8 @@ from webvigil.core.target import Target
 from webvigil.core.technology import Technology
 from webvigil.crawler.crawler import Crawler
 from webvigil.http.client import HttpClient
+
+_PROBE_FAMILIES = frozenset({"vcs", "config", "manifest", "backup", "debug", "sourcemap"})
 
 
 class Orchestrator:
@@ -51,13 +55,14 @@ class Orchestrator:
             pages = tuple(await Crawler(http, target, self._config).discover())
             check_types = self._select_checks(warnings)
             detections = await self._fingerprint(check_types, http, target, pages, warnings)
+            probe_hits = await self._probe_disclosure(check_types, http, target, pages, warnings)
             context = ScanContext(
                 config=self._config,
                 target=target,
                 http=http,
                 pages=pages,
                 entry=pages[0],
-                observations=Observations(detections=detections),
+                observations=Observations(detections=detections, probe_hits=probe_hits),
             )
             findings, errors = await self._run_checks(check_types, context)
             warnings.extend(context.observations.warnings)
@@ -99,6 +104,23 @@ class Orchestrator:
         result = await Fingerprinter(http, target, rules).scan(pages)
         warnings.extend(result.warnings)
         return tuple(result.detections)
+
+    async def _probe_disclosure(
+        self,
+        check_types: Sequence[type[Check]],
+        http: HttpClient,
+        target: Target,
+        pages: tuple[Page, ...],
+        warnings: list[str],
+    ) -> tuple[ProbeHit, ...]:
+        """Run the disclosure probe pass when ``probe`` is on and a probe-fed check is selected."""
+        if not self._config.disclosure.probe:
+            return ()
+        if not any(getattr(check, "family", None) in _PROBE_FAMILIES for check in check_types):
+            return ()
+        report = await DisclosureProbe(http, target, load_catalogue(), pages).run()
+        warnings.extend(report.warnings)
+        return tuple(report.hits)
 
     def _enforce_active_gate(self) -> None:
         if self._config.scan.mode is not ScanMode.ACTIVE:

@@ -74,6 +74,13 @@ def scan(
     verify_tls: Annotated[
         bool, typer.Option("--verify-tls/--insecure", help="Verify the target's TLS certificate.")
     ] = True,
+    probe: Annotated[
+        bool | None,
+        typer.Option(
+            "--probe/--no-probe",
+            help="Probe for well-known exposed paths (.git, .env, backups). Off by default.",
+        ),
+    ] = None,
 ) -> None:
     """Scan a target and report findings."""
     if output_format is not None and output_format not in _FORMATS:
@@ -93,6 +100,7 @@ def scan(
             fail_on=fail_on,
             verify_tls=verify_tls,
             authorized_by=authorized_by,
+            probe=probe,
         )
     except ConfigError as exc:
         _render.error(str(exc))
@@ -157,6 +165,7 @@ def _build_config(
     fail_on: str | None,
     verify_tls: bool,
     authorized_by: str | None,
+    probe: bool | None,
 ) -> ScanConfig:
     base = ScanConfig.load(config)
     scan_overrides: dict[str, object] = {}
@@ -179,11 +188,16 @@ def _build_config(
     if authorized_by is not None:
         active_overrides["authorized_by"] = authorized_by
 
+    disclosure_overrides: dict[str, object] = {}
+    if probe is not None:
+        disclosure_overrides["probe"] = probe
+
     return base.with_overrides(
         scan=scan_overrides,
         http=http_overrides,
         report=report_overrides,
         active=active_overrides,
+        disclosure=disclosure_overrides,
     )
 
 

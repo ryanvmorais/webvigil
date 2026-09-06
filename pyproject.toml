@@ -81,6 +81,7 @@ artifacts = [
     "src/webvigil/api/migrations/**/*.py",
     "src/webvigil/api/migrations/script.py.mako",
     "src/webvigil/checks/deps/data/*.json",
+    "src/webvigil/checks/disclosure/data/*.toml",
 ]
 
 [tool.ruff]

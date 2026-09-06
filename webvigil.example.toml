@@ -28,6 +28,12 @@ fail_on = "none"          # "none" | "info" | "low" | "medium" | "high" | "criti
 # [checks]
 # disabled = ["http.headers.permissions-policy-missing"]
 
+[disclosure]
+probe = false            # opt-in: GET a curated list of well-known sensitive paths
+                         # (.git, .env, backups, debug endpoints, exposed manifests).
+                         # Safe (GET only, in scope, good-neighbor policy applies) but
+                         # noisier than the default passive scan. Unrelated to Active Mode.
+
 # Web API only (extra `web`). Ignored by the CLI and the engine.
 # Every key can also be set from the environment: WEBVIGIL_DATABASE_PATH,
 # WEBVIGIL_WEB_HOST, WEBVIGIL_WEB_PORT, WEBVIGIL_SESSION_SECRET, WEBVIGIL_COOKIE_SECURE,

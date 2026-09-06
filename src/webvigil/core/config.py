@@ -53,6 +53,12 @@ class ChecksSection(_Section):
     disabled: list[str] = []
 
 
+class DisclosureSection(_Section):
+    """Information-disclosure probing (spec 005). Opt-in, GET-only, unrelated to Active Mode."""
+
+    probe: bool = False
+
+
 class ScanConfig(_Section):
     """The whole configuration for one scan."""
 
@@ -61,6 +67,7 @@ class ScanConfig(_Section):
     report: ReportSection = ReportSection()
     active: ActiveSection | None = None
     checks: ChecksSection = ChecksSection()
+    disclosure: DisclosureSection = DisclosureSection()
     # Passthrough for the Web API's ``[web]`` table so one ``webvigil.toml`` serves both
     # tools. The engine and CLI never read it; ``webvigil.api`` parses it into its own
     # strict ``WebConfig``. Section-level typos elsewhere are still hard errors.
@@ -92,7 +99,7 @@ class ScanConfig(_Section):
 
         Only keys the caller actually passes are applied, so unset CLI flags never clobber
         file values. ``sections`` maps a section name (``scan``, ``http``, ``report``,
-        ``active``, ``checks``) to a dict of the fields to override.
+        ``active``, ``checks``, ``disclosure``) to a dict of the fields to override.
         """
         merged = self.model_dump()
         for name, values in sections.items():

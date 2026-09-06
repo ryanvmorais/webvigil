@@ -44,7 +44,8 @@ class Category(StrEnum):
     TLS = "TLS"
     CORS = "CORS"
     DEPS = "DEPS"
-    # Reserved for later specs: DISCLOSURE, INJECTION.
+    DISCLOSURE = "DISCLOSURE"
+    # Reserved for later specs: INJECTION.
 
 
 class ScanMode(StrEnum):

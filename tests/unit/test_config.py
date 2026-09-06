@@ -70,3 +70,22 @@ def test_cli_overrides_win_over_file_values() -> None:
 def test_overrides_ignore_empty_sections() -> None:
     base = ScanConfig()
     assert base.with_overrides(scan={}) == base
+
+
+def test_disclosure_probe_defaults_off_and_round_trips(tmp_path: Path) -> None:
+    assert ScanConfig().disclosure.probe is False
+    path = tmp_path / "webvigil.toml"
+    path.write_text("[disclosure]\nprobe = true\n", "utf-8")
+    assert ScanConfig.load(path).disclosure.probe is True
+
+
+def test_unknown_disclosure_key_is_rejected(tmp_path: Path) -> None:
+    path = tmp_path / "webvigil.toml"
+    path.write_text("[disclosure]\nprobe = true\nnope = 1\n", "utf-8")
+    with pytest.raises(ConfigError):
+        ScanConfig.load(path)
+
+
+def test_disclosure_override_wins_over_file() -> None:
+    base = ScanConfig.model_validate({"disclosure": {"probe": False}})
+    assert base.with_overrides(disclosure={"probe": True}).disclosure.probe is True
