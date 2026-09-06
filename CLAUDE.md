@@ -25,7 +25,7 @@ Conversa com o Ryan e o arquivo de plano seguem em português.
   `cryptography`, `selectolax`.
 - **Web API (extra `web`):** `fastapi`, `uvicorn`, `sqlmodel`+`alembic` (SQLite), `argon2-cffi`, `pyjwt`.
 - **Web UI:** `web/` — Next.js (App Router) + TypeScript + Tailwind + shadcn/ui + TanStack Query, gerido por `pnpm`.
-- **Qualidade:** `ruff` → `black` → `mypy` (strict) → `pytest` (`asyncio_mode=auto`).
+- **Qualidade:** `ruff` → `black` → `mypy` (strict) → `import-linter` → `pytest` (`asyncio_mode=auto`).
 
 ## Comandos
 
@@ -34,16 +34,18 @@ uv sync
 uv run ruff check .
 uv run black --check .
 uv run mypy src
+uv run lint-imports      # contrato: engine não importa Typer/Rich/FastAPI/SQLModel/Uvicorn
 uv run pytest
 uv run webvigil scan <url>
 uv run webvigil list-checks
+uv run webvigil report <scan.json> --format html
 ```
 
 ## Arquitetura (resumo)
 
 Camadas, de cima para baixo:
 
-1. **Interfaces** — CLI (`webvigil.cli`) e Web API (`webvigil.api`). Clientes finos do orchestrator.
+1. **Interfaces** — CLI (`webvigil.cli`, implementada) e Web API (`webvigil.api`, spec 002). Clientes finos do orchestrator.
 2. **Scan Engine** (`webvigil.core`) — biblioteca pura, sem dependência de UI nem de banco:
    `Orchestrator`, `Target`/escopo/política, HTTP layer (`webvigil.http`), crawler leve
    (`webvigil.crawler`), registry de checks, modelo de `Finding`/`Severity`.
@@ -52,7 +54,9 @@ Camadas, de cima para baixo:
 4. **Reporting** (`webvigil.reporting`) — JSON (canônico), SARIF 2.1.0, HTML (Jinja2), Markdown.
 5. **Persistência** (só Web) — SQLite via SQLModel + Alembic.
 
-Regras: o engine nunca importa FastAPI nem SQLModel. A Web UI só fala com a API, nunca com o engine.
+Regras: o engine (`core`, `http`, `crawler`, `checks`, `reporting`) nunca importa Typer,
+Rich, FastAPI, SQLModel nem Uvicorn — contrato verificado por `import-linter` no CI. A Web
+UI só fala com a API, nunca com o engine.
 
 ## Segurança / ética
 
@@ -62,7 +66,7 @@ Regras: o engine nunca importa FastAPI nem SQLModel. A Web UI só fala com a API
 
 ## Fluxo de trabalho
 
-- **Spec-driven development** via `/spec`. Specs em `specs/NNN-nome/` (requirements → design → tasks → implementação), com portão de aprovação humana em cada fase.
-- Spec ativa: `specs/001-foundation/`.
+- **Spec-driven development** via `/spec`. Specs em `specs/NNN-nome/` (requirements → design → tasks → implementação), com portão de aprovação humana em cada fase. Convenções e roadmap em [`specs/README.md`](specs/README.md).
+- Estado: `001-foundation` **concluída** (CLI `v0.1`). Nenhuma spec em andamento — a próxima é `002-web-api-ui` (`/spec nova web-api-ui`).
 - Ao fim de cada sessão: `/preparar-commits` (Conventional Commits) e `/atualizar-docs`.
 - Commits em inglês, padrão Conventional Commits.

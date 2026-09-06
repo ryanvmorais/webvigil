@@ -5,9 +5,13 @@ Thanks for your interest in improving WebVigil.
 ## Development setup
 
 ```bash
-uv sync
+uv sync            # installs the project plus the `dev` dependency group
 uv run pytest
 ```
+
+The `dev` group pins the tooling (`ruff`, `black`, `mypy`, `import-linter`) and the
+test-only libraries (`pytest*`, `starlette`, `jsonschema`, `trustme`); each line in
+`pyproject.toml` says why it is there.
 
 ## Before opening a pull request
 
@@ -17,6 +21,7 @@ Run the full quality gate — CI runs the same checks:
 uv run ruff check .
 uv run black --check .
 uv run mypy src
+uv run lint-imports    # engine must not import Typer/Rich/FastAPI/SQLModel/Uvicorn
 uv run pytest
 ```
 
