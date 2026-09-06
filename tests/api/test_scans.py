@@ -53,6 +53,45 @@ def test_scan_runs_to_completed_with_findings(auth_client: TestClient) -> None:
     assert findings[0]["severity"] == "MEDIUM"
 
 
+def test_scan_detail_exposes_the_technology_inventory(auth_client: TestClient) -> None:
+    from webvigil.core.technology import DetectionMethod, Technology
+
+    FakeOrchestrator.result = make_result(
+        make_finding(check_id="deps.js.vulnerable-library"),
+        technologies=(
+            Technology(
+                name="jquery",
+                version="1.7.1",
+                detection=DetectionMethod.FILENAME,
+                source_url="https://example.com/j.js",
+                vulnerable=True,
+                advisories=("CVE-2011-4969",),
+            ),
+        ),
+    )
+    scan_id = auth_client.post("/api/scans", json={"target": "https://example.com"}).json()["id"]
+    _wait_status(auth_client, scan_id, "completed")
+
+    detail = auth_client.get(f"/api/scans/{scan_id}").json()
+    assert detail["technologies"] == [
+        {
+            "name": "jquery",
+            "version": "1.7.1",
+            "detection": "filename",
+            "source_url": "https://example.com/j.js",
+            "vulnerable": True,
+            "advisories": ["CVE-2011-4969"],
+        }
+    ]
+
+
+def test_scan_detail_technologies_default_to_empty(auth_client: TestClient) -> None:
+    FakeOrchestrator.result = make_result(make_finding(check_id="http.headers.csp"))
+    scan_id = auth_client.post("/api/scans", json={"target": "https://example.com"}).json()["id"]
+    _wait_status(auth_client, scan_id, "completed")
+    assert auth_client.get(f"/api/scans/{scan_id}").json()["technologies"] == []
+
+
 def test_findings_filter_by_severity_and_check(auth_client: TestClient) -> None:
     FakeOrchestrator.result = make_result(
         make_finding(check_id="tls.https", severity=Severity.HIGH, dedup_key="a"),

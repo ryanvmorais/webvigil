@@ -20,6 +20,7 @@ from webvigil.core import (
     ScanResult,
     Scope,
     Severity,
+    Technology,
 )
 
 
@@ -61,6 +62,7 @@ def store_result(session: Session, scan_id: int, result: ScanResult) -> None:
     scan.counts = dict(meta.counts)
     scan.check_errors = [error.model_dump() for error in result.errors]
     scan.warnings = list(result.warnings)
+    scan.technologies = [tech.model_dump(mode="json") for tech in result.technologies]
     scan.error = None
     session.add(scan)
     for finding in result.findings:
@@ -99,6 +101,7 @@ def rows_to_result(scan: Scan, findings: list[FindingRow]) -> ScanResult:
     return ScanResult(
         metadata=metadata,
         findings=tuple(_row_to_finding(row) for row in findings),
+        technologies=tuple(Technology.model_validate(tech) for tech in (scan.technologies or [])),
         errors=tuple(CheckError(**error) for error in scan.check_errors),
         warnings=tuple(scan.warnings),
     )

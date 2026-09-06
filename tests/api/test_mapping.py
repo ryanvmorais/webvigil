@@ -48,6 +48,42 @@ def test_store_then_rebuild_is_byte_identical(web_engine: Engine) -> None:
     assert get_reporter("json").render(rebuilt) == get_reporter("json").render(result)
 
 
+def test_technologies_round_trip_through_the_rows(web_engine: Engine) -> None:
+    from webvigil.core.technology import DetectionMethod, Technology
+
+    scan_id = _seed_scan(web_engine)
+    result = make_result(
+        make_finding(check_id="deps.js.vulnerable-library"),
+        technologies=(
+            Technology(
+                name="jquery",
+                version="1.7.1",
+                detection=DetectionMethod.FILENAME,
+                source_url="https://example.com/jquery-1.7.1.min.js",
+                vulnerable=True,
+                advisories=("CVE-2011-4969",),
+            ),
+        ),
+    )
+    with Session(web_engine) as session:
+        store_result(session, scan_id, result)
+    with Session(web_engine) as session:
+        scan = session.get(Scan, scan_id)
+        assert scan is not None
+        rebuilt = rows_to_result(scan, [])
+    assert rebuilt.technologies == result.technologies
+
+
+def test_missing_technologies_column_reads_as_empty(web_engine: Engine) -> None:
+    scan_id = _seed_scan(web_engine)
+    with Session(web_engine) as session:
+        scan = session.get(Scan, scan_id)
+        assert scan is not None
+        scan.technologies = None  # type: ignore[assignment]  # simulate a pre-004 row
+        rebuilt = rows_to_result(scan, [])
+    assert rebuilt.technologies == ()
+
+
 def test_build_scan_config_applies_options() -> None:
     scan = Scan(
         target="https://example.com/",

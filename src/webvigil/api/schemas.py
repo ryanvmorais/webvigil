@@ -167,12 +167,24 @@ class ScanSummary(BaseModel):
         )
 
 
+class TechnologyOut(BaseModel):
+    """One detected client-side library (spec 004, RF-17). Detail payload only."""
+
+    name: str
+    version: str | None
+    detection: str
+    source_url: str
+    vulnerable: bool
+    advisories: list[str]
+
+
 class ScanOut(ScanSummary):
     authorized_by: str | None
     tool_version: str | None
     error: str | None
     pages_scanned: int
     options: dict[str, Any]
+    technologies: list[TechnologyOut]
 
     @classmethod
     def from_row(cls, scan: Scan) -> ScanOut:
@@ -184,6 +196,7 @@ class ScanOut(ScanSummary):
             error=scan.error,
             pages_scanned=scan.pages_scanned,
             options=dict(scan.options),
+            technologies=[TechnologyOut(**tech) for tech in (scan.technologies or [])],
         )
 
 

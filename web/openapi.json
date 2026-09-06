@@ -516,6 +516,13 @@
             "title": "Target",
             "type": "string"
           },
+          "technologies": {
+            "items": {
+              "$ref": "#/components/schemas/TechnologyOut"
+            },
+            "title": "Technologies",
+            "type": "array"
+          },
           "tool_version": {
             "anyOf": [
               {
@@ -542,7 +549,8 @@
           "tool_version",
           "error",
           "pages_scanned",
-          "options"
+          "options",
+          "technologies"
         ],
         "title": "ScanOut",
         "type": "object"
@@ -661,6 +669,55 @@
           "password"
         ],
         "title": "SetupIn",
+        "type": "object"
+      },
+      "TechnologyOut": {
+        "description": "One detected client-side library (spec 004, RF-17). Detail payload only.",
+        "properties": {
+          "advisories": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Advisories",
+            "type": "array"
+          },
+          "detection": {
+            "title": "Detection",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "source_url": {
+            "title": "Source Url",
+            "type": "string"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          },
+          "vulnerable": {
+            "title": "Vulnerable",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "version",
+          "detection",
+          "source_url",
+          "vulnerable",
+          "advisories"
+        ],
+        "title": "TechnologyOut",
         "type": "object"
       },
       "UserOut": {

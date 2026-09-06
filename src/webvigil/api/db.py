@@ -76,6 +76,8 @@ class Scan(SQLModel, table=True):
     counts: dict[str, int] = Field(default_factory=dict, sa_column=Column(JSON))
     check_errors: list[dict[str, Any]] = Field(default_factory=list, sa_column=Column(JSON))
     warnings: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    # Detected-technology inventory (spec 004, RF-17). Additive; NULL for pre-004 scans.
+    technologies: list[dict[str, Any]] = Field(default_factory=list, sa_column=Column(JSON))
 
 
 class Finding(SQLModel, table=True):
