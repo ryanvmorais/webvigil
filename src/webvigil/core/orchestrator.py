@@ -13,13 +13,17 @@ from datetime import UTC, datetime
 
 from webvigil import __version__
 from webvigil.checks.base import Check
+from webvigil.checks.deps.fingerprint import Fingerprinter
+from webvigil.checks.deps.rules import RetireJsRules
+from webvigil.checks.deps.staleness import staleness_warning
 from webvigil.checks.registry import iter_checks, load_plugins, unknown_check_ids
 from webvigil.core.config import ScanConfig
-from webvigil.core.context import ScanContext
+from webvigil.core.context import Detection, Observations, Page, ScanContext
 from webvigil.core.errors import ActiveModeNotAuthorized
-from webvigil.core.findings import Finding, ScanMode
+from webvigil.core.findings import Category, Finding, ScanMode
 from webvigil.core.result import CheckError, ScanMetadata, ScanResult
 from webvigil.core.target import Target
+from webvigil.core.technology import Technology
 from webvigil.crawler.crawler import Crawler
 from webvigil.http.client import HttpClient
 
@@ -42,17 +46,22 @@ class Orchestrator:
         self._enforce_active_gate()
 
         warnings: list[str] = []
+        technologies: tuple[Technology, ...] = ()
         async with HttpClient(target, self._config) as http:
-            pages = await Crawler(http, target, self._config).discover()
+            pages = tuple(await Crawler(http, target, self._config).discover())
+            check_types = self._select_checks(warnings)
+            detections = await self._fingerprint(check_types, http, target, pages, warnings)
             context = ScanContext(
                 config=self._config,
                 target=target,
                 http=http,
-                pages=tuple(pages),
+                pages=pages,
                 entry=pages[0],
+                observations=Observations(detections=detections),
             )
-            check_types = self._select_checks(warnings)
             findings, errors = await self._run_checks(check_types, context)
+            warnings.extend(context.observations.warnings)
+            technologies = context.observations.technologies
 
         deduped = _dedupe(findings)
         metadata = ScanMetadata(
@@ -69,9 +78,27 @@ class Orchestrator:
         return ScanResult(
             metadata=metadata,
             findings=deduped,
+            technologies=technologies,
             errors=tuple(errors),
             warnings=tuple(warnings),
         )
+
+    async def _fingerprint(
+        self,
+        check_types: Sequence[type[Check]],
+        http: HttpClient,
+        target: Target,
+        pages: tuple[Page, ...],
+        warnings: list[str],
+    ) -> tuple[Detection, ...]:
+        """Run the dependency fingerprint pass when a DEPS check is selected (ADR-1, ADR-3)."""
+        if not any(check.category is Category.DEPS for check in check_types):
+            return ()
+        rules = RetireJsRules.load()
+        warnings.extend(staleness_warning(rules))
+        result = await Fingerprinter(http, target, rules).scan(pages)
+        warnings.extend(result.warnings)
+        return tuple(result.detections)
 
     def _enforce_active_gate(self) -> None:
         if self._config.scan.mode is not ScanMode.ACTIVE:

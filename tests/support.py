@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 import httpx
 
 from webvigil.core.config import ScanConfig
-from webvigil.core.context import Page, ScanContext
+from webvigil.core.context import Observations, Page, ScanContext
 from webvigil.core.findings import (
     Confidence,
     Finding,
@@ -19,6 +19,7 @@ from webvigil.core.findings import (
 )
 from webvigil.core.result import CheckError, ScanMetadata, ScanResult
 from webvigil.core.target import Scope, Target
+from webvigil.core.technology import Technology
 
 _HARDENED_HEADERS: dict[str, str] = {
     "content-security-policy": (
@@ -69,6 +70,7 @@ def make_context(
     target_url: str | None = None,
     http: object = None,
     config: ScanConfig | None = None,
+    observations: Observations | None = None,
 ) -> ScanContext:
     resolved_pages = tuple(pages) if pages is not None else (page,)
     return ScanContext(
@@ -77,6 +79,7 @@ def make_context(
         http=http,  # type: ignore[arg-type]  # header/cookie checks never touch it
         pages=resolved_pages,
         entry=page,
+        observations=observations or Observations(),
     )
 
 
@@ -109,6 +112,7 @@ def make_result(
     errors: Sequence[CheckError] = (),
     warnings: Sequence[str] = (),
     authorized_by: str | None = None,
+    technologies: Sequence[Technology] = (),
 ) -> ScanResult:
     findings = tuple(findings)
     metadata = ScanMetadata(
@@ -123,5 +127,9 @@ def make_result(
         authorized_by=authorized_by,
     )
     return ScanResult(
-        metadata=metadata, findings=findings, errors=tuple(errors), warnings=tuple(warnings)
+        metadata=metadata,
+        findings=findings,
+        technologies=tuple(technologies),
+        errors=tuple(errors),
+        warnings=tuple(warnings),
     )

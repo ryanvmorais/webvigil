@@ -45,8 +45,18 @@ async def test_insecure_profile_reports_every_expected_check(scan) -> None:
         "http.headers.revealing",
         "http.cookies.flags",
         "http.cors.misconfiguration",
+        "deps.js.vulnerable-library",
     } <= reported
     assert result.errors == ()
+
+
+async def test_insecure_profile_lists_the_vulnerable_library_in_the_inventory(scan) -> None:
+    result = await scan("insecure")
+    inventory = {(t.name, t.version, t.vulnerable) for t in result.technologies}
+    assert ("jquery", "1.7.1", True) in inventory
+    finding = next(f for f in result.findings if f.check_id == "deps.js.vulnerable-library")
+    assert "jquery 1.7.1" in finding.title
+    assert finding.references
 
 
 async def test_hardened_profile_reports_nothing(scan) -> None:

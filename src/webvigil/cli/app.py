@@ -12,6 +12,8 @@ from rich.console import Console
 from rich.table import Table
 
 from webvigil import __version__
+from webvigil.checks.deps.rules import RetireJsRules
+from webvigil.checks.deps.staleness import staleness_warning
 from webvigil.checks.registry import all_checks, load_plugins
 from webvigil.cli import _render
 from webvigil.cli._exit import ExitCode, evaluate
@@ -43,6 +45,8 @@ def _root() -> None:
 def version() -> None:
     """Print the WebVigil version."""
     typer.echo(f"webvigil {__version__}")
+    for warning in staleness_warning(RetireJsRules.load()):
+        _render.status(f"warning: {warning}")
 
 
 @app.command()

@@ -24,6 +24,7 @@ class HtmlReporter:
         return template.render(
             meta=result.metadata,
             findings=sort_findings(result.findings),
+            technologies=result.technologies,
             errors=result.errors,
             warnings=result.warnings,
             severities=list(reversed(list(Severity))),

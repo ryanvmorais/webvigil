@@ -14,6 +14,7 @@ import httpx
 
 from webvigil.core.config import ScanConfig
 from webvigil.core.target import Target, normalize_url
+from webvigil.core.technology import DetectionMethod, Technology
 
 if TYPE_CHECKING:
     from webvigil.http.client import HttpClient, RedirectHop, Response
@@ -70,6 +71,41 @@ class Page:
 
 
 @dataclass(frozen=True, slots=True)
+class Detection:
+    """One library identified by the dependency fingerprint pass (spec 004, RF-01)."""
+
+    name: str
+    version: str | None
+    method: DetectionMethod
+    source_url: str
+    marker: str  # the raw filename / banner line / hash that matched — becomes evidence
+
+
+@dataclass(slots=True)
+class Observations:
+    """A side channel for structured output a check produces besides its findings (ADR-2).
+
+    The dependency fingerprint pass fills ``detections`` once; the ``deps.*`` checks call
+    :meth:`add_technology` / :meth:`add_warning`. Mutated only from synchronous check code,
+    so a plain dict/list is safe under the single-threaded event loop.
+    """
+
+    detections: tuple[Detection, ...] = ()
+    _technologies: dict[tuple[str, str | None], Technology] = field(default_factory=dict)
+    warnings: list[str] = field(default_factory=list)
+
+    def add_technology(self, technology: Technology) -> None:
+        self._technologies.setdefault((technology.name, technology.version), technology)
+
+    def add_warning(self, message: str) -> None:
+        self.warnings.append(message)
+
+    @property
+    def technologies(self) -> tuple[Technology, ...]:
+        return tuple(sorted(self._technologies.values(), key=lambda t: (t.name, t.version or "")))
+
+
+@dataclass(frozen=True, slots=True)
 class ScanContext:
     """Everything a check needs: config, target, the HTTP client, and discovered pages."""
 
@@ -78,6 +114,7 @@ class ScanContext:
     http: HttpClient
     pages: tuple[Page, ...]
     entry: Page
+    observations: Observations = field(default_factory=Observations, compare=False)
     _by_url: dict[str, Page] = field(default_factory=dict, compare=False)
 
     def __post_init__(self) -> None:

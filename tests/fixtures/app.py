@@ -9,11 +9,19 @@ from __future__ import annotations
 
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, Response
+from starlette.responses import HTMLResponse, PlainTextResponse, Response
 from starlette.routing import Route
 
 _LINKS = '<a href="/about">about</a> <a href="/contact">contact</a>'
 _PAGE = f"<!doctype html><html><body><h1>Demo</h1>{_LINKS}</body></html>"
+# The insecure profile also ships a known-vulnerable jQuery from its own origin (spec 004,
+# RF-19). 1.7.1 is well below every fixed version in the Retire.js database.
+_VULNERABLE_JS_PATH = "/static/jquery-1.7.1.min.js"
+_INSECURE_PAGE = (
+    f"<!doctype html><html><body><h1>Demo</h1>{_LINKS}"
+    f'<script src="{_VULNERABLE_JS_PATH}"></script></body></html>'
+)
+_VULNERABLE_JS = "/*! jQuery v1.7.1 jquery.com | jquery.org/license */\n!function(){}();\n"
 
 _HARDENED_HEADERS = {
     "content-security-policy": (
@@ -31,7 +39,7 @@ _HARDENED_HEADERS = {
 
 
 def _insecure(request: Request) -> Response:
-    response = HTMLResponse(_PAGE)
+    response = HTMLResponse(_INSECURE_PAGE)
     response.headers["server"] = "Apache/2.4.41 (Ubuntu)"
     response.headers["x-powered-by"] = "PHP/8.1.2"
     response.headers["set-cookie"] = "session=abc123; Path=/"
@@ -50,7 +58,13 @@ def _hardened(request: Request) -> Response:
     return response
 
 
+def _vulnerable_js(request: Request) -> Response:
+    return PlainTextResponse(_VULNERABLE_JS, media_type="application/javascript")
+
+
 def make_app(profile: str) -> Starlette:
     handler = _insecure if profile == "insecure" else _hardened
     routes = [Route(path, handler) for path in ("/", "/about", "/contact")]
+    if profile == "insecure":
+        routes.append(Route(_VULNERABLE_JS_PATH, _vulnerable_js))
     return Starlette(routes=routes)

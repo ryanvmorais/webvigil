@@ -26,6 +26,21 @@ class MarkdownReporter:
             lines.append(f"| {severity.name} | {meta.counts.get(severity.name, 0)} |")
         lines.append("")
 
+        if result.technologies:
+            lines += [
+                "## Detected technologies",
+                "",
+                "| Library | Version | Detection | Status |",
+                "| --- | --- | --- | --- |",
+            ]
+            for tech in result.technologies:
+                status = "**Vulnerable**" if tech.vulnerable else "—"
+                if tech.vulnerable and tech.advisories:
+                    status += f" ({', '.join(tech.advisories)})"
+                version = tech.version or "unknown"
+                lines.append(f"| {tech.name} | {version} | {tech.detection.value} | {status} |")
+            lines.append("")
+
         findings = sort_findings(result.findings)
         if not findings:
             lines += ["No findings.", ""]

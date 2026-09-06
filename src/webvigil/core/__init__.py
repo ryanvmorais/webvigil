@@ -30,6 +30,7 @@ from webvigil.core.findings import (
 )
 from webvigil.core.result import CheckError, ScanMetadata, ScanResult
 from webvigil.core.target import Scope, Target, normalize_url
+from webvigil.core.technology import DetectionMethod, Technology
 
 if TYPE_CHECKING:
     from webvigil.core.orchestrator import Orchestrator
@@ -40,6 +41,7 @@ __all__ = [
     "CheckError",
     "Confidence",
     "ConfigError",
+    "DetectionMethod",
     "DuplicateCheckId",
     "EvidenceItem",
     "Finding",
@@ -57,6 +59,7 @@ __all__ = [
     "Scope",
     "Severity",
     "Target",
+    "Technology",
     "WebVigilError",
     "compute_fingerprint",
     "normalize_url",

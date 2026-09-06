@@ -43,7 +43,8 @@ class Category(StrEnum):
     COOKIES = "COOKIES"
     TLS = "TLS"
     CORS = "CORS"
-    # Reserved for later specs: DEPS, DISCLOSURE, INJECTION.
+    DEPS = "DEPS"
+    # Reserved for later specs: DISCLOSURE, INJECTION.
 
 
 class ScanMode(StrEnum):

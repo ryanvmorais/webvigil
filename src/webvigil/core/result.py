@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict
 
 from webvigil.core.findings import Finding, ScanMode, Severity
 from webvigil.core.target import Scope
+from webvigil.core.technology import Technology
 
 
 class ScanMetadata(BaseModel):
@@ -47,6 +48,7 @@ class ScanResult(BaseModel):
 
     metadata: ScanMetadata
     findings: tuple[Finding, ...]
+    technologies: tuple[Technology, ...] = ()
     errors: tuple[CheckError, ...] = ()
     warnings: tuple[str, ...] = ()
 

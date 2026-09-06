@@ -95,6 +95,42 @@ def test_list_checks_lists_registered_checks() -> None:
     result = runner.invoke(app_mod.app, ["list-checks"])
     assert result.exit_code == 0
     assert "http.headers.csp" in result.stdout
+    assert "deps.js.vulnerable-library" in result.stdout
+
+
+def test_scan_summary_reports_detected_libraries() -> None:
+    from webvigil.core.technology import DetectionMethod, Technology
+
+    _StubOrchestrator.result = make_result(
+        make_finding(check_id="deps.js.vulnerable-library"),
+        technologies=(
+            Technology(
+                name="jquery",
+                version="1.12.4",
+                detection=DetectionMethod.FILENAME,
+                source_url="https://example.com/j.js",
+                vulnerable=True,
+            ),
+        ),
+    )
+    result = runner.invoke(app_mod.app, ["scan", "https://example.com"])
+    assert "Detected 1 client-side library (1 with known vulnerabilities)" in result.stderr
+
+
+def test_version_warns_when_the_advisory_database_is_stale(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        app_mod, "staleness_warning", lambda _rules: ["advisory data is 200 days old"]
+    )
+    result = runner.invoke(app_mod.app, ["version"])
+    assert result.exit_code == 0
+    assert "webvigil" in result.stdout
+    assert "advisory data is 200 days old" in result.stderr
+
+
+def test_version_is_quiet_when_the_database_is_fresh(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(app_mod, "staleness_warning", lambda _rules: [])
+    result = runner.invoke(app_mod.app, ["version"])
+    assert "warning:" not in result.stderr
 
 
 @pytest.mark.parametrize("fmt", ["json", "sarif", "html", "md"])

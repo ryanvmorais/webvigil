@@ -45,6 +45,14 @@ def summary(result: ScanResult) -> None:
         table.add_row(f"[{style}]{severity.name}[/]", f"[{style}]{count}[/]")
     _console.print(table)
 
+    if result.technologies:
+        vulnerable = sum(1 for tech in result.technologies if tech.vulnerable)
+        _console.print(
+            f"[dim]Detected {len(result.technologies)} client-side "
+            f"librar{'y' if len(result.technologies) == 1 else 'ies'} "
+            f"({vulnerable} with known vulnerabilities)[/]"
+        )
+
     for finding in result.findings:
         style = _SEVERITY_STYLE[finding.severity]
         location = finding.location.url

@@ -56,6 +56,21 @@
   <p class="meta">Warnings: {% for w in warnings %}{{ w }}{% if not loop.last %}; {% endif %}{% endfor %}</p>
   {% endif %}
 
+  {% if technologies %}
+  <h2>Detected technologies</h2>
+  <table class="summary">
+    <tr><th>Library</th><th>Version</th><th>Detection</th><th>Status</th></tr>
+    {% for t in technologies %}
+    <tr>
+      <td>{{ t.name }}</td>
+      <td>{{ t.version or "unknown" }}</td>
+      <td>{{ t.detection.value }}</td>
+      <td>{% if t.vulnerable %}Vulnerable{% if t.advisories %} ({{ t.advisories | join(", ") }}){% endif %}{% else %}—{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+
   {% if not findings %}
   <p>No findings.</p>
   {% endif %}
