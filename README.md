@@ -71,6 +71,22 @@ bundled image: `docker build -t webvigil . && docker run --rm webvigil scan http
 
 ---
 
+## Web API
+
+An optional FastAPI service keeps a history of scans in SQLite and runs them through the
+same engine. It is single-user and local-first; a browser dashboard is planned separately.
+
+```bash
+pip install "webvigil[web]"        # or: uv sync --all-extras
+webvigil-web serve                 # http://127.0.0.1:8000  (OpenAPI docs at /docs)
+# or: docker compose up --build
+```
+
+The database is created and migrated on first start; open `/docs` to create the account.
+See [docs/web-api.md](docs/web-api.md) for configuration, auth, and backup.
+
+---
+
 ## Development
 
 ```bash

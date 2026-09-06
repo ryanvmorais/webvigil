@@ -30,33 +30,37 @@ Conversa com o Ryan e o arquivo de plano seguem em português.
 ## Comandos
 
 ```bash
-uv sync
+uv sync --all-extras
 uv run ruff check .
 uv run black --check .
 uv run mypy src
-uv run lint-imports      # contrato: engine não importa Typer/Rich/FastAPI/SQLModel/Uvicorn
+uv run lint-imports      # contrato: engine não importa Typer/Rich/FastAPI/SQLModel/Alembic/pyjwt/argon2
 uv run pytest
 uv run webvigil scan <url>
 uv run webvigil list-checks
 uv run webvigil report <scan.json> --format html
+uv run webvigil-web serve            # Web API (extra `web`) — /docs em http://127.0.0.1:8000
+uv run webvigil-web migrate
 ```
 
 ## Arquitetura (resumo)
 
 Camadas, de cima para baixo:
 
-1. **Interfaces** — CLI (`webvigil.cli`, implementada) e Web API (`webvigil.api`, spec 002). Clientes finos do orchestrator.
+1. **Interfaces** — CLI (`webvigil.cli`) e Web API (`webvigil.api`, extra `web`, entry point
+   `webvigil-web`). Clientes finos do `Orchestrator`.
 2. **Scan Engine** (`webvigil.core`) — biblioteca pura, sem dependência de UI nem de banco:
    `Orchestrator`, `Target`/escopo/política, HTTP layer (`webvigil.http`), crawler leve
    (`webvigil.crawler`), registry de checks, modelo de `Finding`/`Severity`.
 3. **Checks** (`webvigil.checks`) — plugins `PASSIVE`/`ACTIVE`, registrados por decorator +
    entry points. Contrato: `Check.run(ctx: ScanContext) -> list[Finding]`.
 4. **Reporting** (`webvigil.reporting`) — JSON (canônico), SARIF 2.1.0, HTML (Jinja2), Markdown.
-5. **Persistência** (só Web) — SQLite via SQLModel + Alembic.
+5. **Persistência** (só Web, `webvigil.api.db`) — SQLite via SQLModel + Alembic; scans
+   executados por um `ScanRunner` in-process (1 por vez, fila).
 
 Regras: o engine (`core`, `http`, `crawler`, `checks`, `reporting`) nunca importa Typer,
-Rich, FastAPI, SQLModel nem Uvicorn — contrato verificado por `import-linter` no CI. A Web
-UI só fala com a API, nunca com o engine.
+Rich, FastAPI, SQLModel, Alembic, pyjwt nem argon2 — contrato verificado por `import-linter`
+no CI. `webvigil.cli` e `webvigil.api` não se importam. A Web UI só fala com a API.
 
 ## Segurança / ética
 
@@ -67,6 +71,6 @@ UI só fala com a API, nunca com o engine.
 ## Fluxo de trabalho
 
 - **Spec-driven development** via `/spec`. Specs em `specs/NNN-nome/` (requirements → design → tasks → implementação), com portão de aprovação humana em cada fase. Convenções e roadmap em [`specs/README.md`](specs/README.md).
-- Estado: `001-foundation` **concluída** (CLI `v0.1`). Nenhuma spec em andamento — a próxima é `002-web-api-ui` (`/spec nova web-api-ui`).
+- Estado: `001-foundation` (CLI `v0.1`) e `002-web-api` (API `v0.2`) **concluídas**. Nenhuma spec em andamento — a próxima é `003-web-ui` (dashboard Next.js).
 - Ao fim de cada sessão: `/preparar-commits` (Conventional Commits) e `/atualizar-docs`.
 - Commits em inglês, padrão Conventional Commits.

@@ -22,6 +22,10 @@ The authors accept no liability for misuse of this tool.
 A "good neighbor" policy is always enforced: bounded concurrency, configurable request delay,
 a page-count limit, and a scope guard that blocks requests to out-of-scope hosts.
 
+The optional Web API (`webvigil-web`) can also start Active-Mode scans. It applies the same
+gate: a scan with `mode: active` is rejected unless an `authorized_by` attestation is
+supplied, and that text is recorded on the scan and shown in every report.
+
 ## Reporting a vulnerability in WebVigil itself
 
 Please report security issues in WebVigil privately via GitHub Security Advisories

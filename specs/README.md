@@ -24,10 +24,12 @@ WebVigil is built with spec-driven development. Each feature is designed as a sp
 | Spec | Escopo | Entrega | Status |
 |---|---|---|---|
 | [`001-foundation`](001-foundation/) | Engine puro, contrato de check + registry, HTTP layer + scope guard, crawler, `Finding`/`Severity`, Safe/Active mode + portão de autorização, reporters (JSON/SARIF/HTML/MD), CLI, checks v0.1 (headers/cookies/TLS/CORS), CI, Dockerfile | CLI `v0.1` | **done** |
-| `002-web-api-ui` | FastAPI + SQLite (SQLModel + Alembic) + auth single-user + execução async de scan; dashboard Next.js | Web UI `v0.2` | não iniciada |
-| `003-deps-fingerprint` | fingerprint de tech/libs no front + match com CVE; análise opcional de `package.json` / `requirements.txt` | `v0.3` | não iniciada |
-| `004-info-disclosure` | arquivos/rotas expostos (`.git`, `.env`, backups), directory listing, stack traces, endpoints de debug | `v0.4` | não iniciada |
-| `005-active-injection` | Active Mode: XSS refletido/armazenado, SQLi, SSRF, path traversal, open redirect; fuzzing de parâmetros; app-alvo vulnerável em Docker | `v0.5` | não iniciada |
-| `006-auth-flows` | scan autenticado (cookie/header/login form), teste de session/CSRF; descoberta e submissão de formulários no crawler | `v0.6` | não iniciada |
+| [`002-web-api`](002-web-api/) | FastAPI + SQLite (SQLModel + Alembic) + auth single-user (setup na 1ª execução) + execução async de scan com fila 1-a-1 + endpoints de export | API `v0.2` | **done** |
+| `003-web-ui` | dashboard Next.js (App Router + Tailwind + shadcn/ui + TanStack Query) consumindo a API da 002: login, lista de scans, novo scan, detalhe com findings, export | Web UI `v0.3` | não iniciada |
+| `004-deps-fingerprint` | fingerprint de tech/libs no front + match com CVE; análise opcional de `package.json` / `requirements.txt` | `v0.4` | não iniciada |
+| `005-info-disclosure` | arquivos/rotas expostos (`.git`, `.env`, backups), directory listing, stack traces, endpoints de debug | `v0.5` | não iniciada |
+| `006-active-injection` | Active Mode: XSS refletido/armazenado, SQLi, SSRF, path traversal, open redirect; fuzzing de parâmetros; app-alvo vulnerável em Docker | `v0.6` | não iniciada |
+| `007-auth-flows` | scan autenticado (cookie/header/login form), teste de session/CSRF; descoberta e submissão de formulários no crawler | `v0.7` | não iniciada |
 
-Para abrir a próxima: `/spec nova web-api-ui`.
+> A 002 foi dividida: `002-web-api` (backend) e `003-web-ui` (Next.js). O roadmap
+> original tratava as duas como uma spec só; as demais foram renumeradas.

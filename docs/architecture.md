@@ -3,20 +3,23 @@
 WebVigil is organized in layers. Each layer only depends on the ones below it.
 
 ```
-Interfaces        CLI (webvigil.cli)   ·   Web API (webvigil.api)
+Interfaces        CLI (webvigil.cli)   ·   Web API (webvigil.api, extra `web`)
                         \                        /
 Scan Engine            webvigil.core  (Orchestrator, Target, Finding, config)
                   webvigil.http · webvigil.crawler · webvigil.checks
 Reporting              webvigil.reporting  (JSON · SARIF · HTML · Markdown)
-Persistence           SQLite via SQLModel  (web only)
+Persistence       webvigil.api.db  (SQLite via SQLModel + Alembic, web only)
 ```
 
 ## Rules
 
 - `webvigil.core` and the other engine packages (`http`, `crawler`, `checks`, `reporting`)
-  are a pure library. They must not import Typer, Rich, FastAPI, SQLModel, or Uvicorn — a
-  CI `import-linter` contract enforces this.
-- The CLI and the (future) Web API are thin clients of the same `Orchestrator`.
+  are a pure library. They must not import Typer, Rich, FastAPI, SQLModel, Alembic, PyJWT,
+  or argon2 — a CI `import-linter` contract enforces this. `webvigil.cli` and
+  `webvigil.api` do not import each other.
+- The CLI and the Web API are thin clients of the same `Orchestrator`.
+- The Web API adds persistence and a single-slot in-process `ScanRunner` (one scan runs at
+  a time; the rest queue). It never reimplements crawling, checks, or reporting.
 - The Next.js web UI talks only to the Web API, never to the engine directly.
 
 ## Scan flow
@@ -35,7 +38,8 @@ Persistence           SQLite via SQLModel  (web only)
 7. A reporter renders the result (JSON is canonical; SARIF / HTML / Markdown are pure
    functions of it, so `webvigil report` re-renders any format offline).
 
-See [writing-checks.md](writing-checks.md) for the check plugin contract.
+See [writing-checks.md](writing-checks.md) for the check plugin contract and
+[web-api.md](web-api.md) for running the Web API.
 
-The authoritative design lives in
-[`specs/001-foundation/`](../specs/001-foundation/).
+The authoritative designs live under [`specs/`](../specs/) — `001-foundation` (engine + CLI)
+and `002-web-api` (persistence + API).
