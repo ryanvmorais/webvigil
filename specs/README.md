@@ -27,7 +27,7 @@ WebVigil is built with spec-driven development. Each feature is designed as a sp
 | [`002-web-api`](002-web-api/) | FastAPI + SQLite (SQLModel + Alembic) + auth single-user (setup na 1ª execução) + execução async de scan com fila 1-a-1 + endpoints de export | API `v0.2` | **done** |
 | [`003-web-ui`](003-web-ui/) | dashboard Next.js (App Router + Tailwind + shadcn/ui + TanStack Query) consumindo a API da 002: setup/login, lista de scans, novo scan, detalhe com findings, preview/export de relatório, catálogo de checks, settings | Web UI `v0.3` | **done** |
 | [`004-deps-fingerprint`](004-deps-fingerprint/) | fingerprint passivo de libs JS no front + match com base Retire.js vendorada (offline); inventário de tecnologias no resultado, relatórios, API e dashboard | `v0.4` | **done** |
-| `005-info-disclosure` | arquivos/rotas expostos (`.git`, `.env`, backups), directory listing, stack traces, endpoints de debug | `v0.5` | não iniciada |
+| [`005-info-disclosure`](005-info-disclosure/) | stack traces e directory listing (passivo) + sondagem opt-in (`--probe`) de `.git`/`.env`/backups/endpoints de debug com catálogo curado e validação de conteúdo; só engine (sem mudança na API/UI) | `v0.5` | **done** |
 | `006-active-injection` | Active Mode: XSS refletido/armazenado, SQLi, SSRF, path traversal, open redirect; fuzzing de parâmetros; app-alvo vulnerável em Docker | `v0.6` | não iniciada |
 | `007-auth-flows` | scan autenticado (cookie/header/login form), teste de session/CSRF; descoberta e submissão de formulários no crawler | `v0.7` | não iniciada |
 
