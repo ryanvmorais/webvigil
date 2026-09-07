@@ -28,8 +28,8 @@ a known vulnerability.
   its URL only; the scope guard blocks the download.
 - **No manifests.** WebVigil does not read `package.json` / `requirements.txt` from disk and
   does not consume manifests a target exposes over HTTP (that is spec 005's territory).
-- **No online lookups.** Matching is entirely offline against the vendored database. An
-  `AdvisoryProvider` seam exists for a future online provider (e.g. OSV.dev).
+- **No online lookups by default.** Matching is offline against the vendored database.
+  An opt-in OSV.dev provider (`--osv-online`, see below) adds online coverage on top.
 - **No reachability analysis.** A vulnerable version is reported whether or not the flawed
   code path is actually used.
 - **Best effort.** Fetching is capped at 50 distinct in-scope resources per scan; hitting
@@ -45,6 +45,44 @@ The pass runs only when a `DEPS` check is selected. Disable **both** ids to skip
 [checks]
 disabled = ["deps.js.vulnerable-library", "deps.js.library-detected"]
 ```
+
+## OSV.dev online provider (`--osv-online`)
+
+Spec [`010-osv-online`](../specs/010-osv-online/). The vendored database only advances when
+a maintainer refreshes it, and its coverage is Retire.js's coverage. `--osv-online` /
+`[deps] osv_online` adds a second advisory source: [OSV.dev](https://osv.dev/) (Google /
+OpenSSF), the `npm` ecosystem, no API key.
+
+**It is off by default** — it is the only part of the engine that contacts a host other
+than the scan target.
+
+```bash
+uv run webvigil scan https://example.com --osv-online
+```
+
+```toml
+[deps]
+osv_online = true
+# osv_timeout_s = 10.0
+# osv_base_url  = "https://api.osv.dev"
+```
+
+- **What is sent.** The names and versions of the client-side libraries the scan detected,
+  as `{name, ecosystem: "npm", version}` triples — one `POST /v1/querybatch`, then one
+  `POST /v1/query` for each package that had a match. Nothing about the target (no URL,
+  hostname, cookie, or finding) ever leaves the machine.
+- **How results are used.** OSV advisories are **merged** with the vendored Retire.js
+  match for the same detection and de-duplicated by identifier (a shared CVE / GHSA / OSV
+  id), so a library covered by both sources yields one finding carrying the union of the
+  identifiers and references. OSV never replaces the offline match.
+- **On failure.** Any network error, timeout, bad status, or unparseable response is a
+  scan **warning**, not an error — the scan still reports the offline results and the exit
+  code is unaffected.
+- **No cache.** Each opted-in scan queries OSV live (a repeated `(name, version)` within
+  one scan is queried once). There is no on-disk cache and no "refresh script".
+- **Limitations.** `npm` only (no PyPI / other ecosystems); a few Retire.js library names
+  are translated to their npm package name, the rest are used as-is, so an unusual name may
+  not match; no reachability analysis (unchanged from the offline match).
 
 ## The vendored database
 

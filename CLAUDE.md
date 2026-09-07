@@ -69,6 +69,13 @@ Camadas, de cima para baixo:
    entry points. Contrato: `Check.run(ctx: ScanContext) -> list[Finding]`. `webvigil.checks.deps`
    (spec 004) faz fingerprint passivo de libs JS do front + match com uma base Retire.js
    vendorada (offline); o passo de fingerprint roda no `Orchestrator`, não como check.
+   `OsvProvider` (spec 010): provider de advisory online opt-in (`--osv-online` /
+   `[deps] osv_online`, default off) — único ponto do engine que fala com host que não é o
+   alvo. Um passo `_osv_lookup` no `Orchestrator` (depois do fingerprint) faz um
+   `POST /v1/querybatch` + um `POST /v1/query` por pacote com match na `api.osv.dev`, normaliza
+   pro `Advisory` nativo e entrega via `ScanContext.observations`; o check mescla
+   (`merge_advisories`, dedup por identificador) com o match offline. Falha de rede vira
+   warning, não erro. Sem cache em disco.
    Detalhes em [`docs/dependency-fingerprinting.md`](docs/dependency-fingerprinting.md).
    `webvigil.checks.disclosure` (spec 005): dois checks passivos (stack traces, directory
    listing) + um passo de sondagem opt-in no `Orchestrator` (`--probe` / `[disclosure]
@@ -118,6 +125,6 @@ no CI. `webvigil.cli` e `webvigil.api` não se importam. A Web UI só fala com a
 ## Fluxo de trabalho
 
 - **Spec-driven development** via `/spec`. Specs em `specs/NNN-nome/` (requirements → design → tasks → implementação), com portão de aprovação humana em cada fase. Convenções e roadmap em [`specs/README.md`](specs/README.md).
-- Estado: `001-foundation` (CLI `v0.1`), `002-web-api` (API `v0.2`), `003-web-ui` (dashboard `v0.3`), `004-deps-fingerprint` (`v0.4`), `005-info-disclosure` (`v0.5`), `006-active-injection` (`v0.6`), `007-auth-flows` (`v0.7`) e `008-stored-xss` (`v0.8`) **concluídas**. Nenhuma spec em andamento. As próximas duas do roadmap tratam de dívidas técnicas já identificadas, atacáveis em qualquer ordem: `009-ssrf` (coletor OAST opt-in) e `010-osv-online` (provider OSV.dev online para o fingerprint de dependências da 004, hoje só Retire.js vendorado). A 007 entregou só cookie estático + CSRF passivo + submissão de forms GET; login automático, auth por header e testes de sessão saíram para uma spec futura.
+- Estado: `001-foundation` (CLI `v0.1`), `002-web-api` (API `v0.2`), `003-web-ui` (dashboard `v0.3`), `004-deps-fingerprint` (`v0.4`), `005-info-disclosure` (`v0.5`), `006-active-injection` (`v0.6`), `007-auth-flows` (`v0.7`), `008-stored-xss` (`v0.8`) e `010-osv-online` (`v0.10`) **concluídas**. Nenhuma spec em andamento. Resta `009-ssrf` (`v0.9`) — SSRF com coletor out-of-band (OAST) opt-in. A 007 entregou só cookie estático + CSRF passivo + submissão de forms GET; login automático, auth por header e testes de sessão saíram para uma spec futura.
 - Ao fim de cada sessão: `/preparar-commits` (Conventional Commits) e `/atualizar-docs`.
 - Commits em inglês, padrão Conventional Commits.

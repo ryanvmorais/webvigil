@@ -22,8 +22,9 @@ Persistence       webvigil.api.db  (SQLite via SQLModel + Alembic, web only)
 - `webvigil.checks.deps` adds passive dependency fingerprinting: the orchestrator runs a
   fingerprint pass (not a check) that identifies client-side JS libraries and matches them
   against a vendored Retire.js database; two `deps.*` checks turn the result into findings
-  and a technology inventory on the `ScanResult`. Offline; see
-  [dependency-fingerprinting.md](dependency-fingerprinting.md).
+  and a technology inventory on the `ScanResult`. Offline by default; an opt-in
+  `_osv_lookup` pass (`--osv-online`) additionally queries OSV.dev and merges the result.
+  See [dependency-fingerprinting.md](dependency-fingerprinting.md).
 - `webvigil.checks.disclosure` adds information-disclosure detection: two passive checks
   read already-crawled responses (stack traces, directory listings), and — only when
   `[disclosure] probe` / `--probe` is on — the orchestrator runs a probe pass that requests
@@ -82,4 +83,6 @@ The authoritative designs live under [`specs/`](../specs/) — `001-foundation` 
 (exposed files, directory listing, stack traces, debug endpoints),
 `006-active-injection` (reflected XSS, SQLi, path traversal, open redirect),
 `007-auth-flows` (authenticated scanning with static cookies, CSRF detection,
-form-driven crawling), and `008-stored-xss` (two-phase inject-then-recrawl stored XSS).
+form-driven crawling), `008-stored-xss` (two-phase inject-then-recrawl stored XSS),
+and `010-osv-online` (opt-in OSV.dev online advisory provider for the dependency
+fingerprint).
