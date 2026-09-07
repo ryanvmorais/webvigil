@@ -30,15 +30,19 @@ WebVigil is built with spec-driven development. Each feature is designed as a sp
 | [`005-info-disclosure`](005-info-disclosure/) | stack traces e directory listing (passivo) + sondagem opt-in (`--probe`) de `.git`/`.env`/backups/endpoints de debug com catálogo curado e validação de conteúdo; só engine (sem mudança na API/UI) | `v0.5` | **done** |
 | [`006-active-injection`](006-active-injection/) | Active Mode: XSS refletido, SQLi (error/boolean/time), path traversal, open redirect; descoberta de forms + injection points; passo de fuzzing com orçamento; app-alvo vulnerável (fixture + serviço compose) | `v0.6` | **done** |
 | [`007-auth-flows`](007-auth-flows/) | scan autenticado por cookie estático (`--cookie` / `[auth]`), check CSRF passivo (`csrf.form.no-token`, ponderado por SameSite), crawl que submete forms `GET` seguros + heurística de evasão de links logout/destrutivos | `v0.7` | **done** |
-| — | dívidas técnicas: SSRF (coletor OAST opt-in), Stored XSS (crawl stateful de duas fases), provider OSV.dev online para a spec 004 | — | não iniciada |
+| `008-stored-xss` | stored/persistent XSS: fase de re-fetch pós-scan sobre o modelo de injection point da `006` (injeta um marcador via uma request, depois relê as páginas descobertas procurando o marcador renderizado sem escape); Active Mode | `v0.8` | não iniciada |
+| `009-ssrf` | SSRF com coletor out-of-band opt-in: um serviço que o scanner hospeda e o alvo chama de volta (DNS/HTTP callback), habilitado explicitamente; cobre casos cegos que a detecção in-band não pega | `v0.9` | não iniciada |
+| `010-osv-online` | provider OSV.dev online para o fingerprint de dependências da `004` (hoje só Retire.js vendorado): consulta opt-in à API da OSV, com egress de rede explícito; ver `memory/osv-provider-deferred` | `v0.10` | não iniciada |
 
 > A 002 foi dividida: `002-web-api` (backend) e `003-web-ui` (Next.js). O roadmap
 > original tratava as duas como uma spec só; as demais foram renumeradas.
 >
-> **Stored XSS e SSRF** estavam na linha original da `006`; saíram para uma spec futura.
-> Stored XSS exige um crawl stateful de duas fases; SSRF exige um coletor out-of-band, que
-> conflita com o princípio "o engine só fala com o alvo" (spec 004/005). A `006` entregou
-> as quatro classes detectáveis in-band.
+> **`008`–`010` são as três dívidas técnicas acumuladas** e podem ser atacadas em qualquer
+> ordem. `008-stored-xss` e `009-ssrf` estavam na linha original da `006` (a `006` entregou
+> as quatro classes detectáveis in-band); `010-osv-online` é o follow-up prometido da `004`.
+> As três compartilham o mesmo tema: cruzar a fronteira do "o engine só fala com o alvo" —
+> a `008` relendo páginas em duas fases, a `009` e a `010` com egress explícito para um
+> serviço próprio ou de terceiros, sempre opt-in.
 >
 > **Login automático, auth por header e testes de sessão** (fixation, invalidação no
 > logout, id fraco) estavam na linha original da `007`; saíram para uma spec futura — cada
