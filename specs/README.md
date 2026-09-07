@@ -42,10 +42,15 @@ WebVigil is built with spec-driven development. Each feature is designed as a sp
 > hop atrás do marcador que ela mesma gravou (opt-in `--stored-xss`). `010-osv-online`
 > (`v0.10`): provider OSV.dev online opt-in (`--osv-online`), follow-up da `004`.
 > `009-ssrf` (`v0.9`): SSRF **in-band** — recorte deliberado, sem coletor OAST, sem custo,
-> sem infra. **SSRF cega** (o coletor out-of-band que o scanner hospeda e o alvo chama de
-> volta) foi separada para uma spec futura **opt-in** — candidata `011-ssrf-oast` —
-> paralela a como a `010` seguiu a `004`; cruza a fronteira do "o engine só fala com o
-> alvo" e precisa de host público com portas DNS/HTTP.
+> sem infra.
+>
+> **SSRF cega não está no roadmap.** Detectá-la exige um coletor out-of-band (OAST) — um
+> servidor que o scanner hospeda, com domínio público e portas DNS/HTTP — que cruza o
+> princípio "o engine só fala com o alvo" e a decisão de distribuir a ferramenta só pelo
+> repositório, sem serviço hospedado. Quem precisar cobrir o caso cego pareia a WebVigil
+> com um colaborador externo próprio (Burp Collaborator, interactsh). Um dia isso pode
+> virar uma spec *bring-your-own-collaborator* (a WebVigil dispara payloads para um domínio
+> que você passa, sem hospedar nem armazenar nada) — não planejada.
 >
 > **Login automático, auth por header e testes de sessão** (fixation, invalidação no
 > logout, id fraco) estavam na linha original da `007`; saíram para uma spec futura — cada

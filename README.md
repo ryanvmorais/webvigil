@@ -45,11 +45,13 @@ be illegal. See [SECURITY.md](SECURITY.md).
 | `v0.10` | Opt-in OSV.dev online advisory lookup for dependency fingerprinting, augmenting the vendored Retire.js database ([docs](docs/dependency-fingerprinting.md#osvdev-online-provider---osv-online)) | shipped |
 
 > Stored XSS shipped in `v0.8` (opt-in `--stored-xss`); in-band SSRF in `v0.9`; the OSV.dev
-> online advisory provider in `v0.10` (opt-in `--osv-online`). **Blind SSRF** is still
-> pending — it needs an out-of-band collaborator, which the "engine talks only to the
-> target" rule rules out until a spec adds an opt-in one. Automated login-form flows, auth
-> headers, and session-security tests were on the original `v0.7` line and moved to a
-> follow-up spec — each needs the stateful login flow or Active Mode.
+> online advisory provider in `v0.10` (opt-in `--osv-online`). **Blind SSRF is not on the
+> roadmap** — it needs an out-of-band collaborator (a server the scanner hosts and the
+> target calls back to), which the "engine talks only to the target" rule and the
+> repository-only distribution rule out. Pair WebVigil with your own collaborator (Burp
+> Collaborator, interactsh) if you need to cover the blind case. Automated login-form flows,
+> auth headers, and session-security tests were on the original `v0.7` line and are not yet
+> scheduled — each needs the stateful login flow or Active Mode.
 
 ---
 

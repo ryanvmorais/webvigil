@@ -124,10 +124,14 @@ confusion. A parameter whose **name or value looks like a URL** (`url`, `callbac
 `webhook`, `next`, `image`, …) gets the full payload set and is tested first; any other
 parameter gets a short canary set, tested last, only if budget remains.
 
-**Blind SSRF is not covered.** A parameter that triggers a server-side request with *no*
-in-band signal — no reflected body, no error, no status change — needs a collaborator
-server the scanner hosts and the target calls back to. That crosses WebVigil's "the engine
-talks only to the target" rule and is deferred to a future **opt-in** spec.
+**Blind SSRF is not covered, and is not on the roadmap.** A parameter that triggers a
+server-side request with *no* in-band signal — no reflected body, no error, no status
+change — is only detectable with an out-of-band collaborator: a server the scanner hosts,
+with a public domain and DNS/HTTP ports, that the target calls back to. That crosses
+WebVigil's "the engine talks only to the target" rule and the choice to ship WebVigil as a
+repository only, with no hosted service. If you need the blind case, run WebVigil's active
+scan alongside your own collaborator (Burp Collaborator, interactsh) and inject its domain
+by hand.
 
 ## Non-destructive posture
 
@@ -162,8 +166,8 @@ the pass entirely — no enumeration, no crafted request.
 - **Stored XSS** ships in v0.8 behind `--stored-xss` (see above). **DOM XSS** still needs a
   JavaScript engine (out of scope since spec 001).
 - **In-band SSRF** ships in v0.9 (`injection.ssrf.metadata` / `injection.ssrf.internal`,
-  see above). **Blind SSRF** still needs an out-of-band collaborator — a server the scanner
-  hosts that the target calls back to — and is deferred to a future opt-in spec.
+  see above). **Blind SSRF** needs an out-of-band collaborator the scanner hosts — out of
+  scope, not on the roadmap; pair with your own collaborator instead.
 - **No OS command injection, XXE, SSTI, or other injection classes** yet.
 - **No exploitation.** A confirmed SQLi is proved with one bounded marker; WebVigil does
   not dump the database or read further files.
