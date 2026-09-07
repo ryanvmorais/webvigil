@@ -40,7 +40,14 @@ Persistence       webvigil.api.db  (SQLite via SQLModel + Alembic, web only)
   detection (no headless browser, no out-of-band collaborator). See
   [active-injection.md](active-injection.md).
 - The `webvigil.http` client exposes `request(method, …)` for verbs beyond `GET`; a
-  non-idempotent request is never retried on a `5xx` or read timeout.
+  non-idempotent request is never retried on a `5xx` or read timeout. Configured `[auth]`
+  cookies (spec 007) are attached to target-host requests only, and the client discards
+  anything the target sets via `Set-Cookie` so a scan sends exactly what is configured.
+- `webvigil.checks.csrf` adds one passive check (spec 007): `csrf.form.no-token` flags a
+  state-changing `POST` form with no anti-CSRF token, weighted by the session cookie's
+  `SameSite`. It reads `ScanContext.forms` — the `<form>` inventory the crawler now parses
+  during `discover()` and also uses to submit safe `GET` forms. See
+  [authenticated-scanning.md](authenticated-scanning.md).
 - The Web API adds persistence and a single-slot in-process `ScanRunner` (one scan runs at
   a time; the rest queue). It never reimplements crawling, checks, or reporting.
 - The Next.js web UI (`web/`) talks only to the Web API, never to the engine directly. In
@@ -69,5 +76,7 @@ See [writing-checks.md](writing-checks.md) for the check plugin contract and
 The authoritative designs live under [`specs/`](../specs/) — `001-foundation` (engine + CLI),
 `002-web-api` (persistence + API), `003-web-ui` (the Next.js dashboard),
 `004-deps-fingerprint` (passive dependency fingerprinting), `005-info-disclosure`
-(exposed files, directory listing, stack traces, debug endpoints), and
-`006-active-injection` (reflected XSS, SQLi, path traversal, open redirect).
+(exposed files, directory listing, stack traces, debug endpoints),
+`006-active-injection` (reflected XSS, SQLi, path traversal, open redirect), and
+`007-auth-flows` (authenticated scanning with static cookies, CSRF detection,
+form-driven crawling).

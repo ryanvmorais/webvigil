@@ -83,6 +83,13 @@ Camadas, de cima para baixo:
    `ctx.observations.injection_hits`. Portão `--mode active --authorized-by`; só GET/POST;
    detecção in-band (sem browser headless, sem coletor OAST). `[injection]` afina orçamento
    e time-based. Detalhes em [`docs/active-injection.md`](docs/active-injection.md).
+   `webvigil.checks.csrf` (spec 007): um check passivo — `csrf.form.no-token` marca form
+   `POST` state-changing sem token anti-CSRF, confiança ponderada pelo `SameSite` do cookie
+   de sessão. Lê `ScanContext.forms` (o crawler agora parseia `<form>`s durante `discover()`
+   e submete forms `GET` seguros para ampliar a superfície). Scan autenticado por cookie
+   estático: `--cookie "name=value"` / `[auth] cookies`, anexado só a requests do host alvo,
+   nunca em relatório/log/metadata; `webvigil.crawler.safety` guarda o crawl de links
+   logout/destrutivos. Detalhes em [`docs/authenticated-scanning.md`](docs/authenticated-scanning.md).
 4. **Reporting** (`webvigil.reporting`) — JSON (canônico), SARIF 2.1.0, HTML (Jinja2), Markdown.
 5. **Persistência** (só Web, `webvigil.api.db`) — SQLite via SQLModel + Alembic; scans
    executados por um `ScanRunner` in-process (1 por vez, fila).
@@ -105,6 +112,6 @@ no CI. `webvigil.cli` e `webvigil.api` não se importam. A Web UI só fala com a
 ## Fluxo de trabalho
 
 - **Spec-driven development** via `/spec`. Specs em `specs/NNN-nome/` (requirements → design → tasks → implementação), com portão de aprovação humana em cada fase. Convenções e roadmap em [`specs/README.md`](specs/README.md).
-- Estado: `001-foundation` (CLI `v0.1`), `002-web-api` (API `v0.2`), `003-web-ui` (dashboard `v0.3`), `004-deps-fingerprint` (`v0.4`), `005-info-disclosure` (`v0.5`) e `006-active-injection` (`v0.6`) **concluídas**. Nenhuma spec em andamento — a próxima é `007-auth-flows`. (Stored XSS e SSRF saíram da linha da 006 para uma spec futura — stored XSS exige crawl de duas fases; SSRF exige coletor OAST, incompatível com "engine só fala com o alvo".)
+- Estado: `001-foundation` (CLI `v0.1`), `002-web-api` (API `v0.2`), `003-web-ui` (dashboard `v0.3`), `004-deps-fingerprint` (`v0.4`), `005-info-disclosure` (`v0.5`), `006-active-injection` (`v0.6`) e `007-auth-flows` (`v0.7`) **concluídas**. Nenhuma spec em andamento. As próximas tratam de três dívidas técnicas já identificadas: SSRF (exige coletor OAST opt-in), Stored XSS (exige crawl stateful de duas fases) e um provider OSV.dev online para o fingerprint de dependências da spec 004 (hoje só Retire.js vendorado). A 007 entregou só cookie estático + CSRF passivo + submissão de forms GET; login automático, auth por header e testes de sessão saíram para uma spec futura.
 - Ao fim de cada sessão: `/preparar-commits` (Conventional Commits) e `/atualizar-docs`.
 - Commits em inglês, padrão Conventional Commits.

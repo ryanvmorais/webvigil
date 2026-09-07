@@ -74,6 +74,14 @@ by the orchestrator from a bounded pass. `detections`, `probe_hits`, and `inject
 are all populated *before* checks run and are read-only during the run. Most checks should
 not touch `observations` at all.
 
+`ctx.forms` (spec 007) is the tuple of `<form>`s the crawler parsed from the discovered
+pages, de-duplicated and in scope — the counterpart to `ctx.pages` for form-shaped
+structure. `csrf.form.no-token` is the reference for a check that reasons about forms rather
+than single responses: it iterates `ctx.forms`, skips login / search forms via
+`webvigil.crawler.safety` (the shared "is this safe to touch / is this an auth form"
+helper), and reads the crawled responses' `Set-Cookie` headers for context — all without a
+single `ctx.http` request.
+
 An orchestrator pass (the dependency fingerprinter, the disclosure probe, the injection
 scanner) may issue its own `ctx.http` requests — always in-scope, bounded by a documented
 budget, and best-effort (swallow failures). It calibrates the target where that matters:
