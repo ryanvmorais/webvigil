@@ -1,7 +1,9 @@
-"""The stored / persistent-XSS pass: inject markers, re-crawl, correlate (spec 008).
+"""
+The stored / persistent-XSS pass: inject markers, re-crawl, correlate (spec 008).
 
-Run by the orchestrator (``_inject_stored``) when the scan is Active, ``injection.xss.stored``
-is selected, and ``[injection] stored_xss`` is on (ADR-1). Two phases:
+Run by the orchestrator (``_inject_stored``) when the scan is Active,
+``injection.xss.stored`` is selected, and ``[injection] stored_xss`` is on
+(ADR-1). Two phases:
 
 * **A — inject.** One token-tagged marker set per in-scope non-excluded injection point
   (006's ``enumerate_points`` — POST-form points first, query params second).
@@ -55,6 +57,16 @@ class StoredXssScanner:
         pages: tuple[Page, ...],
         forms: tuple[Form, ...],
     ) -> None:
+        """
+        Args:
+            http (HttpClient): The shared, scope-guarded HTTP client.
+            target (Target): The normalized target.
+            config (ScanConfig): The full scan config; supplies the injection
+                budget, the point cap, and ``scan.max_pages`` for the re-crawl.
+            pages (tuple[Page, ...]): The first crawl's pages — the Phase-B
+                frontier and the "known before injection" baseline.
+            forms (tuple[Form, ...]): The parsed form inventory.
+        """
         self._http = http
         self._target = target
         self._config = config
@@ -67,6 +79,16 @@ class StoredXssScanner:
         )
 
     async def run(self) -> StoredXssReport:
+        """
+        Run Phase A (inject a marker set per point) then Phase B (re-crawl and correlate).
+
+        Returns early after Phase A when nothing was submitted.
+
+        Returns:
+            StoredXssReport: The confirmed stored-XSS hits, the marker and
+                re-crawl counts, and any warnings (point cap, budget, re-crawl
+                cap).
+        """
         points, warnings = enumerate_points(
             self._pages, self._forms, max_points=self._config.injection.max_injection_points
         )
@@ -110,6 +132,17 @@ class StoredXssScanner:
         return report
 
     async def _submit(self, point: InjectionPoint, payload: str) -> Response | None:
+        """
+        Phase-A submission: reserve budget, then replay ``point`` with one marker payload.
+
+        Args:
+            point (InjectionPoint): The point to inject through.
+            payload (str): The concrete marker string (token substituted).
+
+        Returns:
+            Response | None: The response, or ``None`` when the budget is spent
+                or the request failed.
+        """
         if not self._budget.take():
             return None
         method, url, params, data = build_request(point, payload)
@@ -122,7 +155,14 @@ class StoredXssScanner:
 
 
 def _stored_order(points: list[InjectionPoint]) -> list[InjectionPoint]:
-    """Form points before query points, each group in ``enumerate_points`` order (RF-04)."""
+    """
+    Args:
+        points (list[InjectionPoint]): The enumerated points.
+
+    Returns:
+        list[InjectionPoint]: Form points before query points, each group in
+            ``enumerate_points`` order (RF-04).
+    """
     forms = [p for p in points if p.source == "form"]
     queries = [p for p in points if p.source != "form"]
     return forms + queries
@@ -133,6 +173,21 @@ def _detect(
     recrawled: list[Page],
     pre: dict[str, str],
 ) -> list[InjectionHit]:
+    """
+    Correlate each submitted marker against the re-crawled bodies.
+
+    A marker counts only when it appears verbatim in an HTML body it was not in
+    before injection, and — for a GET injection point — on a different page than
+    the one it was submitted to (that would be reflected, not stored).
+
+    Args:
+        markers (dict[str, StoredMarker]): Submitted markers, keyed by token.
+        recrawled (list[Page]): The Phase-B pages.
+        pre (dict[str, str]): Normalized URL -> body text from the first crawl.
+
+    Returns:
+        list[InjectionHit]: One ``xss-stored`` hit per marker that rendered.
+    """
     hits: list[InjectionHit] = []
     for marker in markers.values():
         renders: list[_Render] = []
@@ -156,6 +211,20 @@ def _detect(
 
 
 def _stored_hit(marker: StoredMarker, renders: list[_Render]) -> InjectionHit:
+    """
+    Build the finding-ready hit for one marker that rendered on one or more pages.
+
+    The hit's location is the injection point (a stable fingerprint, RF-09), not
+    the render page; render pages go in the evidence. Confidence is HIGH for an
+    off-point render in an html-body / attribute context, MEDIUM otherwise.
+
+    Args:
+        marker (StoredMarker): The submitted marker.
+        renders (list[_Render]): Where it was found, first render first.
+
+    Returns:
+        InjectionHit: The ``xss-stored`` hit.
+    """
     first_url, context, payload, text = renders[0]
     extra = len(renders) - 1
     off_point = normalize_url(first_url) != normalize_url(marker.point.base_url)

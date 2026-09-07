@@ -1,8 +1,10 @@
-"""The active-injection pass: enumerate points, baseline each, fan the detectors (RF-12).
+"""
+The active-injection pass: enumerate points, baseline each, fan the detectors (RF-12).
 
-Run by the orchestrator when the scan is Active and at least one ``injection.*`` check is
-selected (ADR-1, ADR-2). Owns the one shared :class:`ActiveBudget` and the one baseline per
-point; the six checks only filter the resulting :class:`InjectionHit`s.
+Run by the orchestrator when the scan is Active and at least one ``injection.*``
+check is selected (ADR-1, ADR-2). Owns the one shared :class:`ActiveBudget` and
+the one baseline per point; the checks only filter the resulting
+:class:`InjectionHit`s.
 """
 
 from __future__ import annotations
@@ -82,6 +84,19 @@ class InjectionScanner:
         *,
         per_point_limit: int = _PER_POINT_REQUEST_CAP,
     ) -> None:
+        """
+        Args:
+            http (HttpClient): The shared, scope-guarded HTTP client.
+            target (Target): The normalized target.
+            config (InjectionSection): The ``[injection]`` tuning.
+            pages (tuple[Page, ...]): The crawled pages.
+            forms (tuple[Form, ...]): The parsed form inventory.
+            selected_kinds (set[str]): Detector kinds to run, derived from the
+                selected checks; ``sqli-time`` is dropped when
+                ``time_based_sqli`` is off.
+            per_point_limit (int): Cap on requests per injection point. Defaults
+                to ``_PER_POINT_REQUEST_CAP``.
+        """
         self._http = http
         self._target = target
         self._config = config
@@ -98,6 +113,13 @@ class InjectionScanner:
         self._ctx = DetectCtx(send=self._send, delay_s=config.time_based_delay_s, host=target.host)
 
     async def run(self) -> InjectionReport:
+        """
+        Enumerate points, baseline each, and run the ordered detectors under the budget.
+
+        Returns:
+            InjectionReport: The confirmed hits, the point count, and any
+                warnings (point cap, budget exhausted).
+        """
         points, warnings = enumerate_points(
             self._pages, self._forms, max_points=self._config.max_injection_points
         )
@@ -122,6 +144,19 @@ class InjectionScanner:
         return report
 
     def _ordered_kinds(self, point: InjectionPoint) -> list[str]:
+        """
+        Order the selected detector kinds for one point.
+
+        Starts from ``_BASE_ORDER`` (``ssrf`` last), then front-loads
+        ``traversal`` / ``redirect`` / ``ssrf`` to position 0 when the point's
+        name or value matches that detector's heuristic.
+
+        Args:
+            point (InjectionPoint): The point under test.
+
+        Returns:
+            list[str]: The detector kinds to run, in order.
+        """
         kinds = [k for k in _BASE_ORDER if k in self.selected_kinds]
         for predicate, kind in (
             (is_pathlike, "traversal"),
@@ -134,6 +169,16 @@ class InjectionScanner:
         return kinds
 
     async def _baseline(self, point: InjectionPoint) -> Baseline | None:
+        """
+        Send the point's original value once and capture it as the differential anchor.
+
+        Args:
+            point (InjectionPoint): The point to baseline.
+
+        Returns:
+            Baseline | None: The baseline, or ``None`` when the request was
+                denied by the budget or failed.
+        """
         response = await self._send(point, point.original)
         if response is None:
             return None
@@ -148,6 +193,22 @@ class InjectionScanner:
     async def _send(
         self, point: InjectionPoint, value: str, *, time_based: bool = False
     ) -> Response | None:
+        """
+        The :class:`~webvigil.checks.injection.detect.Sender` bound into ``DetectCtx``.
+
+        Reserves budget first — time-based requests against the time sub-budget
+        — then replays the point with ``value``.
+
+        Args:
+            point (InjectionPoint): The point to replay.
+            value (str): The value to place in the point's slot.
+            time_based (bool): Charge against the time-based sub-budget.
+                Defaults to ``False``.
+
+        Returns:
+            Response | None: The response, or ``None`` when the budget is spent
+                or the request failed.
+        """
         if not (self._budget.take_time_based() if time_based else self._budget.take()):
             return None
         method, url, params, data = build_request(point, value)

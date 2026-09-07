@@ -1,8 +1,11 @@
-"""The six active-injection checks: turn ``InjectionHit``s into findings (RF-08..RF-11).
+"""
+The active-injection checks: turn ``InjectionHit``s into findings (RF-08..RF-11).
 
-None of them issues a request — ``engine.InjectionScanner`` (an orchestrator pass) has
-already run and left its hits on ``ctx.observations.injection_hits``. Each check filters by
-``kind``.
+None of them issues a request — ``engine.InjectionScanner`` and the stored-XSS
+pass (an orchestrator pass each) have already run and left their hits on
+``ctx.observations.injection_hits``. Each check filters by ``kind`` and pulls
+its description / remediation / references from the module-level dicts keyed on
+that kind.
 """
 
 from __future__ import annotations
@@ -141,13 +144,28 @@ _REFERENCES: dict[str, tuple[str, ...]] = {
 
 
 class _InjectionCheck(Check):
-    """Shared body: filter ``ctx.observations.injection_hits`` for this check's ``kind``."""
+    """
+    Shared body: filter ``ctx.observations.injection_hits`` for this check's ``kind``.
+
+    Attributes:
+        kind (ClassVar[str]): The ``InjectionHit.kind`` this subclass turns into
+            findings; also the key into ``_DESCRIPTION`` / ``_REMEDIATION`` /
+            ``_REFERENCES``.
+    """
 
     kind: ClassVar[str]
     category = Category.INJECTION
     mode = ScanMode.ACTIVE
 
     async def run(self, ctx: ScanContext) -> list[Finding]:
+        """
+        Args:
+            ctx (ScanContext): The scan context; reads
+                ``observations.injection_hits``.
+
+        Returns:
+            list[Finding]: One finding per hit whose kind matches :attr:`kind`.
+        """
         return [
             self.finding(
                 title=hit.title,
@@ -165,6 +183,8 @@ class _InjectionCheck(Check):
 
 @register
 class ReflectedXssCheck(_InjectionCheck):
+    """Reflected cross-site scripting from the reflected-XSS detector."""
+
     id = "injection.xss.reflected"
     name = "Reflected cross-site scripting"
     kind = "xss"
@@ -175,6 +195,8 @@ class ReflectedXssCheck(_InjectionCheck):
 
 @register
 class SqliErrorBasedCheck(_InjectionCheck):
+    """SQL injection confirmed by a DBMS parser error in the response."""
+
     id = "injection.sqli.error-based"
     name = "SQL injection (error-based)"
     kind = "sqli-error"
@@ -185,6 +207,8 @@ class SqliErrorBasedCheck(_InjectionCheck):
 
 @register
 class SqliBooleanBasedCheck(_InjectionCheck):
+    """Blind SQL injection confirmed by a reproducible true/false response split."""
+
     id = "injection.sqli.boolean-based"
     name = "SQL injection (boolean-based blind)"
     kind = "sqli-boolean"
@@ -195,6 +219,8 @@ class SqliBooleanBasedCheck(_InjectionCheck):
 
 @register
 class SqliTimeBasedCheck(_InjectionCheck):
+    """Blind SQL injection confirmed by an attacker-controlled response delay."""
+
     id = "injection.sqli.time-based"
     name = "SQL injection (time-based blind)"
     kind = "sqli-time"
@@ -205,6 +231,8 @@ class SqliTimeBasedCheck(_InjectionCheck):
 
 @register
 class PathTraversalCheck(_InjectionCheck):
+    """Path traversal confirmed by a known system file in the response."""
+
     id = "injection.traversal.path"
     name = "Path traversal"
     kind = "traversal"
@@ -215,6 +243,8 @@ class PathTraversalCheck(_InjectionCheck):
 
 @register
 class OpenRedirectCheck(_InjectionCheck):
+    """Open redirect confirmed by an off-site sentinel host in the redirect target."""
+
     id = "injection.redirect.open"
     name = "Open redirect"
     kind = "redirect"
@@ -225,6 +255,8 @@ class OpenRedirectCheck(_InjectionCheck):
 
 @register
 class StoredXssCheck(_InjectionCheck):
+    """Stored / persistent XSS from the two-phase stored-XSS pass (spec 008)."""
+
     id = "injection.xss.stored"
     name = "Stored cross-site scripting"
     kind = "xss-stored"
@@ -235,6 +267,8 @@ class StoredXssCheck(_InjectionCheck):
 
 @register
 class SsrfMetadataCheck(_InjectionCheck):
+    """In-band SSRF that reached a cloud instance-metadata service (spec 009)."""
+
     id = "injection.ssrf.metadata"
     name = "SSRF — cloud metadata service"
     kind = "ssrf-metadata"
@@ -245,6 +279,8 @@ class SsrfMetadataCheck(_InjectionCheck):
 
 @register
 class SsrfInternalCheck(_InjectionCheck):
+    """In-band SSRF that reached a loopback / internal resource or read a local file (spec 009)."""
+
     id = "injection.ssrf.internal"
     name = "SSRF — internal resource"
     kind = "ssrf-internal"

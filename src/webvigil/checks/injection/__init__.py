@@ -1,7 +1,11 @@
-"""Active-injection checks (spec 006): reflected XSS, SQLi, path traversal, open redirect.
+"""
+Active-injection checks (spec 006): reflected XSS, SQLi, path traversal, open redirect,
+plus SSRF (spec 009) and stored XSS (spec 008).
 
-The crafted-request work runs in ``engine.InjectionScanner`` (an orchestrator pass, ADR-1);
-the check classes in ``checks`` filter its ``InjectionHit``s by ``kind`` into findings.
+The crafted-request work runs in
+:class:`~webvigil.checks.injection.engine.InjectionScanner` (an orchestrator
+pass, ADR-1); the check classes in :mod:`webvigil.checks.injection.checks`
+filter its ``InjectionHit``s by ``kind`` into findings.
 """
 
 from __future__ import annotations
