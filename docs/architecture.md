@@ -37,7 +37,10 @@ Persistence       webvigil.api.db  (SQLite via SQLModel + Alembic, web only)
   params + `<form>` fields parsed from crawled bodies), baseline each once, fan the
   detectors under a shared request budget — and six thin `injection.*` checks turn its hits
   into findings. Gated by `--mode active --authorized-by`; `GET`/`POST` only; in-band
-  detection (no headless browser, no out-of-band collaborator). See
+  detection (no headless browser, no out-of-band collaborator). Spec 008 adds
+  `injection.xss.stored`: a separate `StoredXssScanner` pass (after the reflected one, opt-in
+  via `--stored-xss`) submits `<wvstored…>` markers, then re-crawls (`Crawler.recrawl`,
+  depth 1) to find them rendered unescaped on another page. See
   [active-injection.md](active-injection.md).
 - The `webvigil.http` client exposes `request(method, …)` for verbs beyond `GET`; a
   non-idempotent request is never retried on a `5xx` or read timeout. Configured `[auth]`
@@ -77,6 +80,6 @@ The authoritative designs live under [`specs/`](../specs/) — `001-foundation` 
 `002-web-api` (persistence + API), `003-web-ui` (the Next.js dashboard),
 `004-deps-fingerprint` (passive dependency fingerprinting), `005-info-disclosure`
 (exposed files, directory listing, stack traces, debug endpoints),
-`006-active-injection` (reflected XSS, SQLi, path traversal, open redirect), and
+`006-active-injection` (reflected XSS, SQLi, path traversal, open redirect),
 `007-auth-flows` (authenticated scanning with static cookies, CSRF detection,
-form-driven crawling).
+form-driven crawling), and `008-stored-xss` (two-phase inject-then-recrawl stored XSS).

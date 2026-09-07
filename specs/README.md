@@ -30,19 +30,20 @@ WebVigil is built with spec-driven development. Each feature is designed as a sp
 | [`005-info-disclosure`](005-info-disclosure/) | stack traces e directory listing (passivo) + sondagem opt-in (`--probe`) de `.git`/`.env`/backups/endpoints de debug com catálogo curado e validação de conteúdo; só engine (sem mudança na API/UI) | `v0.5` | **done** |
 | [`006-active-injection`](006-active-injection/) | Active Mode: XSS refletido, SQLi (error/boolean/time), path traversal, open redirect; descoberta de forms + injection points; passo de fuzzing com orçamento; app-alvo vulnerável (fixture + serviço compose) | `v0.6` | **done** |
 | [`007-auth-flows`](007-auth-flows/) | scan autenticado por cookie estático (`--cookie` / `[auth]`), check CSRF passivo (`csrf.form.no-token`, ponderado por SameSite), crawl que submete forms `GET` seguros + heurística de evasão de links logout/destrutivos | `v0.7` | **done** |
-| `008-stored-xss` | stored/persistent XSS: fase de re-fetch pós-scan sobre o modelo de injection point da `006` (injeta um marcador via uma request, depois relê as páginas descobertas procurando o marcador renderizado sem escape); Active Mode | `v0.8` | não iniciada |
+| [`008-stored-xss`](008-stored-xss/) | stored/persistent XSS: passada `StoredXssScanner` em duas fases (injeta marcadores `<wvstored…>` nos injection points da `006`, depois um re-crawl de 1 hop procurando o marcador renderizado sem escape noutra página); Active Mode + opt-in `--stored-xss` (grava dados no alvo) | `v0.8` | **done** |
 | `009-ssrf` | SSRF com coletor out-of-band opt-in: um serviço que o scanner hospeda e o alvo chama de volta (DNS/HTTP callback), habilitado explicitamente; cobre casos cegos que a detecção in-band não pega | `v0.9` | não iniciada |
 | `010-osv-online` | provider OSV.dev online para o fingerprint de dependências da `004` (hoje só Retire.js vendorado): consulta opt-in à API da OSV, com egress de rede explícito; ver `memory/osv-provider-deferred` | `v0.10` | não iniciada |
 
 > A 002 foi dividida: `002-web-api` (backend) e `003-web-ui` (Next.js). O roadmap
 > original tratava as duas como uma spec só; as demais foram renumeradas.
 >
-> **`008`–`010` são as três dívidas técnicas acumuladas** e podem ser atacadas em qualquer
-> ordem. `008-stored-xss` e `009-ssrf` estavam na linha original da `006` (a `006` entregou
-> as quatro classes detectáveis in-band); `010-osv-online` é o follow-up prometido da `004`.
-> As três compartilham o mesmo tema: cruzar a fronteira do "o engine só fala com o alvo" —
-> a `008` relendo páginas em duas fases, a `009` e a `010` com egress explícito para um
-> serviço próprio ou de terceiros, sempre opt-in.
+> **`008`–`010` eram as três dívidas técnicas acumuladas**, atacáveis em qualquer ordem.
+> `008-stored-xss` **entregou** (`v0.8`): a passada em duas fases relê páginas via um
+> re-crawl de 1 hop, atrás do marcador que ela mesma gravou (opt-in `--stored-xss`, porque
+> escreve dados no alvo). Restam `009-ssrf` e `010-osv-online` — ambas cruzam a fronteira do
+> "o engine só fala com o alvo" com egress explícito para um serviço próprio (coletor OAST)
+> ou de terceiros (OSV.dev), sempre opt-in. `009-ssrf` estava na linha original da `006`;
+> `010-osv-online` é o follow-up prometido da `004`.
 >
 > **Login automático, auth por header e testes de sessão** (fixation, invalidação no
 > logout, id fraco) estavam na linha original da `007`; saíram para uma spec futura — cada

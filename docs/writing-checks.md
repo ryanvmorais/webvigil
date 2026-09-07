@@ -98,9 +98,17 @@ enumerates injection points, baselines each, and runs the per-class detectors un
 shared request budget — and each `injection.*` check is a ~10-line filter over
 `ctx.observations.injection_hits` for its `kind`. A detector confirms its signal before
 emitting a hit (the reflected characters verbatim, a real DBMS error, a differential that
-reproduces). If a later spec adds **stored** XSS, its natural home is a post-scan re-fetch
-phase after the injection pass — inject via one request, then re-read the discovered pages
-looking for the marker rendered unescaped.
+reproduces).
+
+A **stateful** Active technique looks the same to the check, but the pass has two phases.
+`injection.xss.stored` (spec 008, opt-in via `--stored-xss`) is the reference:
+`StoredXssScanner` runs after the reflected pass — Phase A submits a `<wvstored…>` marker
+through each injection point; Phase B is a depth-1 re-crawl from the first crawl's frontier
+(`Crawler.recrawl`); then it correlates by token, requiring the marker back verbatim in an
+executable context on a *different* page. The finding's `location` is the injection point
+(so its fingerprint is stable even when the render URL is a per-entry page whose id
+changes); the render location(s) ride the evidence. The check itself is still just a
+`kind == "xss-stored"` filter.
 
 ## Registration
 

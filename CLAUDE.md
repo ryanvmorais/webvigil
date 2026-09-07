@@ -82,7 +82,13 @@ Camadas, de cima para baixo:
    requests compartilhado); seis checks finos viram findings a partir de
    `ctx.observations.injection_hits`. Portão `--mode active --authorized-by`; só GET/POST;
    detecção in-band (sem browser headless, sem coletor OAST). `[injection]` afina orçamento
-   e time-based. Detalhes em [`docs/active-injection.md`](docs/active-injection.md).
+   e time-based. `injection.xss.stored` (spec 008): passada `StoredXssScanner` separada
+   (depois da refletida, opt-in `--stored-xss` / `[injection] stored_xss`, default off —
+   grava marcadores `<wvstored…>` que o alvo mantém). Fase A injeta um marcador por injection
+   point; Fase B faz um re-crawl de 1 hop (`Crawler.recrawl`) a partir da fronteira do 1º
+   crawl e correlaciona por token. Location do finding = o injection point (fingerprint
+   estável); página(s) de render vão na evidência. Detalhes em
+   [`docs/active-injection.md`](docs/active-injection.md).
    `webvigil.checks.csrf` (spec 007): um check passivo — `csrf.form.no-token` marca form
    `POST` state-changing sem token anti-CSRF, confiança ponderada pelo `SameSite` do cookie
    de sessão. Lê `ScanContext.forms` (o crawler agora parseia `<form>`s durante `discover()`
@@ -112,6 +118,6 @@ no CI. `webvigil.cli` e `webvigil.api` não se importam. A Web UI só fala com a
 ## Fluxo de trabalho
 
 - **Spec-driven development** via `/spec`. Specs em `specs/NNN-nome/` (requirements → design → tasks → implementação), com portão de aprovação humana em cada fase. Convenções e roadmap em [`specs/README.md`](specs/README.md).
-- Estado: `001-foundation` (CLI `v0.1`), `002-web-api` (API `v0.2`), `003-web-ui` (dashboard `v0.3`), `004-deps-fingerprint` (`v0.4`), `005-info-disclosure` (`v0.5`), `006-active-injection` (`v0.6`) e `007-auth-flows` (`v0.7`) **concluídas**. Nenhuma spec em andamento. As próximas três (`008`–`010` no roadmap) tratam de dívidas técnicas já identificadas, atacáveis em qualquer ordem: `008-stored-xss` (crawl stateful de duas fases sobre o modelo de injection point da 006), `009-ssrf` (coletor OAST opt-in) e `010-osv-online` (provider OSV.dev online para o fingerprint de dependências da 004, hoje só Retire.js vendorado). A 007 entregou só cookie estático + CSRF passivo + submissão de forms GET; login automático, auth por header e testes de sessão saíram para uma spec futura.
+- Estado: `001-foundation` (CLI `v0.1`), `002-web-api` (API `v0.2`), `003-web-ui` (dashboard `v0.3`), `004-deps-fingerprint` (`v0.4`), `005-info-disclosure` (`v0.5`), `006-active-injection` (`v0.6`), `007-auth-flows` (`v0.7`) e `008-stored-xss` (`v0.8`) **concluídas**. Nenhuma spec em andamento. As próximas duas do roadmap tratam de dívidas técnicas já identificadas, atacáveis em qualquer ordem: `009-ssrf` (coletor OAST opt-in) e `010-osv-online` (provider OSV.dev online para o fingerprint de dependências da 004, hoje só Retire.js vendorado). A 007 entregou só cookie estático + CSRF passivo + submissão de forms GET; login automático, auth por header e testes de sessão saíram para uma spec futura.
 - Ao fim de cada sessão: `/preparar-commits` (Conventional Commits) e `/atualizar-docs`.
 - Commits em inglês, padrão Conventional Commits.
