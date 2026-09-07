@@ -105,6 +105,16 @@ def scan(
             help='Send this cookie on in-scope requests ("name=value"). Repeatable.',
         ),
     ] = None,
+    osv_online: Annotated[
+        bool | None,
+        typer.Option(
+            "--osv-online/--no-osv-online",
+            help=(
+                "Look up detected libraries against OSV.dev (sends library names + versions "
+                "to api.osv.dev). Augments the offline database. Off by default."
+            ),
+        ),
+    ] = None,
 ) -> None:
     """Scan a target and report findings."""
     if output_format is not None and output_format not in _FORMATS:
@@ -128,6 +138,7 @@ def scan(
             time_based_sqli=time_based_sqli,
             stored_xss=stored_xss,
             cookie=cookie,
+            osv_online=osv_online,
         )
     except ConfigError as exc:
         _render.error(str(exc))
@@ -146,7 +157,13 @@ def scan(
         _render.error(str(exc))
         raise typer.Exit(ExitCode.OPERATIONAL) from exc
 
-    _emit(result, output_format, output, cookie_count=len(cfg.auth.cookies))
+    _emit(
+        result,
+        output_format,
+        output,
+        cookie_count=len(cfg.auth.cookies),
+        osv_online=cfg.deps.osv_online,
+    )
     raise typer.Exit(int(evaluate(result, cfg.report.fail_on)))
 
 
@@ -196,6 +213,7 @@ def _build_config(
     time_based_sqli: bool | None,
     stored_xss: bool | None,
     cookie: list[str] | None,
+    osv_online: bool | None,
 ) -> ScanConfig:
     base = ScanConfig.load(config)
     scan_overrides: dict[str, object] = {}
@@ -232,6 +250,10 @@ def _build_config(
     if cookie is not None:
         auth_overrides["cookies"] = cookie
 
+    deps_overrides: dict[str, object] = {}
+    if osv_online is not None:
+        deps_overrides["osv_online"] = osv_online
+
     return base.with_overrides(
         scan=scan_overrides,
         http=http_overrides,
@@ -240,6 +262,7 @@ def _build_config(
         auth=auth_overrides,
         disclosure=disclosure_overrides,
         injection=injection_overrides,
+        deps=deps_overrides,
     )
 
 
@@ -268,9 +291,10 @@ def _emit(
     output: Path | None,
     *,
     cookie_count: int = 0,
+    osv_online: bool = False,
 ) -> None:
     if output_format is None:
-        _render.summary(result, cookie_count=cookie_count)
+        _render.summary(result, cookie_count=cookie_count, osv_online=osv_online)
         return
     rendered = get_reporter(output_format).render(result)
     if output is not None:
@@ -278,7 +302,7 @@ def _emit(
         _render.status(f"wrote {output_format} report to {output}")
         return
     sys.stdout.write(rendered + "\n")
-    _render.summary(result, cookie_count=cookie_count)
+    _render.summary(result, cookie_count=cookie_count, osv_online=osv_online)
 
 
 def _write_or_print(rendered: str, output: Path | None, output_format: str) -> None:

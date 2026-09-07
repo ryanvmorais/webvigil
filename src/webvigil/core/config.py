@@ -99,6 +99,21 @@ class InjectionSection(_Section):
     stored_xss: bool = False
 
 
+class DepsSection(_Section):
+    """Dependency-fingerprint tuning (spec 004, spec 010).
+
+    ``osv_online`` is the only option that makes the engine reach a host other than the
+    target: with it on, the names and versions of the client-side libraries the scan
+    detected are sent to ``osv_base_url`` (OSV.dev) for a known-vulnerability lookup that
+    augments the vendored, offline Retire.js match. Off by default; see
+    ``docs/dependency-fingerprinting.md``.
+    """
+
+    osv_online: bool = False
+    osv_timeout_s: float = 10.0
+    osv_base_url: str = "https://api.osv.dev"
+
+
 class ScanConfig(_Section):
     """The whole configuration for one scan."""
 
@@ -110,6 +125,7 @@ class ScanConfig(_Section):
     checks: ChecksSection = ChecksSection()
     disclosure: DisclosureSection = DisclosureSection()
     injection: InjectionSection = InjectionSection()
+    deps: DepsSection = DepsSection()
     # Passthrough for the Web API's ``[web]`` table so one ``webvigil.toml`` serves both
     # tools. The engine and CLI never read it; ``webvigil.api`` parses it into its own
     # strict ``WebConfig``. Section-level typos elsewhere are still hard errors.
@@ -141,9 +157,9 @@ class ScanConfig(_Section):
 
         Only keys the caller actually passes are applied, so unset CLI flags never clobber
         file values. ``sections`` maps a section name (``scan``, ``http``, ``report``,
-        ``active``, ``auth``, ``checks``, ``disclosure``, ``injection``) to a dict of the
-        fields to override. ``injection`` covers spec 006 tuning plus spec 008's
-        ``stored_xss``.
+        ``active``, ``auth``, ``checks``, ``disclosure``, ``injection``, ``deps``) to a dict
+        of the fields to override. ``injection`` covers spec 006 tuning plus spec 008's
+        ``stored_xss``; ``deps`` covers spec 010's ``osv_online``.
         """
         merged = self.model_dump()
         for name, values in sections.items():

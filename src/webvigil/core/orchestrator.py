@@ -13,7 +13,9 @@ from datetime import UTC, datetime
 
 from webvigil import __version__
 from webvigil.checks.base import Check
+from webvigil.checks.deps.advisories import Advisory
 from webvigil.checks.deps.fingerprint import Fingerprinter
+from webvigil.checks.deps.osv import OsvLookupError, OsvProvider
 from webvigil.checks.deps.rules import RetireJsRules
 from webvigil.checks.deps.staleness import staleness_warning
 from webvigil.checks.disclosure.catalogue import load_catalogue
@@ -71,6 +73,7 @@ class Orchestrator:
                 )
             check_types = self._select_checks(warnings)
             detections = await self._fingerprint(check_types, http, target, pages, warnings)
+            osv_advisories = await self._osv_lookup(check_types, detections, warnings)
             probe_hits = await self._probe_disclosure(check_types, http, target, pages, warnings)
             injection_hits = await self._inject(check_types, http, target, pages, forms, warnings)
             stored_hits = await self._inject_stored(
@@ -85,6 +88,7 @@ class Orchestrator:
                 forms=forms,
                 observations=Observations(
                     detections=detections,
+                    osv_advisories=osv_advisories,
                     probe_hits=probe_hits,
                     injection_hits=injection_hits + stored_hits,
                 ),
@@ -130,6 +134,39 @@ class Orchestrator:
         result = await Fingerprinter(http, target, rules).scan(pages)
         warnings.extend(result.warnings)
         return tuple(result.detections)
+
+    async def _osv_lookup(
+        self,
+        check_types: Sequence[type[Check]],
+        detections: tuple[Detection, ...],
+        warnings: list[str],
+    ) -> dict[tuple[str, str], tuple[Advisory, ...]]:
+        """Query OSV.dev for the detected libraries when ``[deps] osv_online`` is on (spec 010).
+
+        Opt-in and additive: on any failure the scan keeps the offline Retire.js results and
+        records a warning (RF-01, RF-03, RF-09, ADR-2).
+        """
+        if not self._config.deps.osv_online:
+            return {}
+        if not any(check.category is Category.DEPS for check in check_types):
+            return {}
+        versioned = tuple(d for d in detections if d.version is not None)
+        if not versioned:
+            return {}
+        try:
+            report = await OsvProvider(
+                self._config.deps.osv_base_url,
+                self._config.deps.osv_timeout_s,
+                user_agent=self._config.http.user_agent,
+            ).lookup(versioned)
+        except OsvLookupError as exc:
+            warnings.append(
+                f"OSV.dev lookup failed: {exc}; reported advisories are from the offline "
+                "database only"
+            )
+            return {}
+        warnings.extend(report.warnings)
+        return report.advisories
 
     async def _probe_disclosure(
         self,

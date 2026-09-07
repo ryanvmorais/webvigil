@@ -15,6 +15,7 @@ from webvigil.checks.deps.advisories import (
     Advisory,
     RetireJsProvider,
     default_provider,
+    merge_advisories,
     numeric_version_key,
 )
 from webvigil.checks.registry import register
@@ -73,7 +74,13 @@ class VulnerableLibraryCheck(Check):
         for detection in ctx.observations.detections:
             if detection.version is None:
                 continue
-            advisories = provider.match(detection.name, detection.version)
+            # Merge the offline Retire.js match with any OSV.dev advisories the orchestrator's
+            # opt-in lookup pass left on the context (spec 010, RF-08). Off by default: the
+            # map is empty unless ``[deps] osv_online`` was set.
+            advisories = merge_advisories(
+                provider.match(detection.name, detection.version),
+                ctx.observations.osv_advisories.get((detection.name, detection.version), ()),
+            )
             if not advisories:
                 ctx.observations.add_technology(_technology(detection, vulnerable=False))
                 continue

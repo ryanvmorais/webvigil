@@ -38,7 +38,7 @@ def banner(authorized_by: str) -> None:
     )
 
 
-def summary(result: ScanResult, *, cookie_count: int = 0) -> None:
+def summary(result: ScanResult, *, cookie_count: int = 0, osv_online: bool = False) -> None:
     meta = result.metadata
     table = Table(title=f"WebVigil — {meta.target}", title_justify="left")
     table.add_column("Severity")
@@ -56,6 +56,8 @@ def summary(result: ScanResult, *, cookie_count: int = 0) -> None:
             f"librar{'y' if len(result.technologies) == 1 else 'ies'} "
             f"({vulnerable} with known vulnerabilities)[/]"
         )
+        if osv_online:
+            _console.print("[dim]Advisory sources: offline database + OSV.dev[/]")
 
     exposed = sum(
         1

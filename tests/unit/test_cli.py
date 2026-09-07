@@ -182,6 +182,38 @@ def test_stored_xss_flag_enables_it_over_a_config_file(tmp_path: Path) -> None:
     assert _StubOrchestrator.last_config.injection.stored_xss is False  # type: ignore[attr-defined]
 
 
+def test_osv_online_flag_enables_it_over_a_config_file(tmp_path: Path) -> None:
+    cfg = tmp_path / "webvigil.toml"
+    cfg.write_text("[deps]\nosv_online = false\n", "utf-8")
+    runner.invoke(
+        app_mod.app,
+        ["scan", "https://example.com", "--config", str(cfg), "--osv-online"],
+    )
+    assert _StubOrchestrator.last_config.deps.osv_online is True  # type: ignore[attr-defined]
+    runner.invoke(app_mod.app, ["scan", "https://example.com", "--no-osv-online"])
+    assert _StubOrchestrator.last_config.deps.osv_online is False  # type: ignore[attr-defined]
+
+
+def test_summary_names_osv_as_an_advisory_source_only_when_enabled() -> None:
+    from webvigil.core.technology import DetectionMethod, Technology
+
+    tech = Technology(
+        name="jquery",
+        version="3.4.1",
+        detection=DetectionMethod.FILECONTENT,
+        source_url="https://example.com/jquery.js",
+        vulnerable=True,
+    )
+    _StubOrchestrator.result = make_result(
+        make_finding(check_id="deps.js.vulnerable-library"), technologies=[tech]
+    )
+    with_osv = runner.invoke(app_mod.app, ["scan", "https://example.com", "--osv-online"])
+    assert "Advisory sources: offline database + OSV.dev" in with_osv.stderr
+
+    without = runner.invoke(app_mod.app, ["scan", "https://example.com"])
+    assert "OSV.dev" not in without.stderr
+
+
 def test_active_scan_summary_reports_injection_findings() -> None:
     _StubOrchestrator.result = make_result(
         make_finding(check_id="injection.xss.reflected", severity=Severity.HIGH),

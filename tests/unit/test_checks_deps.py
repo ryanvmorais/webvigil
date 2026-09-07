@@ -11,7 +11,7 @@ import pytest
 from tests.support import make_context, make_page
 from webvigil.checks.deps import check as check_mod
 from webvigil.checks.deps._data import Provenance
-from webvigil.checks.deps.advisories import RetireJsProvider
+from webvigil.checks.deps.advisories import Advisory, RetireJsProvider
 from webvigil.checks.deps.check import LibraryDetectedCheck, VulnerableLibraryCheck
 from webvigil.checks.deps.rules import RetireJsRules
 from webvigil.core.context import Detection, Observations
@@ -126,3 +126,50 @@ async def test_multiple_advisories_take_the_highest_severity(
 
     findings = await VulnerableLibraryCheck().run(_ctx(_det("jquery", "1.4.0")))
     assert findings[0].severity is Severity.HIGH
+
+
+def _osv(*ids: str, severity: Severity = Severity.HIGH, safe: str | None = None) -> Advisory:
+    return Advisory(
+        identifiers=ids,
+        summary="from osv",
+        severity=severity,
+        severity_from_upstream=True,
+        first_safe_version=safe,
+        info_urls=(f"https://osv.dev/vulnerability/{ids[0]}",),
+        cwe=(),
+    )
+
+
+async def test_osv_advisory_creates_a_finding_where_retirejs_found_nothing() -> None:
+    # lodash 5.0.0 is clean in the mini DB, but the OSV lookup pass left an advisory for it.
+    ctx = make_context(
+        make_page(),
+        observations=Observations(
+            detections=(_det("lodash", "5.0.0"),),
+            osv_advisories={("lodash", "5.0.0"): (_osv("GHSA-lodash-x", safe="5.1.0"),)},
+        ),
+    )
+    findings = await VulnerableLibraryCheck().run(ctx)
+    assert len(findings) == 1
+    assert findings[0].severity is Severity.HIGH
+    assert "GHSA-lodash-x" in " ".join(e.content for e in findings[0].evidence)
+    assert any("osv.dev/vulnerability/GHSA-lodash-x" in r for r in findings[0].references)
+    assert [(t.name, t.vulnerable) for t in ctx.observations.technologies] == [("lodash", True)]
+
+
+async def test_osv_and_retirejs_advisories_for_the_same_cve_merge_into_one_finding() -> None:
+    # jquery 1.4.0 -> Retire.js CVE-2011-4969 (medium). OSV returns the same CVE at HIGH.
+    ctx = make_context(
+        make_page(),
+        observations=Observations(
+            detections=(_det("jquery", "1.4.0"),),
+            osv_advisories={
+                ("jquery", "1.4.0"): (_osv("GHSA-jq", "CVE-2011-4969", severity=Severity.HIGH),)
+            },
+        ),
+    )
+    findings = await VulnerableLibraryCheck().run(ctx)
+    assert len(findings) == 1
+    identifiers = " ".join(e.content for e in findings[0].evidence)
+    assert "CVE-2011-4969" in identifiers and "GHSA-jq" in identifiers
+    assert findings[0].severity is Severity.HIGH  # the higher of the two sources

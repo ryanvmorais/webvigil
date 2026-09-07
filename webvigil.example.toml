@@ -52,6 +52,16 @@ time_based_delay_s = 5    # the D in SLEEP(D); keep it below [http] timeout_s
 stored_xss = false        # spec 008: two-phase stored-XSS pass. Submits marker payloads the
                           # target stores and does NOT remove. --stored-xss overrides
 
+[deps]
+# Dependency-fingerprint tuning (spec 004, spec 010).
+osv_online = false        # spec 010: look up detected libraries against OSV.dev. Sends the
+                          # names + versions of the client-side libraries the scan detected
+                          # to api.osv.dev (the only host the engine contacts besides the
+                          # target). Augments the offline Retire.js match. --osv-online overrides
+# osv_timeout_s = 10.0    # total timeout for the OSV.dev request; on timeout the scan
+                          # proceeds with the offline results and a warning
+# osv_base_url = "https://api.osv.dev"
+
 # Web API only (extra `web`). Ignored by the CLI and the engine.
 # Every key can also be set from the environment: WEBVIGIL_DATABASE_PATH,
 # WEBVIGIL_WEB_HOST, WEBVIGIL_WEB_PORT, WEBVIGIL_SESSION_SECRET, WEBVIGIL_COOKIE_SECURE,

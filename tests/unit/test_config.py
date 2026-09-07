@@ -126,6 +126,35 @@ def test_stored_xss_override_wins_over_file() -> None:
     assert base.with_overrides(injection={"stored_xss": True}).injection.stored_xss is True
 
 
+def test_deps_section_defaults_and_round_trips(tmp_path: Path) -> None:
+    defaults = ScanConfig().deps
+    assert defaults.osv_online is False
+    assert defaults.osv_timeout_s == 10.0
+    assert defaults.osv_base_url == "https://api.osv.dev"
+    assert ScanConfig.model_validate(ScanConfig().model_dump()).deps == defaults
+    path = tmp_path / "webvigil.toml"
+    path.write_text(
+        '[deps]\nosv_online = true\nosv_timeout_s = 4.5\nosv_base_url = "http://osv.test"\n',
+        "utf-8",
+    )
+    loaded = ScanConfig.load(path).deps
+    assert loaded.osv_online is True
+    assert loaded.osv_timeout_s == 4.5
+    assert loaded.osv_base_url == "http://osv.test"
+
+
+def test_unknown_deps_key_is_rejected(tmp_path: Path) -> None:
+    path = tmp_path / "webvigil.toml"
+    path.write_text("[deps]\nosv_online = true\nnope = 1\n", "utf-8")
+    with pytest.raises(ConfigError):
+        ScanConfig.load(path)
+
+
+def test_osv_online_override_wins_over_file() -> None:
+    base = ScanConfig.model_validate({"deps": {"osv_online": False}})
+    assert base.with_overrides(deps={"osv_online": True}).deps.osv_online is True
+
+
 def test_auth_cookies_default_empty_and_round_trip(tmp_path: Path) -> None:
     assert ScanConfig().auth.cookies == []
     assert ScanConfig().auth.as_header == ""

@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import functools
+import json
 import re
 
 import httpx
 import pytest
 
 from tests.fixtures.app import make_app
+from webvigil.checks.deps.osv import OsvProvider
 from webvigil.core import orchestrator as orch_mod
 from webvigil.core.config import ScanConfig
 from webvigil.core.orchestrator import Orchestrator
@@ -18,6 +20,45 @@ from webvigil.http.client import HttpClient
 _TARGET = "http://demo.test/"
 # The fixture app is plain HTTP; TLS findings are covered by the socket-based unit tests.
 _DISABLED = ["tls.https"]
+
+# A stand-in OSV.dev record for the fixture's known-vulnerable jQuery 1.7.1 (spec 010).
+_OSV_JQUERY_RECORD = {
+    "id": "GHSA-jquery-fixture",
+    "aliases": ["CVE-2012-6708"],
+    "summary": "jQuery selector interpreted as HTML",
+    "severity": [{"type": "CVSS_V3", "score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N"}],
+    "affected": [
+        {
+            "package": {"ecosystem": "npm", "name": "jquery"},
+            "ranges": [
+                {"type": "ECOSYSTEM", "events": [{"introduced": "1.0.3"}, {"fixed": "1.9.0"}]}
+            ],
+        }
+    ],
+    "references": [{"type": "WEB", "url": "https://bugs.jquery.com/ticket/11290"}],
+    "database_specific": {"severity": "MODERATE", "cwe_ids": ["CWE-79"]},
+}
+
+
+def _osv_up(request: httpx.Request) -> httpx.Response:
+    if request.url.path == "/v1/querybatch":
+        queries = json.loads(request.content)["queries"]
+        results = [
+            (
+                {"vulns": [{"id": _OSV_JQUERY_RECORD["id"]}]}
+                if query["package"]["name"] == "jquery"
+                else {}
+            )
+            for query in queries
+        ]
+        return httpx.Response(200, json={"results": results})
+    if request.url.path == "/v1/query":
+        return httpx.Response(200, json={"vulns": [_OSV_JQUERY_RECORD]})
+    return httpx.Response(404, json={})
+
+
+def _osv_down(request: httpx.Request) -> httpx.Response:
+    return httpx.Response(503, json={})
 
 
 @pytest.fixture
@@ -31,6 +72,8 @@ def scan(monkeypatch: pytest.MonkeyPatch):
         active: bool = False,
         cookies: list[str] | None = None,
         stored_xss: bool = False,
+        osv_online: bool = False,
+        osv_up: bool = True,
     ) -> ScanResult:
         app = make_app(profile)
         holder["app"] = app
@@ -48,6 +91,14 @@ def scan(monkeypatch: pytest.MonkeyPatch):
             raw["injection"] = {"time_based_delay_s": 2, "stored_xss": stored_xss}
         if cookies is not None:
             raw["auth"] = {"cookies": cookies}
+        if osv_online:
+            raw["deps"] = {"osv_online": True, "osv_base_url": "http://osv.test"}
+            handler = _osv_up if osv_up else _osv_down
+            monkeypatch.setattr(
+                orch_mod,
+                "OsvProvider",
+                functools.partial(OsvProvider, transport=httpx.MockTransport(handler)),
+            )
         return await Orchestrator(ScanConfig.model_validate(raw)).run(_TARGET)
 
     _run.holder = holder  # type: ignore[attr-defined]
@@ -79,6 +130,37 @@ async def test_insecure_profile_lists_the_vulnerable_library_in_the_inventory(sc
     finding = next(f for f in result.findings if f.check_id == "deps.js.vulnerable-library")
     assert "jquery 1.7.1" in finding.title
     assert finding.references
+
+
+async def test_osv_online_adds_the_osv_reference_to_the_jquery_finding(scan) -> None:
+    result = await scan("insecure", osv_online=True)
+    finding = next(f for f in result.findings if f.check_id == "deps.js.vulnerable-library")
+    assert any("osv.dev/vulnerability/" in reference for reference in finding.references)
+    assert not any("OSV.dev lookup failed" in warning for warning in result.warnings)
+
+
+async def test_osv_online_hardened_profile_still_reports_no_deps_findings(scan) -> None:
+    result = await scan("hardened", osv_online=True)
+    assert not any(f.check_id.startswith("deps.") for f in result.findings)
+
+
+async def test_osv_outage_warns_and_keeps_the_offline_finding(scan) -> None:
+    result = await scan("insecure", osv_online=True, osv_up=False)
+    assert any("OSV.dev lookup failed" in warning for warning in result.warnings)
+    finding = next(f for f in result.findings if f.check_id == "deps.js.vulnerable-library")
+    assert not any("osv.dev/vulnerability/" in reference for reference in finding.references)
+
+
+async def test_osv_online_scan_is_deterministic(scan) -> None:
+    first = await scan("insecure", osv_online=True)
+    second = await scan("insecure", osv_online=True)
+    assert [f.fingerprint for f in first.findings] == [f.fingerprint for f in second.findings]
+
+
+async def test_osv_not_queried_without_the_opt_in(scan) -> None:
+    result = await scan("insecure")
+    finding = next(f for f in result.findings if f.check_id == "deps.js.vulnerable-library")
+    assert not any("osv.dev/vulnerability/" in reference for reference in finding.references)
 
 
 async def test_insecure_profile_passive_disclosure_without_probe(scan) -> None:
