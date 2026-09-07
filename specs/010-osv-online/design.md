@@ -10,6 +10,8 @@ origin: conception
 
 # 010 — OSV.dev online advisory provider — design
 
+> Design note: [OSV.dev without an API key](../../docs/notes/osv-without-a-key.md).
+
 ## Overview
 
 Spec 004's advisory matching is a two-part shape: the `Fingerprinter` orchestrator pass

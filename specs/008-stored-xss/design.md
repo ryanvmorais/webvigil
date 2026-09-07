@@ -13,6 +13,7 @@ origin: conception
 
 > Requirements: [`requirements.md`](requirements.md). This document is the *how*.
 > Traceability tags (`— RF-NN` / `— RNF-NN`) point back to it.
+> Design note: [detecting stored XSS means writing data you can't take back](../../docs/notes/stored-xss-markers.md).
 
 ## Overview
 

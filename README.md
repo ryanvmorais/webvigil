@@ -144,6 +144,19 @@ See [docs/](docs/) for architecture and a guide to writing your own checks.
 
 ---
 
+## Design notes
+
+Short essays on the reasoning behind specific decisions — the *why* behind a spec's ADRs,
+written up on their own. Full index in [docs/notes/](docs/notes/).
+
+- [The OAST problem: why blind SSRF is the one thing WebVigil won't do](docs/notes/why-not-oast.md)
+- [False-positive discipline in an active scanner](docs/notes/false-positive-discipline.md)
+- [Detecting stored XSS means writing data you can't take back](docs/notes/stored-xss-markers.md)
+- [Keeping a security engine honest with import-linter](docs/notes/engine-boundaries.md)
+- [OSV.dev without an API key](docs/notes/osv-without-a-key.md)
+
+---
+
 ## License
 
 [Apache-2.0](LICENSE)

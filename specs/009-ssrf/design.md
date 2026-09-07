@@ -10,6 +10,9 @@ origin: conception
 
 # 009 — In-band SSRF detection — design
 
+> Design notes: [why blind SSRF is not on the roadmap](../../docs/notes/why-not-oast.md) ·
+> [false-positive discipline](../../docs/notes/false-positive-discipline.md).
+
 ## Overview
 
 009 adds one detector to the spec-006 injection pass and two thin checks that consume its
