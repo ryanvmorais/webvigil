@@ -6,7 +6,11 @@ import httpx
 import pytest
 
 from webvigil.checks.headers.hsts import HstsCheck
-from webvigil.checks.injection.checks import ReflectedXssCheck, StoredXssCheck
+from webvigil.checks.injection.checks import (
+    ReflectedXssCheck,
+    SsrfMetadataCheck,
+    StoredXssCheck,
+)
 from webvigil.checks.injection.models import InjectionHit, StoredXssReport
 from webvigil.core import orchestrator as orch_mod
 from webvigil.core.config import ScanConfig
@@ -84,6 +88,34 @@ async def test_active_scan_reflected_xss_is_reported(httpx_mock: object) -> None
     result = await Orchestrator(_active(), check_types=[ReflectedXssCheck]).run(_TARGET)
     xss = [f for f in result.findings if f.check_id == "injection.xss.reflected"]
     assert xss and xss[0].location.param == "q"
+
+
+async def test_active_scan_ssrf_metadata_is_reported(httpx_mock: object) -> None:
+    def router(request: httpx.Request) -> httpx.Response:
+        value = request.url.params.get("q", "")
+        if "169.254.169.254" in value or "2852039166" in value:
+            return httpx.Response(200, text='{"Code":"Success","AccessKeyId":"ASIAX"}')
+        return httpx.Response(200, text="<div>ok</div>", headers={"content-type": "text/html"})
+
+    httpx_mock.add_callback(router, is_reusable=True)  # type: ignore[attr-defined]
+    result = await Orchestrator(_active(), check_types=[SsrfMetadataCheck]).run(_TARGET)
+    ssrf = [f for f in result.findings if f.check_id == "injection.ssrf.metadata"]
+    assert ssrf and ssrf[0].severity is Severity.CRITICAL
+    assert ssrf[0].location.param == "q"
+
+
+async def test_active_scan_without_an_ssrf_check_sends_no_ssrf_payload(
+    httpx_mock: object,
+) -> None:
+    seen: list[str] = []
+
+    def router(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.params.get("q", ""))
+        return httpx.Response(200, text="<div>ok</div>", headers={"content-type": "text/html"})
+
+    httpx_mock.add_callback(router, is_reusable=True)  # type: ignore[attr-defined]
+    await Orchestrator(_active(), check_types=[ReflectedXssCheck]).run(_TARGET)
+    assert not any("169.254.169.254" in v or v.lower().startswith("file:") for v in seen)
 
 
 async def test_a_raising_pass_becomes_a_warning_not_a_crash(

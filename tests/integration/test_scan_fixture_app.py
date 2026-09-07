@@ -203,10 +203,11 @@ async def test_hardened_profile_reports_nothing(scan) -> None:
 
 async def test_crawler_reaches_the_linked_pages(scan) -> None:
     result = await scan("hardened")
-    # /, /about, /contact + the four injectable endpoints linked from the index (spec 006)
-    # + the GET /search?q= the crawler submits from the search form + /account (→ /login for
-    # an anonymous scan) (spec 007 RF-05) + /guestbook (spec 008 RF-13)
-    assert result.metadata.pages_scanned == 10
+    # /, /about, /contact + the injectable endpoints linked from the index: /search, /item,
+    # /download, /go (spec 006) and /fetch, /webhook (spec 009) + the GET /search?q= the
+    # crawler submits from the search form + /account (→ /login for an anonymous scan)
+    # (spec 007 RF-05) + /guestbook (spec 008 RF-13)
+    assert result.metadata.pages_scanned == 12
 
 
 # --- spec 006: active injection -------------------------------------------------
@@ -223,6 +224,36 @@ async def test_insecure_profile_active_finds_every_injection(scan) -> None:
     assert ("injection.traversal.path", "file") in reported
     assert ("injection.redirect.open", "next") in reported
     assert result.errors == ()
+
+
+async def test_ssrf_metadata_found_on_the_insecure_fetch_endpoint(scan) -> None:
+    result = await scan("insecure", active=True)
+    meta = [f for f in result.findings if f.check_id == "injection.ssrf.metadata"]
+    assert meta, "expected a cloud-metadata SSRF finding"
+    finding = meta[0]
+    assert finding.location.param == "url"
+    assert finding.severity.name == "CRITICAL"
+    assert "AccessKeyId" in " ".join(e.content for e in finding.evidence)
+
+
+async def test_ssrf_internal_found_on_the_insecure_webhook_endpoint(scan) -> None:
+    result = await scan("insecure", active=True)
+    internal = [f for f in result.findings if f.check_id == "injection.ssrf.internal"]
+    assert internal, "expected an internal-resource SSRF finding"
+    assert any(f.location.param == "callback" for f in internal)
+
+
+async def test_hardened_fetch_endpoints_report_no_ssrf(scan) -> None:
+    result = await scan("hardened", active=True)
+    assert not any(f.check_id.startswith("injection.ssrf.") for f in result.findings)
+
+
+async def test_ssrf_scan_is_deterministic(scan) -> None:
+    a = await scan("insecure", active=True)
+    b = await scan("insecure", active=True)
+    ssrf_a = sorted(f.fingerprint for f in a.findings if f.check_id.startswith("injection.ssrf."))
+    ssrf_b = sorted(f.fingerprint for f in b.findings if f.check_id.startswith("injection.ssrf."))
+    assert ssrf_a == ssrf_b and ssrf_a
 
 
 async def test_passive_scan_issues_no_crafted_request(scan) -> None:

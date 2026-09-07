@@ -71,6 +71,65 @@ _PATHLIKE_NAMES = frozenset(
 )
 _PATHLIKE_VALUE = re.compile(r"[/\\]|\.\w{1,5}$")
 
+# Parameters the SSRF detector (spec 009) tries first — names that usually carry a URL the
+# server will fetch, or a value that already looks like one.
+_URLLIKE_NAMES = frozenset(
+    {
+        "url",
+        "uri",
+        "u",
+        "link",
+        "src",
+        "source",
+        "href",
+        "dest",
+        "destination",
+        "callback",
+        "webhook",
+        "hook",
+        "feed",
+        "rss",
+        "proxy",
+        "fetch",
+        "load",
+        "remote",
+        "image",
+        "img",
+        "avatar",
+        "photo",
+        "import",
+        "upload",
+        "document",
+        "file",
+        "target",
+        "to",
+        "out",
+        "next",
+        "continue",
+        "return",
+        "redirect",
+        "redirect_uri",
+        "site",
+        "domain",
+        "host",
+        "server",
+        "path",
+        "page",
+        "view",
+        "data",
+        "json",
+        "xml",
+        "api",
+        "endpoint",
+        "resource",
+        "content",
+        "preview",
+        "open",
+        "download",
+    }
+)
+_URLLIKE_VALUE = re.compile(r"^\s*(?:https?:)?//|\bhttps?://|://|^\s*www\.", re.I)
+
 
 def _base_of(url: str) -> tuple[str, tuple[tuple[str, str], ...]]:
     parts = urlsplit(url)
@@ -127,6 +186,10 @@ def is_redirect_name(point: InjectionPoint) -> bool:
 
 def is_pathlike(point: InjectionPoint) -> bool:
     return point.param.lower() in _PATHLIKE_NAMES or bool(_PATHLIKE_VALUE.search(point.original))
+
+
+def is_urllike(point: InjectionPoint) -> bool:
+    return point.param.lower() in _URLLIKE_NAMES or bool(_URLLIKE_VALUE.search(point.original))
 
 
 def build_request(

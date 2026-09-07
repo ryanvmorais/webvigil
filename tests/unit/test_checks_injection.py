@@ -10,6 +10,8 @@ from webvigil.checks.injection.checks import (
     SqliBooleanBasedCheck,
     SqliErrorBasedCheck,
     SqliTimeBasedCheck,
+    SsrfInternalCheck,
+    SsrfMetadataCheck,
     StoredXssCheck,
 )
 from webvigil.checks.injection.models import InjectionHit
@@ -40,6 +42,8 @@ _ALL = [
     (PathTraversalCheck, "traversal"),
     (OpenRedirectCheck, "redirect"),
     (StoredXssCheck, "xss-stored"),
+    (SsrfMetadataCheck, "ssrf-metadata"),
+    (SsrfInternalCheck, "ssrf-internal"),
 ]
 
 
@@ -96,3 +100,38 @@ async def test_stored_xss_check_metadata_and_finding() -> None:
     assert finding.location.param == "body"
     rendered_on = {e.label: e.content for e in finding.evidence}["Rendered on"]
     assert rendered_on.endswith("/e/0")
+
+
+async def test_ssrf_checks_metadata_and_finding_shape() -> None:
+    assert SsrfMetadataCheck.id == "injection.ssrf.metadata"
+    assert SsrfMetadataCheck.default_severity is Severity.CRITICAL
+    assert SsrfInternalCheck.default_severity is Severity.HIGH
+    assert 918 in SsrfMetadataCheck.cwe and 918 in SsrfInternalCheck.cwe
+
+    hit = InjectionHit(
+        kind="ssrf-metadata",
+        check_id="injection.ssrf.metadata",
+        method="GET",
+        url="https://example.com/fetch",
+        param="url",
+        severity=Severity.CRITICAL,
+        confidence=Confidence.HIGH,
+        title="SSRF to the AWS instance metadata service via the 'url' parameter",
+        payload="http://169.254.169.254/latest/meta-data/",
+        evidence=(
+            ("Injection point", "GET https://example.com/fetch — parameter 'url'"),
+            ("Payload", "http://169.254.169.254/latest/meta-data/"),
+            ("AWS metadata marker", '{"AccessKeyId":"ASIA...'),
+        ),
+    )
+    ctx = make_context(make_page(), observations=Observations(injection_hits=(hit,)))
+    findings = await SsrfMetadataCheck().run(ctx)
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding.severity is Severity.CRITICAL
+    assert finding.location.url == "https://example.com/fetch"
+    assert finding.location.param == "url"
+    assert "AccessKeyId" in {e.label: e.content for e in finding.evidence}["AWS metadata marker"]
+    assert any("Server_Side_Request_Forgery" in r for r in finding.references)
+    # the internal check ignores a metadata-kind hit
+    assert await SsrfInternalCheck().run(ctx) == []

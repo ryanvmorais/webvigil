@@ -9,6 +9,7 @@ from webvigil.checks.injection.points import (
     enumerate_points,
     is_pathlike,
     is_redirect_name,
+    is_urllike,
 )
 from webvigil.crawler.forms import Form, FormField
 
@@ -79,6 +80,22 @@ def test_priority_helpers() -> None:
     assert is_pathlike(points["file"])  # by name
     assert is_pathlike(points["p"])  # by value shape
     assert not is_pathlike(points["q"])
+
+
+def test_is_urllike_by_name_and_by_value() -> None:
+    pages = (
+        make_page(url="https://example.com/x?callback=1&next=/a&q=hello&img=http://cdn/x.png"),
+    )
+    points = {p.param: p for p in enumerate_points(pages, (), max_points=100)[0]}
+    assert is_urllike(points["callback"])  # by name
+    assert is_urllike(points["next"])  # by name
+    assert is_urllike(points["img"])  # by value shape (http://)
+    assert not is_urllike(points["q"])
+
+    protocol_relative = InjectionPoint(
+        "GET", "https://example.com/s", "r", "//evil.example/x", (("r", "//evil.example/x"),)
+    )
+    assert is_urllike(protocol_relative)
 
 
 def test_build_request_get_carries_a_pair_list() -> None:

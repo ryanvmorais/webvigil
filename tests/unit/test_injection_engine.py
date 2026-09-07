@@ -7,7 +7,13 @@ from collections.abc import Callable
 import httpx
 
 from tests.support import make_page
-from webvigil.checks.injection.engine import InjectionScanner
+from webvigil.checks.injection.engine import (
+    _BASE_ORDER,
+    _DETECTORS,
+    KIND_BY_CHECK_ID,
+    InjectionScanner,
+)
+from webvigil.checks.injection.models import InjectionPoint
 from webvigil.core.config import InjectionSection
 from webvigil.core.target import Target
 from webvigil.crawler.forms import Form, FormField
@@ -110,6 +116,33 @@ async def test_one_baseline_per_point_shared_by_all_detectors() -> None:
     await scanner.run()
     baseline_calls = [c for c in http.calls if c.get("q") == "1"]
     assert len(baseline_calls) == 1
+
+
+def test_ssrf_is_registered_and_maps_both_check_ids() -> None:
+    assert "ssrf" in _DETECTORS
+    # last in the base order so it never starves the 006 detectors on an unhelpfully-named
+    # point; front-loaded by _ordered_kinds for a URL-shaped one.
+    assert _BASE_ORDER[-1] == "ssrf"
+    assert KIND_BY_CHECK_ID["injection.ssrf.metadata"] == "ssrf"
+    assert KIND_BY_CHECK_ID["injection.ssrf.internal"] == "ssrf"
+
+
+def test_ssrf_is_front_loaded_for_a_url_shaped_point() -> None:
+    http = _FakeHttp(lambda url, p: _resp())
+    scanner = _scanner(http, kinds={"xss", "ssrf", "sqli-error"})
+    url_point = InjectionPoint(
+        "GET", "https://example.com/fetch", "callback", "x", (("callback", "x"),)
+    )
+    assert scanner._ordered_kinds(url_point)[0] == "ssrf"
+    plain_point = InjectionPoint("GET", "https://example.com/s", "q", "x", (("q", "x"),))
+    assert scanner._ordered_kinds(plain_point)[0] != "ssrf"
+
+
+def test_ssrf_detector_absent_when_no_ssrf_kind_selected() -> None:
+    http = _FakeHttp(lambda url, p: _resp())
+    scanner = _scanner(http, kinds={"xss"})
+    point = InjectionPoint("GET", "https://example.com/s", "q", "x", (("q", "x"),))
+    assert "ssrf" not in scanner._ordered_kinds(point)
 
 
 async def test_form_points_are_posted() -> None:

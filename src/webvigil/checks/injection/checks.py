@@ -52,12 +52,30 @@ _DESCRIPTION: dict[str, str] = {
         "another page's HTML with its markup intact, in a context where a browser would execute "
         "it. The payload runs for every user who views that page — no phishing link required."
     ),
+    "ssrf-metadata": (
+        "A URL supplied in this parameter is fetched by the server, and the request reached the "
+        "cloud instance metadata service. That endpoint exposes instance details and, on most "
+        "providers, temporary IAM credentials — full account compromise is a common next step."
+    ),
+    "ssrf-internal": (
+        "A URL supplied in this parameter is fetched by the server. WebVigil reached a loopback "
+        "or internal-only resource, read a local file via file://, or confirmed the outbound "
+        "request from a connection error naming the injected URL. An attacker can pivot to "
+        "internal services that trust the application's network position."
+    ),
 }
 
 _SQLI_FIX = (
     "Use parameterised queries / prepared statements; never build a SQL statement by "
     "concatenating strings. An ORM's query builder is fine as long as raw fragments are "
     "not interpolated."
+)
+
+_SSRF_FIX = (
+    "Do not fetch user-supplied URLs directly. Resolve the host and reject any address that "
+    "is loopback, link-local (169.254.0.0/16), private (RFC 1918), or otherwise internal — "
+    "after DNS resolution, and again on every redirect. Allow-list the schemes (https only) "
+    "and the destination hosts. On AWS, require IMDSv2 and set the metadata hop limit to 1."
 )
 
 _REMEDIATION: dict[str, str] = {
@@ -84,6 +102,8 @@ _REMEDIATION: dict[str, str] = {
         "output, not on input, so stored data is safe wherever it is later rendered. Add a "
         "Content-Security-Policy as defence in depth."
     ),
+    "ssrf-metadata": _SSRF_FIX,
+    "ssrf-internal": _SSRF_FIX,
 }
 
 _REFERENCES: dict[str, tuple[str, ...]] = {
@@ -108,6 +128,14 @@ _REFERENCES: dict[str, tuple[str, ...]] = {
     "xss-stored": (
         f"{_OWASP}/attacks/xss/",
         "https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html",
+    ),
+    "ssrf-metadata": (
+        "https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html",
+        "https://owasp.org/Top10/A10_2021-Server-Side_Request_Forgery_%28SSRF%29/",
+    ),
+    "ssrf-internal": (
+        "https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html",
+        "https://owasp.org/Top10/A10_2021-Server-Side_Request_Forgery_%28SSRF%29/",
     ),
 }
 
@@ -203,3 +231,23 @@ class StoredXssCheck(_InjectionCheck):
     default_severity = Severity.HIGH
     cwe = (79, 20)
     references = _REFERENCES["xss-stored"]
+
+
+@register
+class SsrfMetadataCheck(_InjectionCheck):
+    id = "injection.ssrf.metadata"
+    name = "SSRF — cloud metadata service"
+    kind = "ssrf-metadata"
+    default_severity = Severity.CRITICAL
+    cwe = (918,)
+    references = _REFERENCES["ssrf-metadata"]
+
+
+@register
+class SsrfInternalCheck(_InjectionCheck):
+    id = "injection.ssrf.internal"
+    name = "SSRF — internal resource"
+    kind = "ssrf-internal"
+    default_severity = Severity.HIGH
+    cwe = (918,)
+    references = _REFERENCES["ssrf-internal"]

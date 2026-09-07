@@ -32,7 +32,10 @@ _LINKS = (
 # link them so an Active scan of the hardened profile actually fuzzes and finds nothing.
 _INJECTION_LINKS = (
     '<a href="/search?q=demo">search</a> <a href="/item?id=1">item</a> '
-    '<a href="/download?file=readme.txt">download</a> <a href="/go?next=/home">go</a>'
+    '<a href="/download?file=readme.txt">download</a> <a href="/go?next=/home">go</a> '
+    # spec 009: two "fetch this URL" endpoints — SSRF-able in the insecure profile.
+    '<a href="/fetch?url=/preview">fetch</a> '
+    '<a href="/webhook?callback=/ping">webhook</a>'
 )
 _FORMS = (
     '<form method="get" action="/search"><input name="q"></form>'
@@ -195,6 +198,68 @@ async def _comment_insecure(request: Request) -> Response:
     return HTMLResponse(f"<!doctype html><p>Posted: {form.get('body', '')}</p>")
 
 
+# spec 009 (RF-12): two server-side URL fetchers. `/fetch` is fully SSRF-able and stands in
+# for a real cloud/host environment so the integration scan is deterministic and offline.
+# `/webhook` blocks the metadata IP (as many real apps do) but still reaches loopback.
+_AWS_METADATA = (
+    '{"Code":"Success","LastUpdated":"2026-09-07T00:00:00Z",'
+    '"AccessKeyId":"ASIAIOSFODNN7EXAMPLE","SecretAccessKey":"wJalrXUtnFEMI/EXAMPLE",'
+    '"Token":"FQoGZXIvYXdzEEXAMPLE","Expiration":"2026-09-07T06:00:00Z"}'
+)
+_REDIS_BANNER = "redis_version:7.2.4\r\nredis_mode:standalone\r\nconnected_clients:1\r\n"
+_LOOPBACK_HOSTS = (
+    "127.0.0.1",
+    "127.1",
+    "localhost",
+    "[::1]",
+    "0.0.0.0",
+    "2130706433",
+    "0x7f000001",
+    "0177.0.0.1",
+)
+_METADATA_HOSTS = (
+    "169.254.169.254",
+    "2852039166",
+    "0xa9fea9fe",
+    "metadata.google",
+    "100.100.100.200",
+    "kubernetes.default",
+)
+
+
+def _fetch_insecure(request: Request) -> Response:
+    raw = request.query_params.get("url", "")
+    low = raw.lower()
+    if not low.startswith(("http://", "https://", "file:")):
+        return HTMLResponse(f"<!doctype html><div>preview of {raw}</div>")
+    if any(h in low for h in _METADATA_HOSTS):
+        return PlainTextResponse(_AWS_METADATA, media_type="application/json")
+    if low.startswith("file:"):
+        return PlainTextResponse(_ETC_PASSWD if "passwd" in low else f"contents of {raw}")
+    if any(h in low for h in _LOOPBACK_HOSTS):
+        return PlainTextResponse(_REDIS_BANNER)
+    return PlainTextResponse(f"failed to fetch {raw}: Connection refused", status_code=502)
+
+
+def _webhook_insecure(request: Request) -> Response:
+    raw = request.query_params.get("callback", "")
+    low = raw.lower()
+    if not low.startswith(("http://", "https://", "file:")):
+        return HTMLResponse(f"<!doctype html><div>callback set to {raw}</div>")
+    if any(h in low for h in _METADATA_HOSTS) or low.startswith("file:"):
+        return PlainTextResponse("blocked: address not permitted", status_code=400)
+    if any(h in low for h in _LOOPBACK_HOSTS):
+        return PlainTextResponse(_REDIS_BANNER)
+    return PlainTextResponse(f"failed to fetch {raw}: Connection refused", status_code=502)
+
+
+def _fetch_hardened(request: Request) -> Response:
+    raw = request.query_params.get("url" if "url" in request.query_params else "callback", "")
+    if not raw.startswith(("https://cdn.example.com/", "https://api.example.com/")):
+        return PlainTextResponse("blocked: destination not on the allow-list", status_code=400)
+    return PlainTextResponse("ok")
+
+
 def _login(request: Request) -> Response:
     return HTMLResponse("<!doctype html><p>Sign in</p>")
 
@@ -338,6 +403,8 @@ _INJECTION_ROUTES = {
         ("/item", _item_insecure, ["GET"]),
         ("/download", _download_insecure, ["GET"]),
         ("/go", _go_insecure, ["GET"]),
+        ("/fetch", _fetch_insecure, ["GET"]),
+        ("/webhook", _webhook_insecure, ["GET"]),
         ("/comment", _comment_insecure, ["POST"]),
         ("/account", _account("session", _ACCOUNT_INSECURE), ["GET"]),
         ("/account/settings", _account_settings("session", escape=False), ["GET"]),
@@ -351,6 +418,8 @@ _INJECTION_ROUTES = {
         ("/item", _item_hardened, ["GET"]),
         ("/download", _download_hardened, ["GET"]),
         ("/go", _go_hardened, ["GET"]),
+        ("/fetch", _fetch_hardened, ["GET"]),
+        ("/webhook", _fetch_hardened, ["GET"]),
         ("/comment", _comment_hardened, ["POST"]),
         ("/account", _account("__Host-session", _ACCOUNT_HARDENED), ["GET"]),
         ("/account/settings", _account_settings("__Host-session", escape=True), ["GET"]),

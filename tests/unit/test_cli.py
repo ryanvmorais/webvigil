@@ -157,6 +157,9 @@ def test_list_checks_lists_the_injection_checks() -> None:
     assert "injection.xss.reflected" in result.stdout
     assert "injection.sqli.time-based" in result.stdout
     assert "injection.xss.stored" in result.stdout
+    assert "injection.ssrf.metadata" in result.stdout
+    assert "injection.ssrf.internal" in result.stdout
+    assert "CRITICAL" in result.stdout  # ssrf.metadata
     assert "INJECTION" in result.stdout
 
 

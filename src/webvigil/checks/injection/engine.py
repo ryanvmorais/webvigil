@@ -12,6 +12,7 @@ from collections.abc import Awaitable, Callable
 from webvigil.checks.injection.detect import DetectCtx, normalize_body
 from webvigil.checks.injection.detect import redirect as redirect_detect
 from webvigil.checks.injection.detect import sqli as sqli_detect
+from webvigil.checks.injection.detect import ssrf as ssrf_detect
 from webvigil.checks.injection.detect import traversal as traversal_detect
 from webvigil.checks.injection.detect import xss as xss_detect
 from webvigil.checks.injection.models import (
@@ -26,6 +27,7 @@ from webvigil.checks.injection.points import (
     enumerate_points,
     is_pathlike,
     is_redirect_name,
+    is_urllike,
 )
 from webvigil.core.config import InjectionSection
 from webvigil.core.context import Page
@@ -46,8 +48,11 @@ _DETECTORS: dict[str, _Detector] = {
     "sqli-time": sqli_detect.detect_time,
     "traversal": traversal_detect.detect,
     "redirect": redirect_detect.detect,
+    "ssrf": ssrf_detect.detect,
 }
-_BASE_ORDER = ("xss", "sqli-error", "sqli-boolean", "traversal", "redirect", "sqli-time")
+# ``ssrf`` runs last so its payload set never starves the 006 detectors on a point with an
+# unhelpful name; ``_ordered_kinds`` front-loads it to position 0 for a URL-shaped point.
+_BASE_ORDER = ("xss", "sqli-error", "sqli-boolean", "traversal", "redirect", "sqli-time", "ssrf")
 
 KIND_BY_CHECK_ID: dict[str, str] = {
     "injection.xss.reflected": "xss",
@@ -56,6 +61,10 @@ KIND_BY_CHECK_ID: dict[str, str] = {
     "injection.sqli.time-based": "sqli-time",
     "injection.traversal.path": "traversal",
     "injection.redirect.open": "redirect",
+    # spec 009: both SSRF checks are fed by the one "ssrf" detector, which emits
+    # kind="ssrf-metadata" / "ssrf-internal" hits the two checks filter on.
+    "injection.ssrf.metadata": "ssrf",
+    "injection.ssrf.internal": "ssrf",
 }
 
 
@@ -114,7 +123,11 @@ class InjectionScanner:
 
     def _ordered_kinds(self, point: InjectionPoint) -> list[str]:
         kinds = [k for k in _BASE_ORDER if k in self.selected_kinds]
-        for predicate, kind in ((is_pathlike, "traversal"), (is_redirect_name, "redirect")):
+        for predicate, kind in (
+            (is_pathlike, "traversal"),
+            (is_redirect_name, "redirect"),
+            (is_urllike, "ssrf"),
+        ):
             if predicate(point) and kind in kinds:
                 kinds.remove(kind)
                 kinds.insert(0, kind)
