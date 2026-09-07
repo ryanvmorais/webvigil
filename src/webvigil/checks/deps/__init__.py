@@ -1,7 +1,9 @@
-"""Dependency fingerprinting: passive client-side library detection + advisory matching.
+"""
+Dependency fingerprinting: passive client-side library detection + advisory matching.
 
-Spec 004. The :class:`~webvigil.checks.deps.fingerprint.Fingerprinter` runs as a pass in the
-orchestrator (not as a check) and its detections are consumed by two checks:
+Spec 004. The :class:`~webvigil.checks.deps.fingerprint.Fingerprinter` runs as a
+pass in the orchestrator (not as a check) and its detections are consumed by two
+checks:
 
 - ``deps.js.vulnerable-library`` — a finding per detected library version with a known
   advisory in the vendored Retire.js database.

@@ -1,8 +1,9 @@
-"""The DEPS checks: turn fingerprint detections into findings (spec 004, RF-09, RF-10).
+"""
+The DEPS checks: turn fingerprint detections into findings (spec 004, RF-09, RF-10).
 
-Neither check issues HTTP — the fingerprint pass (ADR-1) has already run and left its
-``Detection`` list on ``ctx.observations``. Each check also records the libraries it saw on
-the technology inventory (RF-12).
+Neither check issues HTTP — the fingerprint pass (ADR-1) has already run and left
+its ``Detection`` list on ``ctx.observations``. Each check also records the
+libraries it saw on the technology inventory (RF-12).
 """
 
 from __future__ import annotations
@@ -42,12 +43,28 @@ _CONFIDENCE = {
 
 @lru_cache(maxsize=1)
 def _provider() -> RetireJsProvider:
+    """
+    Returns:
+        RetireJsProvider: The process-wide offline advisory provider.
+    """
     return default_provider()
 
 
 def _technology(
     detection: Detection, *, vulnerable: bool, advisories: tuple[str, ...] = ()
 ) -> Technology:
+    """
+    Build the technology-inventory entry for one detection.
+
+    Args:
+        detection (Detection): The detected library.
+        vulnerable (bool): Whether an advisory matched.
+        advisories (tuple[str, ...]): Matched advisory identifiers. Defaults to
+            empty.
+
+    Returns:
+        Technology: The inventory entry.
+    """
     return Technology(
         name=detection.name,
         version=detection.version,
@@ -60,7 +77,13 @@ def _technology(
 
 @register
 class VulnerableLibraryCheck(Check):
-    """A finding per detected library version with a known advisory."""
+    """
+    A finding per detected library version with a known advisory.
+
+    Merges the offline Retire.js match with any OSV.dev advisories the
+    orchestrator's opt-in lookup pass left on the context (spec 010), and
+    records every detection on the technology inventory.
+    """
 
     id = "deps.js.vulnerable-library"
     name = "Vulnerable JavaScript library"
@@ -69,6 +92,16 @@ class VulnerableLibraryCheck(Check):
     default_severity = Severity.MEDIUM
 
     async def run(self, ctx: ScanContext) -> list[Finding]:
+        """
+        Args:
+            ctx (ScanContext): The scan context; reads
+                ``observations.detections`` and ``observations.osv_advisories``,
+                writes the technology inventory.
+
+        Returns:
+            list[Finding]: One finding per versioned detection that has at least
+                one matching advisory.
+        """
         provider = _provider()
         findings: list[Finding] = []
         for detection in ctx.observations.detections:
@@ -98,6 +131,21 @@ class VulnerableLibraryCheck(Check):
         advisories: list[Advisory],
         identifiers: tuple[str, ...],
     ) -> Finding:
+        """
+        Build the finding for one vulnerable library.
+
+        Severity is the highest across the merged advisories; CWE ids and
+        references are their union, plus a MITRE link per CWE.
+
+        Args:
+            ctx (ScanContext): The scan context, for the fallback location.
+            detection (Detection): The detected library and version.
+            advisories (list[Advisory]): The merged advisories.
+            identifiers (tuple[str, ...]): Their union of identifiers.
+
+        Returns:
+            Finding: The assembled finding.
+        """
         top = max(advisories, key=lambda a: a.severity)
         cwe = _unique(c for advisory in advisories for c in advisory.cwe)
         references = _unique(url for advisory in advisories for url in advisory.info_urls) + tuple(
@@ -131,6 +179,14 @@ class LibraryDetectedCheck(Check):
     default_severity = Severity.INFO
 
     async def run(self, ctx: ScanContext) -> list[Finding]:
+        """
+        Args:
+            ctx (ScanContext): The scan context; reads
+                ``observations.detections``, writes the technology inventory.
+
+        Returns:
+            list[Finding]: One INFO finding per version-less detection.
+        """
         findings: list[Finding] = []
         for detection in ctx.observations.detections:
             if detection.version is not None:
@@ -159,12 +215,29 @@ class LibraryDetectedCheck(Check):
 
 
 def _describe(detection: Detection, advisories: list[Advisory]) -> str:
+    """
+    Args:
+        detection (Detection): The vulnerable library.
+        advisories (list[Advisory]): Its advisories.
+
+    Returns:
+        str: A finding description leading with the count and listing each
+            advisory.
+    """
     lead = f"{detection.name} {detection.version} is affected by {len(advisories)} known "
     lead += "vulnerability:" if len(advisories) == 1 else "vulnerabilities:"
     return lead + "\n" + "\n".join(f"- {line}" for line in _advisory_lines(advisories))
 
 
 def _advisory_lines(advisories: list[Advisory]) -> list[str]:
+    """
+    Args:
+        advisories (list[Advisory]): The advisories to render.
+
+    Returns:
+        list[str]: One ``"<ids>: <summary>"`` line per advisory, noting when
+            severity was not supplied upstream.
+    """
     lines: list[str] = []
     for advisory in advisories:
         ids = ", ".join(advisory.identifiers) if advisory.identifiers else "(no identifier)"
@@ -175,6 +248,15 @@ def _advisory_lines(advisories: list[Advisory]) -> list[str]:
 
 
 def _remediation(detection: Detection, advisories: list[Advisory]) -> str:
+    """
+    Args:
+        detection (Detection): The vulnerable library.
+        advisories (list[Advisory]): Its advisories.
+
+    Returns:
+        str: An upgrade instruction naming the highest known first-safe version,
+            or the latest release when none is known.
+    """
     safe = [a.first_safe_version for a in advisories if a.first_safe_version]
     if safe:
         target = max(safe, key=numeric_version_key)
@@ -183,4 +265,11 @@ def _remediation(detection: Detection, advisories: list[Advisory]) -> str:
 
 
 def _unique[T](items: Iterable[T]) -> tuple[T, ...]:
+    """
+    Args:
+        items (Iterable[T]): Any iterable.
+
+    Returns:
+        tuple[T, ...]: The items with duplicates removed, order preserved.
+    """
     return tuple(dict.fromkeys(items))

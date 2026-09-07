@@ -1,17 +1,21 @@
-"""The OSV.dev online advisory provider (spec 010).
+"""
+The OSV.dev online advisory provider (spec 010).
 
-Opt-in via ``[deps] osv_online`` / ``--osv-online``. This is the only part of the engine
-that contacts a host other than the scan target: it sends the names and versions of the
-client-side libraries the fingerprint pass detected to ``api.osv.dev`` and turns the
-matching advisories into WebVigil's native :class:`~webvigil.checks.deps.advisories.Advisory`
-shape, so the check, the inventory, and every reporter are unchanged.
+Opt-in via ``[deps] osv_online`` / ``--osv-online``. This is the only part of
+the engine that contacts a host other than the scan target: it sends the names
+and versions of the client-side libraries the fingerprint pass detected to
+``api.osv.dev`` and turns the matching advisories into WebVigil's native
+:class:`~webvigil.checks.deps.advisories.Advisory` shape, so the check, the
+inventory, and every reporter are unchanged.
 
-Flow (:meth:`OsvProvider.lookup`): one ``POST /v1/querybatch`` says which packages have any
-advisory; then one ``POST /v1/query`` per matched package pulls the full records. The
-orchestrator runs this as a pass before the checks and hands the result to
-``VulnerableLibraryCheck`` via ``ScanContext.observations`` (ADR-2). Any failure raises
-:class:`OsvLookupError`, which the orchestrator turns into a scan warning — the offline
-Retire.js match still stands (RF-09).
+Flow (:meth:`OsvProvider.lookup`): one ``POST /v1/querybatch`` says which
+packages have any advisory; then one ``POST /v1/query`` per matched package
+pulls the full records. The orchestrator runs this as a pass before the checks
+and hands the result to
+:class:`~webvigil.checks.deps.check.VulnerableLibraryCheck` via
+``ScanContext.observations`` (ADR-2). Any failure raises :class:`OsvLookupError`,
+which the orchestrator turns into a scan warning — the offline Retire.js match
+still stands (RF-09).
 """
 
 from __future__ import annotations
@@ -61,12 +65,29 @@ class OsvLookupError(Exception):
 
 @dataclass(frozen=True, slots=True)
 class OsvResult:
-    # (webvigil library name, version) -> advisories from OSV.dev
+    """
+    The output of one OSV.dev lookup pass.
+
+    Attributes:
+        advisories (dict[tuple[str, str], tuple[Advisory, ...]]): ``(webvigil
+            library name, version)`` -> the advisories OSV returned for it.
+        warnings (tuple[str, ...]): Per-package failures that did not abort the
+            whole lookup. Defaults to empty.
+    """
+
     advisories: dict[tuple[str, str], tuple[Advisory, ...]]
     warnings: tuple[str, ...] = field(default=())
 
 
 def _npm_name(name: str) -> str:
+    """
+    Args:
+        name (str): A Retire.js component name.
+
+    Returns:
+        str: The matching npm package name — from ``_NPM_NAME`` when the two
+            differ, else ``name`` verbatim.
+    """
     return _NPM_NAME.get(name, name)
 
 
@@ -81,7 +102,20 @@ _PR_SCOPE_CHANGED = {"N": 0.85, "L": 0.68, "H": 0.5}
 
 
 def _cvss3_base(vector: str) -> float | None:
-    """The CVSS 3.0/3.1 base score for ``vector``, or ``None`` if it is not a v3 vector."""
+    """
+    Compute the CVSS 3.0/3.1 base score from a vector string.
+
+    Implements the published formula directly, so no ``cvss`` dependency is
+    needed (ADR-5).
+
+    Args:
+        vector (str): A CVSS vector, e.g. ``"CVSS:3.1/AV:N/AC:L/..."``.
+
+    Returns:
+        float | None: The base score rounded up to one decimal, or ``None`` when
+            ``vector`` is not a v3 vector or a required metric is missing or
+            unknown.
+    """
     if not vector.startswith(("CVSS:3.0/", "CVSS:3.1/")):
         return None
     parts: dict[str, str] = {}
@@ -109,6 +143,14 @@ def _cvss3_base(vector: str) -> float | None:
 
 
 def _band(score: float) -> Severity | None:
+    """
+    Args:
+        score (float): A CVSS base score.
+
+    Returns:
+        Severity | None: The qualitative band (CRITICAL / HIGH / MEDIUM / LOW),
+            or ``None`` for a score below 0.1.
+    """
     if score >= 9.0:
         return Severity.CRITICAL
     if score >= 7.0:
@@ -130,7 +172,19 @@ _GHSA_SEVERITY = {
 
 
 def _severity(record: Mapping[str, Any]) -> tuple[Severity, bool]:
-    """(severity, came_from_upstream) for an OSV record (RF-07)."""
+    """
+    Resolve the severity of an OSV record (RF-07).
+
+    Prefers a GHSA qualitative label, then a CVSS v3 vector; falls back to the
+    shared ``MEDIUM`` default.
+
+    Args:
+        record (Mapping[str, Any]): One OSV vulnerability record.
+
+    Returns:
+        tuple[Severity, bool]: The severity and whether it came from the record
+            (rather than the default).
+    """
     database_specific = record.get("database_specific") or {}
     label = str(database_specific.get("severity") or "").upper()
     if label in _GHSA_SEVERITY:
@@ -147,6 +201,14 @@ def _severity(record: Mapping[str, Any]) -> tuple[Severity, bool]:
 
 
 def _summary(record: Mapping[str, Any]) -> str:
+    """
+    Args:
+        record (Mapping[str, Any]): One OSV vulnerability record.
+
+    Returns:
+        str: The record ``summary``, or the first sentence of ``details``
+            (capped at 200 chars), or ``""``.
+    """
     summary = str(record.get("summary") or "").strip()
     if summary:
         return summary
@@ -158,6 +220,14 @@ def _summary(record: Mapping[str, Any]) -> str:
 
 
 def _info_urls(record: Mapping[str, Any], osv_id: str) -> tuple[str, ...]:
+    """
+    Args:
+        record (Mapping[str, Any]): One OSV vulnerability record.
+        osv_id (str): The record id, used to build the canonical OSV URL.
+
+    Returns:
+        tuple[str, ...]: The record's reference URLs plus the OSV page, de-duped.
+    """
     urls: list[str] = []
     for reference in record.get("references") or []:
         if isinstance(reference, Mapping) and reference.get("url"):
@@ -167,6 +237,14 @@ def _info_urls(record: Mapping[str, Any], osv_id: str) -> tuple[str, ...]:
 
 
 def _cwe(record: Mapping[str, Any]) -> tuple[int, ...]:
+    """
+    Args:
+        record (Mapping[str, Any]): One OSV vulnerability record.
+
+    Returns:
+        tuple[int, ...]: The numeric CWE ids from ``database_specific.cwe_ids``,
+            de-duped.
+    """
     database_specific = record.get("database_specific") or {}
     found: list[int] = []
     for raw in database_specific.get("cwe_ids") or []:
@@ -177,6 +255,18 @@ def _cwe(record: Mapping[str, Any]) -> tuple[int, ...]:
 
 
 def _first_safe(record: Mapping[str, Any], npm_name: str, detected_version: str) -> str | None:
+    """
+    Find the lowest fixed version above the detected one.
+
+    Args:
+        record (Mapping[str, Any]): One OSV vulnerability record.
+        npm_name (str): The npm package name to filter ``affected`` entries by.
+        detected_version (str): The version in use.
+
+    Returns:
+        str | None: The lowest ``fixed`` version greater than
+            ``detected_version``, or ``None`` when none is listed.
+    """
     fixed: list[str] = []
     for affected in record.get("affected") or []:
         if not isinstance(affected, Mapping):
@@ -197,7 +287,18 @@ def _first_safe(record: Mapping[str, Any], npm_name: str, detected_version: str)
 def _to_advisory(
     record: Mapping[str, Any], *, npm_name: str, detected_version: str
 ) -> Advisory | None:
-    """One OSV record -> a native ``Advisory``; ``None`` if the record is malformed (RF-06)."""
+    """
+    Convert one OSV record into a native :class:`Advisory` (RF-06).
+
+    Args:
+        record (Mapping[str, Any]): One OSV vulnerability record.
+        npm_name (str): The npm package name, for the fixed-version lookup.
+        detected_version (str): The version in use.
+
+    Returns:
+        Advisory | None: The native advisory, or ``None`` when the record has no
+            usable id.
+    """
     try:
         osv_id = str(record["id"])
     except (KeyError, TypeError):
@@ -226,12 +327,41 @@ class OsvProvider:
         user_agent: str,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
+        """
+        Args:
+            base_url (str): The OSV.dev API base URL; a trailing slash is
+                stripped.
+            timeout_s (float): Per-request timeout, in seconds.
+            user_agent (str): ``User-Agent`` sent on every request.
+            transport (httpx.AsyncBaseTransport | None): Test seam — a
+                ``MockTransport``. ``None`` in normal operation.
+        """
         self._base_url = base_url.rstrip("/")
         self._timeout_s = timeout_s
         self._user_agent = user_agent
         self._transport = transport
 
     async def lookup(self, detections: Sequence[Detection]) -> OsvResult:
+        """
+        Look up every versioned detection against OSV.dev.
+
+        One ``querybatch`` filters to the packages with any advisory, then one
+        ``query`` per hit pulls the full records. A per-package ``query``
+        failure is recorded as a warning and skipped; a ``querybatch`` failure
+        raises.
+
+        Args:
+            detections (Sequence[Detection]): The fingerprint detections;
+                version-less ones are ignored.
+
+        Returns:
+            OsvResult: The advisories keyed by ``(name, version)`` and any
+                per-package warnings.
+
+        Raises:
+            OsvLookupError: If the ``querybatch`` call fails or returns an
+                unexpected shape.
+        """
         pairs = list(
             dict.fromkeys((d.name, d.version) for d in detections if d.version is not None)
         )
@@ -275,6 +405,13 @@ class OsvProvider:
         return OsvResult(advisories=advisories, warnings=tuple(warnings))
 
     def _client(self) -> httpx.AsyncClient:
+        """
+        Returns:
+            httpx.AsyncClient: A fresh client bound to the OSV base URL, with the
+                configured timeout, ``User-Agent``, and test transport. This is
+                a dedicated client, separate from the scan's scope-guarded one
+                (engine-boundaries note).
+        """
         kwargs: dict[str, Any] = {
             "base_url": self._base_url,
             "timeout": self._timeout_s,
@@ -287,7 +424,22 @@ class OsvProvider:
     async def _querybatch(
         self, client: httpx.AsyncClient, queries: list[dict[str, Any]]
     ) -> list[list[Any]]:
-        """One list per query (aligned to ``queries``), each holding its returned vuln ids."""
+        """
+        Run ``POST /v1/querybatch``, chunked to the API's per-request cap.
+
+        Args:
+            client (httpx.AsyncClient): The OSV client.
+            queries (list[dict[str, Any]]): One package/version query per
+                detection.
+
+        Returns:
+            list[list[Any]]: One list per query, aligned to ``queries``, each
+                holding the vuln ids that query matched.
+
+        Raises:
+            OsvLookupError: If a chunk's response shape does not line up with the
+                chunk.
+        """
         results: list[list[Any]] = []
         for start in range(0, len(queries), _QUERYBATCH_CAP):
             chunk = queries[start : start + _QUERYBATCH_CAP]
@@ -303,6 +455,21 @@ class OsvProvider:
     async def _query(
         self, client: httpx.AsyncClient, npm_name: str, version: str
     ) -> list[Mapping[str, Any]]:
+        """
+        Run ``POST /v1/query`` for one package/version.
+
+        Args:
+            client (httpx.AsyncClient): The OSV client.
+            npm_name (str): The npm package name.
+            version (str): The detected version.
+
+        Returns:
+            list[Mapping[str, Any]]: The full vulnerability records, or ``[]``
+                when the payload has none.
+
+        Raises:
+            OsvLookupError: On a transport error, bad status, or non-JSON body.
+        """
         payload = await self._post(
             client,
             "/v1/query",
@@ -314,6 +481,21 @@ class OsvProvider:
     async def _post(
         self, client: httpx.AsyncClient, path: str, json: dict[str, Any]
     ) -> Mapping[str, Any]:
+        """
+        POST a JSON body and return the decoded object.
+
+        Args:
+            client (httpx.AsyncClient): The OSV client.
+            path (str): The API path.
+            json (dict[str, Any]): The request body.
+
+        Returns:
+            Mapping[str, Any]: The decoded response object.
+
+        Raises:
+            OsvLookupError: On any transport error, a non-2xx status, a JSON
+                decode failure, or a non-object payload.
+        """
         try:
             response = await client.post(path, json=json)
             response.raise_for_status()

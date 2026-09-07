@@ -1,9 +1,11 @@
-"""The dependency fingerprint pass (spec 004, RF-01..RF-05).
+"""
+The dependency fingerprint pass (spec 004, RF-01..RF-05).
 
-Runs in the orchestrator, not as a check (ADR-1). Given the crawled pages and the shared
-HTTP client it: collects referenced script/style resources, fetches the in-scope ones
-(bounded, best-effort), and applies the vendored Retire.js rules to every source — the
-resource URL, its body, and the page's inline ``<script>`` text.
+Runs in the orchestrator, not as a check (ADR-1). Given the crawled pages and
+the shared HTTP client it: collects referenced script/style resources, fetches
+the in-scope ones (bounded, best-effort), and applies the vendored Retire.js
+rules to every source — the resource URL, its body, and the page's inline
+``<script>`` text.
 """
 
 from __future__ import annotations
@@ -26,11 +28,23 @@ _RESOURCE_ATTRS = (("script", "src"), ("link", "href"))
 
 @dataclass
 class FingerprintResult:
+    """
+    The output of one fingerprint pass.
+
+    Attributes:
+        detections (list[Detection]): The de-duplicated libraries found.
+            Defaults to empty.
+        warnings (list[str]): Non-fatal notices (e.g. the fetch cap was hit).
+            Defaults to empty.
+    """
+
     detections: list[Detection] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
 
 class Fingerprinter:
+    """Applies the Retire.js rules to a crawl's resources and inline scripts."""
+
     def __init__(
         self,
         http: HttpClient,
@@ -39,12 +53,33 @@ class Fingerprinter:
         *,
         max_fetches: int = _MAX_FETCHES,
     ) -> None:
+        """
+        Args:
+            http (HttpClient): The shared, scope-guarded HTTP client.
+            target (Target): The normalized target and its scope rule.
+            rules (RetireJsRules): The compiled Retire.js matchers.
+            max_fetches (int): Cap on extra in-scope resource fetches. Defaults
+                to ``_MAX_FETCHES``.
+        """
         self._http = http
         self._target = target
         self._rules = rules
         self._max_fetches = max_fetches
 
     async def scan(self, pages: tuple[Page, ...]) -> FingerprintResult:
+        """
+        Fingerprint the libraries reachable from a crawl.
+
+        Reads each HTML page's inline scripts and resource references, matches
+        out-of-scope (CDN) resources by URL only, fetches the in-scope ones not
+        already crawled (up to ``max_fetches``), and matches their bodies.
+
+        Args:
+            pages (tuple[Page, ...]): The crawled pages.
+
+        Returns:
+            FingerprintResult: The de-duplicated detections and any warnings.
+        """
         result = FingerprintResult()
         crawled = {normalize_url(p.url) for p in pages}
         raw: list[Detection] = []
@@ -81,6 +116,16 @@ class Fingerprinter:
         return result
 
     def _resource_urls(self, tree: HTMLParser, base: str) -> list[str]:
+        """
+        Args:
+            tree (HTMLParser): The parsed page.
+            base (str): The page URL, for resolving relative references.
+
+        Returns:
+            list[str]: Absolute URLs of ``<script src>`` and relevant
+                ``<link href>`` (stylesheet / preload / modulepreload)
+                resources.
+        """
         urls: list[str] = []
         for tag, attr in _RESOURCE_ATTRS:
             for node in tree.css(tag):
@@ -95,6 +140,15 @@ class Fingerprinter:
         return urls
 
     def _from_inline_scripts(self, tree: HTMLParser, page_url: str) -> list[Detection]:
+        """
+        Args:
+            tree (HTMLParser): The parsed page.
+            page_url (str): The page URL, recorded as the detection source.
+
+        Returns:
+            list[Detection]: Libraries identified from the text of every inline
+                ``<script>`` (those with no ``src``).
+        """
         found: list[Detection] = []
         for node in tree.css("script"):
             if node.attributes.get("src"):
@@ -105,6 +159,14 @@ class Fingerprinter:
         return found
 
     async def _fetch(self, url: str) -> str | None:
+        """
+        Args:
+            url (str): The in-scope resource URL to fetch.
+
+        Returns:
+            str | None: The response body, or ``None`` on a transport failure,
+                a scope refusal, or a >= 400 status.
+        """
         try:
             response = await self._http.get(url)
         except (RequestFailed, OutOfScopeError):
@@ -115,7 +177,18 @@ class Fingerprinter:
 
 
 def _dedupe(detections: list[Detection]) -> list[Detection]:
-    """One detection per ``(name, version)``; a concrete version and a stronger method win."""
+    """
+    Collapse to one detection per ``(name, version)``.
+
+    A concrete version wins over a version-less one, and a stronger detection
+    method (hash > SRI > filename/content > URI) wins on ties.
+
+    Args:
+        detections (list[Detection]): The raw detections from every source.
+
+    Returns:
+        list[Detection]: The winners, sorted by name then version.
+    """
     best: dict[tuple[str, str | None], Detection] = {}
     for detection in detections:
         key = (detection.name, detection.version)
@@ -131,6 +204,13 @@ def _dedupe(detections: list[Detection]) -> list[Detection]:
 
 
 def _rank(method: DetectionMethod) -> int:
+    """
+    Args:
+        method (DetectionMethod): A detection method.
+
+    Returns:
+        int: Its trust rank — higher is stronger, used to break de-dup ties.
+    """
     order = {
         DetectionMethod.HASH: 4,
         DetectionMethod.SRI: 3,
