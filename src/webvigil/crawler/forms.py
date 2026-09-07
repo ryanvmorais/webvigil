@@ -1,13 +1,15 @@
-"""Form discovery (spec 006 RF-05; spec 007 RF-05).
+"""
+Form discovery (spec 006 RF-05; spec 007 RF-05).
 
-Parses ``<form>`` elements out of the page bodies the crawler already fetched — it issues
-**no** requests of its own. :func:`parse_forms` handles one page; the crawler calls it per
-page during ``discover()`` (spec 007 ADR-2) both to build the ``<form>`` inventory and to
-submit safe ``GET`` forms. :func:`extract_forms` is the deduped whole-crawl wrapper, kept
-for tests and any external caller.
+Parses ``<form>`` elements out of the page bodies the crawler already fetched —
+it issues **no** requests of its own. :func:`parse_forms` handles one page; the
+crawler calls it per page during ``discover()`` (spec 007 ADR-2) both to build
+the ``<form>`` inventory and to submit safe ``GET`` forms. :func:`extract_forms`
+is the deduped whole-crawl wrapper, kept for tests and any external caller.
 
-Deciding which forms to fuzz or skip (the authentication / destruction heuristics) is
-:mod:`webvigil.crawler.safety` and the injection package's job, not this module's.
+Deciding which forms to fuzz or skip (the authentication / destruction
+heuristics) is :mod:`webvigil.crawler.safety` and the injection package's job,
+not this module's.
 """
 
 from __future__ import annotations
@@ -30,27 +32,58 @@ _SUBMIT_VALUE_TYPES = frozenset(
 
 @dataclass(frozen=True, slots=True)
 class FormField:
-    """One named control of a form and its current value."""
+    """
+    One named control of a form and its current value.
+
+    Attributes:
+        name (str): The control's ``name`` attribute.
+        type (str): Lower-cased ``<input type>``, or ``"textarea"`` /
+            ``"select"``.
+        value (str): The control's current value (selected option for a
+            ``<select>``, text content for a ``<textarea>``).
+        checked (bool): ``True`` for a checked ``<input type=checkbox|radio>``.
+            Defaults to ``False``.
+    """
 
     name: str
-    type: str  # lower-cased <input type>, or "textarea" / "select"
+    type: str
     value: str
-    checked: bool = False  # <input type=checkbox|radio checked>
+    checked: bool = False
 
 
 @dataclass(frozen=True, slots=True)
 class Form:
-    """A ``<form>`` found on a crawled page, with its submission target resolved."""
+    """
+    A ``<form>`` found on a crawled page, with its submission target resolved.
 
-    method: str  # "GET" | "POST"
-    action: str  # absolute, normalized; the page URL when the form has no action
+    Attributes:
+        method (str): ``"GET"`` or ``"POST"``.
+        action (str): Absolute, normalized submission URL; the page URL when
+            the form has no ``action``.
+        enctype (str): The form encoding; defaults to
+            ``application/x-www-form-urlencoded``.
+        fields (tuple[FormField, ...]): The named controls, in parser order.
+        source_url (str): URL of the page the form was found on.
+    """
+
+    method: str
+    action: str
     enctype: str
     fields: tuple[FormField, ...]
     source_url: str
 
 
 def parse_forms(page: Page, target: Target) -> list[Form]:
-    """Every in-scope ``<form>`` on **one** crawled HTML page (no cross-page de-dup)."""
+    """
+    Every in-scope ``<form>`` on **one** crawled HTML page (no cross-page de-dup).
+
+    Args:
+        page (Page): A page the crawler already fetched.
+        target (Target): The target, used to drop out-of-scope form actions.
+
+    Returns:
+        list[Form]: The in-scope forms, or ``[]`` for a non-HTML or failed page.
+    """
     if not (page.ok and page.is_html and page.text):
         return []
     forms: list[Form] = []
@@ -62,7 +95,17 @@ def parse_forms(page: Page, target: Target) -> list[Form]:
 
 
 def extract_forms(pages: tuple[Page, ...], target: Target) -> tuple[Form, ...]:
-    """Every in-scope ``<form>`` across the crawled HTML pages, de-duplicated."""
+    """
+    Every in-scope ``<form>`` across the crawled HTML pages, de-duplicated.
+
+    Args:
+        pages (tuple[Page, ...]): The crawled pages.
+        target (Target): The target, used to drop out-of-scope form actions.
+
+    Returns:
+        tuple[Form, ...]: The distinct forms, keyed by ``(method, action, field
+            names)``, in first-seen order.
+    """
     seen: set[tuple[str, str, tuple[str, ...]]] = set()
     forms: list[Form] = []
     for page in pages:
@@ -75,11 +118,19 @@ def extract_forms(pages: tuple[Page, ...], target: Target) -> tuple[Form, ...]:
 
 
 def submission_url(form: Form) -> str | None:
-    """The ``GET`` URL ``form`` submits to with its default values, or ``None`` when it is
-    not a form the crawler should submit (any non-``GET`` method).
+    """
+    The ``GET`` URL ``form`` submits to with its default values.
 
-    The form's default field values replace whatever query the action already carries;
-    fields are taken in a stable parser order so the URL is deterministic (RNF-04).
+    The form's default field values replace whatever query the action already
+    carries; fields are taken in a stable parser order so the URL is
+    deterministic (RNF-04).
+
+    Args:
+        form (Form): The form to resolve.
+
+    Returns:
+        str | None: The submission URL, or ``None`` when the method is not
+            ``GET`` (a form the crawler should not submit).
     """
     if form.method != "GET":
         return None
@@ -94,6 +145,18 @@ def submission_url(form: Form) -> str | None:
 
 
 def _form_from_node(node: Node, page_url: str) -> Form | None:
+    """
+    Build a :class:`Form` from one ``<form>`` node.
+
+    Args:
+        node (Node): The parsed ``<form>`` element.
+        page_url (str): URL of the page the form is on, used to resolve a
+            relative or missing ``action``.
+
+    Returns:
+        Form | None: The resolved form, or ``None`` when it has no named
+            fields.
+    """
     attrs = node.attributes
     raw_action = (attrs.get("action") or "").strip()
     action = normalize_url(urljoin(page_url, raw_action or page_url))
@@ -125,6 +188,14 @@ def _form_from_node(node: Node, page_url: str) -> Form | None:
 
 
 def _field_type(node: Node) -> str:
+    """
+    Args:
+        node (Node): An ``<input>``, ``<textarea>``, or ``<select>`` element.
+
+    Returns:
+        str: ``"textarea"`` / ``"select"`` for those tags, else the lower-cased
+            ``type`` attribute (defaulting to ``"text"``).
+    """
     tag = node.tag or ""
     if tag in ("textarea", "select"):
         return tag
@@ -132,6 +203,15 @@ def _field_type(node: Node) -> str:
 
 
 def _field_value(node: Node) -> str:
+    """
+    Args:
+        node (Node): An ``<input>``, ``<textarea>``, or ``<select>`` element.
+
+    Returns:
+        str: The control's effective default value — the text content for a
+            ``<textarea>``, the selected (or first) option for a ``<select>``,
+            the ``value`` attribute otherwise.
+    """
     tag = node.tag or ""
     if tag == "textarea":
         return node.text(deep=True) or ""

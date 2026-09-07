@@ -1,7 +1,9 @@
-"""Best-effort sitemap.xml parsing (RF-07).
+"""
+Best-effort sitemap.xml parsing (RF-07).
 
-A missing or malformed sitemap is never an error — it just yields no extra seed URLs.
-``xml.etree`` does not expand external entities, so untrusted sitemap XML is safe to parse.
+A missing or malformed sitemap is never an error — it just yields no extra seed
+URLs. ``xml.etree`` does not expand external entities, so untrusted sitemap XML
+is safe to parse.
 """
 
 from __future__ import annotations
@@ -13,7 +15,16 @@ from webvigil.http.client import HttpClient
 
 
 def parse(text: str) -> list[str]:
-    """Return every ``<loc>`` URL in a sitemap or sitemap index; ``[]`` if it will not parse."""
+    """
+    Return every ``<loc>`` URL in a sitemap or sitemap index.
+
+    Args:
+        text (str): The raw XML body.
+
+    Returns:
+        list[str]: The trimmed ``<loc>`` values, or ``[]`` when the body will
+            not parse.
+    """
     try:
         root = ElementTree.fromstring(text)
     except ElementTree.ParseError:
@@ -27,7 +38,17 @@ def parse(text: str) -> list[str]:
 
 
 async def fetch(http: HttpClient, url: str) -> list[str]:
-    """Fetch and parse one sitemap URL; any failure yields ``[]``."""
+    """
+    Fetch and parse one sitemap URL.
+
+    Args:
+        http (HttpClient): The shared HTTP client.
+        url (str): The sitemap URL to fetch.
+
+    Returns:
+        list[str]: The ``<loc>`` URLs, or ``[]`` on any non-200 response or
+            transport failure.
+    """
     try:
         response = await http.get(url)
     except (RequestFailed, OutOfScopeError):
