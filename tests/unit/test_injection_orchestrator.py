@@ -19,6 +19,9 @@ pytestmark = pytest.mark.httpx_mock(assert_all_responses_were_requested=False)
 
 
 class _StubCrawler:
+    forms: tuple[object, ...] = ()
+    skipped_destructive = 0
+
     def __init__(self, *_a: object, **_k: object) -> None: ...
 
     async def discover(self) -> list[Page]:

@@ -18,8 +18,9 @@ def _no_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(client_mod, "BACKOFF_JITTER_S", 0.0)
 
 
-def _http(scope: Scope = Scope.HOST) -> HttpClient:
-    return HttpClient(Target.parse("https://example.com", scope=scope), ScanConfig())
+def _http(scope: Scope = Scope.HOST, *, cookies: list[str] | None = None) -> HttpClient:
+    config = ScanConfig.model_validate({"auth": {"cookies": cookies}} if cookies else {})
+    return HttpClient(Target.parse("https://example.com", scope=scope), config)
 
 
 async def test_retries_then_succeeds(httpx_mock: object) -> None:
@@ -130,3 +131,40 @@ async def test_307_redirect_keeps_the_body_and_method(httpx_mock: object) -> Non
     sent = httpx_mock.get_requests()  # type: ignore[attr-defined]
     assert sent[1].method == "POST"
     assert sent[1].read() == b"x=1"
+
+
+# --- spec 007: static cookies on in-scope requests only (RF-01, RF-02, ADR-1) ---
+
+
+async def test_configured_cookie_is_sent_on_a_target_host_request(httpx_mock: object) -> None:
+    httpx_mock.add_response(status_code=200)  # type: ignore[attr-defined]
+    async with _http(cookies=["session=abc123", "csrf=xyz"]) as http:
+        await http.get("https://example.com/dashboard")
+    sent = httpx_mock.get_requests()  # type: ignore[attr-defined]
+    assert sent[0].headers["cookie"] == "session=abc123; csrf=xyz"
+
+
+async def test_cookie_is_absent_on_an_out_of_scope_request(httpx_mock: object) -> None:
+    httpx_mock.add_response(status_code=200)  # type: ignore[attr-defined]
+    async with _http(cookies=["session=abc123"]) as http:
+        await http.get("https://cdn.other.test/lib.js", allow_out_of_scope=True)
+    sent = httpx_mock.get_requests()  # type: ignore[attr-defined]
+    assert "cookie" not in sent[0].headers
+
+
+async def test_no_cookie_configured_means_no_cookie_header(httpx_mock: object) -> None:
+    httpx_mock.add_response(status_code=200)  # type: ignore[attr-defined]
+    async with _http() as http:
+        await http.get("https://example.com/")
+    sent = httpx_mock.get_requests()  # type: ignore[attr-defined]
+    assert "cookie" not in sent[0].headers
+
+
+async def test_caller_cookie_header_is_kept_and_the_configured_value_appended(
+    httpx_mock: object,
+) -> None:
+    httpx_mock.add_response(status_code=200)  # type: ignore[attr-defined]
+    async with _http(cookies=["session=abc123"]) as http:
+        await http.request("GET", "https://example.com/", headers={"cookie": "theme=dark"})
+    sent = httpx_mock.get_requests()  # type: ignore[attr-defined]
+    assert sent[0].headers["cookie"] == "theme=dark; session=abc123"

@@ -46,6 +46,7 @@ class Category(StrEnum):
     DEPS = "DEPS"
     DISCLOSURE = "DISCLOSURE"
     INJECTION = "INJECTION"
+    CSRF = "CSRF"
 
 
 class ScanMode(StrEnum):

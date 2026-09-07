@@ -20,6 +20,7 @@ from webvigil.core.findings import (
 from webvigil.core.result import CheckError, ScanMetadata, ScanResult
 from webvigil.core.target import Scope, Target
 from webvigil.core.technology import Technology
+from webvigil.crawler.forms import Form
 
 _HARDENED_HEADERS: dict[str, str] = {
     "content-security-policy": (
@@ -70,6 +71,7 @@ def make_context(
     target_url: str | None = None,
     http: object = None,
     config: ScanConfig | None = None,
+    forms: Sequence[Form] | None = None,
     observations: Observations | None = None,
 ) -> ScanContext:
     resolved_pages = tuple(pages) if pages is not None else (page,)
@@ -79,6 +81,7 @@ def make_context(
         http=http,  # type: ignore[arg-type]  # header/cookie checks never touch it
         pages=resolved_pages,
         entry=page,
+        forms=tuple(forms or ()),
         observations=observations or Observations(),
     )
 
@@ -114,6 +117,7 @@ def make_result(
     errors: Sequence[CheckError] = (),
     warnings: Sequence[str] = (),
     authorized_by: str | None = None,
+    authenticated: bool = False,
     technologies: Sequence[Technology] = (),
     mode: ScanMode = ScanMode.PASSIVE,
 ) -> ScanResult:
@@ -128,6 +132,7 @@ def make_result(
         pages_scanned=3,
         counts=ScanResult.severity_counts(findings),
         authorized_by=authorized_by,
+        authenticated=authenticated,
     )
     return ScanResult(
         metadata=metadata,

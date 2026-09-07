@@ -28,6 +28,9 @@ def _page() -> Page:
 
 
 class _StubCrawler:
+    forms: tuple[object, ...] = ()
+    skipped_destructive = 0
+
     def __init__(self, *_args: object, **_kwargs: object) -> None: ...
 
     async def discover(self) -> list[Page]:
@@ -116,6 +119,47 @@ async def test_gated_active_run_records_authorization_and_runs_active_checks() -
     result = await Orchestrator(config, check_types=[ActiveOne]).run(_TARGET)
     assert result.metadata.authorized_by == "Jane / #7"
     assert len(result.findings) == 1
+
+
+async def test_authenticated_flag_reflects_configured_cookies() -> None:
+    anon = await Orchestrator(ScanConfig(), check_types=[PassiveOne]).run(_TARGET)
+    assert anon.metadata.authenticated is False
+
+    config = ScanConfig.model_validate({"auth": {"cookies": ["session=abc"]}})
+    authed = await Orchestrator(config, check_types=[PassiveOne]).run(_TARGET)
+    assert authed.metadata.authenticated is True
+
+
+async def test_forms_reach_a_check_via_ctx(monkeypatch: pytest.MonkeyPatch) -> None:
+    from webvigil.crawler.forms import Form, FormField
+
+    form = Form(
+        method="POST",
+        action="https://example.com/x",
+        enctype="application/x-www-form-urlencoded",
+        fields=(FormField(name="a", type="text", value=""),),
+        source_url=_TARGET,
+    )
+    monkeypatch.setattr(_StubCrawler, "forms", (form,))
+    seen: list[object] = []
+
+    class FormReader(_Base):
+        id = "test.formreader"
+
+        async def run(self, ctx: ScanContext) -> list[object]:
+            seen.extend(ctx.forms)
+            return []
+
+    await Orchestrator(ScanConfig(), check_types=[FormReader]).run(_TARGET)
+    assert seen == [form]
+    monkeypatch.setattr(_StubCrawler, "forms", ())
+
+
+async def test_destructive_skip_becomes_a_warning(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(_StubCrawler, "skipped_destructive", 3)
+    result = await Orchestrator(ScanConfig(), check_types=[PassiveOne]).run(_TARGET)
+    assert any("declined to follow 3 link(s)" in w for w in result.warnings)
+    monkeypatch.setattr(_StubCrawler, "skipped_destructive", 0)
 
 
 async def test_registry_selection_filters_by_mode_and_reports_unknown_disabled(

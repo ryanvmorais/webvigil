@@ -31,6 +31,7 @@ def _load_builtin_checks() -> None:
     from webvigil.checks import (  # noqa: F401
         cookies,
         cors,
+        csrf,
         deps,
         disclosure,
         headers,

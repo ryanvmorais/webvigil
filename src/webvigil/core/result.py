@@ -29,6 +29,9 @@ class ScanMetadata(BaseModel):
     pages_scanned: int
     counts: dict[str, int]
     authorized_by: str | None = None
+    # spec 007: records only *that* cookies were supplied for an authenticated scan — never
+    # a cookie name or value.
+    authenticated: bool = False
 
 
 class CheckError(BaseModel):

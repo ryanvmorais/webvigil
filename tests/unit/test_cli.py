@@ -182,6 +182,49 @@ def test_active_scan_summary_reports_injection_findings() -> None:
     assert "Active injection: 2 findings" in result.stderr
 
 
+# --- spec 007: --cookie, list-checks, summary lines ---
+
+
+def test_cookie_flags_populate_the_auth_config() -> None:
+    runner.invoke(
+        app_mod.app,
+        ["scan", "https://example.com", "--cookie", "session=abc", "--cookie", "csrf=xyz"],
+    )
+    assert _StubOrchestrator.last_config.auth.cookies == ["session=abc", "csrf=xyz"]  # type: ignore[attr-defined]
+
+
+def test_cookie_flags_replace_a_config_file_list(tmp_path: Path) -> None:
+    cfg = tmp_path / "webvigil.toml"
+    cfg.write_text("[auth]\ncookies = ['from=file']\n", "utf-8")
+    runner.invoke(
+        app_mod.app,
+        ["scan", "https://example.com", "--config", str(cfg), "--cookie", "from=cli"],
+    )
+    assert _StubOrchestrator.last_config.auth.cookies == ["from=cli"]  # type: ignore[attr-defined]
+
+
+def test_a_malformed_cookie_is_a_clean_error() -> None:
+    result = runner.invoke(app_mod.app, ["scan", "https://example.com", "--cookie", "nope"])
+    assert result.exit_code != 0
+    assert "invalid cookie" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
+def test_list_checks_lists_the_csrf_check() -> None:
+    result = runner.invoke(app_mod.app, ["list-checks"])
+    assert "csrf.form.no-token" in result.stdout
+    assert "CSRF" in result.stdout
+
+
+def test_summary_reports_the_authenticated_scan_and_csrf_count() -> None:
+    _StubOrchestrator.result = make_result(
+        make_finding(check_id="csrf.form.no-token", severity=Severity.MEDIUM),
+    )
+    result = runner.invoke(app_mod.app, ["scan", "https://example.com", "--cookie", "session=abc"])
+    assert "Authenticated scan: 1 cookie supplied" in result.stderr
+    assert "CSRF: 1 form without an anti-CSRF token" in result.stderr
+
+
 def test_version_warns_when_the_advisory_database_is_stale(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         app_mod, "staleness_warning", lambda _rules: ["advisory data is 200 days old"]

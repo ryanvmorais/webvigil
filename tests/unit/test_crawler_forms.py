@@ -1,10 +1,10 @@
-"""Form discovery from crawled page bodies — spec 006 RF-05, ADR-3."""
+"""Form discovery from crawled page bodies — spec 006 RF-05, ADR-3; spec 007 RF-05."""
 
 from __future__ import annotations
 
 from tests.support import make_page
 from webvigil.core.target import Target
-from webvigil.crawler.forms import extract_forms
+from webvigil.crawler.forms import extract_forms, parse_forms, submission_url
 
 _TARGET = Target.parse("https://example.com/")
 
@@ -72,3 +72,52 @@ def test_a_form_with_no_named_field_is_ignored() -> None:
 
 def test_a_page_with_no_form_yields_nothing() -> None:
     assert _forms("<html><body><p>hello</p></body></html>") == ()
+
+
+# --- spec 007: parse_forms, checkbox/radio state, submission_url ---
+
+
+def test_parse_forms_handles_one_page_without_dedup() -> None:
+    html = '<form action="/s" method="get"><input name="q"></form>' * 2
+    assert len(parse_forms(make_page(url="https://example.com/p", text=html), _TARGET)) == 2
+
+
+def test_checkbox_checked_state_is_captured() -> None:
+    (form,) = _forms(
+        "<form>"
+        '<input type="checkbox" name="on" value="1" checked>'
+        '<input type="checkbox" name="off" value="1">'
+        "</form>"
+    )
+    by_name = {f.name: f for f in form.fields}
+    assert by_name["on"].checked is True
+    assert by_name["off"].checked is False
+
+
+def test_submission_url_builds_a_get_query_from_default_values() -> None:
+    (form,) = _forms(
+        '<form action="/search" method="get">'
+        '<input name="q" value="shoes">'
+        '<input type="hidden" name="page" value="1">'
+        '<select name="sort"><option value="new" selected>New</option></select>'
+        '<input type="checkbox" name="sale" value="yes" checked>'
+        '<input type="checkbox" name="used" value="yes">'
+        '<input type="submit" value="Go">'
+        '<input type="password" name="pw">'
+        "</form>"
+    )
+    url = submission_url(form)
+    assert url is not None and url.startswith("https://example.com/search?")
+    # deterministic (selectolax groups by tag), value-carrying fields only: no submit, no
+    # password, no unchecked checkbox.
+    assert sorted(url.split("?", 1)[1].split("&")) == ["page=1", "q=shoes", "sale=yes", "sort=new"]
+
+
+def test_submission_url_replaces_an_existing_query_on_the_action() -> None:
+    (form,) = _forms('<form action="/s?old=1" method="get"><input name="q" value="x"></form>')
+    assert submission_url(form) == "https://example.com/s?q=x"
+
+
+def test_submission_url_is_none_for_a_post_form() -> None:
+    (form,) = _forms('<form action="/s" method="post"><input name="q"></form>')
+    assert submission_url(form) is None

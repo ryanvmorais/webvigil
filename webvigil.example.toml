@@ -7,6 +7,8 @@ mode = "passive"          # "passive" (default, safe for production) | "active"
 scope = "host"            # "host" | "subdomains"
 max_pages = 50            # crawler page-count limit
 follow_robots = true      # respect robots.txt during crawling
+submit_forms = true       # submit safe GET forms (search, filters) during the crawl to
+                          # widen coverage; POST forms are never submitted by the crawler
 
 [http]
 concurrency = 8           # max simultaneous requests
@@ -23,6 +25,12 @@ fail_on = "none"          # "none" | "info" | "low" | "medium" | "high" | "criti
 # Active Mode only — required when mode = "active".
 # [active]
 # authorized_by = "Jane Doe / Engagement #1234"
+
+# Authenticated scan (spec 007). Each entry is "name=value" and is sent only on requests to
+# the target host — never off-host, never written to a report or the scan metadata.
+# CLI: --cookie "name=value" (repeatable), which replaces this list.
+[auth]
+cookies = []
 
 # Suppress specific checks by id.
 # [checks]

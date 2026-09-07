@@ -29,7 +29,7 @@ from webvigil.core.result import CheckError, ScanMetadata, ScanResult
 from webvigil.core.target import Target
 from webvigil.core.technology import Technology
 from webvigil.crawler.crawler import Crawler
-from webvigil.crawler.forms import Form, extract_forms
+from webvigil.crawler.forms import Form
 from webvigil.http.client import HttpClient
 
 _PROBE_FAMILIES = frozenset({"vcs", "config", "manifest", "backup", "debug", "sourcemap"})
@@ -55,8 +55,14 @@ class Orchestrator:
         warnings: list[str] = []
         technologies: tuple[Technology, ...] = ()
         async with HttpClient(target, self._config) as http:
-            pages = tuple(await Crawler(http, target, self._config).discover())
-            forms = extract_forms(pages, target)
+            crawler = Crawler(http, target, self._config)
+            pages = tuple(await crawler.discover())
+            forms = crawler.forms
+            if crawler.skipped_destructive:
+                warnings.append(
+                    f"declined to follow {crawler.skipped_destructive} link(s) that look "
+                    "state-changing (authenticated crawl)"
+                )
             check_types = self._select_checks(warnings)
             detections = await self._fingerprint(check_types, http, target, pages, warnings)
             probe_hits = await self._probe_disclosure(check_types, http, target, pages, warnings)
@@ -67,6 +73,7 @@ class Orchestrator:
                 http=http,
                 pages=pages,
                 entry=pages[0],
+                forms=forms,
                 observations=Observations(
                     detections=detections,
                     probe_hits=probe_hits,
@@ -88,6 +95,7 @@ class Orchestrator:
             finished_at=datetime.now(UTC),
             pages_scanned=len(pages),
             counts=ScanResult.severity_counts(deduped),
+            authenticated=bool(self._config.auth.cookies),
         )
         return ScanResult(
             metadata=metadata,

@@ -3,7 +3,8 @@
 No component talks to ``httpx`` directly — they all go through :class:`HttpClient`, so
 politeness, retries, timeouts, and scope enforcement apply uniformly (RF-05, RF-03, RF-04).
 ``request`` carries any HTTP method through the same machinery; ``get`` is a thin wrapper
-over it (spec 006 ADR-9).
+over it (spec 006 ADR-9). Configured ``[auth]`` cookies (spec 007) are attached to requests
+whose host is the target host and to no other.
 """
 
 from __future__ import annotations
@@ -90,6 +91,8 @@ class HttpClient:
     ) -> None:
         self._target = target
         self._config = config
+        # spec 007: attached to target-host requests only, never stored or logged elsewhere.
+        self._cookie_header = config.auth.as_header
         self._guard = ScopeGuard(target)
         self.limiter = RateLimiter(config.http.concurrency, config.http.delay_ms)
         self.stats = HttpStats()
@@ -209,6 +212,16 @@ class HttpClient:
         crafted: bool,
     ) -> httpx.Response:
         idempotent = method in _IDEMPOTENT
+        # The scanner sends exactly the cookies configured in ``[auth]`` and nothing it
+        # picked up implicitly: drop anything the target set via ``Set-Cookie`` so a scan is
+        # deterministic and authentication stays config-driven (spec 007).
+        self._active_client.cookies.clear()
+        req_headers = dict(headers or {})
+        if self._cookie_header and _host_of(url) == self._target.host:
+            existing = req_headers.get("cookie")
+            req_headers["cookie"] = (
+                f"{existing}; {self._cookie_header}" if existing else self._cookie_header
+            )
         last_error: str = "unknown error"
         for attempt in range(_MAX_ATTEMPTS):
             if attempt:
@@ -228,7 +241,7 @@ class HttpClient:
                         url,
                         params=params,  # type: ignore[arg-type]
                         data=data,  # type: ignore[arg-type]
-                        headers=headers,
+                        headers=req_headers,
                     )
             except (httpx.TransportError, httpx.TimeoutException) as exc:
                 last_error = f"{type(exc).__name__}: {exc}"

@@ -88,6 +88,13 @@ def scan(
             help="Send time-delay SQLi payloads during an Active scan (slower). On by default.",
         ),
     ] = None,
+    cookie: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--cookie",
+            help='Send this cookie on in-scope requests ("name=value"). Repeatable.',
+        ),
+    ] = None,
 ) -> None:
     """Scan a target and report findings."""
     if output_format is not None and output_format not in _FORMATS:
@@ -109,6 +116,7 @@ def scan(
             authorized_by=authorized_by,
             probe=probe,
             time_based_sqli=time_based_sqli,
+            cookie=cookie,
         )
     except ConfigError as exc:
         _render.error(str(exc))
@@ -127,7 +135,7 @@ def scan(
         _render.error(str(exc))
         raise typer.Exit(ExitCode.OPERATIONAL) from exc
 
-    _emit(result, output_format, output)
+    _emit(result, output_format, output, cookie_count=len(cfg.auth.cookies))
     raise typer.Exit(int(evaluate(result, cfg.report.fail_on)))
 
 
@@ -175,6 +183,7 @@ def _build_config(
     authorized_by: str | None,
     probe: bool | None,
     time_based_sqli: bool | None,
+    cookie: list[str] | None,
 ) -> ScanConfig:
     base = ScanConfig.load(config)
     scan_overrides: dict[str, object] = {}
@@ -205,11 +214,16 @@ def _build_config(
     if time_based_sqli is not None:
         injection_overrides["time_based_sqli"] = time_based_sqli
 
+    auth_overrides: dict[str, object] = {}
+    if cookie is not None:
+        auth_overrides["cookies"] = cookie
+
     return base.with_overrides(
         scan=scan_overrides,
         http=http_overrides,
         report=report_overrides,
         active=active_overrides,
+        auth=auth_overrides,
         disclosure=disclosure_overrides,
         injection=injection_overrides,
     )
@@ -234,9 +248,15 @@ def _resolve_active_mode(cfg: ScanConfig) -> ScanConfig:
     raise typer.Exit(ExitCode.NOT_AUTHORIZED)
 
 
-def _emit(result: ScanResult, output_format: str | None, output: Path | None) -> None:
+def _emit(
+    result: ScanResult,
+    output_format: str | None,
+    output: Path | None,
+    *,
+    cookie_count: int = 0,
+) -> None:
     if output_format is None:
-        _render.summary(result)
+        _render.summary(result, cookie_count=cookie_count)
         return
     rendered = get_reporter(output_format).render(result)
     if output is not None:
@@ -244,7 +264,7 @@ def _emit(result: ScanResult, output_format: str | None, output: Path | None) ->
         _render.status(f"wrote {output_format} report to {output}")
         return
     sys.stdout.write(rendered + "\n")
-    _render.summary(result)
+    _render.summary(result, cookie_count=cookie_count)
 
 
 def _write_or_print(rendered: str, output: Path | None, output_format: str) -> None:

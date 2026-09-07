@@ -19,6 +19,7 @@ from webvigil.core.technology import DetectionMethod, Technology
 if TYPE_CHECKING:
     from webvigil.checks.disclosure.probe import ProbeHit
     from webvigil.checks.injection.models import InjectionHit
+    from webvigil.crawler.forms import Form
     from webvigil.http.client import HttpClient, RedirectHop, Response
 
 
@@ -114,13 +115,15 @@ class Observations:
 
 @dataclass(frozen=True, slots=True)
 class ScanContext:
-    """Everything a check needs: config, target, the HTTP client, and discovered pages."""
+    """Everything a check needs: config, target, the HTTP client, discovered pages, and the
+    parsed ``<form>`` inventory (spec 007 — ``forms``, read-only during the check run)."""
 
     config: ScanConfig
     target: Target
     http: HttpClient
     pages: tuple[Page, ...]
     entry: Page
+    forms: tuple[Form, ...] = ()
     observations: Observations = field(default_factory=Observations, compare=False)
     _by_url: dict[str, Page] = field(default_factory=dict, compare=False)
 

@@ -23,7 +23,13 @@ _DISABLED = ["tls.https"]
 def scan(monkeypatch: pytest.MonkeyPatch):
     holder: dict[str, object] = {}
 
-    async def _run(profile: str, *, probe: bool = False, active: bool = False) -> ScanResult:
+    async def _run(
+        profile: str,
+        *,
+        probe: bool = False,
+        active: bool = False,
+        cookies: list[str] | None = None,
+    ) -> ScanResult:
         app = make_app(profile)
         holder["app"] = app
         transport = httpx.ASGITransport(app=app)
@@ -38,6 +44,8 @@ def scan(monkeypatch: pytest.MonkeyPatch):
             raw["scan"] = {"mode": "active"}
             raw["active"] = {"authorized_by": "integration test"}
             raw["injection"] = {"time_based_delay_s": 2}
+        if cookies is not None:
+            raw["auth"] = {"cookies": cookies}
         return await Orchestrator(ScanConfig.model_validate(raw)).run(_TARGET)
 
     _run.holder = holder  # type: ignore[attr-defined]
@@ -112,7 +120,9 @@ async def test_hardened_profile_reports_nothing(scan) -> None:
 async def test_crawler_reaches_the_linked_pages(scan) -> None:
     result = await scan("hardened")
     # /, /about, /contact + the four injectable endpoints linked from the index (spec 006)
-    assert result.metadata.pages_scanned == 7
+    # + the GET /search?q= the crawler submits from the search form + /account (→ /login for
+    # an anonymous scan) (spec 007 RF-05)
+    assert result.metadata.pages_scanned == 9
 
 
 # --- spec 006: active injection -------------------------------------------------
@@ -146,10 +156,79 @@ async def test_hardened_profile_active_reports_nothing(scan) -> None:
 async def test_the_login_form_is_never_fuzzed(scan) -> None:
     await scan("insecure", active=True)
     log = scan.holder["app"].state.requests  # type: ignore[attr-defined]
-    assert not any(" /login" in entry for entry in log)
+    # The crawler may GET /login (it is the redirect target of /account), but the login
+    # form is never submitted with a payload.
+    assert not any(entry.startswith("POST /login") for entry in log)
+    assert not any(entry.startswith("GET /login?") and entry != "GET /login?" for entry in log)
 
 
 async def test_active_injection_scan_is_deterministic(scan) -> None:
     first = {(f.check_id, f.fingerprint) for f in (await scan("insecure", active=True)).findings}
     second = {(f.check_id, f.fingerprint) for f in (await scan("insecure", active=True)).findings}
     assert first == second
+
+
+# --- spec 007: authenticated scanning, CSRF, form-driven crawling ---------------
+
+
+def _urls(result: ScanResult) -> set[str]:
+    return {f.location.url for f in result.findings}
+
+
+async def test_authenticated_scan_reaches_the_account_area(scan) -> None:
+    result = await scan("insecure", cookies=["session=abc123"])
+    log = scan.holder["app"].state.requests  # type: ignore[attr-defined]
+    assert "GET /account?" in log
+    assert "GET /account/settings?" in log
+    assert result.metadata.authenticated is True
+
+
+async def test_anonymous_scan_stops_at_the_login_redirect(scan) -> None:
+    await scan("insecure")
+    log = scan.holder["app"].state.requests  # type: ignore[attr-defined]
+    assert not any("/account/settings" in e for e in log)
+
+
+async def test_crawler_submits_the_get_search_form(scan) -> None:
+    await scan("insecure")
+    log = scan.holder["app"].state.requests  # type: ignore[attr-defined]
+    assert any(e.startswith("GET /search?q=") for e in log)
+
+
+async def test_crawler_never_submits_post_forms_or_logout(scan) -> None:
+    await scan("insecure", cookies=["session=abc123"])  # authenticated, passive
+    log = scan.holder["app"].state.requests  # type: ignore[attr-defined]
+    assert not any(e.startswith("POST /profile") for e in log)
+    assert not any(e.startswith("POST /comment") for e in log)
+    assert not any(e.startswith("POST /login") for e in log)
+    assert not any("/logout" in e for e in log)
+
+
+async def test_csrf_check_flags_the_tokenless_profile_form(scan) -> None:
+    result = await scan("insecure", cookies=["session=abc123"])
+    csrf = [f for f in result.findings if f.check_id == "csrf.form.no-token"]
+    assert len(csrf) == 1
+    assert csrf[0].location.url.endswith("/profile")
+    assert csrf[0].location.method == "POST"
+
+
+async def test_hardened_authenticated_scan_reports_no_csrf(scan) -> None:
+    result = await scan("hardened", cookies=["__Host-session=abc123"])
+    assert not any(f.check_id == "csrf.form.no-token" for f in result.findings)
+
+
+async def test_cookie_value_never_appears_in_any_report(scan) -> None:
+    from webvigil.reporting import get_reporter
+
+    result = await scan("insecure", cookies=["session=s3cr3tvalue"])
+    for fmt in ("json", "sarif", "html", "md"):
+        assert "s3cr3tvalue" not in get_reporter(fmt).render(result)
+    assert all("s3cr3tvalue" not in w for w in result.warnings)
+
+
+async def test_authenticated_scan_is_deterministic(scan) -> None:
+    async def _once() -> set[tuple[str, str]]:
+        result = await scan("insecure", cookies=["session=abc123"])
+        return {(f.check_id, f.fingerprint) for f in result.findings}
+
+    assert await _once() == await _once()

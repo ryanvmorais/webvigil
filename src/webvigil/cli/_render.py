@@ -38,7 +38,7 @@ def banner(authorized_by: str) -> None:
     )
 
 
-def summary(result: ScanResult) -> None:
+def summary(result: ScanResult, *, cookie_count: int = 0) -> None:
     meta = result.metadata
     table = Table(title=f"WebVigil — {meta.target}", title_justify="left")
     table.add_column("Severity")
@@ -75,6 +75,18 @@ def summary(result: ScanResult) -> None:
             _console.print(
                 f"[red]Active injection: {injected} finding{'' if injected == 1 else 's'}[/]"
             )
+
+    if cookie_count:
+        _console.print(
+            f"[dim]Authenticated scan: {cookie_count} cookie{'' if cookie_count == 1 else 's'} "
+            "supplied[/]"
+        )
+    csrf_forms = sum(1 for f in result.findings if f.check_id == "csrf.form.no-token")
+    if csrf_forms:
+        _console.print(
+            f"[yellow]CSRF: {csrf_forms} form{'' if csrf_forms == 1 else 's'} without an "
+            "anti-CSRF token[/]"
+        )
 
     for finding in result.findings:
         style = _SEVERITY_STYLE[finding.severity]

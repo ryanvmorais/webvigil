@@ -1,9 +1,10 @@
 """A minimal Starlette target app with an ``insecure`` and a ``hardened`` profile.
 
 Covers spec 001 (headers/cookies/CORS/revealing), spec 004 (a vulnerable jQuery), spec 005
-(exposed .git/.env/backups, a listing, a stack trace) and spec 006 (reflected XSS, SQLi,
-path traversal, open redirect). The app is plain HTTP by nature, so the integration test
-disables ``tls.https``; TLS cases live in the socket-based unit tests.
+(exposed .git/.env/backups, a listing, a stack trace), spec 006 (reflected XSS, SQLi, path
+traversal, open redirect) and spec 007 (a cookie-gated ``/account`` area, a tokenless POST
+form, a ``/logout`` link the crawler must not follow). The app is plain HTTP by nature, so
+the integration test disables ``tls.https``; TLS cases live in the socket-based unit tests.
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ from starlette.responses import HTMLResponse, PlainTextResponse, RedirectRespons
 from starlette.routing import Route
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-_LINKS = '<a href="/about">about</a> <a href="/contact">contact</a>'
+_LINKS = '<a href="/about">about</a> <a href="/contact">contact</a> <a href="/account">account</a>'
 # spec 006 (RF-20): links to the injectable endpoints, and the three forms. Both profiles
 # link them so an Active scan of the hardened profile actually fuzzes and finds nothing.
 _INJECTION_LINKS = (
@@ -188,6 +189,49 @@ def _login(request: Request) -> Response:
     return HTMLResponse("<!doctype html><p>Sign in</p>")
 
 
+# --- spec 007: the cookie-gated account area (RF-13) ------------------------------
+
+_ACCOUNT_INSECURE = (
+    "<!doctype html><html><body><h1>Account</h1>"
+    '<a href="/account/settings">settings</a> <a href="/logout">log out</a>'
+    '<form method="post" action="/profile"><input name="nickname"></form>'
+    "</body></html>"
+)
+_ACCOUNT_HARDENED = (
+    "<!doctype html><html><body><h1>Account</h1>"
+    '<a href="/account/settings">settings</a> <a href="/logout">log out</a>'
+    '<form method="post" action="/profile">'
+    '<input type="hidden" name="csrf_token" value="tok123"><input name="nickname"></form>'
+    "</body></html>"
+)
+
+
+def _account(cookie_name: str, body: str) -> Callable[[Request], Response]:
+    def view(request: Request) -> Response:
+        if request.cookies.get(cookie_name) != "abc123":
+            return RedirectResponse("/login", status_code=302)
+        return HTMLResponse(body)
+
+    return view
+
+
+def _account_settings(cookie_name: str) -> Callable[[Request], Response]:
+    def view(request: Request) -> Response:
+        if request.cookies.get(cookie_name) != "abc123":
+            return RedirectResponse("/login", status_code=302)
+        return HTMLResponse("<!doctype html><html><body><p>settings</p></body></html>")
+
+    return view
+
+
+def _profile(request: Request) -> Response:
+    return HTMLResponse("<!doctype html><p>updated</p>")
+
+
+def _logout(request: Request) -> Response:
+    return RedirectResponse("/", status_code=302)
+
+
 # --- spec 006: the safe equivalents (hardened) -----------------------------------
 
 
@@ -241,6 +285,10 @@ _INJECTION_ROUTES = {
         ("/download", _download_insecure, ["GET"]),
         ("/go", _go_insecure, ["GET"]),
         ("/comment", _comment_insecure, ["POST"]),
+        ("/account", _account("session", _ACCOUNT_INSECURE), ["GET"]),
+        ("/account/settings", _account_settings("session"), ["GET"]),
+        ("/profile", _profile, ["POST"]),
+        ("/logout", _logout, ["GET"]),
     ),
     "hardened": (
         ("/search", _search_hardened, ["GET"]),
@@ -248,6 +296,10 @@ _INJECTION_ROUTES = {
         ("/download", _download_hardened, ["GET"]),
         ("/go", _go_hardened, ["GET"]),
         ("/comment", _comment_hardened, ["POST"]),
+        ("/account", _account("__Host-session", _ACCOUNT_HARDENED), ["GET"]),
+        ("/account/settings", _account_settings("__Host-session"), ["GET"]),
+        ("/profile", _profile, ["POST"]),
+        ("/logout", _logout, ["GET"]),
     ),
 }
 

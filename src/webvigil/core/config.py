@@ -10,7 +10,7 @@ import tomllib
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 
 from webvigil.core.errors import ConfigError
 from webvigil.core.findings import ScanMode
@@ -29,6 +29,9 @@ class ScanSection(_Section):
     scope: Scope = Scope.HOST
     max_pages: int = 50
     follow_robots: bool = True
+    # Submit safe GET forms (search, filters) during the crawl (spec 007, RF-06). POST forms
+    # are never submitted by the crawler.
+    submit_forms: bool = True
 
 
 class HttpSection(_Section):
@@ -47,6 +50,31 @@ class ReportSection(_Section):
 
 class ActiveSection(_Section):
     authorized_by: str
+
+
+class AuthSection(_Section):
+    """Static credentials for an authenticated scan (spec 007). Cookies only in v0.7.
+
+    Each ``cookies`` entry is a ``name=value`` string. :class:`~webvigil.http.client.HttpClient`
+    attaches them to requests whose host is the target host and to no other, and no cookie
+    value ever reaches a report, a log line, or the scan metadata (RF-01, RF-02).
+    """
+
+    cookies: list[str] = []
+
+    @field_validator("cookies")
+    @classmethod
+    def _check_pairs(cls, raw: list[str]) -> list[str]:
+        for entry in raw:
+            name, sep, _value = entry.partition("=")
+            if not sep or not name.strip():
+                raise ValueError(f"invalid cookie {entry!r}: expected 'name=value'")
+        return raw
+
+    @property
+    def as_header(self) -> str:
+        """The joined ``Cookie:`` header value, or ``""`` when no cookies are configured."""
+        return "; ".join(entry.strip() for entry in self.cookies)
 
 
 class ChecksSection(_Section):
@@ -75,6 +103,7 @@ class ScanConfig(_Section):
     http: HttpSection = HttpSection()
     report: ReportSection = ReportSection()
     active: ActiveSection | None = None
+    auth: AuthSection = AuthSection()
     checks: ChecksSection = ChecksSection()
     disclosure: DisclosureSection = DisclosureSection()
     injection: InjectionSection = InjectionSection()
@@ -109,8 +138,8 @@ class ScanConfig(_Section):
 
         Only keys the caller actually passes are applied, so unset CLI flags never clobber
         file values. ``sections`` maps a section name (``scan``, ``http``, ``report``,
-        ``active``, ``checks``, ``disclosure``, ``injection``) to a dict of the fields to
-        override.
+        ``active``, ``auth``, ``checks``, ``disclosure``, ``injection``) to a dict of the
+        fields to override.
         """
         merged = self.model_dump()
         for name, values in sections.items():

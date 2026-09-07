@@ -125,3 +125,90 @@ async def test_out_of_scope_links_are_not_followed(httpx_mock: object) -> None:
     pages = await _discover(ScanConfig(), router, httpx_mock)
     assert all("evil.test" not in p.url for p in pages)
     assert "https://evil.test/x" not in router.seen
+
+
+# --- spec 007: form-driven crawling and the safety heuristic (RF-03, RF-05, RF-06) ---
+
+_AUTHED = ScanConfig.model_validate({"auth": {"cookies": ["session=abc"]}})
+
+
+async def _crawl(config: ScanConfig, router: _Router, httpx_mock: object) -> Crawler:
+    httpx_mock.add_callback(router, is_reusable=True)  # type: ignore[attr-defined]
+    async with HttpClient(Target.parse(_SEED), config) as http:
+        crawler = Crawler(http, Target.parse(_SEED), config)
+        await crawler.discover()
+        return crawler
+
+
+async def test_a_get_search_form_is_submitted(httpx_mock: object) -> None:
+    router = _Router(
+        {
+            _SEED: _page('<form method="get" action="/search"><input name="q"></form>'),
+            "https://example.com/search?q=": _page(_html()),
+        }
+    )
+    crawler = await _crawl(ScanConfig(), router, httpx_mock)
+    assert "https://example.com/search?q=" in router.seen
+    assert any(f.action == "https://example.com/search" for f in crawler.forms)
+
+
+async def test_a_post_form_is_recorded_but_never_submitted(httpx_mock: object) -> None:
+    form = '<form method="post" action="/comment"><textarea name="b"></textarea></form>'
+    router = _Router({_SEED: _page(form)})
+    crawler = await _crawl(ScanConfig(), router, httpx_mock)
+    assert [f.method for f in crawler.forms] == ["POST"]
+    assert not any("/comment" in url for url in router.seen)
+
+
+async def test_submit_forms_false_disables_form_submission(httpx_mock: object) -> None:
+    router = _Router({_SEED: _page('<form method="get" action="/search"><input name="q"></form>')})
+    config = ScanConfig.model_validate({"scan": {"submit_forms": False}})
+    crawler = await _crawl(config, router, httpx_mock)
+    assert not any("/search" in url for url in router.seen)
+    assert len(crawler.forms) == 1  # still inventoried
+
+
+async def test_logout_links_are_never_followed(httpx_mock: object) -> None:
+    router = _Router(
+        {_SEED: _page(_html("/logout", "/ok")), "https://example.com/ok": _page(_html())}
+    )
+    for config in (ScanConfig(), _AUTHED):
+        router.seen.clear()
+        await _crawl(config, router, httpx_mock)
+        assert "https://example.com/logout" not in router.seen
+
+
+async def test_destructive_links_are_skipped_only_when_authenticated(httpx_mock: object) -> None:
+    links = _html("/items/5/delete", "/ok")
+    router = _Router(
+        {
+            _SEED: _page(links),
+            "https://example.com/items/5/delete": _page(_html()),
+            "https://example.com/ok": _page(_html()),
+        }
+    )
+    router.seen.clear()
+    crawler = await _crawl(_AUTHED, router, httpx_mock)
+    assert "https://example.com/items/5/delete" not in router.seen
+    assert crawler.skipped_destructive == 1
+
+    router.seen.clear()
+    crawler = await _crawl(ScanConfig(), router, httpx_mock)
+    assert "https://example.com/items/5/delete" in router.seen
+    assert crawler.skipped_destructive == 0
+
+
+async def test_submitted_form_urls_count_against_max_pages(httpx_mock: object) -> None:
+    router = _Router(
+        {
+            _SEED: _page(
+                _html("/a") + '<form method="get" action="/search"><input name="q"></form>'
+            ),
+            "https://example.com/a": _page(_html()),
+            "https://example.com/search?q=": _page(_html()),
+        }
+    )
+    pages = await _discover(
+        ScanConfig.model_validate({"scan": {"max_pages": 2}}), router, httpx_mock
+    )
+    assert len(pages) == 2

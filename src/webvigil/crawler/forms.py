@@ -1,16 +1,19 @@
-"""Form discovery for the active-injection pass (spec 006, RF-05, ADR-3).
+"""Form discovery (spec 006 RF-05; spec 007 RF-05).
 
 Parses ``<form>`` elements out of the page bodies the crawler already fetched — it issues
-**no** requests of its own. The crawler stays focused on ``<a href>`` discovery; the
-orchestrator calls :func:`extract_forms` right after the crawl and hands the result to the
-injection engine. Deciding which forms to fuzz (the authentication / destruction heuristic)
-is the injection package's job, not this module's.
+**no** requests of its own. :func:`parse_forms` handles one page; the crawler calls it per
+page during ``discover()`` (spec 007 ADR-2) both to build the ``<form>`` inventory and to
+submit safe ``GET`` forms. :func:`extract_forms` is the deduped whole-crawl wrapper, kept
+for tests and any external caller.
+
+Deciding which forms to fuzz or skip (the authentication / destruction heuristics) is
+:mod:`webvigil.crawler.safety` and the injection package's job, not this module's.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from urllib.parse import urljoin
+from urllib.parse import urlencode, urljoin, urlsplit, urlunsplit
 
 from selectolax.parser import HTMLParser, Node
 
@@ -18,6 +21,11 @@ from webvigil.core.context import Page
 from webvigil.core.target import Target, normalize_url
 
 _DEFAULT_ENCTYPE = "application/x-www-form-urlencoded"
+
+# <input type>s (and pseudo-types) whose current value the crawler submits with a GET form.
+_SUBMIT_VALUE_TYPES = frozenset(
+    {"", "text", "search", "email", "url", "tel", "number", "hidden", "date", "textarea", "select"}
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,6 +35,7 @@ class FormField:
     name: str
     type: str  # lower-cased <input type>, or "textarea" / "select"
     value: str
+    checked: bool = False  # <input type=checkbox|radio checked>
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,23 +49,48 @@ class Form:
     source_url: str
 
 
+def parse_forms(page: Page, target: Target) -> list[Form]:
+    """Every in-scope ``<form>`` on **one** crawled HTML page (no cross-page de-dup)."""
+    if not (page.ok and page.is_html and page.text):
+        return []
+    forms: list[Form] = []
+    for node in HTMLParser(page.text).css("form"):
+        form = _form_from_node(node, page.url)
+        if form is not None and target.in_scope(form.action):
+            forms.append(form)
+    return forms
+
+
 def extract_forms(pages: tuple[Page, ...], target: Target) -> tuple[Form, ...]:
-    """Every in-scope ``<form>`` on the crawled HTML pages, de-duplicated."""
+    """Every in-scope ``<form>`` across the crawled HTML pages, de-duplicated."""
     seen: set[tuple[str, str, tuple[str, ...]]] = set()
     forms: list[Form] = []
     for page in pages:
-        if not (page.ok and page.is_html and page.text):
-            continue
-        for node in HTMLParser(page.text).css("form"):
-            form = _form_from_node(node, page.url)
-            if form is None or not target.in_scope(form.action):
-                continue
+        for form in parse_forms(page, target):
             key = (form.method, form.action, tuple(f.name for f in form.fields))
-            if key in seen:
-                continue
-            seen.add(key)
-            forms.append(form)
+            if key not in seen:
+                seen.add(key)
+                forms.append(form)
     return tuple(forms)
+
+
+def submission_url(form: Form) -> str | None:
+    """The ``GET`` URL ``form`` submits to with its default values, or ``None`` when it is
+    not a form the crawler should submit (any non-``GET`` method).
+
+    The form's default field values replace whatever query the action already carries;
+    fields are taken in a stable parser order so the URL is deterministic (RNF-04).
+    """
+    if form.method != "GET":
+        return None
+    pairs = [
+        (field.name, field.value)
+        for field in form.fields
+        if field.type in _SUBMIT_VALUE_TYPES
+        or (field.type in ("checkbox", "radio") and field.checked)
+    ]
+    split = urlsplit(form.action)
+    return urlunsplit((split.scheme, split.netloc, split.path, urlencode(pairs), ""))
 
 
 def _form_from_node(node: Node, page_url: str) -> Form | None:
@@ -71,7 +105,14 @@ def _form_from_node(node: Node, page_url: str) -> Form | None:
         name = (child.attributes.get("name") or "").strip()
         if not name:
             continue
-        fields.append(FormField(name=name, type=_field_type(child), value=_field_value(child)))
+        fields.append(
+            FormField(
+                name=name,
+                type=_field_type(child),
+                value=_field_value(child),
+                checked="checked" in child.attributes,
+            )
+        )
     if not fields:
         return None
     return Form(

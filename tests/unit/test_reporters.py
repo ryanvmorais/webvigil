@@ -43,6 +43,16 @@ def test_load_result_reads_a_file(tmp_path: Path) -> None:
     assert load_result(path) == _result()
 
 
+def test_json_carries_the_authenticated_flag_and_round_trips() -> None:
+    anon = json.loads(get_reporter("json").render(_result()))
+    assert anon["metadata"]["authenticated"] is False
+
+    authed = make_result(make_finding(check_id="csrf.form.no-token"), authenticated=True)
+    rendered = get_reporter("json").render(authed)
+    assert json.loads(rendered)["metadata"]["authenticated"] is True
+    assert load_result_from_string(rendered) == authed
+
+
 def test_sarif_validates_against_the_2_1_0_schema() -> None:
     document = json.loads(get_reporter("sarif").render(_result()))
     jsonschema.validate(document, _SARIF_SCHEMA)

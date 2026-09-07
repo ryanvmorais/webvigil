@@ -115,3 +115,41 @@ def test_injection_override_wins_over_file() -> None:
     base = ScanConfig.model_validate({"injection": {"time_based_sqli": True}})
     merged = base.with_overrides(injection={"time_based_sqli": False})
     assert merged.injection.time_based_sqli is False
+
+
+def test_auth_cookies_default_empty_and_round_trip(tmp_path: Path) -> None:
+    assert ScanConfig().auth.cookies == []
+    assert ScanConfig().auth.as_header == ""
+    path = tmp_path / "webvigil.toml"
+    path.write_text("[auth]\ncookies = ['session=abc', 'csrf=xyz']\n", "utf-8")
+    loaded = ScanConfig.load(path).auth
+    assert loaded.cookies == ["session=abc", "csrf=xyz"]
+    assert loaded.as_header == "session=abc; csrf=xyz"
+
+
+@pytest.mark.parametrize("bad", ["sessionabc", "=value", "   =v"])
+def test_auth_cookie_without_a_valid_pair_is_rejected(tmp_path: Path, bad: str) -> None:
+    path = tmp_path / "webvigil.toml"
+    path.write_text(f"[auth]\ncookies = ['{bad}']\n", "utf-8")
+    with pytest.raises(ConfigError):
+        ScanConfig.load(path)
+
+
+def test_unknown_auth_key_is_rejected(tmp_path: Path) -> None:
+    path = tmp_path / "webvigil.toml"
+    path.write_text("[auth]\ncookies = []\nheaders = ['X: 1']\n", "utf-8")
+    with pytest.raises(ConfigError):
+        ScanConfig.load(path)
+
+
+def test_auth_cookies_override_replaces_the_file_list() -> None:
+    base = ScanConfig.model_validate({"auth": {"cookies": ["a=1", "b=2"]}})
+    merged = base.with_overrides(auth={"cookies": ["c=3"]})
+    assert merged.auth.cookies == ["c=3"]
+
+
+def test_submit_forms_defaults_on_and_round_trips(tmp_path: Path) -> None:
+    assert ScanConfig().scan.submit_forms is True
+    path = tmp_path / "webvigil.toml"
+    path.write_text("[scan]\nsubmit_forms = false\n", "utf-8")
+    assert ScanConfig.load(path).scan.submit_forms is False
