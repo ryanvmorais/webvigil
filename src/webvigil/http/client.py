@@ -1,10 +1,12 @@
-"""The async HTTP client wrapper: retries, manual redirects, and the scope guard.
+"""
+The async HTTP client wrapper: retries, manual redirects, and the scope guard.
 
-No component talks to ``httpx`` directly — they all go through :class:`HttpClient`, so
-politeness, retries, timeouts, and scope enforcement apply uniformly (RF-05, RF-03, RF-04).
-``request`` carries any HTTP method through the same machinery; ``get`` is a thin wrapper
-over it (spec 006 ADR-9). Configured ``[auth]`` cookies (spec 007) are attached to requests
-whose host is the target host and to no other.
+No component talks to ``httpx`` directly — they all go through
+:class:`HttpClient`, so politeness, retries, timeouts, and scope enforcement
+apply uniformly (RF-05, RF-03, RF-04). :meth:`HttpClient.request` carries any
+HTTP method through the same machinery; :meth:`HttpClient.get` is a thin wrapper
+over it (spec 006 ADR-9). Configured ``[auth]`` cookies (spec 007) are attached
+to requests whose host is the target host and to no other.
 """
 
 from __future__ import annotations
@@ -40,7 +42,17 @@ BACKOFF_JITTER_S = 0.25
 
 @dataclass(slots=True)
 class HttpStats:
-    """Counters for one scan's HTTP activity, surfaced in reports and tests."""
+    """
+    Counters for one scan's HTTP activity, surfaced in reports and tests.
+
+    Attributes:
+        requests (int): Total requests actually sent (including retries).
+        retries (int): Requests that were re-sent after a transport error or a
+            retryable status.
+        blocked_out_of_scope (int): Requests refused by the scope guard.
+        crafted_requests (int): Requests that carried an injection payload or
+            used a non-idempotent method.
+    """
 
     requests: int = 0
     retries: int = 0
@@ -50,6 +62,15 @@ class HttpStats:
 
 @dataclass(frozen=True, slots=True)
 class RedirectHop:
+    """
+    One redirect the client followed while staying in scope.
+
+    Attributes:
+        from_url (str): URL that returned the redirect.
+        to_url (str): URL the ``Location`` header pointed to.
+        status_code (int): The 3xx status of the redirecting response.
+    """
+
     from_url: str
     to_url: str
     status_code: int
@@ -57,7 +78,25 @@ class RedirectHop:
 
 @dataclass(frozen=True, eq=False, slots=True)
 class Response:
-    """A thin, read-only view of one fetched URL (after in-scope redirects)."""
+    """
+    A thin, read-only view of one fetched URL (after in-scope redirects).
+
+    Attributes:
+        url (str): Final URL after in-scope redirects.
+        requested_url (str): URL originally asked for.
+        status_code (int): HTTP status of the final response.
+        headers (httpx.Headers): Response headers of the final response.
+        text (str): Decoded response body.
+        content (bytes): Raw response body.
+        elapsed_ms (float): Wall-clock time for the final request, in
+            milliseconds.
+        history (tuple[RedirectHop, ...]): Redirect hops followed. Defaults to
+            empty.
+        redirected_out_of_scope (bool): ``True`` when a redirect left scope and
+            was not followed. Defaults to ``False``.
+        final_location (str | None): The out-of-scope ``Location`` that was not
+            followed, when applicable.
+    """
 
     url: str
     requested_url: str
@@ -72,15 +111,31 @@ class Response:
 
     @property
     def is_html(self) -> bool:
+        """
+        Returns:
+            bool: ``True`` when the response ``Content-Type`` names HTML.
+        """
         return "html" in self.headers.get("content-type", "").lower()
 
 
 def _host_of(url: str) -> str:
+    """
+    Args:
+        url (str): An absolute URL.
+
+    Returns:
+        str: The lower-cased host, or ``""`` when the URL has none.
+    """
     return (urlsplit(url).hostname or "").lower()
 
 
 class HttpClient:
-    """Owns one ``httpx.AsyncClient`` and the shared rate limiter for a scan."""
+    """
+    Owns one ``httpx.AsyncClient`` and the shared rate limiter for a scan.
+
+    Must be used as an async context manager: the underlying client is created
+    on ``__aenter__`` and closed on ``__aexit__``.
+    """
 
     def __init__(
         self,
@@ -89,6 +144,16 @@ class HttpClient:
         *,
         transport: httpx.BaseTransport | httpx.AsyncBaseTransport | None = None,
     ) -> None:
+        """
+        Args:
+            target (Target): The normalized target; its scope rule guards every
+                request.
+            config (ScanConfig): The resolved scan configuration (concurrency,
+                delay, timeout, TLS verification, ``[auth]`` cookies).
+            transport (httpx.BaseTransport | httpx.AsyncBaseTransport | None):
+                Test seam — an ``httpx`` ``ASGITransport`` / ``MockTransport``.
+                ``None`` in normal operation.
+        """
         self._target = target
         self._config = config
         # spec 007: attached to target-host requests only, never stored or logged elsewhere.
@@ -100,6 +165,12 @@ class HttpClient:
         self._client: httpx.AsyncClient | None = None
 
     async def __aenter__(self) -> HttpClient:
+        """
+        Open the underlying ``httpx.AsyncClient``.
+
+        Returns:
+            HttpClient: This instance, ready to issue requests.
+        """
         self._client = httpx.AsyncClient(
             http2=True,
             follow_redirects=False,
@@ -116,12 +187,20 @@ class HttpClient:
         exc: BaseException | None,
         tb: TracebackType | None,
     ) -> None:
+        """Close the underlying ``httpx.AsyncClient`` if it is open."""
         if self._client is not None:
             await self._client.aclose()
             self._client = None
 
     @property
     def _active_client(self) -> httpx.AsyncClient:
+        """
+        Returns:
+            httpx.AsyncClient: The open client.
+
+        Raises:
+            RuntimeError: When accessed outside the async context manager.
+        """
         if self._client is None:
             raise RuntimeError("HttpClient must be used as an async context manager")
         return self._client
@@ -133,7 +212,23 @@ class HttpClient:
         headers: dict[str, str] | None = None,
         allow_out_of_scope: bool = False,
     ) -> Response:
-        """Fetch ``url`` with a GET, following redirects only while they stay in scope."""
+        """
+        Fetch ``url`` with a GET, following redirects only while they stay in scope.
+
+        Args:
+            url (str): The absolute URL to fetch.
+            headers (dict[str, str] | None): Extra request headers.
+            allow_out_of_scope (bool): Skip the scope guard for this request.
+                Defaults to ``False``.
+
+        Returns:
+            Response: The final response after in-scope redirects.
+
+        Raises:
+            OutOfScopeError: When ``url`` is out of scope and
+                ``allow_out_of_scope`` is ``False``.
+            RequestFailed: When the request fails after exhausting retries.
+        """
         return await self.request(
             "GET", url, headers=headers, allow_out_of_scope=allow_out_of_scope
         )
@@ -149,12 +244,32 @@ class HttpClient:
         allow_out_of_scope: bool = False,
         crafted: bool = False,
     ) -> Response:
-        """Issue ``method url`` through the scope guard, rate limiter, retries, and the
+        """
+        Issue ``method url`` through the scope guard, rate limiter, retries, and the
         in-scope-only manual redirect loop.
 
-        ``params`` is merged into the query string; ``data`` is a urlencoded form body.
-        A 301/302/303 redirect drops the method to GET and drops both; a 307/308 replays
-        them. ``crafted`` marks an injection request for the ``crafted_requests`` counter.
+        Args:
+            method (str): HTTP method; case-insensitive.
+            url (str): The absolute URL to request.
+            params (dict[str, str] | list[tuple[str, str]] | None): Merged into
+                the query string.
+            data (dict[str, str] | list[tuple[str, str]] | None): A urlencoded
+                form body.
+            headers (dict[str, str] | None): Extra request headers.
+            allow_out_of_scope (bool): Skip the scope guard for this request.
+                Defaults to ``False``.
+            crafted (bool): Mark this as an injection request for the
+                ``crafted_requests`` counter. Defaults to ``False``.
+
+        Returns:
+            Response: The final response. A 301/302/303 redirect drops the
+                method to GET and drops ``params`` and ``data``; a 307/308
+                replays them.
+
+        Raises:
+            OutOfScopeError: When ``url`` is out of scope and
+                ``allow_out_of_scope`` is ``False``.
+            RequestFailed: When the request fails after exhausting retries.
         """
         method = method.upper()
         if not allow_out_of_scope and not self._guard.allows(url):
@@ -211,6 +326,28 @@ class HttpClient:
         data: _Params | None,
         crafted: bool,
     ) -> httpx.Response:
+        """
+        Send one request with retry and the ``[auth]`` cookie handling, no redirect loop.
+
+        Idempotent methods are retried on a transport error and on a retryable
+        5xx; a non-idempotent method is retried only on a pre-send connect
+        error, never after a read timeout.
+
+        Args:
+            method (str): Upper-cased HTTP method.
+            url (str): The absolute URL to request.
+            headers (dict[str, str] | None): Extra request headers.
+            params (dict[str, str] | list[tuple[str, str]] | None): Query
+                parameters.
+            data (dict[str, str] | list[tuple[str, str]] | None): Form body.
+            crafted (bool): Whether to count this against ``crafted_requests``.
+
+        Returns:
+            httpx.Response: The raw response.
+
+        Raises:
+            RequestFailed: When every attempt fails.
+        """
         idempotent = method in _IDEMPOTENT
         # The scanner sends exactly the cookies configured in ``[auth]`` and nothing it
         # picked up implicitly: drop anything the target set via ``Set-Cookie`` so a scan is

@@ -1,4 +1,10 @@
-"""HTTP layer: async client wrapper, rate limiting, retries, and the scope guard."""
+"""
+HTTP layer: async client wrapper, rate limiting, retries, and the scope guard.
+
+Every outbound request in the engine goes through :class:`~webvigil.http.client.HttpClient`,
+so politeness, retries, timeouts, and scope enforcement apply uniformly no
+matter which component is talking to the target.
+"""
 
 from __future__ import annotations
 
