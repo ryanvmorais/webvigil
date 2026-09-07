@@ -41,14 +41,15 @@ be illegal. See [SECURITY.md](SECURITY.md).
 | `v0.6` | Active Mode: injection testing — reflected XSS, SQL injection (error/boolean/time), path traversal, open redirect ([docs](docs/active-injection.md)) | shipped |
 | `v0.7` | Authenticated scanning (static cookies), CSRF detection, and form-driven crawling ([docs](docs/authenticated-scanning.md)) | shipped |
 | `v0.8` | Stored / persistent XSS: opt-in two-phase inject-then-recrawl detection ([docs](docs/active-injection.md#stored-xss----stored-xss-opt-in)) | shipped |
+| `v0.9` | In-band SSRF: cloud metadata service, loopback / internal resources, `file://` — detected from the target's own responses ([docs](docs/active-injection.md#ssrf--cloud-metadata-loopback-file)) | shipped |
 | `v0.10` | Opt-in OSV.dev online advisory lookup for dependency fingerprinting, augmenting the vendored Retire.js database ([docs](docs/dependency-fingerprinting.md#osvdev-online-provider---osv-online)) | shipped |
 
-> Stored XSS shipped in `v0.8` (opt-in `--stored-xss`); the OSV.dev online advisory
-> provider shipped in `v0.10` (opt-in `--osv-online`). SSRF is still pending — it needs an
-> out-of-band collaborator, which the "engine talks only to the target" rule rules out
-> until a spec adds one. Automated login-form flows, auth headers, and session-security
-> tests were on the original `v0.7` line and moved to a follow-up spec — each needs the
-> stateful login flow or Active Mode.
+> Stored XSS shipped in `v0.8` (opt-in `--stored-xss`); in-band SSRF in `v0.9`; the OSV.dev
+> online advisory provider in `v0.10` (opt-in `--osv-online`). **Blind SSRF** is still
+> pending — it needs an out-of-band collaborator, which the "engine talks only to the
+> target" rule rules out until a spec adds an opt-in one. Automated login-form flows, auth
+> headers, and session-security tests were on the original `v0.7` line and moved to a
+> follow-up spec — each needs the stateful login flow or Active Mode.
 
 ---
 
@@ -61,7 +62,7 @@ uv sync
 uv run webvigil scan https://example.com
 uv run webvigil scan https://example.com --format html --output report.html
 uv run webvigil scan https://example.com --probe   # also probe for exposed .git/.env/backups
-uv run webvigil scan https://example.com --mode active --authorized-by "you / engagement"  # injection testing
+uv run webvigil scan https://example.com --mode active --authorized-by "you / engagement"  # injection + in-band SSRF testing
 uv run webvigil scan https://example.com --mode active --authorized-by me --stored-xss     # + stored XSS (writes markers)
 uv run webvigil scan https://example.com --cookie "session=<paste from your browser>"      # authenticated scan
 uv run webvigil scan https://example.com --osv-online                                      # also check libraries against OSV.dev

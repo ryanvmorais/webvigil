@@ -31,19 +31,21 @@ WebVigil is built with spec-driven development. Each feature is designed as a sp
 | [`006-active-injection`](006-active-injection/) | Active Mode: XSS refletido, SQLi (error/boolean/time), path traversal, open redirect; descoberta de forms + injection points; passo de fuzzing com orçamento; app-alvo vulnerável (fixture + serviço compose) | `v0.6` | **done** |
 | [`007-auth-flows`](007-auth-flows/) | scan autenticado por cookie estático (`--cookie` / `[auth]`), check CSRF passivo (`csrf.form.no-token`, ponderado por SameSite), crawl que submete forms `GET` seguros + heurística de evasão de links logout/destrutivos | `v0.7` | **done** |
 | [`008-stored-xss`](008-stored-xss/) | stored/persistent XSS: passada `StoredXssScanner` em duas fases (injeta marcadores `<wvstored…>` nos injection points da `006`, depois um re-crawl de 1 hop procurando o marcador renderizado sem escape noutra página); Active Mode + opt-in `--stored-xss` (grava dados no alvo) | `v0.8` | **done** |
-| `009-ssrf` | SSRF com coletor out-of-band opt-in: um serviço que o scanner hospeda e o alvo chama de volta (DNS/HTTP callback), habilitado explicitamente; cobre casos cegos que a detecção in-band não pega | `v0.9` | não iniciada |
+| [`009-ssrf`](009-ssrf/) | SSRF **in-band**: um detector `ssrf` na passada da `006` que envia payloads de URL e prova o fetch server-side pelo response do alvo — marcador de metadata de nuvem (`injection.ssrf.metadata`, CRITICAL), assinatura de `file://` / banner de serviço interno / erro de conexão ecoando a URL (`injection.ssrf.internal`, HIGH). `is_urllike` prioriza params com cara de URL; sem flag, sem config. SSRF cega adiada | `v0.9` | **done** |
 | [`010-osv-online`](010-osv-online/) | provider OSV.dev online para o fingerprint de dependências da `004`: passo `_osv_lookup` no orquestrador (opt-in `--osv-online` / `[deps] osv_online`) que faz um `querybatch` + um `query` por pacote na `api.osv.dev`, normaliza pro `Advisory` nativo e mescla com o match Retire.js offline (dedup por identificador); falha vira warning, sem cache | `v0.10` | **done** |
 
 > A 002 foi dividida: `002-web-api` (backend) e `003-web-ui` (Next.js). O roadmap
 > original tratava as duas como uma spec só; as demais foram renumeradas.
 >
-> **`008`–`010` eram as três dívidas técnicas acumuladas**, atacáveis em qualquer ordem.
-> `008-stored-xss` **entregou** (`v0.8`): a passada em duas fases relê páginas via um
-> re-crawl de 1 hop, atrás do marcador que ela mesma gravou (opt-in `--stored-xss`, porque
-> escreve dados no alvo). `010-osv-online` **entregou** (`v0.10`): o follow-up prometido da
-> `004` — um provider OSV.dev online, opt-in (`--osv-online`), que amplia a cobertura do
-> match Retire.js offline. Resta `009-ssrf` (linha original da `006`) — cruza a fronteira do
-> "o engine só fala com o alvo" com egress explícito para um coletor OAST próprio, opt-in.
+> **`008`–`010` eram as três dívidas técnicas acumuladas**, atacáveis em qualquer ordem —
+> **todas entregues**. `008-stored-xss` (`v0.8`): passada em duas fases com re-crawl de 1
+> hop atrás do marcador que ela mesma gravou (opt-in `--stored-xss`). `010-osv-online`
+> (`v0.10`): provider OSV.dev online opt-in (`--osv-online`), follow-up da `004`.
+> `009-ssrf` (`v0.9`): SSRF **in-band** — recorte deliberado, sem coletor OAST, sem custo,
+> sem infra. **SSRF cega** (o coletor out-of-band que o scanner hospeda e o alvo chama de
+> volta) foi separada para uma spec futura **opt-in** — candidata `011-ssrf-oast` —
+> paralela a como a `010` seguiu a `004`; cruza a fronteira do "o engine só fala com o
+> alvo" e precisa de host público com portas DNS/HTTP.
 >
 > **Login automático, auth por header e testes de sessão** (fixation, invalidação no
 > logout, id fraco) estavam na linha original da `007`; saíram para uma spec futura — cada

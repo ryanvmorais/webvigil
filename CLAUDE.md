@@ -86,10 +86,16 @@ Camadas, de cima para baixo:
    SQLi (error/boolean/time), path traversal, open redirect. O `Orchestrator` roda um passo
    `InjectionScanner` (enumera injection points a partir de query params + `<form>`s
    parseados dos corpos já baixados, baseline por ponto, detectores sob um orçamento de
-   requests compartilhado); seis checks finos viram findings a partir de
+   requests compartilhado); checks finos viram findings a partir de
    `ctx.observations.injection_hits`. Portão `--mode active --authorized-by`; só GET/POST;
    detecção in-band (sem browser headless, sem coletor OAST). `[injection]` afina orçamento
-   e time-based. `injection.xss.stored` (spec 008): passada `StoredXssScanner` separada
+   e time-based. `injection.ssrf.metadata` (CRITICAL) / `injection.ssrf.internal` (HIGH)
+   (spec 009): SSRF **in-band** — um detector `ssrf` na mesma passada que envia payloads de
+   URL e prova o fetch server-side pelo response do alvo (marcador de metadata de nuvem,
+   assinatura de `file://`, banner de serviço interno, ou erro de conexão ecoando a URL).
+   `is_urllike` prioriza params com cara de URL. Sem flag, sem config (payloads só leem).
+   SSRF cega fica para uma spec OAST opt-in futura. `injection.xss.stored` (spec 008):
+   passada `StoredXssScanner` separada
    (depois da refletida, opt-in `--stored-xss` / `[injection] stored_xss`, default off —
    grava marcadores `<wvstored…>` que o alvo mantém). Fase A injeta um marcador por injection
    point; Fase B faz um re-crawl de 1 hop (`Crawler.recrawl`) a partir da fronteira do 1º
@@ -125,6 +131,6 @@ no CI. `webvigil.cli` e `webvigil.api` não se importam. A Web UI só fala com a
 ## Fluxo de trabalho
 
 - **Spec-driven development** via `/spec`. Specs em `specs/NNN-nome/` (requirements → design → tasks → implementação), com portão de aprovação humana em cada fase. Convenções e roadmap em [`specs/README.md`](specs/README.md).
-- Estado: `001-foundation` (CLI `v0.1`), `002-web-api` (API `v0.2`), `003-web-ui` (dashboard `v0.3`), `004-deps-fingerprint` (`v0.4`), `005-info-disclosure` (`v0.5`), `006-active-injection` (`v0.6`), `007-auth-flows` (`v0.7`), `008-stored-xss` (`v0.8`) e `010-osv-online` (`v0.10`) **concluídas**. Nenhuma spec em andamento. Resta `009-ssrf` (`v0.9`) — SSRF com coletor out-of-band (OAST) opt-in. A 007 entregou só cookie estático + CSRF passivo + submissão de forms GET; login automático, auth por header e testes de sessão saíram para uma spec futura.
+- Estado: `001-foundation` (CLI `v0.1`), `002-web-api` (API `v0.2`), `003-web-ui` (dashboard `v0.3`), `004-deps-fingerprint` (`v0.4`), `005-info-disclosure` (`v0.5`), `006-active-injection` (`v0.6`), `007-auth-flows` (`v0.7`), `008-stored-xss` (`v0.8`), `009-ssrf` (SSRF in-band, `v0.9`) e `010-osv-online` (`v0.10`) **concluídas**. O roadmap de dívida técnica está zerado. Pendências para specs futuras opt-in: **SSRF cega** (coletor OAST), e da 007 — login automático, auth por header e testes de sessão. Nenhuma spec em andamento.
 - Ao fim de cada sessão: `/preparar-commits` (Conventional Commits) e `/atualizar-docs`.
 - Commits em inglês, padrão Conventional Commits.

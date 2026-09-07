@@ -30,6 +30,8 @@ no out-of-band collaborator.
 | `injection.traversal.path` | HIGH | A `../` payload returns a known system file — `root:…:0:0:` from `/etc/passwd`, `[fonts]` from `win.ini` — not present in the baseline. |
 | `injection.redirect.open` | MEDIUM | An off-site URL injected into the parameter is honoured in the `Location` header (or a `<meta refresh>` / `location.href`). The redirect to the sentinel host is never followed. |
 | `injection.xss.stored` | HIGH | A `<wvstored…>` marker submitted through a form (or query parameter) is stored by the app and later rendered with its markup intact on a **different** page — found by a re-crawl. Opt-in; see below. |
+| `injection.ssrf.metadata` | CRITICAL | A URL payload in the parameter makes the server fetch the cloud instance metadata service — a provider marker (`AccessKeyId`, `computeMetadata`, `vmId`, …) appears in the response, absent from the baseline. |
+| `injection.ssrf.internal` | HIGH | A URL payload reaches a loopback / internal resource (recognizable service banner), reads a local file via `file://`, or an SSRF-shaped connection error names the injected URL — each absent from the baseline. |
 
 Every finding's `location` carries the `method`, `url`, and `param`; its evidence carries
 the injection point, the payload sent, and the proof.
@@ -95,6 +97,38 @@ panel, a moderation queue, a staff email); a marker shown only after moderation 
 a marker rendered more than one hop past a known page; a sink that strips unknown tags. DOM
 XSS still needs a JavaScript engine (out of scope).
 
+## SSRF — cloud metadata, loopback, `file://`
+
+`injection.ssrf.metadata` and `injection.ssrf.internal` (v0.9) detect Server-Side Request
+Forgery **in-band** — from the target's own response, with **no** out-of-band collaborator.
+They run in Active Mode like every other injection check; there is **no opt-in flag** and
+**no config** (the payloads only read — they write nothing to the target).
+
+The `ssrf` detector puts URL payloads in a parameter and looks for one of four proofs, each
+required absent from the point's baseline:
+
+1. a **cloud-metadata marker** — AWS (`AccessKeyId`, `ami-launch-index`), GCP
+   (`computeMetadata`, `machineType`), Azure (`vmId`, `resourceGroupName`), AliCloud,
+   Kubernetes (a `403 "kind":"Status"`) → `injection.ssrf.metadata`, **CRITICAL** (the
+   metadata service usually hands out IAM credentials);
+2. a **`file://` read** — `/etc/passwd` or `win.ini` content → `injection.ssrf.internal`;
+3. a **recognizable internal service** — a Redis / nginx-status / Docker-API / Elasticsearch
+   banner, or an internal admin page title → `injection.ssrf.internal`;
+4. an **SSRF-shaped connection error** (or a `502/504` the baseline never returned) that
+   **echoes the injected URL** → `injection.ssrf.internal`, MEDIUM confidence — proves the
+   parameter reaches a server-side fetcher even when nothing leaked.
+
+Payloads cover the IP/host obfuscations that slip past a naïve block: decimal / hex / octal
+encodings of `127.0.0.1` and `169.254.169.254`, `127.1`, `[::1]`, and `user@host`
+confusion. A parameter whose **name or value looks like a URL** (`url`, `callback`,
+`webhook`, `next`, `image`, …) gets the full payload set and is tested first; any other
+parameter gets a short canary set, tested last, only if budget remains.
+
+**Blind SSRF is not covered.** A parameter that triggers a server-side request with *no*
+in-band signal — no reflected body, no error, no status change — needs a collaborator
+server the scanner hosts and the target calls back to. That crosses WebVigil's "the engine
+talks only to the target" rule and is deferred to a future **opt-in** spec.
+
 ## Non-destructive posture
 
 - **`GET` and `POST` only** — never `PUT`, `PATCH`, `DELETE`.
@@ -127,9 +161,9 @@ the pass entirely — no enumeration, no crafted request.
 
 - **Stored XSS** ships in v0.8 behind `--stored-xss` (see above). **DOM XSS** still needs a
   JavaScript engine (out of scope since spec 001).
-- **No SSRF.** Meaningful SSRF detection needs an out-of-band collaborator — a server the
-  scanner controls that the target calls back to. WebVigil's engine talks only to the
-  target, so SSRF waits for a spec that adds an opt-in collaborator.
+- **In-band SSRF** ships in v0.9 (`injection.ssrf.metadata` / `injection.ssrf.internal`,
+  see above). **Blind SSRF** still needs an out-of-band collaborator — a server the scanner
+  hosts that the target calls back to — and is deferred to a future opt-in spec.
 - **No OS command injection, XXE, SSTI, or other injection classes** yet.
 - **No exploitation.** A confirmed SQLi is proved with one bounded marker; WebVigil does
   not dump the database or read further files.
