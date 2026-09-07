@@ -1,4 +1,6 @@
-"""TLS/HTTPS check: protocol versions, certificate, redirect, and mixed content (RF-19)."""
+"""
+TLS/HTTPS check: protocol versions, certificate, redirect, and mixed content (RF-19).
+"""
 
 from __future__ import annotations
 
@@ -18,6 +20,15 @@ _MIXED_CONTENT_RE = re.compile(r"""(?:src|href)\s*=\s*["']http://[^"']+["']""", 
 
 @register
 class TlsHttpsCheck(Check):
+    """
+    One check covering the target's transport security.
+
+    Reports a plaintext site with no redirect to HTTPS, an accepted obsolete
+    protocol (TLS 1.0 HIGH, TLS 1.1 MEDIUM), the certificate problems from
+    :func:`webvigil.checks.tls._cert.analyze`, and an HTTPS page that pulls
+    sub-resources over ``http://``.
+    """
+
     id = "tls.https"
     name = "TLS and HTTPS configuration"
     category = Category.TLS
@@ -26,6 +37,14 @@ class TlsHttpsCheck(Check):
     references = ("https://owasp.org/www-project-secure-headers/#transport-layer-security",)
 
     async def run(self, ctx: ScanContext) -> list[Finding]:
+        """
+        Args:
+            ctx (ScanContext): The scan context; probes the origin's TLS
+                endpoint via ``ctx.http.limiter`` and reads the entry page.
+
+        Returns:
+            list[Finding]: Every transport-security finding, possibly empty.
+        """
         findings: list[Finding] = []
         entry = ctx.entry
         wanted_https = urlsplit(ctx.target.entry_url).scheme == "https"
@@ -60,6 +79,14 @@ class TlsHttpsCheck(Check):
         return findings
 
     def _version_findings(self, host: str, probe: tls_probe.TlsProbeResult) -> list[Finding]:
+        """
+        Args:
+            host (str): The TLS host.
+            probe (tls_probe.TlsProbeResult): The probe result.
+
+        Returns:
+            list[Finding]: One finding per accepted obsolete protocol version.
+        """
         findings: list[Finding] = []
         for version, severity in _LEGACY_VERSIONS.items():
             if probe.offered_versions.get(version) == tls_probe.OK:
@@ -80,6 +107,14 @@ class TlsHttpsCheck(Check):
         return findings
 
     def _cert_findings(self, host: str, cert_der: bytes) -> list[Finding]:
+        """
+        Args:
+            host (str): The TLS host the certificate should cover.
+            cert_der (bytes): The peer certificate in DER form.
+
+        Returns:
+            list[Finding]: One finding per :class:`~webvigil.checks.tls._cert.CertIssue`.
+        """
         return [
             self.finding(
                 title=issue.title,
@@ -96,6 +131,16 @@ class TlsHttpsCheck(Check):
         ]
 
     def _mixed_content_findings(self, url: str, html: str) -> list[Finding]:
+        """
+        Args:
+            url (str): The HTTPS page URL.
+            html (str): Its body.
+
+        Returns:
+            list[Finding]: A single MEDIUM finding listing up to ten
+                ``http://`` sub-resource references, or empty when there are
+                none.
+        """
         matches = _MIXED_CONTENT_RE.findall(html)
         if not matches:
             return []
@@ -116,5 +161,12 @@ class TlsHttpsCheck(Check):
 
 
 def _tls_endpoint(origin: str) -> tuple[str, int]:
+    """
+    Args:
+        origin (str): The target origin (scheme + host + optional port).
+
+    Returns:
+        tuple[str, int]: The host and port to probe, defaulting the port to 443.
+    """
     parts = urlsplit(origin)
     return parts.hostname or "", parts.port or 443

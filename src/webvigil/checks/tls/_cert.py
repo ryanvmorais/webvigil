@@ -16,6 +16,16 @@ _WEAK_HASHES = {"md5", "sha1"}
 
 @dataclass(frozen=True, slots=True)
 class CertIssue:
+    """
+    One problem found with a peer certificate.
+
+    Attributes:
+        dedup_key (str): Short stable key for the specific problem.
+        severity (Severity): How serious it is.
+        title (str): One-line summary.
+        description (str): Full explanation, with concrete dates where relevant.
+    """
+
     dedup_key: str
     severity: Severity
     title: str
@@ -23,6 +33,17 @@ class CertIssue:
 
 
 def _matches(pattern: str, host: str) -> bool:
+    """
+    Match a certificate name against a host, honouring a single leading wildcard.
+
+    Args:
+        pattern (str): A DNS name from the certificate, e.g. ``"*.example.com"``.
+        host (str): The host being verified.
+
+    Returns:
+        bool: ``True`` when ``pattern`` covers ``host``. A ``*.`` wildcard
+            matches exactly one label.
+    """
     pattern = pattern.lower().strip()
     host = host.lower().strip()
     if pattern == host:
@@ -34,7 +55,22 @@ def _matches(pattern: str, host: str) -> bool:
 
 
 def analyze(cert_der: bytes, host: str, *, now: datetime | None = None) -> list[CertIssue]:
-    """Return the certificate problems relevant to ``host``."""
+    """
+    Return the certificate problems relevant to ``host``.
+
+    Checks expiry (expired / expiring within 14 days), not-yet-valid, SAN
+    hostname coverage, a weak signature hash (MD5 / SHA-1), and self-signing.
+
+    Args:
+        cert_der (bytes): The peer certificate in DER form.
+        host (str): The host the certificate is expected to cover.
+        now (datetime | None): Reference time; defaults to the current UTC time.
+
+    Returns:
+        list[CertIssue]: The problems found, possibly empty. A single
+            ``"cert-unparseable"`` issue is returned when the DER will not
+            decode.
+    """
     now = now or datetime.now(UTC)
     try:
         cert = x509.load_der_x509_certificate(cert_der)
@@ -114,6 +150,14 @@ def analyze(cert_der: bytes, host: str, *, now: datetime | None = None) -> list[
 
 
 def _san_dns_names(cert: x509.Certificate) -> list[str]:
+    """
+    Args:
+        cert (x509.Certificate): The parsed certificate.
+
+    Returns:
+        list[str]: The DNS names in the Subject Alternative Name extension, or
+            ``[]`` when the extension is absent.
+    """
     try:
         ext = cert.extensions.get_extension_for_oid(ExtensionOID.SUBJECT_ALTERNATIVE_NAME)
     except x509.ExtensionNotFound:

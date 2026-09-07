@@ -1,4 +1,8 @@
-"""Cookie-flag checks (RF-18)."""
+"""
+Cookie-flag checks (RF-18).
+
+Importing this package registers the ``Set-Cookie`` attribute check.
+"""
 
 from __future__ import annotations
 

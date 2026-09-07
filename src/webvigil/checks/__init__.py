@@ -1,8 +1,10 @@
-"""Check plugins.
+"""
+Check plugins.
 
-Each check subclasses ``Check``, declares its metadata, and implements
-``async run(ctx) -> list[Finding]``. Checks are registered with the ``@register``
-decorator and, for third parties, discovered via the ``webvigil.checks`` entry points.
+Each check subclasses :class:`~webvigil.checks.base.Check`, declares its
+metadata, and implements ``async run(ctx) -> list[Finding]``. Checks are
+registered with the ``@register`` decorator and, for third parties, discovered
+via the ``webvigil.checks`` entry points.
 """
 
 from __future__ import annotations
@@ -27,7 +29,7 @@ __all__ = [
 
 
 def _load_builtin_checks() -> None:
-    """Import the built-in check packages so their ``@register`` calls run."""
+    """Import the built-in check packages so their ``@register`` calls run at import time."""
     from webvigil.checks import (  # noqa: F401
         cookies,
         cors,

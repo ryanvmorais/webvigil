@@ -1,7 +1,8 @@
-"""CORS misconfiguration check (RF-20).
+"""
+CORS misconfiguration check (RF-20).
 
-This check sends one extra GET with an ``Origin`` header — the most active thing Safe Mode
-does (RNF-05). It is still a plain GET and still scope-guarded.
+This check sends one extra GET with an ``Origin`` header — the most active thing
+Safe Mode does (RNF-05). It is still a plain GET and still scope-guarded.
 """
 
 from __future__ import annotations
@@ -17,6 +18,15 @@ _PROBE_ORIGIN = "https://webvigil-cors-probe.example"
 
 @register
 class CorsCheck(Check):
+    """
+    Flags a permissive CORS configuration on the entry page.
+
+    Sends one GET with a throwaway ``Origin`` and reports: the origin being
+    reflected into ``Access-Control-Allow-Origin`` (HIGH with credentials, else
+    MEDIUM), ``*`` combined with credentials (HIGH), and an allowed ``null``
+    origin (MEDIUM).
+    """
+
     id = "http.cors.misconfiguration"
     name = "CORS misconfiguration"
     category = Category.CORS
@@ -25,6 +35,15 @@ class CorsCheck(Check):
     references = ("https://portswigger.net/web-security/cors",)
 
     async def run(self, ctx: ScanContext) -> list[Finding]:
+        """
+        Args:
+            ctx (ScanContext): The scan context; sends one extra GET via
+                ``ctx.http``.
+
+        Returns:
+            list[Finding]: At most one finding — the first misconfiguration
+                matched — or empty when CORS is absent or safe.
+        """
         url = ctx.entry.url
         try:
             response = await ctx.http.get(url, headers={"Origin": _PROBE_ORIGIN})

@@ -1,4 +1,6 @@
-"""Content-Security-Policy check (RF-16)."""
+"""
+Content-Security-Policy check (RF-16).
+"""
 
 from __future__ import annotations
 
@@ -13,6 +15,13 @@ _SOURCE_DIRECTIVES = ("script-src", "default-src")
 
 @register
 class CspCheck(Check):
+    """
+    Flags a missing Content-Security-Policy and common policy weaknesses.
+
+    Reports the header's absence, ``'unsafe-inline'`` / ``'unsafe-eval'`` in
+    any source list, and a bare ``*`` in ``script-src`` or ``default-src``.
+    """
+
     id = "http.headers.csp"
     name = "Content-Security-Policy weaknesses"
     category = Category.HEADERS
@@ -21,6 +30,14 @@ class CspCheck(Check):
     references = ("https://owasp.org/www-project-secure-headers/#content-security-policy",)
 
     async def run(self, ctx: ScanContext) -> list[Finding]:
+        """
+        Args:
+            ctx (ScanContext): The scan context; only the entry page is read.
+
+        Returns:
+            list[Finding]: One "missing" finding, or one finding per weakness
+                found in the present policy.
+        """
         page = ctx.entry
         value = header_value(page, "content-security-policy")
         location = Location(url=page.url, header="Content-Security-Policy")
@@ -80,6 +97,18 @@ class CspCheck(Check):
         dedup_key: str,
         token: str,
     ) -> Finding:
+        """
+        Build the finding for an ``'unsafe-inline'`` / ``'unsafe-eval'`` token.
+
+        Args:
+            location (Location): The CSP header location.
+            evidence (list[EvidenceItem]): The shared policy evidence.
+            dedup_key (str): Short key distinguishing the two token cases.
+            token (str): The offending token, quoted for display.
+
+        Returns:
+            Finding: A MEDIUM-severity finding.
+        """
         return self.finding(
             title=f"Content-Security-Policy allows {token}",
             description=(

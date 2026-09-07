@@ -1,6 +1,9 @@
-"""Security-header and revealing-header checks (RF-16, RF-17).
+"""
+Security-header and revealing-header checks (RF-16, RF-17).
 
-Importing this package registers every header check.
+Importing this package registers every header check (CSP, HSTS, frame options,
+sniffing, referrer, permissions, cross-origin isolation, and version
+disclosure).
 """
 
 from __future__ import annotations

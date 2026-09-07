@@ -1,4 +1,6 @@
-"""Revealing-headers check: server/framework version disclosure (RF-17)."""
+"""
+Revealing-headers check: server/framework version disclosure (RF-17).
+"""
 
 from __future__ import annotations
 
@@ -17,6 +19,13 @@ _HAS_DIGIT = re.compile(r"\d")
 
 @register
 class RevealingHeadersCheck(Check):
+    """
+    Flags response headers that disclose the server or framework version.
+
+    ``Server`` is only reported when it carries a digit; a curated set of
+    ``X-*`` version headers is reported whenever present.
+    """
+
     id = "http.headers.revealing"
     name = "Server or framework version disclosed in headers"
     category = Category.HEADERS
@@ -25,6 +34,13 @@ class RevealingHeadersCheck(Check):
     references = ("https://owasp.org/www-project-secure-headers/#fingerprinting",)
 
     async def run(self, ctx: ScanContext) -> list[Finding]:
+        """
+        Args:
+            ctx (ScanContext): The scan context; only the entry page is read.
+
+        Returns:
+            list[Finding]: One LOW finding per disclosing header.
+        """
         page = ctx.entry
         findings: list[Finding] = []
 
@@ -40,6 +56,17 @@ class RevealingHeadersCheck(Check):
         return findings
 
     def _finding(self, url: str, header: str, value: str) -> Finding:
+        """
+        Build the finding for one disclosing header.
+
+        Args:
+            url (str): The page URL.
+            header (str): The disclosing header name.
+            value (str): Its value.
+
+        Returns:
+            Finding: A LOW-severity, HIGH-confidence finding.
+        """
         return self.finding(
             title=f"{header} header discloses technology details",
             description=(

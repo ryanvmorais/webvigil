@@ -1,4 +1,8 @@
-"""TLS/HTTPS checks (RF-19)."""
+"""
+TLS/HTTPS checks (RF-19).
+
+Importing this package registers the combined TLS/HTTPS check.
+"""
 
 from __future__ import annotations
 

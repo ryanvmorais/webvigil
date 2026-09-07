@@ -1,4 +1,8 @@
-"""CORS misconfiguration check (RF-20)."""
+"""
+CORS misconfiguration check (RF-20).
+
+Importing this package registers the CORS check.
+"""
 
 from __future__ import annotations
 

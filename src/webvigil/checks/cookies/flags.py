@@ -1,4 +1,6 @@
-"""Cookie-flag check: Secure / HttpOnly / SameSite / prefixes (RF-18)."""
+"""
+Cookie-flag check: Secure / HttpOnly / SameSite / prefixes (RF-18).
+"""
 
 from __future__ import annotations
 
@@ -11,6 +13,14 @@ from webvigil.core.findings import Category, EvidenceItem, Finding, Location, Se
 
 @register
 class CookieFlagsCheck(Check):
+    """
+    Flags weak ``Set-Cookie`` attributes on every crawled page.
+
+    Checks each cookie for a missing ``Secure`` (on HTTPS), missing
+    ``HttpOnly``, ``SameSite=None`` without ``Secure``, an unset ``SameSite``,
+    and ``__Host-`` / ``__Secure-`` prefix violations.
+    """
+
     id = "http.cookies.flags"
     name = "Cookie flag weaknesses"
     category = Category.COOKIES
@@ -19,6 +29,14 @@ class CookieFlagsCheck(Check):
     references = ("https://owasp.org/www-community/controls/SecureCookieAttribute",)
 
     async def run(self, ctx: ScanContext) -> list[Finding]:
+        """
+        Args:
+            ctx (ScanContext): The scan context; every OK page's ``Set-Cookie``
+                headers are inspected.
+
+        Returns:
+            list[Finding]: One finding per weak attribute per cookie.
+        """
         findings: list[Finding] = []
         for page in ctx.pages:
             if not page.ok:
@@ -28,6 +46,17 @@ class CookieFlagsCheck(Check):
         return findings
 
     def _inspect(self, page: Page, raw: str) -> list[Finding]:
+        """
+        Inspect one ``Set-Cookie`` header value.
+
+        Args:
+            page (Page): The page that set the cookie.
+            raw (str): One raw ``Set-Cookie`` header value.
+
+        Returns:
+            list[Finding]: One finding per weak attribute, or empty when the
+                value has no parseable name.
+        """
         name, attrs = parse_set_cookie(raw)
         if not name:
             return []
@@ -126,6 +155,21 @@ class CookieFlagsCheck(Check):
         description: str,
         remediation: str,
     ) -> Finding:
+        """
+        Build one cookie-weakness finding with a per-cookie, per-weakness dedup key.
+
+        Args:
+            location (Location): The cookie location.
+            evidence (list[EvidenceItem]): The shared ``Set-Cookie`` evidence.
+            dedup_suffix (str): Short key identifying the specific weakness.
+            severity (Severity): Severity for this weakness.
+            title (str): Finding title.
+            description (str): Finding description.
+            remediation (str): Finding remediation.
+
+        Returns:
+            Finding: The assembled finding.
+        """
         return self.finding(
             title=title,
             description=description,

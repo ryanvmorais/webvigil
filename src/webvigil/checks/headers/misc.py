@@ -1,4 +1,6 @@
-"""Smaller single-header checks: frame options, sniffing, referrer, permissions, isolation."""
+"""
+Smaller single-header checks: frame options, sniffing, referrer, permissions, isolation.
+"""
 
 from __future__ import annotations
 
@@ -13,6 +15,13 @@ _LEAKING_REFERRER_POLICIES = {"unsafe-url", "no-referrer-when-downgrade", ""}
 
 @register
 class FrameOptionsCheck(Check):
+    """
+    Flags a page with no clickjacking protection.
+
+    Satisfied by either ``X-Frame-Options`` or a CSP ``frame-ancestors``
+    directive; reports only when both are absent.
+    """
+
     id = "http.headers.frame-options"
     name = "Clickjacking protection missing"
     category = Category.HEADERS
@@ -21,6 +30,14 @@ class FrameOptionsCheck(Check):
     references = ("https://owasp.org/www-project-secure-headers/#x-frame-options",)
 
     async def run(self, ctx: ScanContext) -> list[Finding]:
+        """
+        Args:
+            ctx (ScanContext): The scan context; only the entry page is read.
+
+        Returns:
+            list[Finding]: One finding when neither control is present, else
+                empty.
+        """
         page = ctx.entry
         has_xfo = header_value(page, "x-frame-options") is not None
         csp = header_value(page, "content-security-policy") or ""
@@ -47,6 +64,8 @@ class FrameOptionsCheck(Check):
 
 @register
 class ContentTypeOptionsCheck(Check):
+    """Flags a response whose ``X-Content-Type-Options`` is not ``nosniff``."""
+
     id = "http.headers.content-type-options"
     name = "X-Content-Type-Options not nosniff"
     category = Category.HEADERS
@@ -55,6 +74,14 @@ class ContentTypeOptionsCheck(Check):
     references = ("https://owasp.org/www-project-secure-headers/#x-content-type-options",)
 
     async def run(self, ctx: ScanContext) -> list[Finding]:
+        """
+        Args:
+            ctx (ScanContext): The scan context; only the entry page is read.
+
+        Returns:
+            list[Finding]: One finding when the header is missing or not
+                ``nosniff``, else empty.
+        """
         page = ctx.entry
         value = (header_value(page, "x-content-type-options") or "").strip().lower()
         if value == "nosniff":
@@ -76,6 +103,10 @@ class ContentTypeOptionsCheck(Check):
 
 @register
 class ReferrerPolicyCheck(Check):
+    """
+    Flags a missing ``Referrer-Policy``, or one whose value leaks the full URL cross-origin.
+    """
+
     id = "http.headers.referrer-policy"
     name = "Referrer-Policy missing or leaking"
     category = Category.HEADERS
@@ -84,6 +115,13 @@ class ReferrerPolicyCheck(Check):
     references = ("https://owasp.org/www-project-secure-headers/#referrer-policy",)
 
     async def run(self, ctx: ScanContext) -> list[Finding]:
+        """
+        Args:
+            ctx (ScanContext): The scan context; only the entry page is read.
+
+        Returns:
+            list[Finding]: One "missing" or one "leaking" finding, else empty.
+        """
         page = ctx.entry
         raw = header_value(page, "referrer-policy")
         if raw is None:
@@ -123,6 +161,8 @@ class ReferrerPolicyCheck(Check):
 
 @register
 class PermissionsPolicyCheck(Check):
+    """Flags a response with no ``Permissions-Policy`` header (INFO)."""
+
     id = "http.headers.permissions-policy"
     name = "Permissions-Policy header missing"
     category = Category.HEADERS
@@ -130,6 +170,14 @@ class PermissionsPolicyCheck(Check):
     references = ("https://owasp.org/www-project-secure-headers/#permissions-policy",)
 
     async def run(self, ctx: ScanContext) -> list[Finding]:
+        """
+        Args:
+            ctx (ScanContext): The scan context; only the entry page is read.
+
+        Returns:
+            list[Finding]: One INFO finding when the header is absent, else
+                empty.
+        """
         page = ctx.entry
         if header_value(page, "permissions-policy") is not None:
             return []
@@ -153,6 +201,8 @@ class PermissionsPolicyCheck(Check):
 
 @register
 class CrossOriginIsolationCheck(Check):
+    """Flags a response with no ``Cross-Origin-Opener-Policy`` header (INFO)."""
+
     id = "http.headers.cross-origin-isolation"
     name = "Cross-origin isolation headers missing"
     category = Category.HEADERS
@@ -160,6 +210,14 @@ class CrossOriginIsolationCheck(Check):
     references = ("https://owasp.org/www-project-secure-headers/#cross-origin-opener-policy",)
 
     async def run(self, ctx: ScanContext) -> list[Finding]:
+        """
+        Args:
+            ctx (ScanContext): The scan context; only the entry page is read.
+
+        Returns:
+            list[Finding]: One INFO finding when ``Cross-Origin-Opener-Policy``
+                is absent, else empty.
+        """
         page = ctx.entry
         if header_value(page, "cross-origin-opener-policy") is not None:
             return []

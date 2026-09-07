@@ -1,4 +1,6 @@
-"""HTTP Strict-Transport-Security check (RF-16)."""
+"""
+HTTP Strict-Transport-Security check (RF-16).
+"""
 
 from __future__ import annotations
 
@@ -16,6 +18,14 @@ _MAX_AGE_RE = re.compile(r"max-age\s*=\s*\"?(\d+)\"?", re.IGNORECASE)
 
 @register
 class HstsCheck(Check):
+    """
+    Flags a missing HSTS header on an HTTPS site, and a weak one when present.
+
+    Only runs on an HTTPS entry page (the plaintext case belongs to the
+    TLS/HTTPS check). Reports absence, a ``max-age`` below 180 days, and a
+    missing ``includeSubDomains``.
+    """
+
     id = "http.headers.hsts"
     name = "Strict-Transport-Security weaknesses"
     category = Category.HEADERS
@@ -24,6 +34,14 @@ class HstsCheck(Check):
     references = ("https://owasp.org/www-project-secure-headers/#http-strict-transport-security",)
 
     async def run(self, ctx: ScanContext) -> list[Finding]:
+        """
+        Args:
+            ctx (ScanContext): The scan context; only the entry page is read.
+
+        Returns:
+            list[Finding]: Empty for a plaintext page; one "missing" finding, or
+                one finding per weakness of a present header.
+        """
         page = ctx.entry
         if not is_https(page.url):
             # The site is served over plaintext; the TLS/HTTPS check owns that finding.
