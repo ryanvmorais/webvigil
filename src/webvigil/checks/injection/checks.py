@@ -47,6 +47,11 @@ _DESCRIPTION: dict[str, str] = {
         "was honoured. Attackers use this for convincing phishing links and, with OAuth-style "
         "flows, for token theft."
     ),
+    "xss-stored": (
+        "A value supplied in this parameter is stored by the application and later rendered in "
+        "another page's HTML with its markup intact, in a context where a browser would execute "
+        "it. The payload runs for every user who views that page — no phishing link required."
+    ),
 }
 
 _SQLI_FIX = (
@@ -73,6 +78,12 @@ _REMEDIATION: dict[str, str] = {
         "Do not redirect to a user-supplied absolute URL. Redirect only to an allow-listed set "
         "of paths, or map an opaque token to a known destination server-side."
     ),
+    "xss-stored": (
+        "Context-encode all untrusted output (HTML entity, attribute, JavaScript-string, or "
+        "URL encoding as appropriate); prefer a templating engine that auto-escapes. Encode on "
+        "output, not on input, so stored data is safe wherever it is later rendered. Add a "
+        "Content-Security-Policy as defence in depth."
+    ),
 }
 
 _REFERENCES: dict[str, tuple[str, ...]] = {
@@ -93,6 +104,10 @@ _REFERENCES: dict[str, tuple[str, ...]] = {
     "traversal": (f"{_OWASP}/attacks/Path_Traversal",),
     "redirect": (
         "https://cheatsheetseries.owasp.org/cheatsheets/Unvalidated_Redirects_and_Forwards_Cheat_Sheet.html",
+    ),
+    "xss-stored": (
+        f"{_OWASP}/attacks/xss/",
+        "https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html",
     ),
 }
 
@@ -178,3 +193,13 @@ class OpenRedirectCheck(_InjectionCheck):
     default_severity = Severity.MEDIUM
     cwe = (601,)
     references = _REFERENCES["redirect"]
+
+
+@register
+class StoredXssCheck(_InjectionCheck):
+    id = "injection.xss.stored"
+    name = "Stored cross-site scripting"
+    kind = "xss-stored"
+    default_severity = Severity.HIGH
+    cwe = (79, 20)
+    references = _REFERENCES["xss-stored"]

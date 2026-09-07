@@ -49,6 +49,8 @@ request_budget = 500      # max crafted requests per scan; hitting it is a warni
 max_injection_points = 200  # max query params / form fields tested; excess is a warning
 time_based_sqli = true    # send time-delay SQLi payloads (slower); --no-time-based-sqli overrides
 time_based_delay_s = 5    # the D in SLEEP(D); keep it below [http] timeout_s
+stored_xss = false        # spec 008: two-phase stored-XSS pass. Submits marker payloads the
+                          # target stores and does NOT remove. --stored-xss overrides
 
 # Web API only (extra `web`). Ignored by the CLI and the engine.
 # Every key can also be set from the environment: WEBVIGIL_DATABASE_PATH,

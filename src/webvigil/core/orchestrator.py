@@ -20,6 +20,7 @@ from webvigil.checks.disclosure.catalogue import load_catalogue
 from webvigil.checks.disclosure.probe import DisclosureProbe, ProbeHit
 from webvigil.checks.injection.engine import KIND_BY_CHECK_ID, InjectionScanner
 from webvigil.checks.injection.models import InjectionHit
+from webvigil.checks.injection.stored import StoredXssScanner
 from webvigil.checks.registry import iter_checks, load_plugins, unknown_check_ids
 from webvigil.core.config import ScanConfig
 from webvigil.core.context import Detection, Observations, Page, ScanContext
@@ -33,6 +34,7 @@ from webvigil.crawler.forms import Form
 from webvigil.http.client import HttpClient
 
 _PROBE_FAMILIES = frozenset({"vcs", "config", "manifest", "backup", "debug", "sourcemap"})
+_STORED_CHECK_ID = "injection.xss.stored"
 
 
 class Orchestrator:
@@ -53,6 +55,10 @@ class Orchestrator:
         self._enforce_active_gate()
 
         warnings: list[str] = []
+        if self._config.injection.stored_xss and self._config.scan.mode is not ScanMode.ACTIVE:
+            warnings.append(
+                "stored-XSS testing requires --mode active — the stored pass did not run"
+            )
         technologies: tuple[Technology, ...] = ()
         async with HttpClient(target, self._config) as http:
             crawler = Crawler(http, target, self._config)
@@ -67,6 +73,9 @@ class Orchestrator:
             detections = await self._fingerprint(check_types, http, target, pages, warnings)
             probe_hits = await self._probe_disclosure(check_types, http, target, pages, warnings)
             injection_hits = await self._inject(check_types, http, target, pages, forms, warnings)
+            stored_hits = await self._inject_stored(
+                check_types, http, target, pages, forms, warnings
+            )
             context = ScanContext(
                 config=self._config,
                 target=target,
@@ -77,7 +86,7 @@ class Orchestrator:
                 observations=Observations(
                     detections=detections,
                     probe_hits=probe_hits,
-                    injection_hits=injection_hits,
+                    injection_hits=injection_hits + stored_hits,
                 ),
             )
             findings, errors = await self._run_checks(check_types, context)
@@ -162,6 +171,30 @@ class Orchestrator:
             ).run()
         except Exception as exc:  # a detector bug must not abort the whole scan
             warnings.append(f"active injection pass failed: {exc or type(exc).__name__}")
+            return ()
+        warnings.extend(report.warnings)
+        return tuple(report.hits)
+
+    async def _inject_stored(
+        self,
+        check_types: Sequence[type[Check]],
+        http: HttpClient,
+        target: Target,
+        pages: tuple[Page, ...],
+        forms: tuple[Form, ...],
+        warnings: list[str],
+    ) -> tuple[InjectionHit, ...]:
+        """Run the two-phase stored-XSS pass (spec 008) when it is Active, selected, opted in."""
+        if self._config.scan.mode is not ScanMode.ACTIVE:
+            return ()
+        if not self._config.injection.stored_xss:
+            return ()
+        if not any(check.id == _STORED_CHECK_ID for check in check_types):
+            return ()
+        try:
+            report = await StoredXssScanner(http, target, self._config, pages, forms).run()
+        except Exception as exc:  # a detector bug must not abort the whole scan
+            warnings.append(f"stored-XSS pass failed: {exc or type(exc).__name__}")
             return ()
         warnings.extend(report.warnings)
         return tuple(report.hits)

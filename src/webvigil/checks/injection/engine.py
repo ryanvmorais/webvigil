@@ -21,7 +21,12 @@ from webvigil.checks.injection.models import (
     InjectionPoint,
     InjectionReport,
 )
-from webvigil.checks.injection.points import enumerate_points, is_pathlike, is_redirect_name
+from webvigil.checks.injection.points import (
+    build_request,
+    enumerate_points,
+    is_pathlike,
+    is_redirect_name,
+)
 from webvigil.core.config import InjectionSection
 from webvigil.core.context import Page
 from webvigil.core.errors import OutOfScopeError, RequestFailed
@@ -132,20 +137,10 @@ class InjectionScanner:
     ) -> Response | None:
         if not (self._budget.take_time_based() if time_based else self._budget.take()):
             return None
-        method, url, params, data = _build_request(point, value)
+        method, url, params, data = build_request(point, value)
         try:
             return await self._http.request(
                 method, url, params=params or None, data=data, crafted=True
             )
         except (RequestFailed, OutOfScopeError):
             return None
-
-
-def _build_request(
-    point: InjectionPoint, value: str
-) -> tuple[str, str, list[tuple[str, str]], dict[str, str] | None]:
-    fuzzed = [(name, value if name == point.param else current) for name, current in point.params]
-    if point.method == "GET":
-        return "GET", point.base_url, fuzzed, None
-    # httpx wants a Mapping for a urlencoded form body; a pair list takes its raw-content path.
-    return "POST", point.base_url, list(point.query), dict(fuzzed)

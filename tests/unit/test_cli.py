@@ -156,6 +156,7 @@ def test_list_checks_lists_the_injection_checks() -> None:
     result = runner.invoke(app_mod.app, ["list-checks"])
     assert "injection.xss.reflected" in result.stdout
     assert "injection.sqli.time-based" in result.stdout
+    assert "injection.xss.stored" in result.stdout
     assert "INJECTION" in result.stdout
 
 
@@ -167,6 +168,18 @@ def test_no_time_based_sqli_flag_disables_it_over_a_config_file(tmp_path: Path) 
         ["scan", "https://example.com", "--config", str(cfg), "--no-time-based-sqli"],
     )
     assert _StubOrchestrator.last_config.injection.time_based_sqli is False  # type: ignore[attr-defined]
+
+
+def test_stored_xss_flag_enables_it_over_a_config_file(tmp_path: Path) -> None:
+    cfg = tmp_path / "webvigil.toml"
+    cfg.write_text("[injection]\nstored_xss = false\n", "utf-8")
+    runner.invoke(
+        app_mod.app,
+        ["scan", "https://example.com", "--config", str(cfg), "--stored-xss"],
+    )
+    assert _StubOrchestrator.last_config.injection.stored_xss is True  # type: ignore[attr-defined]
+    runner.invoke(app_mod.app, ["scan", "https://example.com", "--no-stored-xss"])
+    assert _StubOrchestrator.last_config.injection.stored_xss is False  # type: ignore[attr-defined]
 
 
 def test_active_scan_summary_reports_injection_findings() -> None:

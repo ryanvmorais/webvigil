@@ -2,9 +2,11 @@
 
 Covers spec 001 (headers/cookies/CORS/revealing), spec 004 (a vulnerable jQuery), spec 005
 (exposed .git/.env/backups, a listing, a stack trace), spec 006 (reflected XSS, SQLi, path
-traversal, open redirect) and spec 007 (a cookie-gated ``/account`` area, a tokenless POST
-form, a ``/logout`` link the crawler must not follow). The app is plain HTTP by nature, so
-the integration test disables ``tls.https``; TLS cases live in the socket-based unit tests.
+traversal, open redirect), spec 007 (a cookie-gated ``/account`` area, a tokenless POST
+form, a ``/logout`` link the crawler must not follow) and spec 008 (a guestbook and a
+behind-login profile page that render stored input unescaped on a later request). The app
+is plain HTTP by nature, so the integration test disables ``tls.https``; TLS cases live in
+the socket-based unit tests.
 """
 
 from __future__ import annotations
@@ -22,7 +24,10 @@ from starlette.responses import HTMLResponse, PlainTextResponse, RedirectRespons
 from starlette.routing import Route
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-_LINKS = '<a href="/about">about</a> <a href="/contact">contact</a> <a href="/account">account</a>'
+_LINKS = (
+    '<a href="/about">about</a> <a href="/contact">contact</a> '
+    '<a href="/account">account</a> <a href="/guestbook">guestbook</a>'
+)
 # spec 006 (RF-20): links to the injectable endpoints, and the three forms. Both profiles
 # link them so an Active scan of the hardened profile actually fuzzes and finds nothing.
 _INJECTION_LINKS = (
@@ -35,6 +40,11 @@ _FORMS = (
     '<input type="hidden" name="csrf" value="tok123"><textarea name="body"></textarea></form>'
     '<form method="post" action="/login">'
     '<input name="username"><input type="password" name="password"></form>'
+    # spec 008 (RF-13): a guestbook whose entries are rendered on a per-entry page reachable
+    # only after a post — so the stored-XSS re-crawl must find it. It carries a CSRF token so
+    # the CSRF check stays quiet; the stored-XSS pass fuzzes the `body` field.
+    '<form method="post" action="/guestbook">'
+    '<input type="hidden" name="csrf_token" value="gbtok"><textarea name="body"></textarea></form>'
 )
 _PAGE = f"<!doctype html><html><body><h1>Demo</h1>{_LINKS} {_INJECTION_LINKS}{_FORMS}</body></html>"
 
@@ -208,28 +218,72 @@ _ACCOUNT_HARDENED = (
 
 def _account(cookie_name: str, body: str) -> Callable[[Request], Response]:
     def view(request: Request) -> Response:
-        if request.cookies.get(cookie_name) != "abc123":
+        if not request.cookies.get(cookie_name):  # any non-empty session value is "logged in"
             return RedirectResponse("/login", status_code=302)
         return HTMLResponse(body)
 
     return view
 
 
-def _account_settings(cookie_name: str) -> Callable[[Request], Response]:
+def _account_settings(cookie_name: str, *, escape: bool) -> Callable[[Request], Response]:
     def view(request: Request) -> Response:
-        if request.cookies.get(cookie_name) != "abc123":
+        if not request.cookies.get(cookie_name):
             return RedirectResponse("/login", status_code=302)
-        return HTMLResponse("<!doctype html><html><body><p>settings</p></body></html>")
+        # spec 008: the nickname set via POST /profile is rendered here on a later request —
+        # a stored-XSS sink that only an authenticated re-crawl can reach.
+        nickname: str = request.app.state.profile
+        shown = html.escape(nickname) if escape else nickname
+        return HTMLResponse(f"<!doctype html><html><body><p>settings: {shown}</p></body></html>")
 
     return view
 
 
-def _profile(request: Request) -> Response:
+async def _profile(request: Request) -> Response:
+    form = await request.form()
+    request.app.state.profile = str(form.get("nickname", ""))
     return HTMLResponse("<!doctype html><p>updated</p>")
 
 
 def _logout(request: Request) -> Response:
     return RedirectResponse("/", status_code=302)
+
+
+# --- spec 008: the guestbook — stored XSS on a per-entry page (RF-13) -------------
+
+
+def _guestbook_list(request: Request) -> Response:
+    entries: list[str] = request.app.state.guestbook
+    links = "".join(f'<a href="/guestbook/e/{i}">entry {i}</a>' for i in range(len(entries)))
+    return HTMLResponse(
+        f"<!doctype html><html><body><h1>Guestbook</h1>{links}"
+        '<form method="post" action="/guestbook">'
+        '<input type="hidden" name="csrf_token" value="gbtok"><textarea name="body"></textarea>'
+        "</form></body></html>"
+    )
+
+
+async def _guestbook_post(request: Request) -> Response:
+    form = await request.form()
+    request.app.state.guestbook.append(str(form.get("body", "")))
+    return RedirectResponse("/guestbook", status_code=302)
+
+
+def _guestbook_entry(escape: bool) -> Callable[[Request], Response]:
+    def view(request: Request) -> Response:
+        entries: list[str] = request.app.state.guestbook
+        index = int(request.path_params["i"])
+        if not 0 <= index < len(entries):
+            return HTMLResponse("<!doctype html><div>no such entry</div>", status_code=404)
+        body = html.escape(entries[index]) if escape else entries[index]
+        return HTMLResponse(f"<!doctype html><html><body><div>{body}</div></body></html>")
+
+    return view
+
+
+async def _guestbook(request: Request) -> Response:
+    if request.method == "POST":
+        return await _guestbook_post(request)
+    return _guestbook_list(request)
 
 
 # --- spec 006: the safe equivalents (hardened) -----------------------------------
@@ -286,9 +340,11 @@ _INJECTION_ROUTES = {
         ("/go", _go_insecure, ["GET"]),
         ("/comment", _comment_insecure, ["POST"]),
         ("/account", _account("session", _ACCOUNT_INSECURE), ["GET"]),
-        ("/account/settings", _account_settings("session"), ["GET"]),
+        ("/account/settings", _account_settings("session", escape=False), ["GET"]),
         ("/profile", _profile, ["POST"]),
         ("/logout", _logout, ["GET"]),
+        ("/guestbook", _guestbook, ["GET", "POST"]),
+        ("/guestbook/e/{i:int}", _guestbook_entry(escape=False), ["GET"]),
     ),
     "hardened": (
         ("/search", _search_hardened, ["GET"]),
@@ -297,9 +353,11 @@ _INJECTION_ROUTES = {
         ("/go", _go_hardened, ["GET"]),
         ("/comment", _comment_hardened, ["POST"]),
         ("/account", _account("__Host-session", _ACCOUNT_HARDENED), ["GET"]),
-        ("/account/settings", _account_settings("__Host-session"), ["GET"]),
+        ("/account/settings", _account_settings("__Host-session", escape=True), ["GET"]),
         ("/profile", _profile, ["POST"]),
         ("/logout", _logout, ["GET"]),
+        ("/guestbook", _guestbook, ["GET", "POST"]),
+        ("/guestbook/e/{i:int}", _guestbook_entry(escape=True), ["GET"]),
     ),
 }
 
@@ -332,4 +390,6 @@ def make_app(profile: str) -> Starlette:
 
     app = Starlette(routes=routes, middleware=[Middleware(_recorder(requests))])
     app.state.requests = requests
+    app.state.guestbook = []  # spec 008: reset per app so the suite stays deterministic
+    app.state.profile = ""
     return app

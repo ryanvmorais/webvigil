@@ -212,3 +212,93 @@ async def test_submitted_form_urls_count_against_max_pages(httpx_mock: object) -
         ScanConfig.model_validate({"scan": {"max_pages": 2}}), router, httpx_mock
     )
     assert len(pages) == 2
+
+
+# --- spec 008: Crawler.recrawl — depth-1 re-crawl from a known frontier (RF-05) ------
+
+
+async def _recrawl(
+    config: ScanConfig,
+    router: _Router,
+    httpx_mock: object,
+    frontier: list[str],
+    *,
+    max_fetches: int = 50,
+    limit: int | None = None,
+) -> list[Page]:
+    httpx_mock.add_callback(router, is_reusable=True)  # type: ignore[attr-defined]
+    budget = [0]
+
+    def should_fetch() -> bool:
+        if limit is not None and budget[0] >= limit:
+            return False
+        budget[0] += 1
+        return True
+
+    async with HttpClient(Target.parse(_SEED), config) as http:
+        crawler = Crawler(http, Target.parse(_SEED), config)
+        return await crawler.recrawl(frontier, should_fetch=should_fetch, max_fetches=max_fetches)
+
+
+async def test_recrawl_refetches_the_frontier_and_follows_one_new_hop(httpx_mock: object) -> None:
+    router = _Router(
+        {
+            _SEED: _page(_html("/guestbook")),
+            "https://example.com/guestbook": _page(_html("/guestbook/e/1")),
+            "https://example.com/guestbook/e/1": _page(_html("/guestbook/e/1/raw")),
+            "https://example.com/guestbook/e/1/raw": _page(_html()),
+        }
+    )
+    pages = await _recrawl(
+        ScanConfig(), router, httpx_mock, [_SEED, "https://example.com/guestbook"]
+    )
+    fetched = {p.url for p in pages}
+    assert _SEED in fetched and "https://example.com/guestbook" in fetched
+    assert "https://example.com/guestbook/e/1" in fetched  # one hop past the frontier
+    assert "https://example.com/guestbook/e/1/raw" not in fetched  # not a second hop
+
+
+async def test_recrawl_stops_when_should_fetch_returns_false(httpx_mock: object) -> None:
+    router = _Router(
+        {
+            _SEED: _page(_html("/a")),
+            "https://example.com/a": _page(_html()),
+            "https://example.com/b": _page(_html()),
+        }
+    )
+    pages = await _recrawl(
+        ScanConfig(),
+        router,
+        httpx_mock,
+        [_SEED, "https://example.com/b"],
+        limit=1,
+    )
+    assert len(pages) == 1
+
+
+async def test_recrawl_caps_at_max_fetches(httpx_mock: object) -> None:
+    router = _Router({f"https://example.com/p{i}": _page(_html()) for i in range(5)})
+    pages = await _recrawl(
+        ScanConfig(),
+        router,
+        httpx_mock,
+        [f"https://example.com/p{i}" for i in range(5)],
+        max_fetches=3,
+    )
+    assert len(pages) == 3
+
+
+async def test_recrawl_skips_a_new_logout_or_destructive_link(httpx_mock: object) -> None:
+    router = _Router(
+        {
+            _SEED: _page(_html("/logout", "/items/9/delete", "/ok")),
+            "https://example.com/ok": _page(_html()),
+            "https://example.com/logout": _page(_html()),
+            "https://example.com/items/9/delete": _page(_html()),
+        }
+    )
+    pages = await _recrawl(_AUTHED, router, httpx_mock, [_SEED])
+    fetched = {p.url for p in pages}
+    assert "https://example.com/ok" in fetched
+    assert "https://example.com/logout" not in fetched
+    assert "https://example.com/items/9/delete" not in fetched

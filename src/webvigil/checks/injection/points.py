@@ -127,3 +127,17 @@ def is_redirect_name(point: InjectionPoint) -> bool:
 
 def is_pathlike(point: InjectionPoint) -> bool:
     return point.param.lower() in _PATHLIKE_NAMES or bool(_PATHLIKE_VALUE.search(point.original))
+
+
+def build_request(
+    point: InjectionPoint, value: str
+) -> tuple[str, str, list[tuple[str, str]], dict[str, str] | None]:
+    """The ``(method, url, params, data)`` to replay ``point`` with ``value`` in its slot.
+
+    Shared by the reflected-injection engine (spec 006) and the stored-XSS pass (spec 008).
+    """
+    fuzzed = [(name, value if name == point.param else current) for name, current in point.params]
+    if point.method == "GET":
+        return "GET", point.base_url, fuzzed, None
+    # httpx wants a Mapping for a urlencoded form body; a pair list takes its raw-content path.
+    return "POST", point.base_url, list(point.query), dict(fuzzed)

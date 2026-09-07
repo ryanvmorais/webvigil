@@ -95,6 +95,16 @@ class ActiveBudget:
         self.time_based_spent += 1
         return True
 
+    def take_recrawl(self, n: int = 1) -> bool:
+        """Reserve ``n`` re-crawl fetches against the per-scan limit only (spec 008, RF-06).
+
+        The per-point cap is a Phase-A concept and must not stop the Phase-B re-crawl.
+        """
+        if self.spent + n > self.request_limit:
+            return False
+        self.spent += n
+        return True
+
 
 @dataclass
 class InjectionReport:
@@ -103,3 +113,22 @@ class InjectionReport:
     hits: list[InjectionHit] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     points_tested: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class StoredMarker:
+    """One marker submitted through one injection point during the stored pass (spec 008)."""
+
+    token: str  # the per-point secrets.token_hex (without the "wv" prefix)
+    point: InjectionPoint
+    payloads: tuple[str, ...]  # the concrete STORED_MARKERS strings sent (token substituted)
+
+
+@dataclass
+class StoredXssReport:
+    """The output of ``StoredXssScanner.run`` (spec 008)."""
+
+    hits: list[InjectionHit] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+    markers_submitted: int = 0
+    pages_recrawled: int = 0

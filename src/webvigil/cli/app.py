@@ -88,6 +88,16 @@ def scan(
             help="Send time-delay SQLi payloads during an Active scan (slower). On by default.",
         ),
     ] = None,
+    stored_xss: Annotated[
+        bool | None,
+        typer.Option(
+            "--stored-xss/--no-stored-xss",
+            help=(
+                "Test for stored/persistent XSS during an Active scan: submit marker payloads "
+                "the target will store, then re-crawl. Off by default."
+            ),
+        ),
+    ] = None,
     cookie: Annotated[
         list[str] | None,
         typer.Option(
@@ -116,6 +126,7 @@ def scan(
             authorized_by=authorized_by,
             probe=probe,
             time_based_sqli=time_based_sqli,
+            stored_xss=stored_xss,
             cookie=cookie,
         )
     except ConfigError as exc:
@@ -183,6 +194,7 @@ def _build_config(
     authorized_by: str | None,
     probe: bool | None,
     time_based_sqli: bool | None,
+    stored_xss: bool | None,
     cookie: list[str] | None,
 ) -> ScanConfig:
     base = ScanConfig.load(config)
@@ -213,6 +225,8 @@ def _build_config(
     injection_overrides: dict[str, object] = {}
     if time_based_sqli is not None:
         injection_overrides["time_based_sqli"] = time_based_sqli
+    if stored_xss is not None:
+        injection_overrides["stored_xss"] = stored_xss
 
     auth_overrides: dict[str, object] = {}
     if cookie is not None:

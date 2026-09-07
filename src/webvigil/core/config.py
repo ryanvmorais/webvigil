@@ -88,12 +88,15 @@ class DisclosureSection(_Section):
 
 
 class InjectionSection(_Section):
-    """Active-injection tuning (spec 006). Only consulted on an Active scan."""
+    """Active-injection tuning (spec 006, spec 008). Only consulted on an Active scan."""
 
     request_budget: int = 500
     max_injection_points: int = 200
     time_based_sqli: bool = True
     time_based_delay_s: int = 5
+    # spec 008 — opt-in stored/persistent-XSS pass. Off by default: the pass submits marker
+    # payloads the target stores and does not remove them (see docs/active-injection.md).
+    stored_xss: bool = False
 
 
 class ScanConfig(_Section):
@@ -139,7 +142,8 @@ class ScanConfig(_Section):
         Only keys the caller actually passes are applied, so unset CLI flags never clobber
         file values. ``sections`` maps a section name (``scan``, ``http``, ``report``,
         ``active``, ``auth``, ``checks``, ``disclosure``, ``injection``) to a dict of the
-        fields to override.
+        fields to override. ``injection`` covers spec 006 tuning plus spec 008's
+        ``stored_xss``.
         """
         merged = self.model_dump()
         for name, values in sections.items():

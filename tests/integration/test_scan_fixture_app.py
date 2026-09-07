@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import functools
+import re
 
 import httpx
 import pytest
@@ -29,6 +30,7 @@ def scan(monkeypatch: pytest.MonkeyPatch):
         probe: bool = False,
         active: bool = False,
         cookies: list[str] | None = None,
+        stored_xss: bool = False,
     ) -> ScanResult:
         app = make_app(profile)
         holder["app"] = app
@@ -40,10 +42,10 @@ def scan(monkeypatch: pytest.MonkeyPatch):
             "checks": {"disabled": _DISABLED},
             "disclosure": {"probe": probe},
         }
-        if active:
+        if active or stored_xss:
             raw["scan"] = {"mode": "active"}
             raw["active"] = {"authorized_by": "integration test"}
-            raw["injection"] = {"time_based_delay_s": 2}
+            raw["injection"] = {"time_based_delay_s": 2, "stored_xss": stored_xss}
         if cookies is not None:
             raw["auth"] = {"cookies": cookies}
         return await Orchestrator(ScanConfig.model_validate(raw)).run(_TARGET)
@@ -121,8 +123,8 @@ async def test_crawler_reaches_the_linked_pages(scan) -> None:
     result = await scan("hardened")
     # /, /about, /contact + the four injectable endpoints linked from the index (spec 006)
     # + the GET /search?q= the crawler submits from the search form + /account (→ /login for
-    # an anonymous scan) (spec 007 RF-05)
-    assert result.metadata.pages_scanned == 9
+    # an anonymous scan) (spec 007 RF-05) + /guestbook (spec 008 RF-13)
+    assert result.metadata.pages_scanned == 10
 
 
 # --- spec 006: active injection -------------------------------------------------
@@ -229,6 +231,73 @@ async def test_cookie_value_never_appears_in_any_report(scan) -> None:
 async def test_authenticated_scan_is_deterministic(scan) -> None:
     async def _once() -> set[tuple[str, str]]:
         result = await scan("insecure", cookies=["session=abc123"])
+        return {(f.check_id, f.fingerprint) for f in result.findings}
+
+    assert await _once() == await _once()
+
+
+# --- spec 008: stored / persistent XSS -----------------------------------------
+
+
+def _stored(result: ScanResult):
+    return [f for f in result.findings if f.check_id == "injection.xss.stored"]
+
+
+async def test_stored_xss_found_on_the_insecure_guestbook(scan) -> None:
+    result = await scan("insecure", stored_xss=True)
+    stored = _stored(result)
+    gb = next((f for f in stored if f.location.url.endswith("/guestbook")), None)
+    assert gb is not None
+    assert (gb.location.method, gb.location.param) == ("POST", "body")
+    rendered_on = {e.label: e.content for e in gb.evidence}["Rendered on"]
+    assert "/guestbook/e/" in rendered_on
+    assert result.errors == ()
+
+
+async def test_stored_xss_render_location_is_the_per_entry_page(scan) -> None:
+    result = await scan("insecure", stored_xss=True)
+    gb = next(f for f in _stored(result) if f.location.url.endswith("/guestbook"))
+    # /guestbook only lists links; the raw marker renders on /guestbook/e/<id>, which the
+    # first crawl never saw — proving the one-hop re-crawl reached it.
+    rendered_on = {e.label: e.content for e in gb.evidence}["Rendered on"]
+    assert re.search(r"/guestbook/e/\d+", rendered_on)
+
+
+async def test_stored_xss_not_run_without_the_opt_in(scan) -> None:
+    result = await scan("insecure", active=True)
+    assert _stored(result) == []
+    log = scan.holder["app"].state.requests  # type: ignore[attr-defined]
+    # the per-entry pages are only fetched by the Phase B re-crawl, which never ran
+    assert not any(e.startswith("GET /guestbook/e/") for e in log)
+
+
+async def test_stored_xss_passive_scan_does_nothing(scan) -> None:
+    result = await scan("insecure")
+    assert _stored(result) == []
+    log = scan.holder["app"].state.requests  # type: ignore[attr-defined]
+    assert not any(e.startswith("POST /guestbook") for e in log)
+
+
+async def test_hardened_profile_reports_no_stored_xss(scan) -> None:
+    result = await scan("hardened", stored_xss=True)
+    assert not any(f.check_id.startswith("injection.") for f in result.findings)
+
+
+async def test_authenticated_stored_xss_reaches_the_account_area_and_keeps_the_cookie_private(
+    scan,
+) -> None:
+    result = await scan("insecure", cookies=["session=s3cr3t008"], stored_xss=True)
+    from webvigil.reporting import get_reporter
+
+    params = {(f.location.method, f.location.param) for f in _stored(result)}
+    assert ("POST", "nickname") in params  # the behind-login /profile → /account/settings sink
+    for fmt in ("json", "sarif", "html", "md"):
+        assert "s3cr3t008" not in get_reporter(fmt).render(result)
+
+
+async def test_stored_xss_scan_is_deterministic(scan) -> None:
+    async def _once() -> set[tuple[str, str]]:
+        result = await scan("insecure", stored_xss=True)
         return {(f.check_id, f.fingerprint) for f in result.findings}
 
     assert await _once() == await _once()

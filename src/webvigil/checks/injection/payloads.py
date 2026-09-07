@@ -100,3 +100,17 @@ REDIRECT_PAYLOADS: tuple[str, ...] = (
     "\thttps://webvigil.invalid",
     "https://{host}@webvigil.invalid",
 )
+
+# --- stored / persistent XSS (spec 008, RF-04) ------------------------------------
+
+STORED_TOKEN_BYTES = 6
+# {token} is a per-point secrets.token_hex, so a marker found on the re-crawl traces back to
+# the exact injection point. A hit needs the tag back *verbatim* (`<` and `>` not entity-
+# encoded) in an HTML response, on a page other than the one it was submitted to. The tag is
+# inert in a browser (no script, no handler, no URL) but unambiguously rendered as an element
+# if the app failed to escape it, and it carries `wvstored` so it is attributable to WebVigil
+# in the target's data store.
+STORED_MARKERS: tuple[str, ...] = (
+    "<wvstored{token}>",
+    '"><wvstored{token}>',
+)

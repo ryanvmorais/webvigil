@@ -3,7 +3,13 @@
 from __future__ import annotations
 
 from tests.support import make_page
-from webvigil.checks.injection.points import enumerate_points, is_pathlike, is_redirect_name
+from webvigil.checks.injection.models import InjectionPoint
+from webvigil.checks.injection.points import (
+    build_request,
+    enumerate_points,
+    is_pathlike,
+    is_redirect_name,
+)
 from webvigil.crawler.forms import Form, FormField
 
 
@@ -73,3 +79,26 @@ def test_priority_helpers() -> None:
     assert is_pathlike(points["file"])  # by name
     assert is_pathlike(points["p"])  # by value shape
     assert not is_pathlike(points["q"])
+
+
+def test_build_request_get_carries_a_pair_list() -> None:
+    point = InjectionPoint("GET", "https://example.com/s", "q", "hi", (("q", "hi"), ("lang", "en")))
+    method, url, params, data = build_request(point, "PAY")
+    assert (method, url, data) == ("GET", "https://example.com/s", None)
+    assert params == [("q", "PAY"), ("lang", "en")]
+
+
+def test_build_request_post_uses_a_dict_body_and_keeps_the_action_query() -> None:
+    point = InjectionPoint(
+        "POST",
+        "https://example.com/c",
+        "body",
+        "",
+        (("body", ""), ("csrf", "tok")),
+        query=(("ref", "1"),),
+        source="form",
+    )
+    method, url, params, data = build_request(point, "PAY")
+    assert (method, url) == ("POST", "https://example.com/c")
+    assert params == [("ref", "1")]
+    assert data == {"body": "PAY", "csrf": "tok"}

@@ -97,11 +97,15 @@ def test_injection_section_defaults_and_round_trips(tmp_path: Path) -> None:
     assert defaults.max_injection_points == 200
     assert defaults.time_based_sqli is True
     assert defaults.time_based_delay_s == 5
+    assert defaults.stored_xss is False
     path = tmp_path / "webvigil.toml"
-    path.write_text("[injection]\nrequest_budget = 40\ntime_based_sqli = false\n", "utf-8")
+    path.write_text(
+        "[injection]\nrequest_budget = 40\ntime_based_sqli = false\nstored_xss = true\n", "utf-8"
+    )
     loaded = ScanConfig.load(path).injection
     assert loaded.request_budget == 40
     assert loaded.time_based_sqli is False
+    assert loaded.stored_xss is True
 
 
 def test_unknown_injection_key_is_rejected(tmp_path: Path) -> None:
@@ -115,6 +119,11 @@ def test_injection_override_wins_over_file() -> None:
     base = ScanConfig.model_validate({"injection": {"time_based_sqli": True}})
     merged = base.with_overrides(injection={"time_based_sqli": False})
     assert merged.injection.time_based_sqli is False
+
+
+def test_stored_xss_override_wins_over_file() -> None:
+    base = ScanConfig.model_validate({"injection": {"stored_xss": False}})
+    assert base.with_overrides(injection={"stored_xss": True}).injection.stored_xss is True
 
 
 def test_auth_cookies_default_empty_and_round_trip(tmp_path: Path) -> None:

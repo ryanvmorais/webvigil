@@ -10,6 +10,7 @@ submits safe ``GET`` forms (search, filters) with their default values (RF-05) a
 from __future__ import annotations
 
 from collections import deque
+from collections.abc import Callable, Sequence
 from urllib.parse import urljoin, urlsplit
 
 from selectolax.parser import HTMLParser
@@ -74,6 +75,38 @@ class Crawler:
             pages.append(page)
             self._enqueue_links(page, seen, queue)
             self._collect_and_enqueue_forms(page, seen, queue)
+
+        return pages
+
+    async def recrawl(
+        self,
+        frontier: Sequence[str],
+        *,
+        should_fetch: Callable[[], bool],
+        max_fetches: int,
+    ) -> list[Page]:
+        """Re-fetch every ``frontier`` URL, then follow **one hop** of new in-scope links
+        and safe ``GET`` forms discovered on those pages (spec 008, RF-05).
+
+        Reuses the crawl's scope / logout / destructive / auth-form skips and
+        ``submit_forms`` handling. ``should_fetch()`` is called (and, for a budget guard,
+        consumes a slot) immediately before each fetch; a ``False`` return stops the
+        re-crawl. At most ``max_fetches`` pages. Robots / sitemap are not re-consulted.
+        """
+        seen: set[str] = {normalize_url(u) for u in frontier}
+        pages: list[Page] = []
+        queue: deque[str] = deque()
+
+        for url in dict.fromkeys(normalize_url(u) for u in frontier):
+            if len(pages) >= max_fetches or not should_fetch():
+                return pages
+            page = await self._fetch(url)
+            pages.append(page)
+            self._enqueue_links(page, seen, queue)
+            self._collect_and_enqueue_forms(page, seen, queue)
+
+        while queue and len(pages) < max_fetches and should_fetch():
+            pages.append(await self._fetch(queue.popleft()))
 
         return pages
 
