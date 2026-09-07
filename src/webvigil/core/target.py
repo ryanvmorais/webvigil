@@ -1,7 +1,8 @@
-"""Target parsing, URL normalization, and scope checks.
+"""
+Target parsing, URL normalization, and scope checks.
 
-A :class:`Target` is built once at the start of a scan and shared (read-only) with the HTTP
-layer, the crawler, and every check.
+A :class:`Target` is built once at the start of a scan and shared (read-only)
+with the HTTP layer, the crawler, and every check.
 """
 
 from __future__ import annotations
@@ -46,17 +47,30 @@ _MULTI_LABEL_SUFFIXES = frozenset(
 
 
 class Scope(StrEnum):
-    """How wide the scan is allowed to reach."""
+    """
+    How wide the scan is allowed to reach.
+
+    Attributes:
+        HOST (str): Only the exact target host.
+        SUBDOMAINS (str): The target's registrable domain and any subdomain.
+    """
 
     HOST = "host"
     SUBDOMAINS = "subdomains"
 
 
 def normalize_url(url: str) -> str:
-    """Return a canonical form of ``url`` for de-duplication and comparison.
+    """
+    Return a canonical form of ``url`` for de-duplication and comparison.
 
-    Lowercases the scheme and host, drops a default port, drops the fragment, and keeps the
-    path (at least ``/``) and query.
+    Lowercases the scheme and host, drops a default port, drops the fragment,
+    and keeps the path (at least ``/``) and query.
+
+    Args:
+        url (str): An absolute URL. A value with no host is returned unchanged.
+
+    Returns:
+        str: The canonical URL.
     """
     parts = urlsplit(url)
     scheme = parts.scheme.lower()
@@ -71,7 +85,16 @@ def normalize_url(url: str) -> str:
 
 
 def registrable_domain(host: str) -> str:
-    """Best-effort registrable domain of ``host`` using the bundled suffix subset."""
+    """
+    Best-effort registrable domain of ``host`` using the bundled suffix subset.
+
+    Args:
+        host (str): A hostname, e.g. ``"api.example.co.uk"``.
+
+    Returns:
+        str: The registrable domain (``"example.co.uk"``). Falls back to the
+            last two labels for any suffix not in ``_MULTI_LABEL_SUFFIXES``.
+    """
     labels = host.lower().split(".")
     if len(labels) <= 2:
         return host.lower()
@@ -84,7 +107,15 @@ def registrable_domain(host: str) -> str:
 
 @dataclass(frozen=True, slots=True)
 class Target:
-    """A normalized scan target plus its scope rule."""
+    """
+    A normalized scan target plus its scope rule.
+
+    Attributes:
+        entry_url (str): The normalized URL the scan starts from.
+        host (str): The lower-cased target host.
+        origin (str): Scheme + host + non-default port, with no path or query.
+        scope (Scope): How wide the crawl may reach.
+    """
 
     entry_url: str
     host: str
@@ -93,7 +124,21 @@ class Target:
 
     @classmethod
     def parse(cls, raw: str, *, scope: Scope = Scope.HOST) -> Target:
-        """Build a target from user input, assuming ``https://`` when no scheme is given."""
+        """
+        Build a target from user input, assuming ``https://`` when no scheme is given.
+
+        Args:
+            raw (str): The target as typed by the user.
+            scope (Scope): How wide the crawl may reach. Defaults to
+                :attr:`Scope.HOST`.
+
+        Returns:
+            Target: The parsed, normalized target.
+
+        Raises:
+            InvalidTargetError: If ``raw`` is empty, carries a non-HTTP scheme,
+                or has no resolvable host.
+        """
         candidate = raw.strip()
         if not candidate:
             raise InvalidTargetError("target URL is empty")
@@ -119,7 +164,16 @@ class Target:
         return cls(entry_url=entry_url, host=host, origin=origin, scope=scope)
 
     def in_scope(self, url: str) -> bool:
-        """Whether ``url`` may be requested under this target's scope rule."""
+        """
+        Whether ``url`` may be requested under this target's scope rule.
+
+        Args:
+            url (str): An absolute URL, or a bare ``host[:port]``.
+
+        Returns:
+            bool: ``True`` when the host equals the target host, or — under
+                :attr:`Scope.SUBDOMAINS` — shares its registrable domain.
+        """
         parts = urlsplit(url if "://" in url else f"//{url}")
         other = (parts.hostname or "").lower()
         if not other:

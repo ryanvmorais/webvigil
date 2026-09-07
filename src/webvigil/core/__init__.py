@@ -1,6 +1,9 @@
-"""Scan engine: orchestrator, target/scope model, findings, and configuration.
+"""
+Scan engine: orchestrator, target/scope model, findings, and configuration.
 
-Pure library code — must not import FastAPI, SQLModel, Typer, Rich, or any UI concern.
+Pure library code. This package must not import FastAPI, SQLModel, Typer, Rich,
+or any other UI or persistence concern — the boundary is enforced by
+import-linter in CI.
 """
 
 from __future__ import annotations
@@ -67,8 +70,22 @@ __all__ = [
 
 
 def __getattr__(name: str) -> object:
-    # Lazy so importing `webvigil.core` does not eagerly pull the orchestrator, which
-    # depends on `webvigil.checks` / `webvigil.http` / `webvigil.crawler`.
+    """
+    Resolve :class:`~webvigil.core.orchestrator.Orchestrator` lazily on first access (PEP 562).
+
+    Importing ``webvigil.core`` must stay cheap. The orchestrator pulls in
+    ``webvigil.checks``, ``webvigil.http`` and ``webvigil.crawler``, so it is
+    imported only when the name is actually referenced.
+
+    Args:
+        name (str): The attribute name requested on the module.
+
+    Returns:
+        object: The ``Orchestrator`` class when ``name`` is ``"Orchestrator"``.
+
+    Raises:
+        AttributeError: For any other attribute name.
+    """
     if name == "Orchestrator":
         from webvigil.core.orchestrator import Orchestrator
 

@@ -1,7 +1,9 @@
-"""The orchestrator: the one entry point that runs a whole scan (RF-11, RF-15).
+"""
+The orchestrator: the one entry point that runs a whole scan (RF-11, RF-15).
 
-Parse target → enforce the Active-Mode gate → crawl in scope → run the selected checks
-concurrently against a shared context → dedupe findings → assemble a ``ScanResult``.
+Parse target → enforce the Active-Mode gate → crawl in scope → run the selected
+checks concurrently against a shared context → dedupe findings → assemble a
+:class:`~webvigil.core.result.ScanResult`.
 """
 
 from __future__ import annotations
@@ -40,7 +42,12 @@ _STORED_CHECK_ID = "injection.xss.stored"
 
 
 class Orchestrator:
-    """Runs one scan from a raw target string to a :class:`ScanResult`."""
+    """
+    Runs one scan from a raw target string to a :class:`~webvigil.core.result.ScanResult`.
+
+    Attributes are private; construct one with a resolved config and call
+    :meth:`run`.
+    """
 
     def __init__(
         self,
@@ -48,10 +55,38 @@ class Orchestrator:
         *,
         check_types: Sequence[type[Check]] | None = None,
     ) -> None:
+        """
+        Args:
+            config (ScanConfig): The fully resolved configuration for the scan.
+            check_types (Sequence[type[Check]] | None): An explicit check set,
+                bypassing registry discovery. Used by tests; ``None`` in normal
+                operation.
+        """
         self._config = config
         self._check_types = check_types
 
     async def run(self, raw_target: str) -> ScanResult:
+        """
+        Run a full scan and return its result.
+
+        Parses ``raw_target``, enforces the Active-Mode gate, crawls in scope,
+        runs the fingerprint / OSV / disclosure-probe / injection passes,
+        fans the selected checks over a shared context, dedupes, and assembles
+        the result.
+
+        Args:
+            raw_target (str): The target as typed by the user; ``https://`` is
+                assumed when no scheme is given.
+
+        Returns:
+            ScanResult: Metadata, deduplicated findings, detected technologies,
+                per-check errors, and warnings.
+
+        Raises:
+            InvalidTargetError: If ``raw_target`` cannot be parsed.
+            ActiveModeNotAuthorized: If Active Mode is requested without an
+                ``authorized_by`` attestation.
+        """
         started_at = datetime.now(UTC)
         target = Target.parse(raw_target, scope=self._config.scan.scope)
         self._enforce_active_gate()
@@ -126,7 +161,22 @@ class Orchestrator:
         pages: tuple[Page, ...],
         warnings: list[str],
     ) -> tuple[Detection, ...]:
-        """Run the dependency fingerprint pass when a DEPS check is selected (ADR-1, ADR-3)."""
+        """
+        Run the dependency fingerprint pass when a DEPS check is selected (ADR-1, ADR-3).
+
+        A no-op returning ``()`` when no DEPS check is in ``check_types``.
+        Appends any staleness or fingerprint notice to ``warnings`` in place.
+
+        Args:
+            check_types (Sequence[type[Check]]): The checks selected for the run.
+            http (HttpClient): The shared, scope-guarded HTTP client.
+            target (Target): The normalized target.
+            pages (tuple[Page, ...]): The pages the crawler discovered.
+            warnings (list[str]): Scan-level warning list, appended to in place.
+
+        Returns:
+            tuple[Detection, ...]: The libraries the pass identified.
+        """
         if not any(check.category is Category.DEPS for check in check_types):
             return ()
         rules = RetireJsRules.load()
@@ -141,10 +191,22 @@ class Orchestrator:
         detections: tuple[Detection, ...],
         warnings: list[str],
     ) -> dict[tuple[str, str], tuple[Advisory, ...]]:
-        """Query OSV.dev for the detected libraries when ``[deps] osv_online`` is on (spec 010).
+        """
+        Query OSV.dev for the detected libraries when ``[deps] osv_online`` is on (spec 010).
 
-        Opt-in and additive: on any failure the scan keeps the offline Retire.js results and
-        records a warning (RF-01, RF-03, RF-09, ADR-2).
+        Opt-in and additive: a no-op returning ``{}`` when the flag is off, no
+        DEPS check is selected, or nothing was detected with a version. On any
+        lookup failure the scan keeps the offline Retire.js results and records
+        a warning (RF-01, RF-03, RF-09, ADR-2).
+
+        Args:
+            check_types (Sequence[type[Check]]): The checks selected for the run.
+            detections (tuple[Detection, ...]): Libraries from :meth:`_fingerprint`.
+            warnings (list[str]): Scan-level warning list, appended to in place.
+
+        Returns:
+            dict[tuple[str, str], tuple[Advisory, ...]]: ``(name, version)`` ->
+                OSV advisories, for the check to merge with the offline match.
         """
         if not self._config.deps.osv_online:
             return {}
@@ -176,7 +238,23 @@ class Orchestrator:
         pages: tuple[Page, ...],
         warnings: list[str],
     ) -> tuple[ProbeHit, ...]:
-        """Run the disclosure probe pass when ``probe`` is on and a probe-fed check is selected."""
+        """
+        Run the disclosure probe pass when ``probe`` is on and a probe-fed check is selected.
+
+        A no-op returning ``()`` when ``[disclosure] probe`` is off or no
+        probe-fed check is selected. Appends probe notices to ``warnings`` in
+        place.
+
+        Args:
+            check_types (Sequence[type[Check]]): The checks selected for the run.
+            http (HttpClient): The shared, scope-guarded HTTP client.
+            target (Target): The normalized target.
+            pages (tuple[Page, ...]): The pages the crawler discovered.
+            warnings (list[str]): Scan-level warning list, appended to in place.
+
+        Returns:
+            tuple[ProbeHit, ...]: The sensitive paths the probe reached.
+        """
         if not self._config.disclosure.probe:
             return ()
         if not any(getattr(check, "family", None) in _PROBE_FAMILIES for check in check_types):
@@ -194,7 +272,24 @@ class Orchestrator:
         forms: tuple[Form, ...],
         warnings: list[str],
     ) -> tuple[InjectionHit, ...]:
-        """Run the active-injection pass when the scan is Active and a check is selected."""
+        """
+        Run the active-injection pass when the scan is Active and a check is selected.
+
+        A no-op returning ``()`` in Passive Mode or when no injection check is
+        selected. A detector bug is caught here and downgraded to a warning so
+        it cannot abort the whole scan.
+
+        Args:
+            check_types (Sequence[type[Check]]): The checks selected for the run.
+            http (HttpClient): The shared, scope-guarded HTTP client.
+            target (Target): The normalized target.
+            pages (tuple[Page, ...]): The pages the crawler discovered.
+            forms (tuple[Form, ...]): The parsed ``<form>`` inventory.
+            warnings (list[str]): Scan-level warning list, appended to in place.
+
+        Returns:
+            tuple[InjectionHit, ...]: The confirmed reflected-injection hits.
+        """
         if self._config.scan.mode is not ScanMode.ACTIVE:
             return ()
         selected = {
@@ -221,7 +316,24 @@ class Orchestrator:
         forms: tuple[Form, ...],
         warnings: list[str],
     ) -> tuple[InjectionHit, ...]:
-        """Run the two-phase stored-XSS pass (spec 008) when it is Active, selected, opted in."""
+        """
+        Run the two-phase stored-XSS pass (spec 008) when it is Active, selected, opted in.
+
+        A no-op returning ``()`` in Passive Mode, when ``[injection] stored_xss``
+        is off, or when the stored-XSS check is not selected. A detector bug is
+        caught here and downgraded to a warning.
+
+        Args:
+            check_types (Sequence[type[Check]]): The checks selected for the run.
+            http (HttpClient): The shared, scope-guarded HTTP client.
+            target (Target): The normalized target.
+            pages (tuple[Page, ...]): The pages the crawler discovered.
+            forms (tuple[Form, ...]): The parsed ``<form>`` inventory.
+            warnings (list[str]): Scan-level warning list, appended to in place.
+
+        Returns:
+            tuple[InjectionHit, ...]: The confirmed stored-XSS hits.
+        """
         if self._config.scan.mode is not ScanMode.ACTIVE:
             return ()
         if not self._config.injection.stored_xss:
@@ -237,6 +349,13 @@ class Orchestrator:
         return tuple(report.hits)
 
     def _enforce_active_gate(self) -> None:
+        """
+        Refuse to proceed in Active Mode without an authorization attestation.
+
+        Raises:
+            ActiveModeNotAuthorized: In Active Mode when ``[active].authorized_by``
+                is absent or blank.
+        """
         if self._config.scan.mode is not ScanMode.ACTIVE:
             return
         if self._config.active is None or not self._config.active.authorized_by.strip():
@@ -246,6 +365,19 @@ class Orchestrator:
             )
 
     def _select_checks(self, warnings: list[str]) -> list[type[Check]]:
+        """
+        Resolve the checks to run: the explicit set if given, else registry discovery.
+
+        Loads plugins, then filters the registry by scan mode and the
+        configured disabled list. An unknown id in that list becomes a warning,
+        not an error.
+
+        Args:
+            warnings (list[str]): Scan-level warning list, appended to in place.
+
+        Returns:
+            list[type[Check]]: The check classes to instantiate and run.
+        """
         if self._check_types is not None:
             return list(self._check_types)
         load_plugins()
@@ -261,6 +393,20 @@ class Orchestrator:
     async def _run_checks(
         self, check_types: Sequence[type[Check]], context: ScanContext
     ) -> tuple[list[Finding], list[CheckError]]:
+        """
+        Instantiate and run every selected check concurrently over one shared context.
+
+        Each check runs in its own task; one that raises is recorded as a
+        :class:`~webvigil.core.result.CheckError` instead of failing the group.
+
+        Args:
+            check_types (Sequence[type[Check]]): The check classes to run.
+            context (ScanContext): The shared, read-only scan context.
+
+        Returns:
+            tuple[list[Finding], list[CheckError]]: The findings every check
+                produced, and one entry per check that raised.
+        """
         findings: list[Finding] = []
         errors: list[CheckError] = []
 
@@ -285,6 +431,17 @@ class Orchestrator:
 
 
 def _dedupe(findings: Sequence[Finding]) -> tuple[Finding, ...]:
+    """
+    Drop findings whose fingerprint has already been seen, keeping the first.
+
+    Args:
+        findings (Sequence[Finding]): The findings from every check, in run
+            order.
+
+    Returns:
+        tuple[Finding, ...]: The findings with duplicates removed, order
+            preserved.
+    """
     seen: set[str] = set()
     unique: list[Finding] = []
     for finding in findings:
