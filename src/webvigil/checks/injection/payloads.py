@@ -1,8 +1,10 @@
-"""The documented, static payload sets for the active-injection detectors (spec 006, RNF-07).
+"""
+The documented, static payload sets for the active-injection detectors (spec 006, RNF-07).
 
 Small and well-known — no mutation engine, no WAF-evasion tuning. ``{token}`` /
-``{d}`` / ``{host}`` are substituted by the detector. Signatures are compiled regexes
-matched against a response body and required to be *absent from the baseline*.
+``{d}`` / ``{host}`` are substituted by the detector. Signatures are compiled
+regexes matched against a response body and required to be *absent from the
+baseline*.
 """
 
 from __future__ import annotations

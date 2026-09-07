@@ -1,7 +1,8 @@
-"""SQL-injection detectors: error-based, boolean-based blind, time-based blind (RF-09).
+"""
+SQL-injection detectors: error-based, boolean-based blind, time-based blind (RF-09).
 
-All three compare against the point's shared baseline and confirm their signal before
-emitting a hit (RF-13).
+All three compare against the point's shared baseline and confirm their signal
+before emitting a hit (RF-13).
 """
 
 from __future__ import annotations
@@ -22,16 +23,43 @@ _GAP = 0.90  # FALSE-vs-baseline ceiling
 
 
 def _ratio(a: str, b: str) -> float:
+    """
+    Args:
+        a (str): First string.
+        b (str): Second string.
+
+    Returns:
+        float: A fast upper-bound similarity ratio in ``[0, 1]``.
+    """
     return SequenceMatcher(None, a, b).quick_ratio()
 
 
 def _point_evidence(point: InjectionPoint) -> tuple[str, str]:
+    """
+    Args:
+        point (InjectionPoint): The point under test.
+
+    Returns:
+        tuple[str, str]: The ``("Injection point", ...)`` evidence pair.
+    """
     return ("Injection point", f"{point.method} {point.base_url} — parameter '{point.param}'")
 
 
 async def detect_error(
     point: InjectionPoint, baseline: Baseline, ctx: DetectCtx
 ) -> list[InjectionHit]:
+    """
+    Error-based: break the quoting and look for a DBMS parser error absent from the baseline.
+
+    Args:
+        point (InjectionPoint): The point under test.
+        baseline (Baseline): Its baseline response.
+        ctx (DetectCtx): The budget-aware send context.
+
+    Returns:
+        list[InjectionHit]: A single ``sqli-error`` hit naming the DBMS, or
+            empty.
+    """
     for probe in payloads.SQLI_ERROR:
         response = await ctx.send(point, point.original + probe)
         if response is None:
@@ -64,6 +92,20 @@ async def detect_error(
 async def detect_boolean(
     point: InjectionPoint, baseline: Baseline, ctx: DetectCtx
 ) -> list[InjectionHit]:
+    """
+    Boolean-based blind: find a pair where TRUE matches the baseline and FALSE diverges.
+
+    Guards against a noisy page: re-checks page stability, then re-runs the same
+    pair to confirm the split reproduces before emitting.
+
+    Args:
+        point (InjectionPoint): The point under test.
+        baseline (Baseline): Its baseline response.
+        ctx (DetectCtx): The budget-aware send context.
+
+    Returns:
+        list[InjectionHit]: A single ``sqli-boolean`` hit, or empty.
+    """
     for true_p, false_p in payloads.SQLI_BOOLEAN_PAIRS:
         true_r = await ctx.send(point, point.original + true_p)
         false_r = await ctx.send(point, point.original + false_p)
@@ -113,6 +155,16 @@ async def detect_boolean(
 
 
 def _splits(baseline_norm: str, true_body: str, false_body: str) -> bool:
+    """
+    Args:
+        baseline_norm (str): The normalised baseline body.
+        true_body (str): The TRUE-payload response body.
+        false_body (str): The FALSE-payload response body.
+
+    Returns:
+        bool: ``True`` when TRUE stays close to the baseline (>= ``_SIMILARITY``)
+            and FALSE diverges (<= ``_GAP``).
+    """
     return (
         _ratio(baseline_norm, normalize_body(true_body)) >= _SIMILARITY
         and _ratio(baseline_norm, normalize_body(false_body)) <= _GAP
@@ -122,6 +174,23 @@ def _splits(baseline_norm: str, true_body: str, false_body: str) -> bool:
 async def detect_time(
     point: InjectionPoint, baseline: Baseline, ctx: DetectCtx
 ) -> list[InjectionHit]:
+    """
+    Time-based blind: a payload that sleeps ``delay`` seconds must slow the response.
+
+    Confirms by re-running at half the delay and checking the response time
+    scales with the request rather than staying at the full delay.
+
+    Args:
+        point (InjectionPoint): The point under test.
+        baseline (Baseline): Its baseline response, for the timing floor.
+        ctx (DetectCtx): The budget-aware send context; ``ctx.delay_s`` is the
+            requested delay.
+
+    Returns:
+        list[InjectionHit]: A single ``sqli-time`` hit (HIGH confidence, or
+            MEDIUM when the confirmation request was denied by the budget), or
+            empty.
+    """
     delay = ctx.delay_s
     threshold_ms = (delay - 1) * 1000
     for dbms, template in payloads.SQLI_TIME:

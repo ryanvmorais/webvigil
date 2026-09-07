@@ -1,8 +1,10 @@
-"""Open-redirect detector — an off-site value is honoured in the redirect target (RF-11).
+"""
+Open-redirect detector — an off-site value is honoured in the redirect target (RF-11).
 
-WebVigil inspects the ``Location`` header (and a ``<meta refresh>`` / ``location.href`` in
-the body); it never follows the redirect to the sentinel host (RF-02) — the HTTP layer has
-already refused the off-scope hop and recorded it in ``final_location``.
+WebVigil inspects the ``Location`` header (and a ``<meta refresh>`` /
+``location.href`` in the body); it never follows the redirect to the sentinel
+host (RF-02) — the HTTP layer has already refused the off-scope hop and recorded
+it in ``final_location``.
 """
 
 from __future__ import annotations
@@ -25,6 +27,18 @@ _JS_RE = re.compile(
 
 
 async def detect(point: InjectionPoint, baseline: Baseline, ctx: DetectCtx) -> list[InjectionHit]:
+    """
+    Args:
+        point (InjectionPoint): The point under test.
+        baseline (Baseline): Its baseline response (unused — the sentinel host
+            is unambiguous).
+        ctx (DetectCtx): The budget-aware send context.
+
+    Returns:
+        list[InjectionHit]: A single ``redirect`` hit when the sentinel host
+            reaches the ``Location`` (HIGH) or a ``<meta refresh>`` /
+            ``location`` assignment (MEDIUM), else empty.
+    """
     for template in payloads.REDIRECT_PAYLOADS:
         payload = template.replace("{host}", ctx.host)
         response = await ctx.send(point, payload)
@@ -58,6 +72,14 @@ async def detect(point: InjectionPoint, baseline: Baseline, ctx: DetectCtx) -> l
 
 
 def _honoured(response: Response) -> tuple[str | None, Confidence]:
+    """
+    Args:
+        response (Response): The response to the redirect payload.
+
+    Returns:
+        tuple[str | None, Confidence]: A description of how the sentinel was
+            honoured and the confidence, or ``(None, LOW)`` when it was not.
+    """
     if response.final_location and _host(response.final_location) == _SENTINEL:
         return f"Location -> {response.final_location}", Confidence.HIGH
     location = response.headers.get("location")
@@ -71,6 +93,15 @@ def _honoured(response: Response) -> tuple[str | None, Confidence]:
 
 
 def _host(url: str) -> str:
+    """
+    Args:
+        url (str): A possibly-malformed redirect target (backslashes,
+            scheme-relative).
+
+    Returns:
+        str: Its lower-cased host, normalising ``\\`` to ``/`` and a leading
+            ``//`` to ``http://``.
+    """
     candidate = url.replace("\\", "/").strip()
     if candidate.startswith("//"):
         candidate = "http:" + candidate

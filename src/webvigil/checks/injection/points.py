@@ -1,9 +1,10 @@
-"""Injection-point enumeration and the fuzz / skip heuristics (spec 006, RF-04, RF-06).
+"""
+Injection-point enumeration and the fuzz / skip heuristics (spec 006, RF-04, RF-06).
 
-Points come from two places, parsed from data the crawler already has: query-string
-parameters on discovered URLs, and fuzzable fields of discovered forms. Forms that look
-like authentication or destruction are dropped here (RF-04) — the crawler reported them,
-this module decides what to do with them.
+Points come from two places, parsed from data the crawler already has:
+query-string parameters on discovered URLs, and fuzzable fields of discovered
+forms. Forms that look like authentication or destruction are dropped here
+(RF-04) — the crawler reported them, this module decides what to do with them.
 """
 
 from __future__ import annotations
@@ -132,6 +133,14 @@ _URLLIKE_VALUE = re.compile(r"^\s*(?:https?:)?//|\bhttps?://|://|^\s*www\.", re.
 
 
 def _base_of(url: str) -> tuple[str, tuple[tuple[str, str], ...]]:
+    """
+    Args:
+        url (str): An absolute URL.
+
+    Returns:
+        tuple[str, tuple[tuple[str, str], ...]]: The URL with its query
+            stripped, and the parsed query pairs (blank values kept).
+    """
     parts = urlsplit(url)
     base = urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
     return base, tuple(parse_qsl(parts.query, keep_blank_values=True))
@@ -140,7 +149,22 @@ def _base_of(url: str) -> tuple[str, tuple[tuple[str, str], ...]]:
 def enumerate_points(
     pages: tuple[Page, ...], forms: tuple[Form, ...], *, max_points: int
 ) -> tuple[list[InjectionPoint], list[str]]:
-    """Return the injection points to test (stably ordered, capped) plus any cap warning."""
+    """
+    Enumerate the injection points to test.
+
+    Query parameters from every OK page plus fuzzable fields of every form that
+    is not auth- or destruction-shaped, de-duplicated by
+    :attr:`InjectionPoint.key`, sorted, and capped at ``max_points``.
+
+    Args:
+        pages (tuple[Page, ...]): The crawled pages.
+        forms (tuple[Form, ...]): The parsed form inventory.
+        max_points (int): Hard cap on the number of points returned.
+
+    Returns:
+        tuple[list[InjectionPoint], list[str]]: The points (stably ordered,
+            capped) and a one-item warning list when the cap truncated them.
+    """
     seen: set[str] = set()
     points: list[InjectionPoint] = []
 
@@ -181,23 +205,60 @@ def enumerate_points(
 
 
 def is_redirect_name(point: InjectionPoint) -> bool:
+    """
+    Args:
+        point (InjectionPoint): The point to classify.
+
+    Returns:
+        bool: ``True`` when the parameter name is one the open-redirect detector
+            should try first.
+    """
     return point.param.lower() in _PREFERRED_REDIRECT
 
 
 def is_pathlike(point: InjectionPoint) -> bool:
+    """
+    Args:
+        point (InjectionPoint): The point to classify.
+
+    Returns:
+        bool: ``True`` when the name or current value looks like a file path —
+            the traversal detector front-loads these.
+    """
     return point.param.lower() in _PATHLIKE_NAMES or bool(_PATHLIKE_VALUE.search(point.original))
 
 
 def is_urllike(point: InjectionPoint) -> bool:
+    """
+    Args:
+        point (InjectionPoint): The point to classify.
+
+    Returns:
+        bool: ``True`` when the name or current value looks like a URL the
+            server would fetch — the SSRF detector front-loads these and sends
+            its full payload set only for them.
+    """
     return point.param.lower() in _URLLIKE_NAMES or bool(_URLLIKE_VALUE.search(point.original))
 
 
 def build_request(
     point: InjectionPoint, value: str
 ) -> tuple[str, str, list[tuple[str, str]], dict[str, str] | None]:
-    """The ``(method, url, params, data)`` to replay ``point`` with ``value`` in its slot.
+    """
+    Build the request to replay ``point`` with ``value`` in its slot.
 
-    Shared by the reflected-injection engine (spec 006) and the stored-XSS pass (spec 008).
+    Shared by the reflected-injection engine (spec 006) and the stored-XSS pass
+    (spec 008).
+
+    Args:
+        point (InjectionPoint): The point to replay.
+        value (str): The value to place in the point's parameter.
+
+    Returns:
+        tuple[str, str, list[tuple[str, str]], dict[str, str] | None]: The
+            ``(method, url, params, data)`` — for a GET, ``data`` is ``None`` and
+            ``params`` carries the fuzzed pairs; for a POST, ``params`` carries
+            the action's own query and ``data`` the fuzzed body.
     """
     fuzzed = [(name, value if name == point.param else current) for name, current in point.params]
     if point.method == "GET":

@@ -1,8 +1,10 @@
-"""The per-class injection detectors and the context they run in (spec 006, RF-08..RF-11).
+"""
+The per-class injection detectors and the context they run in (spec 006, RF-08..RF-11).
 
-Each detector is ``async def detect(point, baseline, ctx) -> list[InjectionHit]``. It never
-touches the budget directly — :meth:`DetectCtx.send` reserves the request and returns
-``None`` when a cap is reached, at which point the detector simply stops.
+Each detector is ``async def detect(point, baseline, ctx) -> list[InjectionHit]``.
+It never touches the budget directly — :meth:`DetectCtx.send` reserves the
+request and returns ``None`` when a cap is reached, at which point the detector
+simply stops.
 """
 
 from __future__ import annotations
@@ -20,22 +22,53 @@ _WS = re.compile(r"\s+")
 
 
 def normalize_body(text: str) -> str:
-    """Collapse whitespace and mask the tokens that vary between two identical requests."""
+    """
+    Collapse whitespace and mask the tokens that vary between two identical requests.
+
+    Args:
+        text (str): A response body.
+
+    Returns:
+        str: The normalised body — hidden inputs removed, long tokens (CSRF
+            tokens, nonces) masked, whitespace collapsed — suitable for a
+            similarity ratio.
+    """
     text = _HIDDEN_INPUT.sub("", text)
     text = _LONG_TOKEN.sub("*", text)
     return _WS.sub(" ", text).strip()
 
 
 class Sender(Protocol):
+    """The bound send function a detector calls; it owns the budget accounting."""
+
     async def __call__(
         self, point: InjectionPoint, value: str, *, time_based: bool = False
-    ) -> Response | None: ...
+    ) -> Response | None:
+        """
+        Args:
+            point (InjectionPoint): The point to replay.
+            value (str): The value to place in the point's slot.
+            time_based (bool): Charge this against the time-based sub-budget.
+                Defaults to ``False``.
+
+        Returns:
+            Response | None: The response, or ``None`` when a budget cap left no
+                room — the detector should then stop.
+        """
+        ...
 
 
 @dataclass(frozen=True, slots=True)
 class DetectCtx:
-    """What a detector needs besides the point and its baseline."""
+    """
+    What a detector needs besides the point and its baseline.
+
+    Attributes:
+        send (Sender): The budget-aware send function.
+        delay_s (int): The configured ``[injection] time_based_delay_s``.
+        host (str): The target host, for the ``{host}`` payload substitution.
+    """
 
     send: Sender
-    delay_s: int  # [injection] time_based_delay_s
-    host: str  # target host, for the {host} redirect payload
+    delay_s: int
+    host: str
