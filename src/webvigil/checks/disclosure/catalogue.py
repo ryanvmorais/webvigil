@@ -1,7 +1,8 @@
-"""Load and expand the curated probe catalogue from ``data/paths.toml`` (RF-05, ADR-4).
+"""
+Load and expand the curated probe catalogue from ``data/paths.toml`` (RF-05, ADR-4).
 
-Uses :mod:`importlib.resources` so it works from a wheel or an editable checkout, never a
-path relative to this source file.
+Uses :mod:`importlib.resources` so it works from a wheel or an editable
+checkout, never a path relative to this source file.
 """
 
 from __future__ import annotations
@@ -87,9 +88,21 @@ _HIGH_BACKUP_SUFFIXES = frozenset({".sql", ".sql.gz"})
 
 @dataclass(frozen=True, slots=True)
 class Validator:
-    """How a probe response body is confirmed to be what its path implies (RF-06).
+    """
+    How a probe response body is confirmed to be what its path implies (RF-06).
 
     A response passes if **any** configured check passes.
+
+    Attributes:
+        content (re.Pattern[str] | None): Pattern the body must match at least
+            ``min_matches`` times.
+        min_matches (int): Required number of ``content`` matches. Defaults to 1.
+        content_type (tuple[str, ...]): Substrings, any of which in the
+            ``Content-Type`` passes.
+        json_keys (tuple[str, ...]): Top-level JSON keys, any of which present
+            passes.
+        magic (tuple[bytes, ...]): Byte prefixes, any of which at the start of
+            the raw body passes.
     """
 
     content: re.Pattern[str] | None = None
@@ -99,6 +112,15 @@ class Validator:
     magic: tuple[bytes, ...] = ()
 
     def passes(self, *, body: str, raw: bytes, content_type: str) -> bool:
+        """
+        Args:
+            body (str): The decoded response body.
+            raw (bytes): The raw response body.
+            content_type (str): The response ``Content-Type``.
+
+        Returns:
+            bool: ``True`` when any configured check passes.
+        """
         if self.magic and raw.startswith(self.magic):
             return True
         if self.content_type:
@@ -117,7 +139,24 @@ class Validator:
 
 @dataclass(frozen=True, slots=True)
 class ProbeEntry:
-    """One catalogue path to probe, resolved against the target origin at scan time."""
+    """
+    One catalogue path to probe, resolved against the target origin at scan time.
+
+    Attributes:
+        path (str): Path relative to the origin.
+        family (str): Probe family (``vcs``, ``config``, ``manifest``,
+            ``backup``, ``debug``, ``sourcemap``).
+        check_id (str): The probe-fed check this entry feeds.
+        severity (Severity): Severity for a hit.
+        confidence (Confidence): Confidence for a hit.
+        title (str): Finding title.
+        description (str): Finding description.
+        validator (Validator): How a response is confirmed to be the real file.
+        redaction (str): Redaction strategy for the body. Defaults to
+            ``"none"``.
+        ok_status (frozenset[int]): Status codes that count as a reachable
+            resource. Defaults to ``{200, 206}``.
+    """
 
     path: str
     family: str
@@ -133,7 +172,16 @@ class ProbeEntry:
 
 @lru_cache(maxsize=1)
 def load_catalogue() -> tuple[ProbeEntry, ...]:
-    """Parse ``paths.toml`` and expand the backup cross-product into a flat tuple of entries."""
+    """
+    Parse ``paths.toml`` and expand the backup cross-product into a flat tuple of entries.
+
+    Returns:
+        tuple[ProbeEntry, ...]: Every catalogue entry, cached for the process.
+
+    Raises:
+        ConfigError: If the shipped file is not valid TOML, contains a bad
+            regex, is empty, or names an unknown check.
+    """
     text = files(_PACKAGE).joinpath(_FILE).read_text(encoding="utf-8")
     try:
         raw = tomllib.loads(text)
@@ -147,6 +195,14 @@ def load_catalogue() -> tuple[ProbeEntry, ...]:
 
 
 def _entry_from_toml(item: dict[str, Any]) -> ProbeEntry:
+    """
+    Args:
+        item (dict[str, Any]): One ``[[entry]]`` table from ``paths.toml``.
+
+    Returns:
+        ProbeEntry: The parsed entry, with a family default description when
+            none is given.
+    """
     family = str(item["family"])
     return ProbeEntry(
         path=str(item["path"]),
@@ -163,6 +219,16 @@ def _entry_from_toml(item: dict[str, Any]) -> ProbeEntry:
 
 
 def _validator_from_toml(item: dict[str, Any]) -> Validator:
+    """
+    Args:
+        item (dict[str, Any]): One entry table, for its validator keys.
+
+    Returns:
+        Validator: The compiled validator.
+
+    Raises:
+        ConfigError: If the entry's ``content`` regex will not compile.
+    """
     content = item.get("content")
     try:
         pattern = re.compile(str(content)) if content else None
@@ -178,6 +244,15 @@ def _validator_from_toml(item: dict[str, Any]) -> Validator:
 
 
 def _expand_backups(table: dict[str, Any]) -> list[ProbeEntry]:
+    """
+    Args:
+        table (dict[str, Any]): The ``[backups]`` table (``check``,
+            ``basenames``, ``suffixes``).
+
+    Returns:
+        list[ProbeEntry]: One entry per basename x suffix, or ``[]`` when the
+            table is absent.
+    """
     if not table:
         return []
     check_id = str(table["check"])
@@ -191,6 +266,18 @@ def _expand_backups(table: dict[str, Any]) -> list[ProbeEntry]:
 
 
 def _backup_entry(path: str, suffix: str, check_id: str) -> ProbeEntry:
+    """
+    Build a backup :class:`ProbeEntry`, choosing the validator from the suffix.
+
+    Args:
+        path (str): The path to probe.
+        suffix (str): The file suffix (``.zip``, ``.sql``, ``.bak``, ...).
+        check_id (str): The backup check id.
+
+    Returns:
+        ProbeEntry: An archive-magic, SQL-content, or source-marker validator
+            depending on ``suffix``; ``.sql`` / ``.sql.gz`` are HIGH severity.
+    """
     magic = _BACKUP_ARCHIVE_MAGIC.get(suffix, ())
     if magic:
         validator = Validator(magic=magic)
@@ -217,7 +304,13 @@ def _backup_entry(path: str, suffix: str, check_id: str) -> ProbeEntry:
 
 @lru_cache(maxsize=1)
 def backup_spec() -> tuple[str, tuple[str, ...], tuple[str, ...]]:
-    """``(check_id, suffixes)`` plus the extra basenames the probe adds the host label to."""
+    """
+    Returns:
+        tuple[str, tuple[str, ...], tuple[str, ...]]: The backup check id, the
+            configured suffixes, and the configured basenames — the probe
+            appends the host label to these at scan time. Cached for the
+            process.
+    """
     text = files(_PACKAGE).joinpath(_FILE).read_text(encoding="utf-8")
     table = tomllib.loads(text).get("backups", {})
     return (
@@ -228,11 +321,27 @@ def backup_spec() -> tuple[str, tuple[str, ...], tuple[str, ...]]:
 
 
 def build_backup_entry(path: str, suffix: str) -> ProbeEntry:
-    """A backup :class:`ProbeEntry` for a host-label basename the probe derives at scan time."""
+    """
+    Args:
+        path (str): The host-label-derived path (e.g. ``"example.sql"``).
+        suffix (str): Its suffix.
+
+    Returns:
+        ProbeEntry: A backup entry for a basename the probe derives at scan
+            time.
+    """
     return _backup_entry(path, suffix, backup_spec()[0])
 
 
 def _validate(entries: list[ProbeEntry]) -> None:
+    """
+    Args:
+        entries (list[ProbeEntry]): The fully expanded catalogue.
+
+    Raises:
+        ConfigError: If the catalogue is empty or an entry names a check id not
+            in ``PROBE_CHECK_IDS``.
+    """
     if not entries:  # pragma: no cover - shipped file
         raise ConfigError("disclosure catalogue is empty")
     for entry in entries:

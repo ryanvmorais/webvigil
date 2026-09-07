@@ -1,9 +1,10 @@
-"""Compiled signatures for framework error pages and directory listings (RF-01, RF-02).
+"""
+Compiled signatures for framework error pages and directory listings (RF-01, RF-02).
 
-Pure data — no I/O. Each :class:`ErrorSignature` keys on the framework's *chrome* (its
-debugger markup, its stack-trace layout), not on the words "error" or "exception" alone,
-so a generic "something went wrong" page and a blog post that quotes a traceback do not
-match (RNF-05).
+Pure data — no I/O. Each :class:`ErrorSignature` keys on the framework's
+*chrome* (its debugger markup, its stack-trace layout), not on the words
+"error" or "exception" alone, so a generic "something went wrong" page and a
+blog post that quotes a traceback do not match (RNF-05).
 """
 
 from __future__ import annotations
@@ -18,17 +19,34 @@ _SNIPPET_MAX = 400
 
 @dataclass(frozen=True, slots=True)
 class ErrorSignature:
-    """One recognisable framework error / stack-trace page."""
+    """
+    One recognisable framework error / stack-trace page.
+
+    Attributes:
+        framework (str): Framework name, shown in the finding and used as its
+            dedup key.
+        pattern (re.Pattern[str]): The compiled chrome pattern.
+        interactive (bool): ``True`` for a live debugger console — a
+            code-execution surface, reported at HIGH confidence.
+        severity (Severity): Severity for a finding from this signature.
+    """
 
     framework: str
     pattern: re.Pattern[str]
-    interactive: bool  # True for a live debugger console (code-execution surface)
+    interactive: bool
     severity: Severity
 
 
 @dataclass(frozen=True, slots=True)
 class ErrorMatch:
-    """A signature that fired against a response body, plus the text that matched."""
+    """
+    A signature that fired against a response body, plus the text that matched.
+
+    Attributes:
+        signature (ErrorSignature): The signature that fired.
+        snippet (str): The matched text, whitespace-collapsed and capped at
+            ``_SNIPPET_MAX``.
+    """
 
     signature: ErrorSignature
     snippet: str
@@ -136,7 +154,14 @@ LISTING_SIGNATURES: tuple[re.Pattern[str], ...] = (
 
 
 def match_error(body: str) -> ErrorMatch | None:
-    """Return the first framework error signature that fires against ``body``, or ``None``."""
+    """
+    Args:
+        body (str): A response body.
+
+    Returns:
+        ErrorMatch | None: The first (most-specific) framework error signature
+            that fires, with its matched snippet, or ``None``.
+    """
     for signature in ERROR_SIGNATURES:
         hit = signature.pattern.search(body)
         if hit is not None:
@@ -148,5 +173,12 @@ def match_error(body: str) -> ErrorMatch | None:
 
 
 def is_directory_listing(body: str) -> bool:
-    """Whether ``body`` is a server-generated directory index (Apache / nginx / http.server)."""
+    """
+    Args:
+        body (str): A response body.
+
+    Returns:
+        bool: ``True`` when ``body`` is a server-generated directory index
+            (Apache / nginx / ``http.server``).
+    """
     return any(pattern.search(body) for pattern in LISTING_SIGNATURES)

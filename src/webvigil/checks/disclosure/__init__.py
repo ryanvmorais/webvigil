@@ -1,4 +1,5 @@
-"""Information-disclosure checks (spec 005, ``Category.DISCLOSURE``).
+"""
+Information-disclosure checks (spec 005, ``Category.DISCLOSURE``).
 
 Two tiers:
 

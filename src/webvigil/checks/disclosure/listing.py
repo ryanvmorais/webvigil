@@ -1,4 +1,6 @@
-"""Passive check: server-generated directory listings in already-crawled responses (RF-02)."""
+"""
+Passive check: server-generated directory listings in already-crawled responses (RF-02).
+"""
 
 from __future__ import annotations
 
@@ -17,6 +19,12 @@ _SAMPLE = 12
 
 @register
 class DirectoryListingCheck(Check):
+    """
+    Flags a server-generated directory index in an already-crawled response.
+
+    One finding per listing URL; the evidence samples the first entries.
+    """
+
     id = "disclosure.listing.directory-index"
     name = "Directory listing enabled"
     category = Category.DISCLOSURE
@@ -25,6 +33,13 @@ class DirectoryListingCheck(Check):
     references = ("https://owasp.org/www-community/attacks/Forced_browsing",)
 
     async def run(self, ctx: ScanContext) -> list[Finding]:
+        """
+        Args:
+            ctx (ScanContext): The scan context; every OK page body is checked.
+
+        Returns:
+            list[Finding]: One finding per page that renders a directory index.
+        """
         findings: list[Finding] = []
         seen: set[str] = set()
         for page in ctx.pages:
@@ -57,4 +72,11 @@ class DirectoryListingCheck(Check):
 
 
 def _path_of(url: str) -> str:
+    """
+    Args:
+        url (str): An absolute URL.
+
+    Returns:
+        str: Its path, or ``"/"`` when empty.
+    """
     return urlsplit(url).path or "/"

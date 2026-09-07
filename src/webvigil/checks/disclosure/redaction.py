@@ -1,8 +1,9 @@
-"""Redact secrets out of a probe response body before it enters a ``Finding`` (RNF-06, ADR-9).
+"""
+Redact secrets out of a probe response body before it enters a ``Finding`` (RNF-06, ADR-9).
 
-The raw secret must never reach the ``ScanResult`` — which is persisted by the Web API and
-rendered in four report formats. Redaction runs once, at the source, inside
-``DisclosureProbe``.
+The raw secret must never reach the ``ScanResult`` — which is persisted by the
+Web API and rendered in four report formats. Redaction runs once, at the source,
+inside :class:`~webvigil.checks.disclosure.probe.DisclosureProbe`.
 """
 
 from __future__ import annotations
@@ -34,7 +35,18 @@ _SECRET_KEYS = {"value", "password", "passwd", "secret", "token", "apikey", "api
 
 
 def apply(strategy: str, body: str) -> str:
-    """Return ``body`` with secrets removed according to ``strategy``, length-bounded."""
+    """
+    Return ``body`` with secrets removed according to ``strategy``, length-bounded.
+
+    Args:
+        strategy (str): One of ``"dotenv"`` (mask every ``KEY=value``),
+            ``"json-env"`` (mask secret-named JSON keys), ``"generic"`` (mask
+            well-known token shapes), or anything else (truncate only).
+        body (str): The raw response body.
+
+    Returns:
+        str: The redacted, length-bounded body.
+    """
     if strategy == "dotenv":
         return _dotenv(body)
     if strategy == "json-env":
@@ -45,6 +57,14 @@ def apply(strategy: str, body: str) -> str:
 
 
 def _dotenv(body: str) -> str:
+    """
+    Args:
+        body (str): A dotenv-style body.
+
+    Returns:
+        str: The body with every value after a ``KEY=`` / ``KEY:`` replaced by a
+            mask, capped at ``_MAX_LINES`` lines and ``_LIMIT`` chars.
+    """
     lines: list[str] = []
     for line in body.splitlines()[:_MAX_LINES]:
         match = _KV_RE.match(line)
@@ -53,6 +73,15 @@ def _dotenv(body: str) -> str:
 
 
 def _json_env(body: str) -> str:
+    """
+    Args:
+        body (str): A JSON body (e.g. a config or env dump).
+
+    Returns:
+        str: The re-serialised JSON with secret-named keys masked and token
+            shapes scrubbed from string values; falls back to generic masking
+            when the body is not valid JSON.
+    """
     try:
         data = json.loads(body)
     except ValueError:
@@ -61,6 +90,15 @@ def _json_env(body: str) -> str:
 
 
 def _scrub(node: Any) -> Any:
+    """
+    Recursively mask secret-named keys and token-shaped string values.
+
+    Args:
+        node (Any): Any JSON value.
+
+    Returns:
+        Any: The same structure with secrets removed.
+    """
     if isinstance(node, dict):
         return {
             key: (_VALUE_MASK if key.lower() in _SECRET_KEYS else _scrub(value))

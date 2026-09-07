@@ -1,4 +1,6 @@
-"""Passive check: framework error pages / stack traces in already-crawled responses (RF-01)."""
+"""
+Passive check: framework error pages / stack traces in already-crawled responses (RF-01).
+"""
 
 from __future__ import annotations
 
@@ -11,6 +13,15 @@ from webvigil.core.findings import Category, Confidence, EvidenceItem, Finding, 
 
 @register
 class ErrorPageCheck(Check):
+    """
+    Flags a framework error page or stack trace in an already-crawled response.
+
+    Matches on framework chrome (debugger markup, stack-trace layout), not the
+    words "error" / "exception", and reports at most one finding per framework.
+    An interactive debugger is HIGH confidence and carries the framework's own
+    severity.
+    """
+
     id = "disclosure.debug.error-page"
     name = "Framework error page / stack trace exposed"
     category = Category.DISCLOSURE
@@ -19,6 +30,14 @@ class ErrorPageCheck(Check):
     references = ("https://owasp.org/www-community/Improper_Error_Handling",)
 
     async def run(self, ctx: ScanContext) -> list[Finding]:
+        """
+        Args:
+            ctx (ScanContext): The scan context; every OK page body is scanned.
+
+        Returns:
+            list[Finding]: One finding per distinct framework whose error
+                signature fired.
+        """
         findings: list[Finding] = []
         seen: set[str] = set()
         for page in ctx.pages:

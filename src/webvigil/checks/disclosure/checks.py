@@ -1,8 +1,10 @@
-"""The six probe-fed disclosure checks (RF-08, RF-10).
+"""
+The six probe-fed disclosure checks (RF-08, RF-10).
 
-Each reads :class:`~webvigil.checks.disclosure.probe.ProbeHit`\\s of its family from
-``ctx.observations.probe_hits`` (filled by the orchestrator's ``DisclosureProbe`` pass) and
-turns them into findings. They issue no HTTP themselves.
+Each reads :class:`~webvigil.checks.disclosure.probe.ProbeHit`\\s of its family
+from ``ctx.observations.probe_hits`` (filled by the orchestrator's
+``DisclosureProbe`` pass) and turns them into findings. They issue no HTTP
+themselves.
 """
 
 from __future__ import annotations
@@ -53,11 +55,27 @@ _REFERENCES = {
 
 
 class _ProbeFedCheck(Check):
+    """
+    Shared base: turn this check's family of probe hits into findings.
+
+    Attributes:
+        family (ClassVar[str]): The probe family this subclass consumes.
+    """
+
     family: ClassVar[str]
     category = Category.DISCLOSURE
     mode = ScanMode.PASSIVE
 
     async def run(self, ctx: ScanContext) -> list[Finding]:
+        """
+        Args:
+            ctx (ScanContext): The scan context; reads
+                ``observations.probe_hits``.
+
+        Returns:
+            list[Finding]: One finding per probe hit whose family matches
+                :attr:`family`.
+        """
         return [
             self.finding(
                 title=f"{hit.title} at {hit.path}",
@@ -79,6 +97,8 @@ class _ProbeFedCheck(Check):
 
 @register
 class VcsExposedCheck(_ProbeFedCheck):
+    """Reachable version-control metadata (``.git``, ``.svn``, ...)."""
+
     id = "disclosure.vcs.exposed"
     name = "Version-control metadata exposed"
     family = "vcs"
@@ -89,6 +109,8 @@ class VcsExposedCheck(_ProbeFedCheck):
 
 @register
 class DotenvExposedCheck(_ProbeFedCheck):
+    """A reachable configuration or environment file (``.env``, ``config.php``, ...)."""
+
     id = "disclosure.config.dotenv-exposed"
     name = "Configuration or environment file exposed"
     family = "config"
@@ -99,6 +121,8 @@ class DotenvExposedCheck(_ProbeFedCheck):
 
 @register
 class ManifestExposedCheck(_ProbeFedCheck):
+    """A reachable dependency manifest (``package.json``, ``composer.lock``, ...)."""
+
     id = "disclosure.config.manifest-exposed"
     name = "Dependency manifest exposed"
     family = "manifest"
@@ -109,6 +133,8 @@ class ManifestExposedCheck(_ProbeFedCheck):
 
 @register
 class BackupFileExposedCheck(_ProbeFedCheck):
+    """A reachable backup, archive, or database dump."""
+
     id = "disclosure.backup.file-exposed"
     name = "Backup or dump file exposed"
     family = "backup"
@@ -119,6 +145,8 @@ class BackupFileExposedCheck(_ProbeFedCheck):
 
 @register
 class DebugEndpointExposedCheck(_ProbeFedCheck):
+    """A reachable debug or administrative endpoint (``/debug``, ``/actuator``, ...)."""
+
     id = "disclosure.debug.endpoint-exposed"
     name = "Debug or administrative endpoint exposed"
     family = "debug"
@@ -129,6 +157,8 @@ class DebugEndpointExposedCheck(_ProbeFedCheck):
 
 @register
 class SourcemapExposedCheck(_ProbeFedCheck):
+    """A reachable JavaScript source map (``*.js.map``)."""
+
     id = "disclosure.sourcemap.exposed"
     name = "JavaScript source map exposed"
     family = "sourcemap"
