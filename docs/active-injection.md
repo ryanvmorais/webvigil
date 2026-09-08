@@ -18,7 +18,7 @@ state changes (a submitted form) — that is inherent to Active Mode.
 
 ## What it detects
 
-All four are detected **in-band** — from the target's own responses. No headless browser,
+All of them are detected **in-band** — from the target's own responses. No headless browser,
 no out-of-band collaborator.
 
 | Check | Severity | How it is proved |
@@ -32,6 +32,8 @@ no out-of-band collaborator.
 | `injection.xss.stored` | HIGH | A `<wvstored…>` marker submitted through a form (or query parameter) is stored by the app and later rendered with its markup intact on a **different** page — found by a re-crawl. Opt-in; see below. |
 | `injection.ssrf.metadata` | CRITICAL | A URL payload in the parameter makes the server fetch the cloud instance metadata service — a provider marker (`AccessKeyId`, `computeMetadata`, `vmId`, …) appears in the response, absent from the baseline. |
 | `injection.ssrf.internal` | HIGH | A URL payload reaches a loopback / internal resource (recognizable service banner), reads a local file via `file://`, or an SSRF-shaped connection error names the injected URL — each absent from the baseline. |
+| `injection.cmdi.os` | CRITICAL | A shell-metacharacter break plus `echo <marker>=$((a*b))` makes the shell return the *computed* product next to a per-request marker (absent from the baseline), **or** a `sleep`/`ping -n` payload delays the response past a zero-delay control and scales with a half-length probe. This is RCE. |
+| `injection.ssti` | HIGH | A polyglot draws a template-engine parse error, then an arithmetic payload (`{{a*b}}`, `${a*b}`, `<%= a*b %>`, …) returns the *evaluated* product glued to a per-request marker, absent from the baseline. The engine is named when identifiable (`{{7*'7'}}` → `7777777` Jinja2, `49` Twig). |
 
 Every finding's `location` carries the `method`, `url`, and `param`; its evidence carries
 the injection point, the payload sent, and the proof.
@@ -133,6 +135,40 @@ repository only, with no hosted service. If you need the blind case, run WebVigi
 scan alongside your own collaborator (Burp Collaborator, interactsh) and inject its domain
 by hand.
 
+## Command injection & SSTI
+
+`injection.cmdi.os` (CRITICAL) and `injection.ssti` (HIGH) (v0.11) detect the two
+server-side injection classes that lead straight to remote code execution and are provable
+**in-band**. They run in Active Mode like every other injection check.
+
+**OS command injection** has two detector stages:
+
+- **echo** — the payload appends a shell separator (`;`, `|`, `&&`, `` ` ``, `$(…)`, a
+  newline, `${IFS}` for space-filtered contexts) plus `echo <marker>=$((a*b))`. A hit needs
+  `<marker>=<a*b>` — the *evaluated* product, glued to a per-request marker, absent from the
+  baseline. A reflected literal `$((a*b))` is **not** a hit. A Windows `& echo … & set /a`
+  variant is reported at MEDIUM confidence.
+- **time** — `;sleep <d>`, `` `sleep <d>` ``, `&ping -n <d+1> 127.0.0.1`, `&timeout /t <d>`.
+  Confirmed exactly like time-based SQLi: the injected request runs ≥ ~`d` s slower than a
+  `sleep 0` control, and a half-delay probe scales. Gated by `[injection] time_based_cmdi`
+  (default on) / `--no-time-based-cmdi`.
+
+**SSTI** is a two-stage probe: a polyglot (`${{<%[%'"}}%\`) that draws a template-engine
+parse error (Jinja2, Twig, Freemarker, Velocity, Smarty, Mako, ERB), then per-engine
+arithmetic payloads (`{{a*b}}`, `${a*b}`, `<%= a*b %>`, `#{a*b}`, `*{a*b}`, `@(a*b)`) whose
+computed product must come back glued to the marker. When the engine did not error, a
+`{{7*'7'}}` probe identifies it (`7777777` → Jinja2 / Nunjucks, `49` → Twig).
+
+A parameter whose **name** suggests a shell command or a template (`cmd`, `host`, `ping`,
+`exec`, `template`, `render`, …) gets the full payload set and is tested first; any other
+parameter gets a short canary set from the base order, budget permitting.
+
+**Truly blind command injection is not covered.** A shell command with no output *and* no
+timing effect (`; curl http://attacker/`) needs an out-of-band collaborator the scanner
+hosts — the same reason blind SSRF is off the roadmap
+([`docs/notes/why-not-oast.md`](notes/why-not-oast.md)). The time-based detector is the
+in-band substitute; for the rest, pair with your own collaborator.
+
 ## Non-destructive posture
 
 - **`GET` and `POST` only** — never `PUT`, `PATCH`, `DELETE`.
@@ -147,16 +183,18 @@ by hand.
 
 ```toml
 [injection]
-request_budget = 500        # max crafted requests per scan; hitting it is a warning
+request_budget = 600        # max crafted requests per scan; hitting it is a warning
 max_injection_points = 200  # max params / fields tested; excess is a warning
 time_based_sqli = true      # --no-time-based-sqli overrides
-time_based_delay_s = 5      # the D in SLEEP(D); keep below [http] timeout_s
+time_based_cmdi = true      # spec 011: time-delay command-injection payloads; --no-time-based-cmdi overrides
+time_based_delay_s = 5      # the D in SLEEP(D) / sleep D; keep below [http] timeout_s
 stored_xss = false          # run the two-phase stored-XSS pass; --stored-xss overrides
 ```
 
-Per point the pass sends at most 30 crafted requests; time-based sends at most 8
-sleep-inducing requests per scan; the stored-XSS re-crawl fetches at most 60 pages. Hitting
-any cap is a scan **warning**, not an error.
+Per point the pass sends at most 35 crafted requests (raised from 30 in v0.11, which added
+the command-injection and SSTI detector families); the time-based detectors share a cap of
+8 sleep-inducing requests per scan; the stored-XSS re-crawl fetches at most 60 pages.
+Hitting any cap is a scan **warning**, not an error.
 
 Disable any check by id (`[checks] disabled`). Disabling **every** `injection.*` id skips
 the pass entirely — no enumeration, no crafted request.
@@ -168,7 +206,10 @@ the pass entirely — no enumeration, no crafted request.
 - **In-band SSRF** ships in v0.9 (`injection.ssrf.metadata` / `injection.ssrf.internal`,
   see above). **Blind SSRF** needs an out-of-band collaborator the scanner hosts — out of
   scope, not on the roadmap; pair with your own collaborator instead.
-- **No OS command injection, XXE, SSTI, or other injection classes** yet.
+- **OS command injection** and **SSTI** ship in v0.11 (`injection.cmdi.os` /
+  `injection.ssti`, see above). **Truly blind command injection** (no output, no timing)
+  needs a collaborator — out of scope, like blind SSRF.
+- **No XXE, CRLF, host-header injection, or other injection classes** yet.
 - **No exploitation.** A confirmed SQLi is proved with one bounded marker; WebVigil does
   not dump the database or read further files.
 - **No parameter mining.** It fuzzes parameters the target actually exposes, not guessed

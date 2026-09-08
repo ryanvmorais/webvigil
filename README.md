@@ -43,15 +43,17 @@ be illegal. See [SECURITY.md](SECURITY.md).
 | `v0.8` | Stored / persistent XSS: opt-in two-phase inject-then-recrawl detection ([docs](docs/active-injection.md#stored-xss----stored-xss-opt-in)) | shipped |
 | `v0.9` | In-band SSRF: cloud metadata service, loopback / internal resources, `file://` — detected from the target's own responses ([docs](docs/active-injection.md#ssrf--cloud-metadata-loopback-file)) | shipped |
 | `v0.10` | Opt-in OSV.dev online advisory lookup for dependency fingerprinting, augmenting the vendored Retire.js database ([docs](docs/dependency-fingerprinting.md#osvdev-online-provider---osv-online)) | shipped |
+| `v0.11` | Active Mode: in-band OS command injection (arithmetic echo + time-based) and server-side template injection ([docs](docs/active-injection.md#command-injection--ssti)) | shipped |
 
 > Stored XSS shipped in `v0.8` (opt-in `--stored-xss`); in-band SSRF in `v0.9`; the OSV.dev
-> online advisory provider in `v0.10` (opt-in `--osv-online`). **Blind SSRF is not on the
-> roadmap** — it needs an out-of-band collaborator (a server the scanner hosts and the
-> target calls back to), which the "engine talks only to the target" rule and the
-> repository-only distribution rule out. Pair WebVigil with your own collaborator (Burp
-> Collaborator, interactsh) if you need to cover the blind case. Automated login-form flows,
-> auth headers, and session-security tests were on the original `v0.7` line and are not yet
-> scheduled — each needs the stateful login flow or Active Mode.
+> online advisory provider in `v0.10` (opt-in `--osv-online`); command injection + SSTI in
+> `v0.11`. **Blind SSRF and truly blind command injection are not on the roadmap** — each
+> needs an out-of-band collaborator (a server the scanner hosts and the target calls back
+> to), which the "engine talks only to the target" rule and the repository-only distribution
+> rule out. Pair WebVigil with your own collaborator (Burp Collaborator, interactsh) if you
+> need to cover the blind case. Automated login-form flows, auth headers, and
+> session-security tests were on the original `v0.7` line and are not yet scheduled — each
+> needs the stateful login flow or Active Mode.
 
 ---
 
