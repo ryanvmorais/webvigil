@@ -9,6 +9,20 @@ from webvigil.core.result import ScanResult
 
 
 class ExitCode(IntEnum):
+    """
+    The process exit codes the CLI uses.
+
+    Attributes:
+        OK (int): Success, no ``--fail-on`` threshold crossed.
+        INTERNAL (int): An unexpected error (Typer's default for an unhandled
+            exception).
+        USAGE (int): Bad command-line usage.
+        FINDINGS (int): A finding at or above the ``--fail-on`` severity.
+        OPERATIONAL (int): A controlled failure — bad config, unreachable
+            target, unreadable report.
+        NOT_AUTHORIZED (int): Active Mode requested without an authorization.
+    """
+
     OK = 0
     INTERNAL = 1
     USAGE = 2
@@ -18,7 +32,17 @@ class ExitCode(IntEnum):
 
 
 def evaluate(result: ScanResult, fail_on: str) -> ExitCode:
-    """``FINDINGS`` if any finding is at or above the ``fail_on`` severity, else ``OK``."""
+    """
+    Decide the exit code from the findings and the ``--fail-on`` threshold.
+
+    Args:
+        result (ScanResult): The completed scan.
+        fail_on (str): A severity name, or ``"none"`` to never fail.
+
+    Returns:
+        ExitCode: ``FINDINGS`` if any finding is at or above the ``fail_on``
+            severity, else ``OK``.
+    """
     if fail_on == "none":
         return ExitCode.OK
     threshold = Severity.from_name(fail_on)

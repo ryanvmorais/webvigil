@@ -1,4 +1,9 @@
-"""WebVigil CLI entry point: ``scan``, ``list-checks``, ``report``, ``version``."""
+"""
+WebVigil CLI entry point: ``scan``, ``list-checks``, ``report``, ``version``.
+
+The command docstrings double as Typer ``--help`` text, so they stay terse; the
+private helpers below carry the full Args/Returns sections.
+"""
 
 from __future__ import annotations
 
@@ -215,6 +220,27 @@ def _build_config(
     cookie: list[str] | None,
     osv_online: bool | None,
 ) -> ScanConfig:
+    """
+    Merge the CLI flags onto the loaded config file (or the model defaults).
+
+    Only flags the user actually passed are applied, so an unset flag never
+    clobbers a file value. ``verify_tls`` is always applied because its
+    ``--verify-tls/--insecure`` pair always has a value.
+
+    Args:
+        config (Path | None): Path to a ``webvigil.toml``, or ``None``.
+        mode, scope, max_pages, delay, fail_on, authorized_by, probe,
+            time_based_sqli, stored_xss, cookie, osv_online: The optional CLI
+            overrides; ``None`` means "not passed".
+        verify_tls (bool): The resolved TLS-verification flag.
+
+    Returns:
+        ScanConfig: The merged, validated configuration.
+
+    Raises:
+        ConfigError: If the file is missing / invalid or the merge fails
+            validation.
+    """
     base = ScanConfig.load(config)
     scan_overrides: dict[str, object] = {}
     if mode is not None:
@@ -267,6 +293,21 @@ def _build_config(
 
 
 def _resolve_active_mode(cfg: ScanConfig) -> ScanConfig:
+    """
+    Ensure an Active scan has an authorization, prompting on a TTY if it does not.
+
+    Args:
+        cfg (ScanConfig): The merged config.
+
+    Returns:
+        ScanConfig: ``cfg`` unchanged for a Passive scan or one that already
+            has an attestation; otherwise a copy with the interactively supplied
+            ``authorized_by``.
+
+    Raises:
+        typer.Exit: With ``NOT_AUTHORIZED`` when Active Mode has no attestation
+            and none could be obtained.
+    """
     if cfg.scan.mode is not ScanMode.ACTIVE:
         return cfg
     if cfg.active is not None and cfg.active.authorized_by.strip():
@@ -293,6 +334,24 @@ def _emit(
     cookie_count: int = 0,
     osv_online: bool = False,
 ) -> None:
+    """
+    Emit the scan output: the terminal summary, or a rendered report.
+
+    With no ``--format``, prints only the summary. With ``--format`` and
+    ``--output``, writes the report to the file and prints a status line. With
+    ``--format`` and no ``--output``, writes the report to stdout and the
+    summary to stderr.
+
+    Args:
+        result (ScanResult): The completed scan.
+        output_format (str | None): The report format, or ``None`` for
+            summary-only.
+        output (Path | None): Where to write the report, or ``None`` for
+            stdout.
+        cookie_count (int): Cookies supplied, for the summary. Defaults to 0.
+        osv_online (bool): Whether OSV.dev ran, for the summary. Defaults to
+            ``False``.
+    """
     if output_format is None:
         _render.summary(result, cookie_count=cookie_count, osv_online=osv_online)
         return
@@ -306,6 +365,14 @@ def _emit(
 
 
 def _write_or_print(rendered: str, output: Path | None, output_format: str) -> None:
+    """
+    Write a rendered report to ``output``, or to stdout when ``output`` is ``None``.
+
+    Args:
+        rendered (str): The rendered report text.
+        output (Path | None): Destination file, or ``None`` for stdout.
+        output_format (str): The format name, for the status line.
+    """
     if output is not None:
         output.write_text(rendered, "utf-8")
         _render.status(f"wrote {output_format} report to {output}")

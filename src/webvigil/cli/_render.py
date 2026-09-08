@@ -1,4 +1,6 @@
-"""Human-facing terminal output — always to stderr, so stdout stays pipeable (RF-24)."""
+"""
+Human-facing terminal output — always to stderr, so stdout stays pipeable (RF-24).
+"""
 
 from __future__ import annotations
 
@@ -24,14 +26,32 @@ _SEVERITY_STYLE = {
 
 
 def error(message: str) -> None:
+    """
+    Print an ``error: <message>`` line to stderr in bold red.
+
+    Args:
+        message (str): The error text; printed literally, no Rich markup.
+    """
     _console.print(f"error: {message}", style="bold red", markup=False, highlight=False)
 
 
 def status(message: str) -> None:
+    """
+    Print a plain status line to stderr.
+
+    Args:
+        message (str): The text; printed literally, no Rich markup.
+    """
     _console.print(message, markup=False, highlight=False)
 
 
 def banner(authorized_by: str) -> None:
+    """
+    Print the Active-Mode warning banner to stderr.
+
+    Args:
+        authorized_by (str): The authorization attestation to echo back.
+    """
     _console.print(
         "[bold yellow]Active Mode[/] — sending crafted requests. Only scan systems you are "
         f"authorized to test.\nAuthorization on record: [italic]{authorized_by}[/]"
@@ -39,6 +59,20 @@ def banner(authorized_by: str) -> None:
 
 
 def summary(result: ScanResult, *, cookie_count: int = 0, osv_online: bool = False) -> None:
+    """
+    Print the human-readable scan summary to stderr.
+
+    A severity-count table, then optional one-liners (detected technologies,
+    disclosure, active injection, authenticated scan, CSRF), then one line per
+    finding, then error and warning counts.
+
+    Args:
+        result (ScanResult): The completed scan.
+        cookie_count (int): Number of ``[auth]`` cookies supplied, for the
+            authenticated-scan line. Defaults to 0.
+        osv_online (bool): Whether the OSV.dev lookup ran, for the advisory-
+            sources line. Defaults to ``False``.
+    """
     meta = result.metadata
     table = Table(title=f"WebVigil — {meta.target}", title_justify="left")
     table.add_column("Severity")
