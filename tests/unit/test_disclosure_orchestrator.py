@@ -1,5 +1,9 @@
 """
 Orchestrator wiring for the disclosure probe pass — RF-04, RF-09, ADR-2.
+
+The autouse ``_stub_crawler`` returns one plain page; ``DisclosureProbe`` is
+monkeypatched to a boom stub for the cases where the pass must not run, and
+``_router`` serves a real ``.git/config`` for the cases where it must.
 """
 
 from __future__ import annotations
@@ -20,6 +24,8 @@ _GIT_CONFIG = "[core]\n\trepositoryformatversion = 0\n"
 
 
 class _StubCrawler:
+    """A crawler that discovers exactly one plain HTML page."""
+
     forms: tuple[object, ...] = ()
     skipped_destructive = 0
 
@@ -40,6 +46,7 @@ class _StubCrawler:
 
 @pytest.fixture(autouse=True)
 def _stub_crawler(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Swap the orchestrator's ``Crawler`` for :class:`_StubCrawler`."""
     monkeypatch.setattr(orch_mod, "Crawler", _StubCrawler)
 
 
@@ -47,16 +54,19 @@ pytestmark = pytest.mark.httpx_mock(assert_all_responses_were_requested=False)
 
 
 def _router(request: httpx.Request) -> httpx.Response:
+    """Serve a valid ``.git/config`` at that one URL; everything else is a 404."""
     if str(request.url) == "https://example.com/.git/config":
         return httpx.Response(200, text=_GIT_CONFIG, headers={"content-type": "text/plain"})
     return httpx.Response(404, text="nope", headers={"content-type": "text/html"})
 
 
 def _boom(*_a: object, **_k: object) -> object:
+    """A stand-in that fails the test if the probe pass is constructed at all."""
     raise AssertionError("DisclosureProbe must not run")
 
 
 async def test_probe_off_by_default_does_not_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    """With ``[disclosure] probe`` off, the pass is never constructed."""
     monkeypatch.setattr(orch_mod, "DisclosureProbe", _boom)
     result = await Orchestrator(ScanConfig(), check_types=[VcsExposedCheck]).run(_TARGET)
     assert not any(f.check_id.startswith("disclosure.") for f in result.findings)
@@ -65,6 +75,7 @@ async def test_probe_off_by_default_does_not_run(monkeypatch: pytest.MonkeyPatch
 async def test_probe_on_but_no_probe_fed_check_does_not_run(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """The toggle alone is not enough — with no probe-fed check selected the pass still skips."""
     monkeypatch.setattr(orch_mod, "DisclosureProbe", _boom)
     config = ScanConfig(disclosure={"probe": True})
     # ErrorPageCheck is a disclosure check but NOT probe-fed
@@ -73,6 +84,7 @@ async def test_probe_on_but_no_probe_fed_check_does_not_run(
 
 
 async def test_probe_on_with_a_probe_fed_check_emits_findings(httpx_mock: object) -> None:
+    """Toggle on plus a probe-fed check: the pass runs and its hits become findings."""
     httpx_mock.add_callback(_router, is_reusable=True)  # type: ignore[attr-defined]
     config = ScanConfig(disclosure={"probe": True})
     result = await Orchestrator(config, check_types=[VcsExposedCheck, DotenvExposedCheck]).run(
@@ -85,6 +97,7 @@ async def test_probe_on_with_a_probe_fed_check_emits_findings(httpx_mock: object
 async def test_probe_warnings_surface_on_the_result(
     httpx_mock: object, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """A probe warning (here, the request cap) is carried onto the scan result."""
     monkeypatch.setattr(orch_mod, "_PROBE_FAMILIES", frozenset({"vcs"}))
     monkeypatch.setattr("webvigil.checks.disclosure.probe._REQUEST_CAP", 3)
     httpx_mock.add_callback(_router, is_reusable=True)  # type: ignore[attr-defined]

@@ -1,5 +1,9 @@
 """
 DisclosureProbe: calibration, validation, derived probes, the cap — RF-04..RF-09, RNF-04.
+
+Every path the probe requests is served by a ``_Router`` (an ``httpx_mock``
+callback) that also records the URLs seen — so the "not fetched" assertions are
+real. The probe runs against the full shipped catalogue.
 """
 
 from __future__ import annotations
@@ -26,6 +30,15 @@ _SOURCE_MAP = '{"version": 3, "sources": ["app.ts"], "mappings": "AAAA", "source
 
 
 def _page(html: str = "", url: str = _SEED, ok: bool = True) -> Page:
+    """
+    Args:
+        html (str): The page body.
+        url (str): The page URL. Defaults to the seed.
+        ok (bool): ``False`` for a failed page.
+
+    Returns:
+        Page: An HTML page (or a failed one).
+    """
     return Page(
         requested_url=url,
         url=url,
@@ -38,6 +51,9 @@ def _page(html: str = "", url: str = _SEED, ok: bool = True) -> Page:
 
 
 class _Router:
+    """An ``httpx`` callback: serves ``routes`` (URL -> ``(status, body, content_type)``),
+    everything else gets ``default``, and every requested URL is appended to ``seen``."""
+
     def __init__(self, routes: dict[str, tuple[int, str, str]], default: tuple[int, str, str]):
         self.routes = routes
         self.default = default
@@ -51,6 +67,18 @@ class _Router:
 
 
 async def _run(router: _Router, pages: tuple[Page, ...], httpx_mock: object):
+    """
+    Run one disclosure probe against ``router`` over the full catalogue.
+
+    Args:
+        router (_Router): The response router.
+        pages (tuple[Page, ...]): The crawled pages the probe mines for derived
+            targets.
+        httpx_mock: The ``pytest-httpx`` fixture.
+
+    Returns:
+        ProbeReport: The probe's report.
+    """
     httpx_mock.add_callback(router, is_reusable=True)  # type: ignore[attr-defined]
     target = Target.parse(_SEED)
     async with HttpClient(target, ScanConfig()) as http:
@@ -59,6 +87,7 @@ async def _run(router: _Router, pages: tuple[Page, ...], httpx_mock: object):
 
 
 async def test_validated_git_config_is_a_hit_random_200_is_not(httpx_mock: object) -> None:
+    """A path passes only when its body validates: a real ``.git/config`` hits, the 404s do not."""
     router = _Router(
         {"https://example.com/.git/config": (200, _GIT_CONFIG, "text/plain")},
         default=(404, "not found", "text/html"),
@@ -70,6 +99,7 @@ async def test_validated_git_config_is_a_hit_random_200_is_not(httpx_mock: objec
 
 
 async def test_spa_catch_all_200_is_not_a_hit_but_a_real_file_is(httpx_mock: object) -> None:
+    """An SPA that 200s for every path yields no hits; a real ``package.json`` still validates."""
     shell = "<html><body><div id=app></div></body></html>"
     router = _Router(
         {"https://example.com/package.json": (200, _PACKAGE_JSON, "application/json")},
@@ -82,6 +112,7 @@ async def test_spa_catch_all_200_is_not_a_hit_but_a_real_file_is(httpx_mock: obj
 
 
 async def test_inconclusive_calibration_warns_and_still_validates(httpx_mock: object) -> None:
+    """When calibration cannot settle on a soft-404 shape it warns, but validation still runs."""
     counter = {"n": 0}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -100,6 +131,7 @@ async def test_inconclusive_calibration_warns_and_still_validates(httpx_mock: ob
 
 
 async def test_request_cap_truncates_and_warns(httpx_mock: object, monkeypatch) -> None:
+    """Past the request cap the remaining paths are dropped and a warning is added."""
     monkeypatch.setattr(probe_mod, "_REQUEST_CAP", 5)
     router = _Router({}, default=(404, "nope", "text/html"))
     report = await _run(router, (_page(),), httpx_mock)
@@ -108,6 +140,7 @@ async def test_request_cap_truncates_and_warns(httpx_mock: object, monkeypatch) 
 
 
 async def test_source_map_probed_for_in_scope_script_only(httpx_mock: object) -> None:
+    """``<script>.map`` is probed for in-scope scripts only; the CDN script is left alone."""
     html = (
         '<html><body><script src="/static/app.js"></script>'
         '<script src="https://cdn.example/vendor.js"></script></body></html>'
@@ -122,6 +155,7 @@ async def test_source_map_probed_for_in_scope_script_only(httpx_mock: object) ->
 
 
 async def test_forbidden_git_directory_is_a_medium_confidence_hit(httpx_mock: object) -> None:
+    """A ``403`` on ``.git/`` is a hit at MEDIUM confidence, without content validation."""
     router = _Router(
         {"https://example.com/.git/": (403, "<h1>403 Forbidden</h1>", "text/html")},
         default=(404, "", "text/html"),
@@ -132,6 +166,8 @@ async def test_forbidden_git_directory_is_a_medium_confidence_hit(httpx_mock: ob
 
 
 async def test_probe_is_deterministic(httpx_mock: object) -> None:
+    """Two identical runs produce the same hits in the same order (RNF-04)."""
+
     def make_router() -> _Router:
         return _Router(
             {"https://example.com/.git/config": (200, _GIT_CONFIG, "text/plain")},

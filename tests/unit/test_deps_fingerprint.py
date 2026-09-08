@@ -1,5 +1,9 @@
 """
 Fingerprinter: sources, scope handling, and the fetch cap — RF-01..RF-04, RNF-07.
+
+Resource fetches are stubbed with ``httpx_mock`` (via a small ``_router``); the
+rules come from ``tests/data/retirejs-mini.json``. ``http.stats`` is asserted to
+prove which cases fetch and which do not.
 """
 
 from __future__ import annotations
@@ -31,6 +35,14 @@ _RULES = RetireJsRules.from_raw(
 
 
 def _page(html: str, url: str = _SEED) -> Page:
+    """
+    Args:
+        html (str): The page body.
+        url (str): The page URL. Defaults to the seed.
+
+    Returns:
+        Page: A 200 HTML page.
+    """
     return Page(
         requested_url=url,
         url=url,
@@ -42,6 +54,18 @@ def _page(html: str, url: str = _SEED) -> Page:
 
 
 async def _run(pages: tuple[Page, ...], router, httpx_mock: object, *, max_fetches: int = 50):
+    """
+    Run one fingerprint pass over ``pages`` with resource fetches served by ``router``.
+
+    Args:
+        pages (tuple[Page, ...]): The crawled pages.
+        router: A handler from :func:`_router`.
+        httpx_mock: The ``pytest-httpx`` fixture.
+        max_fetches (int): The pass's fetch cap. Defaults to 50.
+
+    Returns:
+        tuple: ``(FingerprintResult, HttpStats)``.
+    """
     httpx_mock.add_callback(router, is_reusable=True)  # type: ignore[attr-defined]
     config = ScanConfig()
     target = Target.parse(_SEED)
@@ -52,6 +76,16 @@ async def _run(pages: tuple[Page, ...], router, httpx_mock: object, *, max_fetch
 
 
 def _router(routes: dict[str, tuple[int, str]]):
+    """
+    Build an ``httpx`` callback that serves ``routes`` and records the URLs it saw.
+
+    Args:
+        routes (dict[str, tuple[int, str]]): URL -> ``(status, body)``; anything
+            else is a 404.
+
+    Returns:
+        Callable: The handler, with a ``.seen`` list attribute.
+    """
     seen: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -66,6 +100,7 @@ def _router(routes: dict[str, tuple[int, str]]):
 
 
 async def test_detects_library_from_a_fetched_in_scope_filename(httpx_mock: object) -> None:
+    """An in-scope ``<script src>`` is fetched and its filename version is captured."""
     html = '<html><body><script src="/static/jquery-1.12.4.min.js"></script></body></html>'
     router = _router({"https://example.com/static/jquery-1.12.4.min.js": (200, "// minified")})
     result, _ = await _run((_page(html),), router, httpx_mock)
@@ -75,6 +110,7 @@ async def test_detects_library_from_a_fetched_in_scope_filename(httpx_mock: obje
 
 
 async def test_detects_library_from_an_inline_banner_without_fetching(httpx_mock: object) -> None:
+    """An inline ``<script>`` banner is matched from the page body — zero requests."""
     html = "<html><body><script>/*! jQuery v3.4.1 */\nwindow.x=1;</script></body></html>"
     router = _router({})
     result, stats = await _run((_page(html),), router, httpx_mock)
@@ -87,6 +123,7 @@ async def test_detects_library_from_an_inline_banner_without_fetching(httpx_mock
 async def test_cross_origin_script_is_identified_from_url_but_not_fetched(
     httpx_mock: object,
 ) -> None:
+    """A CDN script is matched by its URL only; the out-of-scope host is never requested."""
     html = (
         '<html><body><script src="https://cdn.example/3.4.1/jquery.min.js"></script></body></html>'
     )
@@ -98,6 +135,7 @@ async def test_cross_origin_script_is_identified_from_url_but_not_fetched(
 
 
 async def test_fetch_cap_truncates_and_warns(httpx_mock: object) -> None:
+    """Past ``max_fetches`` in-scope resources, the rest are skipped and a warning is added."""
     refs = "".join(f'<script src="/s/lib{i}.js"></script>' for i in range(5))
     html = f"<html><body>{refs}</body></html>"
     router = _router({f"https://example.com/s/lib{i}.js": (200, "") for i in range(5)})
@@ -107,6 +145,7 @@ async def test_fetch_cap_truncates_and_warns(httpx_mock: object) -> None:
 
 
 async def test_non_html_and_failed_pages_are_skipped(httpx_mock: object) -> None:
+    """A failed page contributes no detections and triggers no fetches."""
     failed = Page.failed("https://example.com/x", "boom")
     result, _ = await _run((failed,), _router({}), httpx_mock)
     assert result.detections == []

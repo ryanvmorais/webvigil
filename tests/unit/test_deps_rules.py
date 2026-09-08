@@ -1,5 +1,9 @@
 """
 RetireJsRules: the real DB compiles, and identify() reads each source — RF-05, RF-06.
+
+One test runs against the real vendored database (it must always compile); the
+rest use the ``rules`` fixture over ``tests/data/retirejs-mini.json`` so each
+detection source can be asserted in isolation.
 """
 
 from __future__ import annotations
@@ -26,10 +30,15 @@ _PROVENANCE = Provenance(
 
 @pytest.fixture
 def rules() -> RetireJsRules:
+    """
+    Returns:
+        RetireJsRules: Rules compiled from the mini database.
+    """
     return RetireJsRules.from_raw(json.loads(_MINI.read_text("utf-8")), _PROVENANCE)
 
 
 def test_the_vendored_database_loads_and_parses() -> None:
+    """The real vendored database compiles, and a filename detection works end to end against it."""
     real = RetireJsRules.load()
     # Loading compiles every Python-compatible extractor (JS-only constructs are skipped)
     # and parses the vulnerability entries.
@@ -45,6 +54,7 @@ def test_the_vendored_database_loads_and_parses() -> None:
 
 
 def test_identify_from_filename(rules: RetireJsRules) -> None:
+    """A ``jquery-1.12.4.min.js`` path yields a FILENAME detection."""
     found = rules.identify(url="https://target/static/jquery-1.12.4.min.js")
     assert ("jquery", "1.12.4", DetectionMethod.FILENAME) in [
         (d.name, d.version, d.method) for d in found
@@ -52,6 +62,7 @@ def test_identify_from_filename(rules: RetireJsRules) -> None:
 
 
 def test_identify_from_uri_path(rules: RetireJsRules) -> None:
+    """A ``/3.4.1/jquery.min.js`` CDN path yields a URI detection."""
     found = rules.identify(url="https://cdn.example/3.4.1/jquery.min.js")
     assert ("jquery", "3.4.1", DetectionMethod.URI) in [
         (d.name, d.version, d.method) for d in found
@@ -59,6 +70,7 @@ def test_identify_from_uri_path(rules: RetireJsRules) -> None:
 
 
 def test_identify_from_filecontent_banner(rules: RetireJsRules) -> None:
+    """A ``/*! jQuery v3.4.1 */`` banner in a body yields a FILECONTENT detection."""
     body = "/*! jQuery v3.4.1 | (c) JS Foundation */\n!function(){}();"
     found = rules.identify(url="https://target/app.js", body=body)
     jquery = [d for d in found if d.name == "jquery"]
@@ -67,6 +79,7 @@ def test_identify_from_filecontent_banner(rules: RetireJsRules) -> None:
 
 
 def test_identify_from_hash(rules: RetireJsRules) -> None:
+    """An exact SHA-1 match of a body yields a HASH detection with the exact version."""
     body = "!function(){/* minified lib */}();"
     digest = hashlib.sha1(body.encode()).hexdigest()
     raw = json.loads(_MINI.read_text("utf-8"))
@@ -79,4 +92,5 @@ def test_identify_from_hash(rules: RetireJsRules) -> None:
 
 
 def test_identify_returns_nothing_for_an_unknown_resource(rules: RetireJsRules) -> None:
+    """A resource matching no extractor and no hash yields nothing."""
     assert rules.identify(url="https://target/static/app.css", body="body{}") == []

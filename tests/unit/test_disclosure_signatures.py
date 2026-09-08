@@ -1,5 +1,9 @@
 """
 Error-page and directory-listing signatures — RF-01, RF-02, RNF-05.
+
+Pure data in, pure verdict out: each ``_<FRAMEWORK>`` constant is a fragment of
+that framework's real error chrome, and ``_GENERIC`` / ``_LINK_LIST`` are the
+false-positive bait the signatures must not fire on.
 """
 
 from __future__ import annotations
@@ -77,6 +81,7 @@ _LINK_LIST = (
 def test_error_signatures_fire(
     body: str, framework: str, interactive: bool, severity: Severity
 ) -> None:
+    """Each framework's error chrome matches with the right framework, interactivity, severity."""
     match = match_error(body)
     assert match is not None
     assert match.signature.framework == framework
@@ -86,14 +91,17 @@ def test_error_signatures_fire(
 
 
 def test_generic_error_page_does_not_match() -> None:
+    """A plain "something went wrong" page and an empty body match nothing (RNF-05)."""
     assert match_error(_GENERIC) is None
     assert match_error("") is None
 
 
 def test_directory_listing_signatures() -> None:
+    """Apache and ``http.server`` index pages are both recognised."""
     assert is_directory_listing(_APACHE_INDEX)
     assert is_directory_listing(_HTTP_SERVER_INDEX)
 
 
 def test_normal_link_list_is_not_a_listing() -> None:
+    """A page that merely contains a ``<ul>`` of links is not mistaken for an index."""
     assert not is_directory_listing(_LINK_LIST)
