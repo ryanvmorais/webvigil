@@ -45,9 +45,11 @@ probe = false            # opt-in: GET a curated list of well-known sensitive pa
 [injection]
 # Active-injection tuning (spec 006). Only consulted on an Active scan
 # (mode = "active"); ignored by a passive scan.
-request_budget = 500      # max crafted requests per scan; hitting it is a warning
+request_budget = 600      # max crafted requests per scan; hitting it is a warning
 max_injection_points = 200  # max query params / form fields tested; excess is a warning
 time_based_sqli = true    # send time-delay SQLi payloads (slower); --no-time-based-sqli overrides
+time_based_cmdi = true    # spec 011: send time-delay OS-command-injection payloads (slower);
+                          # --no-time-based-cmdi overrides. Shares the time budget with SQLi
 time_based_delay_s = 5    # the D in SLEEP(D); keep it below [http] timeout_s
 stored_xss = false        # spec 008: two-phase stored-XSS pass. Submits marker payloads the
                           # target stores and does NOT remove. --stored-xss overrides

@@ -115,7 +115,11 @@ def scan(monkeypatch: pytest.MonkeyPatch):
             "disclosure": {"probe": probe},
         }
         if active or stored_xss:
-            raw["scan"] = {"mode": "active"}
+            # A wider page budget for the stored-XSS re-crawl: an active scan of the insecure
+            # profile now fuzzes ~10 injection points (spec 011 added /ping, /greet and the
+            # cmdi/ssti detectors), and every POST-form payload leaves a guestbook entry the
+            # Phase-B re-crawl then has to walk past to reach the marker's own entry.
+            raw["scan"] = {"mode": "active", "max_pages": 90}
             raw["active"] = {"authorized_by": "integration test"}
             raw["injection"] = {"time_based_delay_s": 2, "stored_xss": stored_xss}
         if cookies is not None:
@@ -247,13 +251,13 @@ async def test_hardened_profile_reports_nothing(scan) -> None:
 
 
 async def test_crawler_reaches_the_linked_pages(scan) -> None:
-    """The crawler reaches all 12 linked pages of the fixture app (index, forms, endpoints)."""
+    """The crawler reaches all 14 linked pages of the fixture app (index, forms, endpoints)."""
     result = await scan("hardened")
     # /, /about, /contact + the injectable endpoints linked from the index: /search, /item,
-    # /download, /go (spec 006) and /fetch, /webhook (spec 009) + the GET /search?q= the
-    # crawler submits from the search form + /account (→ /login for an anonymous scan)
-    # (spec 007 RF-05) + /guestbook (spec 008 RF-13)
-    assert result.metadata.pages_scanned == 12
+    # /download, /go (spec 006), /fetch, /webhook (spec 009) and /ping, /greet (spec 011)
+    # + the GET /search?q= the crawler submits from the search form + /account (→ /login for
+    # an anonymous scan) (spec 007 RF-05) + /guestbook (spec 008 RF-13)
+    assert result.metadata.pages_scanned == 14
 
 
 # ---------------------------------------------------------------------------
@@ -307,6 +311,40 @@ async def test_ssrf_scan_is_deterministic(scan) -> None:
     ssrf_a = sorted(f.fingerprint for f in a.findings if f.check_id.startswith("injection.ssrf."))
     ssrf_b = sorted(f.fingerprint for f in b.findings if f.check_id.startswith("injection.ssrf."))
     assert ssrf_a == ssrf_b and ssrf_a
+
+
+async def test_command_injection_found_on_the_insecure_ping_endpoint(scan) -> None:
+    """The ``/ping`` endpoint shells out — an active scan reports a CRITICAL command injection."""
+    result = await scan("insecure", active=True)
+    cmdi = [f for f in result.findings if f.check_id == "injection.cmdi.os"]
+    assert cmdi, "expected an OS command-injection finding"
+    assert any(f.location.param == "host" for f in cmdi)
+    assert cmdi[0].severity.name == "CRITICAL"
+
+
+async def test_ssti_found_on_the_insecure_greet_endpoint(scan) -> None:
+    """The ``/greet`` endpoint concatenates into template source — an SSTI is reported."""
+    result = await scan("insecure", active=True)
+    ssti = [f for f in result.findings if f.check_id == "injection.ssti"]
+    assert ssti, "expected a server-side template-injection finding"
+    assert any(f.location.param == "name" for f in ssti)
+    assert "Jinja" in ssti[0].title
+
+
+async def test_hardened_ping_and_greet_report_no_rce(scan) -> None:
+    """The hardened ``/ping`` validates its input and ``/greet`` renders data, so nothing fires."""
+    result = await scan("hardened", active=True)
+    assert not any(f.check_id in {"injection.cmdi.os", "injection.ssti"} for f in result.findings)
+
+
+async def test_rce_scan_is_deterministic(scan) -> None:
+    """Two active scans produce the same command-injection / SSTI finding fingerprints."""
+    a = await scan("insecure", active=True)
+    b = await scan("insecure", active=True)
+    ids = {"injection.cmdi.os", "injection.ssti"}
+    fa = sorted(f.fingerprint for f in a.findings if f.check_id in ids)
+    fb = sorted(f.fingerprint for f in b.findings if f.check_id in ids)
+    assert fa == fb and fa
 
 
 async def test_passive_scan_issues_no_crafted_request(scan) -> None:

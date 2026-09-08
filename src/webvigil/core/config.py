@@ -181,11 +181,15 @@ class InjectionSection(_Section):
 
     Attributes:
         request_budget (int): Total crafted requests the injection pass may
-            spend. Defaults to 500.
+            spend. Defaults to 600 (raised from 500 in spec 011, which added the
+            command-injection and SSTI detector families).
         max_injection_points (int): Cap on enumerated injection points.
             Defaults to 200.
         time_based_sqli (bool): Send time-delay SQLi payloads. Defaults to
             ``True``.
+        time_based_cmdi (bool): Send time-delay OS-command-injection payloads
+            (spec 011). Slower; shares the time sub-budget with ``time_based_sqli``.
+            Defaults to ``True``.
         time_based_delay_s (int): Delay a positive time-based SQLi payload
             should induce, in seconds. Defaults to 5.
         stored_xss (bool): Run the opt-in stored/persistent-XSS pass. Off by
@@ -193,9 +197,10 @@ class InjectionSection(_Section):
             does not remove them (see ``docs/active-injection.md``).
     """
 
-    request_budget: int = 500
+    request_budget: int = 600
     max_injection_points: int = 200
     time_based_sqli: bool = True
+    time_based_cmdi: bool = True
     time_based_delay_s: int = 5
     stored_xss: bool = False
 
@@ -311,8 +316,8 @@ class ScanConfig(_Section):
                 ``http``, ``report``, ``active``, ``auth``, ``checks``,
                 ``disclosure``, ``injection``, ``deps``) to a dict of the
                 fields to override. ``injection`` covers spec 006 tuning plus
-                spec 008's ``stored_xss``; ``deps`` covers spec 010's
-                ``osv_online``.
+                spec 008's ``stored_xss`` and spec 011's ``time_based_cmdi``;
+                ``deps`` covers spec 010's ``osv_online``.
 
         Returns:
             ScanConfig: A new, validated configuration.

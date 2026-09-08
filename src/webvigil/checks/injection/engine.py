@@ -12,9 +12,11 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 
 from webvigil.checks.injection.detect import DetectCtx, normalize_body
+from webvigil.checks.injection.detect import cmdi as cmdi_detect
 from webvigil.checks.injection.detect import redirect as redirect_detect
 from webvigil.checks.injection.detect import sqli as sqli_detect
 from webvigil.checks.injection.detect import ssrf as ssrf_detect
+from webvigil.checks.injection.detect import ssti as ssti_detect
 from webvigil.checks.injection.detect import traversal as traversal_detect
 from webvigil.checks.injection.detect import xss as xss_detect
 from webvigil.checks.injection.models import (
@@ -27,6 +29,7 @@ from webvigil.checks.injection.models import (
 from webvigil.checks.injection.points import (
     build_request,
     enumerate_points,
+    is_commandlike,
     is_pathlike,
     is_redirect_name,
     is_urllike,
@@ -38,7 +41,11 @@ from webvigil.core.target import Target
 from webvigil.crawler.forms import Form
 from webvigil.http.client import HttpClient, Response
 
-_PER_POINT_REQUEST_CAP = 30
+# Raised from 30 (spec 006) to 35 in spec 011: the cmdi + ssti detector families now share a
+# point's budget (spec 011 Resolved decision 6 — measured against the fixture; +5 is enough
+# for the front-loaded ssti/cmdi canary without letting the slow time-based detectors run on
+# a point that would otherwise stop before them).
+_PER_POINT_REQUEST_CAP = 35
 _TIME_BASED_SLEEP_CAP = 8
 
 _Detector = Callable[[InjectionPoint, Baseline, DetectCtx], Awaitable[list[InjectionHit]]]
@@ -50,11 +57,25 @@ _DETECTORS: dict[str, _Detector] = {
     "sqli-time": sqli_detect.detect_time,
     "traversal": traversal_detect.detect,
     "redirect": redirect_detect.detect,
+    "ssti": ssti_detect.detect,
+    "cmdi": cmdi_detect.detect,
     "ssrf": ssrf_detect.detect,
 }
-# ``ssrf`` runs last so its payload set never starves the 006 detectors on a point with an
-# unhelpful name; ``_ordered_kinds`` front-loads it to position 0 for a URL-shaped point.
-_BASE_ORDER = ("xss", "sqli-error", "sqli-boolean", "traversal", "redirect", "sqli-time", "ssrf")
+# ``ssti`` is broad and ``cmdi`` / ``ssrf`` carry slow or large payload sets, so all three
+# sit near the end where they cannot starve the fast 006 detectors on a point with an
+# unhelpful name; ``_ordered_kinds`` front-loads each to position 0 for a point its
+# heuristic matches.
+_BASE_ORDER = (
+    "xss",
+    "sqli-error",
+    "sqli-boolean",
+    "traversal",
+    "redirect",
+    "ssti",
+    "sqli-time",
+    "cmdi",
+    "ssrf",
+)
 
 KIND_BY_CHECK_ID: dict[str, str] = {
     "injection.xss.reflected": "xss",
@@ -63,6 +84,10 @@ KIND_BY_CHECK_ID: dict[str, str] = {
     "injection.sqli.time-based": "sqli-time",
     "injection.traversal.path": "traversal",
     "injection.redirect.open": "redirect",
+    # spec 011: the "cmdi" detector runs both its echo and time stages internally; the
+    # time stage is gated by DetectCtx.time_based_cmdi, not by dropping a kind.
+    "injection.cmdi.os": "cmdi",
+    "injection.ssti": "ssti",
     # spec 009: both SSRF checks are fed by the one "ssrf" detector, which emits
     # kind="ssrf-metadata" / "ssrf-internal" hits the two checks filter on.
     "injection.ssrf.metadata": "ssrf",
@@ -108,9 +133,16 @@ class InjectionScanner:
         self._budget = ActiveBudget(
             request_limit=config.request_budget,
             per_point_limit=per_point_limit,
-            time_based_limit=_TIME_BASED_SLEEP_CAP if config.time_based_sqli else 0,
+            time_based_limit=(
+                _TIME_BASED_SLEEP_CAP if (config.time_based_sqli or config.time_based_cmdi) else 0
+            ),
         )
-        self._ctx = DetectCtx(send=self._send, delay_s=config.time_based_delay_s, host=target.host)
+        self._ctx = DetectCtx(
+            send=self._send,
+            delay_s=config.time_based_delay_s,
+            host=target.host,
+            time_based_cmdi=config.time_based_cmdi,
+        )
 
     async def run(self) -> InjectionReport:
         """
@@ -162,6 +194,8 @@ class InjectionScanner:
             (is_pathlike, "traversal"),
             (is_redirect_name, "redirect"),
             (is_urllike, "ssrf"),
+            (is_commandlike, "cmdi"),
+            (is_commandlike, "ssti"),
         ):
             if predicate(point) and kind in kinds:
                 kinds.remove(kind)

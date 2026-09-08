@@ -67,8 +67,12 @@ class DetectCtx:
         send (Sender): The budget-aware send function.
         delay_s (int): The configured ``[injection] time_based_delay_s``.
         host (str): The target host, for the ``{host}`` payload substitution.
+        time_based_cmdi (bool): The configured ``[injection] time_based_cmdi`` —
+            gates the command-injection detector's sleep stage (spec 011).
+            Defaults to ``True``.
     """
 
     send: Sender
     delay_s: int
     host: str
+    time_based_cmdi: bool = True

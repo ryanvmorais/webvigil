@@ -131,6 +131,83 @@ _URLLIKE_NAMES = frozenset(
 )
 _URLLIKE_VALUE = re.compile(r"^\s*(?:https?:)?//|\bhttps?://|://|^\s*www\.", re.I)
 
+# Parameters the command-injection / SSTI detectors (spec 011) front-load. Kept off the
+# most generic names (``q`` / ``search`` / ``query``) so the fast 006 detectors are not
+# starved on every search box; ``cmdi`` / ``ssti`` still run on those points from the base
+# order, budget permitting. Name-only: a command / template sink rarely has a telltale
+# value.
+_COMMANDLIKE_NAMES = frozenset(
+    {
+        "cmd",
+        "command",
+        "exec",
+        "execute",
+        "run",
+        "ping",
+        "host",
+        "hostname",
+        "ip",
+        "addr",
+        "dns",
+        "lookup",
+        "shell",
+        "system",
+        "process",
+        "proc",
+        "arg",
+        "args",
+        "argv",
+        "option",
+        "opt",
+        "flags",
+        "name",
+        "template",
+        "tpl",
+        "tmpl",
+        "twig",
+        "jinja",
+        "render",
+        "view",
+        "engine",
+        "preview",
+        "greeting",
+        "code",
+        "eval",
+        "expr",
+        "expression",
+    }
+)
+
+# The narrower subset whose name specifically suggests an OS shell — only these trigger the
+# command-injection detector's full echo payload set and its (slower) time-based stage. A
+# ``name`` / ``template`` sink is front-loaded for SSTI but is not shell-shaped.
+_SHELL_NAMES = frozenset(
+    {
+        "cmd",
+        "command",
+        "exec",
+        "execute",
+        "run",
+        "ping",
+        "host",
+        "hostname",
+        "ip",
+        "addr",
+        "dns",
+        "lookup",
+        "shell",
+        "system",
+        "process",
+        "proc",
+        "arg",
+        "args",
+        "argv",
+        "option",
+        "opt",
+        "flags",
+    }
+)
+
 
 def _base_of(url: str) -> tuple[str, tuple[tuple[str, str], ...]]:
     """
@@ -239,6 +316,32 @@ def is_urllike(point: InjectionPoint) -> bool:
             its full payload set only for them.
     """
     return point.param.lower() in _URLLIKE_NAMES or bool(_URLLIKE_VALUE.search(point.original))
+
+
+def is_commandlike(point: InjectionPoint) -> bool:
+    """
+    Args:
+        point (InjectionPoint): The point to classify.
+
+    Returns:
+        bool: ``True`` when the parameter name looks like it feeds a shell
+            command or a template — the command-injection and SSTI detectors
+            front-load these and send their full payload set only for them.
+    """
+    return point.param.lower() in _COMMANDLIKE_NAMES
+
+
+def is_shell_param(point: InjectionPoint) -> bool:
+    """
+    Args:
+        point (InjectionPoint): The point to classify.
+
+    Returns:
+        bool: ``True`` when the parameter name specifically suggests an OS shell
+            — the command-injection detector sends its full echo set and runs its
+            time-based stage only for these (spec 011).
+    """
+    return point.param.lower() in _SHELL_NAMES
 
 
 def build_request(

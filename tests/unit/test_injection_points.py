@@ -15,6 +15,7 @@ from webvigil.checks.injection.models import InjectionPoint
 from webvigil.checks.injection.points import (
     build_request,
     enumerate_points,
+    is_commandlike,
     is_pathlike,
     is_redirect_name,
     is_urllike,
@@ -121,6 +122,22 @@ def test_is_urllike_by_name_and_by_value() -> None:
         "GET", "https://example.com/s", "r", "//evil.example/x", (("r", "//evil.example/x"),)
     )
     assert is_urllike(protocol_relative)
+
+
+def test_is_commandlike_is_name_only() -> None:
+    """``is_commandlike`` fires on command / template parameter names, not on a value shape."""
+    pages = (make_page(url="https://example.com/x?cmd=1&host=a&template=t&q=x&email=a@b.c"),)
+    points = {p.param: p for p in enumerate_points(pages, (), max_points=100)[0]}
+    assert is_commandlike(points["cmd"])
+    assert is_commandlike(points["host"])
+    assert is_commandlike(points["template"])
+    assert not is_commandlike(points["q"])  # too generic to front-load the RCE detectors
+    assert not is_commandlike(points["email"])
+
+    shell_value = InjectionPoint(
+        "GET", "https://example.com/s", "note", "a; rm -rf /", (("note", "a; rm -rf /"),)
+    )
+    assert not is_commandlike(shell_value)  # value shape is not a signal
 
 
 def test_build_request_get_carries_a_pair_list() -> None:

@@ -190,6 +190,43 @@ def test_ssrf_detector_absent_when_no_ssrf_kind_selected() -> None:
     assert "ssrf" not in scanner._ordered_kinds(point)
 
 
+# ---------------------------------------------------------------------------
+# Command-injection and SSTI detector registration and ordering (spec 011)
+# ---------------------------------------------------------------------------
+
+
+def test_cmdi_and_ssti_are_registered_and_mapped() -> None:
+    """Both new detectors are in the table and each check id maps to its kind."""
+    assert "cmdi" in _DETECTORS and "ssti" in _DETECTORS
+    assert KIND_BY_CHECK_ID["injection.cmdi.os"] == "cmdi"
+    assert KIND_BY_CHECK_ID["injection.ssti"] == "ssti"
+    # slow / broad detectors sit near the end, ahead of ssrf.
+    assert _BASE_ORDER.index("cmdi") > _BASE_ORDER.index("xss")
+    assert _BASE_ORDER.index("ssti") > _BASE_ORDER.index("xss")
+
+
+def test_cmdi_and_ssti_are_front_loaded_for_a_command_shaped_point() -> None:
+    """A ``host`` point front-loads ``cmdi`` / ``ssti``; a plain ``q`` point does not."""
+    http = _FakeHttp(lambda url, p: _resp())
+    scanner = _scanner(http, kinds={"xss", "cmdi", "ssti", "sqli-error"})
+    host_point = InjectionPoint("GET", "https://example.com/ping", "host", "x", (("host", "x"),))
+    assert set(scanner._ordered_kinds(host_point)[:2]) == {"cmdi", "ssti"}
+    plain_point = InjectionPoint("GET", "https://example.com/s", "q", "x", (("q", "x"),))
+    assert scanner._ordered_kinds(plain_point)[0] not in {"cmdi", "ssti"}
+
+
+def test_time_sub_budget_is_enabled_by_time_based_cmdi_alone() -> None:
+    """With ``time_based_sqli`` off but ``time_based_cmdi`` on, the sleep budget is non-zero."""
+    http = _FakeHttp(lambda url, p: _resp())
+    scanner = _scanner(
+        http,
+        kinds={"cmdi"},
+        config=InjectionSection(time_based_sqli=False, time_based_cmdi=True),
+    )
+    assert scanner._budget.time_based_limit > 0
+    assert scanner._ctx.time_based_cmdi is True
+
+
 async def test_form_points_are_posted() -> None:
     """A form injection point is exercised with POST requests to the form action."""
     seen: list[str] = []

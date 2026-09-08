@@ -6,9 +6,10 @@ jQuery), spec 005 (exposed .git/.env/backups, a listing, a stack trace), spec
 006 (reflected XSS, SQLi, path traversal, open redirect), spec 007 (a
 cookie-gated ``/account`` area, a tokenless POST form, a ``/logout`` link the
 crawler must not follow), spec 008 (a guestbook and a behind-login profile page
-that render stored input unescaped on a later request) and spec 009 (two "fetch
-this URL" endpoints). The app is plain HTTP by nature, so the integration test
-disables ``tls.https``; TLS cases live in the socket-based unit tests.
+that render stored input unescaped on a later request), spec 009 (two "fetch
+this URL" endpoints) and spec 011 (a shell-backed ``/ping`` and a
+template-backed ``/greet``). The app is plain HTTP by nature, so the integration
+test disables ``tls.https``; TLS cases live in the socket-based unit tests.
 
 The route handlers are one-liners with inline comments per spec; only
 :func:`make_app` and the middleware factory carry a docstring.
@@ -22,6 +23,7 @@ import sqlite3
 import time
 from collections.abc import Callable
 
+import jinja2
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.requests import Request
@@ -40,7 +42,10 @@ _INJECTION_LINKS = (
     '<a href="/download?file=readme.txt">download</a> <a href="/go?next=/home">go</a> '
     # spec 009: two "fetch this URL" endpoints — SSRF-able in the insecure profile.
     '<a href="/fetch?url=/preview">fetch</a> '
-    '<a href="/webhook?callback=/ping">webhook</a>'
+    '<a href="/webhook?callback=/ping">webhook</a> '
+    # spec 011: a shell-backed "ping" and a template-backed "greet".
+    '<a href="/ping?host=127.0.0.1">ping</a> '
+    '<a href="/greet?name=guest">greet</a>'
 )
 _FORMS = (
     '<form method="get" action="/search"><input name="q"></form>'
@@ -101,6 +106,12 @@ _TRACE_PAGE = (
 # spec 006: a known system file the traversal payloads reach on the insecure profile.
 _ETC_PASSWD = "root:x:0:0:root:/root:/bin/bash\ndaemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin\n"
 _SLEEP_RE = re.compile(r"(?:sleep|pg_sleep)\((\d+)\)", re.I)
+# spec 011: the insecure /ping endpoint simulates a shell-out — it evaluates the arithmetic
+# echo payload and, for a `sleep N` / `ping -n N` payload, blocks that long (bounded).
+_CMDI_SLEEP_RE = re.compile(r"sleep (\d+)|ping -n (\d+)|timeout /t (\d+)", re.I)
+_CMDI_ARITH_RE = re.compile(
+    r"(wv[0-9a-f]+)=\$\(\((\d+)\*(\d+)\)\)|(wv[0-9a-f]+)&set /a (\d+)\*(\d+)", re.I
+)
 
 _DB = sqlite3.connect(":memory:", check_same_thread=False)
 _DB.executescript(
@@ -192,6 +203,33 @@ def _download_insecure(request: Request) -> Response:
     if "etc/passwd" in lowered:
         return PlainTextResponse(_ETC_PASSWD)
     return PlainTextResponse(f"contents of {name}")
+
+
+def _ping_insecure(request: Request) -> Response:
+    raw = request.query_params.get("host", "")  # spec 011: os.system(f"ping -c1 {raw}")
+    sleep = _CMDI_SLEEP_RE.search(raw)
+    if sleep:
+        time.sleep(min(int(next(g for g in sleep.groups() if g)), 6))
+        return PlainTextResponse(f"PING {raw}: 1 packets transmitted")
+    arith = _CMDI_ARITH_RE.search(raw)
+    if arith and arith.group(1):  # POSIX  $((a*b))
+        return PlainTextResponse(
+            f"PING\n{arith.group(1)}={int(arith.group(2)) * int(arith.group(3))}\n"
+        )
+    if arith:  # Windows  set /a a*b
+        return PlainTextResponse(
+            f"PING\n{arith.group(4)}\n{int(arith.group(5)) * int(arith.group(6))}\n"
+        )
+    return PlainTextResponse(f"PING {raw}: 1 packets transmitted, 0 received")
+
+
+def _greet_insecure(request: Request) -> Response:
+    name = request.query_params.get("name", "")  # spec 011: name concatenated into the source
+    try:
+        body = jinja2.Template("<!doctype html><p>Hi " + name + "</p>").render()
+    except jinja2.exceptions.TemplateError as exc:
+        return PlainTextResponse(f"jinja2.exceptions.{type(exc).__name__}: {exc}", status_code=500)
+    return HTMLResponse(body)
 
 
 def _go_insecure(request: Request) -> Response:
@@ -392,6 +430,19 @@ async def _comment_hardened(request: Request) -> Response:
     return HTMLResponse(f"<!doctype html><p>Posted: {html.escape(str(form.get('body', '')))}</p>")
 
 
+def _ping_hardened(request: Request) -> Response:
+    host = request.query_params.get("host", "")  # spec 011: validate, then pass as an argv item
+    if not re.fullmatch(r"[A-Za-z0-9.\-]{1,253}", host):
+        return PlainTextResponse("invalid host", status_code=400)
+    return PlainTextResponse(f"PING {host}: 1 packets transmitted")
+
+
+def _greet_hardened(request: Request) -> Response:
+    name = request.query_params.get("name", "")  # spec 011: name is template *data*, not source
+    template = jinja2.Template("<!doctype html><p>Hi {{ name }}</p>", autoescape=True)
+    return HTMLResponse(template.render(name=name))
+
+
 _INSECURE_EXTRA_ROUTES: tuple[tuple[str, Callable[[Request], Response]], ...] = (
     (_VULNERABLE_JS_PATH, _vulnerable_js),
     ("/uploads/", _html(_LISTING_PAGE)),
@@ -410,6 +461,8 @@ _INJECTION_ROUTES = {
         ("/go", _go_insecure, ["GET"]),
         ("/fetch", _fetch_insecure, ["GET"]),
         ("/webhook", _webhook_insecure, ["GET"]),
+        ("/ping", _ping_insecure, ["GET"]),
+        ("/greet", _greet_insecure, ["GET"]),
         ("/comment", _comment_insecure, ["POST"]),
         ("/account", _account("session", _ACCOUNT_INSECURE), ["GET"]),
         ("/account/settings", _account_settings("session", escape=False), ["GET"]),
@@ -425,6 +478,8 @@ _INJECTION_ROUTES = {
         ("/go", _go_hardened, ["GET"]),
         ("/fetch", _fetch_hardened, ["GET"]),
         ("/webhook", _fetch_hardened, ["GET"]),
+        ("/ping", _ping_hardened, ["GET"]),
+        ("/greet", _greet_hardened, ["GET"]),
         ("/comment", _comment_hardened, ["POST"]),
         ("/account", _account("__Host-session", _ACCOUNT_HARDENED), ["GET"]),
         ("/account/settings", _account_settings("__Host-session", escape=True), ["GET"]),

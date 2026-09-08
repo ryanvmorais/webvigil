@@ -126,18 +126,22 @@ def test_disclosure_override_wins_over_file() -> None:
 def test_injection_section_defaults_and_round_trips(tmp_path: Path) -> None:
     """``[injection]`` has the documented budget/point/time-based defaults and round-trips."""
     defaults = ScanConfig().injection
-    assert defaults.request_budget == 500
+    assert defaults.request_budget == 600
     assert defaults.max_injection_points == 200
     assert defaults.time_based_sqli is True
+    assert defaults.time_based_cmdi is True
     assert defaults.time_based_delay_s == 5
     assert defaults.stored_xss is False
     path = tmp_path / "webvigil.toml"
     path.write_text(
-        "[injection]\nrequest_budget = 40\ntime_based_sqli = false\nstored_xss = true\n", "utf-8"
+        "[injection]\nrequest_budget = 40\ntime_based_sqli = false\n"
+        "time_based_cmdi = false\nstored_xss = true\n",
+        "utf-8",
     )
     loaded = ScanConfig.load(path).injection
     assert loaded.request_budget == 40
     assert loaded.time_based_sqli is False
+    assert loaded.time_based_cmdi is False
     assert loaded.stored_xss is True
 
 
@@ -160,6 +164,14 @@ def test_stored_xss_override_wins_over_file() -> None:
     """The ``stored_xss`` opt-in can be turned on by an override over an off file value."""
     base = ScanConfig.model_validate({"injection": {"stored_xss": False}})
     assert base.with_overrides(injection={"stored_xss": True}).injection.stored_xss is True
+
+
+def test_time_based_cmdi_override_wins_over_file() -> None:
+    """The ``--no-time-based-cmdi`` flag turns the spec-011 sleep stage off over a file value."""
+    base = ScanConfig.model_validate({"injection": {"time_based_cmdi": True}})
+    assert (
+        base.with_overrides(injection={"time_based_cmdi": False}).injection.time_based_cmdi is False
+    )
 
 
 # ---------------------------------------------------------------------------

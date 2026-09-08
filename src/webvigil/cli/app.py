@@ -93,6 +93,16 @@ def scan(
             help="Send time-delay SQLi payloads during an Active scan (slower). On by default.",
         ),
     ] = None,
+    time_based_cmdi: Annotated[
+        bool | None,
+        typer.Option(
+            "--time-based-cmdi/--no-time-based-cmdi",
+            help=(
+                "Send time-delay OS-command-injection payloads during an Active scan "
+                "(slower). On by default."
+            ),
+        ),
+    ] = None,
     stored_xss: Annotated[
         bool | None,
         typer.Option(
@@ -141,6 +151,7 @@ def scan(
             authorized_by=authorized_by,
             probe=probe,
             time_based_sqli=time_based_sqli,
+            time_based_cmdi=time_based_cmdi,
             stored_xss=stored_xss,
             cookie=cookie,
             osv_online=osv_online,
@@ -216,6 +227,7 @@ def _build_config(
     authorized_by: str | None,
     probe: bool | None,
     time_based_sqli: bool | None,
+    time_based_cmdi: bool | None,
     stored_xss: bool | None,
     cookie: list[str] | None,
     osv_online: bool | None,
@@ -230,8 +242,8 @@ def _build_config(
     Args:
         config (Path | None): Path to a ``webvigil.toml``, or ``None``.
         mode, scope, max_pages, delay, fail_on, authorized_by, probe,
-            time_based_sqli, stored_xss, cookie, osv_online: The optional CLI
-            overrides; ``None`` means "not passed".
+            time_based_sqli, time_based_cmdi, stored_xss, cookie, osv_online: The
+            optional CLI overrides; ``None`` means "not passed".
         verify_tls (bool): The resolved TLS-verification flag.
 
     Returns:
@@ -269,6 +281,8 @@ def _build_config(
     injection_overrides: dict[str, object] = {}
     if time_based_sqli is not None:
         injection_overrides["time_based_sqli"] = time_based_sqli
+    if time_based_cmdi is not None:
+        injection_overrides["time_based_cmdi"] = time_based_cmdi
     if stored_xss is not None:
         injection_overrides["stored_xss"] = stored_xss
 

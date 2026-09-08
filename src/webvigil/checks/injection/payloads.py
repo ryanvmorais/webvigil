@@ -228,3 +228,108 @@ SSRF_ERROR_SIGNATURES: tuple[re.Pattern[str], ...] = (
     re.compile(r"java\.net\.(?:Connect|UnknownHost|SocketTimeout|MalformedURL)Exception", re.I),
     re.compile(r"requests\.exceptions\.\w+|urllib3?\.exceptions|aiohttp\.client_exceptions", re.I),
 )
+
+# --- OS command injection (spec 011, RF-02, RF-03) ------------------------------------
+#
+# Every payload is a *value* appended to the point's original value. The shell metacharacter
+# breaks out of the command the value lands in; ``echo {marker}=$(({a}*{b}))`` then makes the
+# shell perform POSIX arithmetic expansion. ``{marker}`` is a per-request ``wv`` + token_hex,
+# ``{a}`` / ``{b}`` are random two-digit operands (the detector substitutes all three). A hit
+# needs ``{marker}=<a*b>`` (the *evaluated* product) in the response and absent from the
+# baseline (ADR-4) — an app that merely reflects the payload sends back the literal
+# ``$((a*b))`` and is not a hit.
+
+CMDI_MARKER_BYTES = 6
+
+CMDI_ECHO_POSIX: tuple[str, ...] = (
+    ";echo {marker}=$(({a}*{b}))",
+    "|echo {marker}=$(({a}*{b}))",
+    "||echo {marker}=$(({a}*{b}))",
+    "&&echo {marker}=$(({a}*{b}))",
+    "&echo {marker}=$(({a}*{b}))",
+    "$(echo {marker}=$(({a}*{b})))",
+    "`echo {marker}=$(({a}*{b}))`",
+    "%0aecho {marker}=$(({a}*{b}))",
+    ";echo${{IFS}}{marker}=$(({a}*{b}))",  # space-filtered contexts
+    '";echo {marker}=$(({a}*{b}));#',  # break a double-quoted "$var"
+    "';echo {marker}=$(({a}*{b}));#",  # break a single-quoted '$var'
+)
+
+# Windows cmd.exe: no single self-checking expansion like $((...)), so the proof is a
+# two-token match (marker echoed, then `set /a` prints the product) — reported at MEDIUM
+# confidence by the detector (ADR-6).
+CMDI_ECHO_WINDOWS: tuple[str, ...] = (
+    "&echo {marker}&set /a {a}*{b}",
+    "|echo {marker}&set /a {a}*{b}",
+)
+
+# (label, template) — ``{d}`` = the configured delay in seconds, ``{d1}`` = ``d + 1`` (ping
+# wants a packet count). The detector confirms against a ``{d}=0`` control and a half-delay
+# probe, exactly like ``SQLI_TIME``.
+CMDI_TIME: tuple[tuple[str, str], ...] = (
+    ("POSIX", ";sleep {d}"),
+    ("POSIX", "$(sleep {d})"),
+    ("POSIX", "`sleep {d}`"),
+    ("POSIX", "|sleep {d}"),
+    ("POSIX", "%0asleep {d}"),
+    ("Windows", "&ping -n {d1} 127.0.0.1"),
+    ("Windows", "&timeout /t {d}"),
+)
+
+# --- server-side template injection (spec 011, RF-05, RF-06) --------------------------
+#
+# Stage 1 sends ``SSTI_POLYGLOT`` and reads the body for a template-engine parse error.
+# Stage 2 sends ``arith_payloads`` (marker glued to an arithmetic expression) and needs
+# ``<marker><a*b>`` in the response, absent from the baseline (ADR-4). ``SSTI_ENGINE_PROBE``
+# is the optional third request: ``{{7*'7'}}`` renders ``7777777`` on Jinja2/Nunjucks and
+# ``49`` on Twig.
+
+SSTI_MARKER_BYTES = 6
+
+# The PortSwigger SSTI polyglot — valid enough in most contexts to draw a parse error
+# without evaluating anything.
+SSTI_POLYGLOT = "${{<%[%'\"}}%\\"
+
+# ``%s`` is the marker; ``%`` formatting leaves the template braces untouched.
+SSTI_ENGINE_PROBE = "%s{{7*'7'}}"
+
+# (engine, pattern) — a parse/render error in the response body, required absent from the
+# baseline. A match names the engine and picks its arithmetic payload first.
+SSTI_ERROR_SIGNATURES: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("Jinja2", re.compile(r"jinja2\.exceptions|TemplateSyntaxError|TemplateAssertionError", re.I)),
+    ("Twig", re.compile(r"Twig\\Error|Twig_Error|Twig\\Environment", re.I)),
+    ("Freemarker", re.compile(r"FreeMarker template error|freemarker\.core\.", re.I)),
+    ("Velocity", re.compile(r"org\.apache\.velocity|ParseErrorException", re.I)),
+    ("Smarty", re.compile(r"Smarty(?:CompilerException|_Compiler_)|Smarty error", re.I)),
+    ("Mako", re.compile(r"mako\.exceptions|mako\.runtime", re.I)),
+    ("ERB", re.compile(r"\(erb\):\d+|SyntaxError \(\(erb\)\)", re.I)),
+    ("Handlebars", re.compile(r"Handlebars.*Parse error|hbs.*Parse error", re.I)),
+)
+
+
+def arith_payloads(marker: str, a: int, b: int) -> tuple[tuple[str, str], ...]:
+    """
+    Build the stage-2 SSTI arithmetic payloads.
+
+    The marker is glued to the expression so a hit is ``<marker><product>`` in
+    the rendered output, never the bare product (ADR-4).
+
+    Args:
+        marker (str): The per-request marker (``wv`` + token_hex).
+        a (int): First operand.
+        b (int): Second operand.
+
+    Returns:
+        tuple[tuple[str, str], ...]: ``(engine hint, payload)`` pairs, most
+            common engines first.
+    """
+    return (
+        ("Jinja2/Twig", f"{marker}{{{{{a}*{b}}}}}"),  # {marker}{{a*b}}
+        ("Freemarker/EL", f"{marker}${{{a}*{b}}}"),  # {marker}${a*b}
+        ("ERB/EJS", f"{marker}<%= {a}*{b} %>"),
+        ("Groovy/Twig", f"{marker}${{{{{a}*{b}}}}}"),  # {marker}${{a*b}}
+        ("Thymeleaf", f"{marker}*{{{a}*{b}}}"),  # {marker}*{a*b}
+        ("Razor", f"{marker}@({a}*{b})"),
+        ("Smarty", f"{marker}{{{a}*{b}}}"),  # {marker}{a*b}
+        ("Slim/Pug", f"{marker}#{{{a}*{b}}}"),  # {marker}#{a*b}
+    )

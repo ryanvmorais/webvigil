@@ -203,7 +203,9 @@ def test_list_checks_lists_the_injection_checks() -> None:
     assert "injection.xss.stored" in result.stdout
     assert "injection.ssrf.metadata" in result.stdout
     assert "injection.ssrf.internal" in result.stdout
-    assert "CRITICAL" in result.stdout  # ssrf.metadata
+    assert "injection.cmdi.os" in result.stdout
+    assert "injection.ssti" in result.stdout
+    assert "CRITICAL" in result.stdout  # ssrf.metadata, cmdi.os
     assert "INJECTION" in result.stdout
 
 
@@ -216,6 +218,17 @@ def test_no_time_based_sqli_flag_disables_it_over_a_config_file(tmp_path: Path) 
         ["scan", "https://example.com", "--config", str(cfg), "--no-time-based-sqli"],
     )
     assert _StubOrchestrator.last_config.injection.time_based_sqli is False  # type: ignore[attr-defined]
+
+
+def test_no_time_based_cmdi_flag_disables_it_over_a_config_file(tmp_path: Path) -> None:
+    """``--no-time-based-cmdi`` overrides a config file that enabled it (spec 011)."""
+    cfg = tmp_path / "webvigil.toml"
+    cfg.write_text("[injection]\ntime_based_cmdi = true\n", "utf-8")
+    runner.invoke(
+        app_mod.app,
+        ["scan", "https://example.com", "--config", str(cfg), "--no-time-based-cmdi"],
+    )
+    assert _StubOrchestrator.last_config.injection.time_based_cmdi is False  # type: ignore[attr-defined]
 
 
 def test_stored_xss_flag_enables_it_over_a_config_file(tmp_path: Path) -> None:

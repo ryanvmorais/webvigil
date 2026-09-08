@@ -66,6 +66,18 @@ _DESCRIPTION: dict[str, str] = {
         "request from a connection error naming the injected URL. An attacker can pivot to "
         "internal services that trust the application's network position."
     ),
+    "cmdi": (
+        "A value supplied in this parameter is passed to an operating-system shell. WebVigil "
+        "appended a shell command and the server executed it — proved by a computed value in "
+        "the response that reflection alone could not produce, or by an attacker-controlled "
+        "response delay. This is remote code execution."
+    ),
+    "ssti": (
+        "A value supplied in this parameter is concatenated into server-side template source "
+        "rather than passed as template data. WebVigil injected a template expression and the "
+        "engine evaluated it (an arithmetic expression returned its result). Most template "
+        "engines expose enough of the host language to reach remote code execution."
+    ),
 }
 
 _SQLI_FIX = (
@@ -98,6 +110,17 @@ _REMEDIATION: dict[str, str] = {
     "redirect": (
         "Do not redirect to a user-supplied absolute URL. Redirect only to an allow-listed set "
         "of paths, or map an opaque token to a known destination server-side."
+    ),
+    "cmdi": (
+        "Never pass user input to a shell. Call the program directly with an argument vector "
+        "(subprocess with a list and shell=False), so there is no shell to inject into. If a "
+        "shell is unavoidable, allow-list the input against a strict pattern — escaping is not "
+        "enough."
+    ),
+    "ssti": (
+        "Never build template source from user input. Pass user values as template data "
+        "(context variables), not into the template string. Use a sandboxed, logic-less engine "
+        "for user-authored templates, and keep the template directory out of user control."
     ),
     "xss-stored": (
         "Context-encode all untrusted output (HTML entity, attribute, JavaScript-string, or "
@@ -139,6 +162,14 @@ _REFERENCES: dict[str, tuple[str, ...]] = {
     "ssrf-internal": (
         "https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html",
         "https://owasp.org/Top10/A10_2021-Server-Side_Request_Forgery_%28SSRF%29/",
+    ),
+    "cmdi": (
+        f"{_OWASP}/attacks/Command_Injection",
+        "https://cheatsheetseries.owasp.org/cheatsheets/OS_Command_Injection_Defense_Cheat_Sheet.html",
+    ),
+    "ssti": (
+        "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/07-Input_Validation_Testing/18-Testing_for_Server-side_Template_Injection",
+        "https://portswigger.net/research/server-side-template-injection",
     ),
 }
 
@@ -263,6 +294,30 @@ class StoredXssCheck(_InjectionCheck):
     default_severity = Severity.HIGH
     cwe = (79, 20)
     references = _REFERENCES["xss-stored"]
+
+
+@register
+class OsCommandInjectionCheck(_InjectionCheck):
+    """OS command injection from the shell-metacharacter echo or time detector (spec 011)."""
+
+    id = "injection.cmdi.os"
+    name = "OS command injection"
+    kind = "cmdi"
+    default_severity = Severity.CRITICAL
+    cwe = (78, 77)
+    references = _REFERENCES["cmdi"]
+
+
+@register
+class TemplateInjectionCheck(_InjectionCheck):
+    """Server-side template injection from the polyglot + arithmetic detector (spec 011)."""
+
+    id = "injection.ssti"
+    name = "Server-side template injection"
+    kind = "ssti"
+    default_severity = Severity.HIGH
+    cwe = (1336, 94)
+    references = _REFERENCES["ssti"]
 
 
 @register

@@ -11,11 +11,14 @@ stub when it must.
 
 from __future__ import annotations
 
+import re
+
 import httpx
 import pytest
 
 from webvigil.checks.headers.hsts import HstsCheck
 from webvigil.checks.injection.checks import (
+    OsCommandInjectionCheck,
     ReflectedXssCheck,
     SsrfMetadataCheck,
     StoredXssCheck,
@@ -143,6 +146,40 @@ async def test_active_scan_without_an_ssrf_check_sends_no_ssrf_payload(
     httpx_mock.add_callback(router, is_reusable=True)  # type: ignore[attr-defined]
     await Orchestrator(_active(), check_types=[ReflectedXssCheck]).run(_TARGET)
     assert not any("169.254.169.254" in v or v.lower().startswith("file:") for v in seen)
+
+
+async def test_active_scan_command_injection_is_reported(httpx_mock: object) -> None:
+    """A target that evaluates the injected arithmetic yields a CRITICAL command-injection."""
+
+    def router(request: httpx.Request) -> httpx.Response:
+        value = request.url.params.get("q", "")
+        m = re.search(r"(wv[0-9a-f]+)=\$\(\((\d+)\*(\d+)\)\)", value)
+        if m:
+            body = f"{m.group(1)}={int(m.group(2)) * int(m.group(3))}"
+            return httpx.Response(200, text=body, headers={"content-type": "text/plain"})
+        return httpx.Response(200, text="<div>ok</div>", headers={"content-type": "text/html"})
+
+    httpx_mock.add_callback(router, is_reusable=True)  # type: ignore[attr-defined]
+    cfg = _active(injection={"time_based_cmdi": False})
+    result = await Orchestrator(cfg, check_types=[OsCommandInjectionCheck]).run(_TARGET)
+    cmdi = [f for f in result.findings if f.check_id == "injection.cmdi.os"]
+    assert cmdi and cmdi[0].severity is Severity.CRITICAL
+    assert cmdi[0].location.param == "q"
+
+
+async def test_active_scan_without_a_cmdi_or_ssti_check_sends_no_such_payload(
+    httpx_mock: object,
+) -> None:
+    """With only the XSS check selected, no shell-break or template payload is sent."""
+    seen: list[str] = []
+
+    def router(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.params.get("q", ""))
+        return httpx.Response(200, text="<div>ok</div>", headers={"content-type": "text/html"})
+
+    httpx_mock.add_callback(router, is_reusable=True)  # type: ignore[attr-defined]
+    await Orchestrator(_active(), check_types=[ReflectedXssCheck]).run(_TARGET)
+    assert not any("$((" in v or "{{7*" in v or ";sleep" in v for v in seen)
 
 
 async def test_a_raising_pass_becomes_a_warning_not_a_crash(

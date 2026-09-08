@@ -12,6 +12,7 @@ from __future__ import annotations
 from tests.support import make_context, make_page
 from webvigil.checks.injection.checks import (
     OpenRedirectCheck,
+    OsCommandInjectionCheck,
     PathTraversalCheck,
     ReflectedXssCheck,
     SqliBooleanBasedCheck,
@@ -20,6 +21,7 @@ from webvigil.checks.injection.checks import (
     SsrfInternalCheck,
     SsrfMetadataCheck,
     StoredXssCheck,
+    TemplateInjectionCheck,
 )
 from webvigil.checks.injection.models import InjectionHit
 from webvigil.core.context import Observations
@@ -59,6 +61,8 @@ _ALL = [
     (StoredXssCheck, "xss-stored"),
     (SsrfMetadataCheck, "ssrf-metadata"),
     (SsrfInternalCheck, "ssrf-internal"),
+    (OsCommandInjectionCheck, "cmdi"),
+    (TemplateInjectionCheck, "ssti"),
 ]
 
 
@@ -155,3 +159,36 @@ async def test_ssrf_checks_metadata_and_finding_shape() -> None:
     assert any("Server_Side_Request_Forgery" in r for r in finding.references)
     # the internal check ignores a metadata-kind hit
     assert await SsrfInternalCheck().run(ctx) == []
+
+
+async def test_cmdi_and_ssti_check_metadata_and_finding_shape() -> None:
+    """``injection.cmdi.os`` is a CRITICAL CWE-78 finding; ``injection.ssti`` is HIGH CWE-1336."""
+    assert OsCommandInjectionCheck.id == "injection.cmdi.os"
+    assert OsCommandInjectionCheck.default_severity is Severity.CRITICAL
+    assert 78 in OsCommandInjectionCheck.cwe
+    assert TemplateInjectionCheck.id == "injection.ssti"
+    assert TemplateInjectionCheck.default_severity is Severity.HIGH
+    assert 1336 in TemplateInjectionCheck.cwe
+
+    hit = InjectionHit(
+        kind="cmdi",
+        check_id="injection.cmdi.os",
+        method="GET",
+        url="https://example.com/ping",
+        param="host",
+        severity=Severity.CRITICAL,
+        confidence=Confidence.HIGH,
+        title="OS command injection via the 'host' parameter",
+        payload="localhost;echo wvabc=221",
+        evidence=(
+            ("Injection point", "GET https://example.com/ping — parameter 'host'"),
+            ("Payload", "localhost;echo wvabc=221"),
+            ("Command output", "wvabc=221"),
+        ),
+    )
+    ctx = make_context(make_page(), observations=Observations(injection_hits=(hit,)))
+    findings = await OsCommandInjectionCheck().run(ctx)
+    assert len(findings) == 1
+    assert findings[0].severity is Severity.CRITICAL
+    assert findings[0].location.param == "host"
+    assert await TemplateInjectionCheck().run(ctx) == []  # ignores a cmdi-kind hit
