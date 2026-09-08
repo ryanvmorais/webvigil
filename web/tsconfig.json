@@ -1,23 +1,26 @@
 {
+  // TypeScript config for the dashboard. Next reads and augments this file;
+  // `pnpm typecheck` runs `tsc --noEmit` against it. Scaffolded by create-next-app.
   "compilerOptions": {
     "target": "ES2017",
     "lib": ["dom", "dom.iterable", "esnext"],
     "allowJs": true,
     "skipLibCheck": true,
     "strict": true,
-    "noEmit": true,
+    "noEmit": true, // Next (and Vitest) do the emitting; tsc only type-checks
     "esModuleInterop": true,
     "module": "esnext",
-    "moduleResolution": "bundler",
+    "moduleResolution": "bundler", // resolve imports the way the bundler does
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "jsx": "preserve",
+    "jsx": "preserve", // Next transforms JSX itself, not tsc
     "incremental": true,
     "plugins": [
       {
         "name": "next"
       }
     ],
+    // `@/…` resolves to `src/…` everywhere (imports, and the shadcn aliases in components.json).
     "paths": {
       "@/*": ["./src/*"]
     }

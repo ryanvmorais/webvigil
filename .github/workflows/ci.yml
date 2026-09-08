@@ -1,3 +1,8 @@
+# CI pipeline (GitHub Actions). Three independent jobs, each mirroring a slice of
+# the local quality gate so that a green check means the same as a clean checkout:
+#   quality  engine/CLI on 3.12 and 3.13 — ruff, black, mypy, import-linter, pytest
+#   web      dashboard — generated types current, lint, format, typecheck, test, build, e2e
+#   docker   both images build; the CLI image smoke-tests a report render offline
 name: CI
 
 on:
