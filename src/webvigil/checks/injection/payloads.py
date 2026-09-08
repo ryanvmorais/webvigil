@@ -384,3 +384,77 @@ XXE_ERROR_SIGNATURES: tuple[re.Pattern[str], ...] = (
     ),
     re.compile(r"entit(?:y|ies) expansion|maximum entity|entity expansion limit", re.I),
 )
+
+# --- LDAP injection (spec 014, RF-08) --------------------------------------------------
+#
+# The error probes are appended to the point's value to break the search-filter syntax.
+# The boolean probes come as ``(true, false)``: ``true`` *replaces* the value with a filter
+# that matches everything (an injection widens the result set), ``false`` appends a clause
+# that changes nothing. A hit needs an LDAP-parser signature absent from the baseline, or
+# the ``wider_then_same`` differential (see ``detect/_diff.py``).
+
+LDAP_ERROR: tuple[str, ...] = (")", "*)(", "(|", "))", "*)(&")
+
+LDAP_ERROR_SIGNATURES: tuple[re.Pattern[str], ...] = (
+    re.compile(r"LDAPException|javax\.naming\.directory|com\.sun\.jndi\.ldap", re.I),
+    re.compile(r"Bad search filter|Search: Bad search filter|invalid DN syntax", re.I),
+    re.compile(r"Protocol error|ldap_search|com_err|Operations error", re.I),
+    re.compile(r"supplied argument is not a valid ldap|ldap_(?:bind|result|search)\(\)", re.I),
+    re.compile(r"AcceptSecurityContext error|DSID-\w+|LDAP: error code \d+", re.I),
+)
+
+LDAP_BOOLEAN: tuple[tuple[str, str], ...] = (
+    ("*)(uid=*))(|(uid=*", ")(!(objectClass=*)"),
+    ("*", "x)(&(x=y)"),
+)
+
+# --- XPath / XQuery injection (spec 014, RF-09) --------------------------------------
+#
+# Error probes appended to break the expression. Boolean pairs ``(true, false)`` appended:
+# ``true`` closes the quote and ORs in a tautology, ``false`` ANDs in a contradiction. A
+# hit needs an XPath-parser signature absent from the baseline, or the ``two_sided_split``
+# differential.
+
+XPATH_ERROR: tuple[str, ...] = ("'", '"', "]", "count(//*", "' or ''='")
+
+XPATH_ERROR_SIGNATURES: tuple[re.Pattern[str], ...] = (
+    re.compile(r"XPathException|XPathEvalError|lxml\.etree\.XPath", re.I),
+    re.compile(r"System\.Xml\.XPath|MS\.Internal\.Xml|org\.jaxen|net\.sf\.saxon", re.I),
+    re.compile(r"Expression must evaluate to a node-set|Invalid (?:XPath )?expression", re.I),
+    re.compile(
+        r"xmlXPathEval|xmlXPathCompOp|unfinished literal|SyntaxError:.{0,15} expression", re.I
+    ),
+    re.compile(r"XPST\d{4}|XPTY\d{4}|error in xpath expression", re.I),
+)
+
+XPATH_BOOLEAN_PAIRS: tuple[tuple[str, str], ...] = (
+    ("' or '1'='1", "' and '1'='2"),
+    ("x' or 1=1 or 'x'='y", "x' and 1=2 and 'x'='y"),
+    (" or 1=1", " and 1=2"),
+)
+
+# --- Server-Side Includes / ESI injection (spec 014, RF-10) ------------------------
+#
+# The echo directives are appended to the point's value. A hit needs the *evaluated*
+# output (a rendered date, an environment dump, the host) in the response and absent from
+# the baseline — the directive reflected verbatim is not a hit (ADR-8). The marker probe
+# names an undefined variable so the SSI processor emits its configured error string.
+# ``#exec`` / ``#include`` are never sent.
+
+SSI_MARKER_BYTES = 5
+SSI_ECHO: tuple[str, ...] = (
+    '<!--#echo var="DATE_LOCAL"-->',
+    "<!--#printenv-->",
+    "<esi:vars>$(HTTP_HOST)</esi:vars>",
+)
+SSI_MARKER = '<!--#echo var="wv{token}"-->'
+
+SSI_EVAL_SIGNATURES: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\b\d{4}-\d{2}-\d{2}\b|\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun),\s+\d{1,2}\s+\w+\s+\d{4}"),
+    re.compile(r"\b(?:DOCUMENT_ROOT|SERVER_SOFTWARE|HTTP_HOST|REQUEST_URI|SERVER_NAME)="),
+)
+SSI_ERROR_SIGNATURE = re.compile(
+    r"\[an error occurred while processing (?:this|the) directive\]|"
+    r"\[error processing directive\]",
+    re.I,
+)

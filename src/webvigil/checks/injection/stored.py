@@ -39,7 +39,13 @@ from webvigil.crawler.crawler import Crawler
 from webvigil.crawler.forms import Form
 from webvigil.http.client import HttpClient, Response
 
-_STORED_REFETCH_CAP = 60
+# Phase B page budget. Raised from 60 (spec 008) to 120 in spec 014: specs 011-014 each
+# added crawlable endpoints and detector families that fuzz a stored sink, so on a target
+# that stores every submission (the test fixture's guestbook) the marker's own entry can sit
+# past the old cap before the re-crawl reaches it. A real target is bounded by its actual
+# link count, and Phase B still respects the shared request_budget, so the ceiling costs
+# nothing there. Excess is a warning, not an error.
+_STORED_REFETCH_CAP = 120
 _PER_POINT_REQUEST_CAP = 30  # mirrors engine._PER_POINT_REQUEST_CAP (Phase A submissions)
 _CHECK_ID = "injection.xss.stored"
 

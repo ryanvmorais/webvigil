@@ -41,6 +41,7 @@ def _load_builtin_checks() -> None:
         headers,
         injection,
         tls,
+        upload,
     )
 
 

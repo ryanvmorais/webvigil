@@ -14,11 +14,14 @@ from collections.abc import Awaitable, Callable
 from webvigil.checks.injection.detect import DetectCtx, normalize_body
 from webvigil.checks.injection.detect import cmdi as cmdi_detect
 from webvigil.checks.injection.detect import crlf as crlf_detect
+from webvigil.checks.injection.detect import ldap as ldap_detect
 from webvigil.checks.injection.detect import redirect as redirect_detect
 from webvigil.checks.injection.detect import sqli as sqli_detect
+from webvigil.checks.injection.detect import ssi as ssi_detect
 from webvigil.checks.injection.detect import ssrf as ssrf_detect
 from webvigil.checks.injection.detect import ssti as ssti_detect
 from webvigil.checks.injection.detect import traversal as traversal_detect
+from webvigil.checks.injection.detect import xpath as xpath_detect
 from webvigil.checks.injection.detect import xss as xss_detect
 from webvigil.checks.injection.detect import xxe as xxe_detect
 from webvigil.checks.injection.models import (
@@ -33,9 +36,12 @@ from webvigil.checks.injection.points import (
     enumerate_points,
     is_commandlike,
     is_headerlike,
+    is_ldaplike,
     is_pathlike,
     is_redirect_name,
+    is_ssilike,
     is_urllike,
+    is_xpathlike,
 )
 from webvigil.core.config import InjectionSection
 from webvigil.core.context import Page
@@ -45,11 +51,11 @@ from webvigil.crawler.forms import Form
 from webvigil.crawler.openapi import ApiOperation
 from webvigil.http.client import HttpClient, Response
 
-# Raised from 30 (spec 006) to 35 in spec 011: the cmdi + ssti detector families now share a
-# point's budget (spec 011 Resolved decision 6 — measured against the fixture; +5 is enough
-# for the front-loaded ssti/cmdi canary without letting the slow time-based detectors run on
-# a point that would otherwise stop before them).
-_PER_POINT_REQUEST_CAP = 35
+# Raised from 30 (spec 006) to 35 in spec 011 (cmdi + ssti families) and to 38 in spec 014
+# (the ldap / xpath / ssi families each add a small error + boolean probe set) — measured
+# against the fixture: enough for the front-loaded 014 canary without letting the slow
+# time-based detectors run on a point that would otherwise stop before them.
+_PER_POINT_REQUEST_CAP = 38
 _TIME_BASED_SLEEP_CAP = 8
 
 _Detector = Callable[[InjectionPoint, Baseline, DetectCtx], Awaitable[list[InjectionHit]]]
@@ -69,14 +75,17 @@ _DETECTORS: dict[str, _Detector] = {
     "redirect": redirect_detect.detect,
     "ssti": ssti_detect.detect,
     "crlf": crlf_detect.detect,
+    "ssi": ssi_detect.detect,
     "cmdi": cmdi_detect.detect,
+    "ldap": ldap_detect.detect,
+    "xpath": xpath_detect.detect,
     "xxe": xxe_detect.detect,
     "ssrf": ssrf_detect.detect,
 }
-# ``ssti`` / ``crlf`` are broad and ``cmdi`` / ``xxe`` / ``ssrf`` carry slow, large, or
-# body-rewriting payload sets, so they sit near the end where they cannot starve the fast
-# 006 detectors on a point with an unhelpful name; ``_ordered_kinds`` front-loads each to
-# position 0 for a point its heuristic matches.
+# ``ssti`` / ``crlf`` are broad and ``cmdi`` / ``ldap`` / ``xpath`` / ``ssi`` / ``xxe`` /
+# ``ssrf`` carry slow, large, or body-rewriting payload sets, so they sit near the end where
+# they cannot starve the fast 006 detectors (nor ``sqli-time``) on a point with an unhelpful
+# name; ``_ordered_kinds`` front-loads each to position 0 for a point its heuristic matches.
 _BASE_ORDER = (
     "xss",
     "sqli-error",
@@ -87,6 +96,9 @@ _BASE_ORDER = (
     "crlf",
     "sqli-time",
     "cmdi",
+    "ldap",
+    "xpath",
+    "ssi",
     "xxe",
     "ssrf",
 )
@@ -110,6 +122,10 @@ KIND_BY_CHECK_ID: dict[str, str] = {
     # kind="ssrf-metadata" / "ssrf-internal" hits the two checks filter on.
     "injection.ssrf.metadata": "ssrf",
     "injection.ssrf.internal": "ssrf",
+    # spec 014: LDAP / XPath / SSI value injections, error signature + boolean differential.
+    "injection.ldap": "ldap",
+    "injection.xpath": "xpath",
+    "injection.ssi": "ssi",
 }
 
 
@@ -227,6 +243,9 @@ class InjectionScanner:
             (is_commandlike, "cmdi"),
             (is_commandlike, "ssti"),
             (is_headerlike, "crlf"),
+            (is_ldaplike, "ldap"),
+            (is_xpathlike, "xpath"),
+            (is_ssilike, "ssi"),
             # xxe is opt-in and only runs on POST points — front-load it so the per-point
             # cap does not stop the pass before it (it sits last in _BASE_ORDER).
             (_is_post, "xxe"),

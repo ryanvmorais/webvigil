@@ -90,6 +90,24 @@ _DESCRIPTION: dict[str, str] = {
         "error naming the entity. XXE reads local files and, via SYSTEM URLs, can reach "
         "internal services (SSRF)."
     ),
+    "ldap": (
+        "A value supplied in this parameter is spliced into an LDAP search filter without "
+        "escaping. WebVigil either drew a filter-parser error or widened the result set with an "
+        "always-true filter. An attacker can read directory entries they should not see or "
+        "bypass an LDAP-backed authentication check."
+    ),
+    "xpath": (
+        "A value supplied in this parameter is concatenated into an XPath expression evaluated "
+        "over an XML document. WebVigil either drew an expression-parser error or flipped a "
+        "true/false condition (blind XPath injection). The whole document can be extracted one "
+        "node at a time."
+    ),
+    "ssi": (
+        "A value supplied in this parameter is reflected into a page that a server-side include "
+        "(or ESI) processor then evaluates. WebVigil injected an #echo / <esi:vars> directive "
+        "and the server ran it. SSI injection commonly escalates to file disclosure and, where "
+        "#exec is enabled, to command execution."
+    ),
 }
 
 _SQLI_FIX = (
@@ -143,6 +161,21 @@ _REMEDIATION: dict[str, str] = {
         "Disable DOCTYPE / DTD processing and external-entity resolution in the XML parser "
         "(e.g. defusedxml, or set the parser to forbid DTDs). Do not accept XML where JSON "
         "would do."
+    ),
+    "ldap": (
+        "Escape every user value with the LDAP filter-encoding rules (RFC 4515) before building "
+        "a search filter, or use a parameterised directory API. Validate the input against a "
+        "strict allow-list and bind with least privilege."
+    ),
+    "xpath": (
+        "Do not build XPath expressions by string concatenation. Use a parameterised /variable "
+        "-binding XPath API, or escape and quote user values; validate them against an "
+        "allow-list first."
+    ),
+    "ssi": (
+        "Disable SSI / ESI processing on pages that render user input, or HTML-encode the input "
+        "so directives cannot form. If SSI is required, keep #exec and #include disabled and "
+        "never place untrusted data where the processor parses directives."
     ),
     "xss-stored": (
         "Context-encode all untrusted output (HTML entity, attribute, JavaScript-string, or "
@@ -200,6 +233,18 @@ _REFERENCES: dict[str, tuple[str, ...]] = {
     "xxe": (
         "https://cheatsheetseries.owasp.org/cheatsheets/XML_External_Entity_Prevention_Cheat_Sheet.html",
         f"{_OWASP}/attacks/XML_External_Entity_(XXE)_Processing",
+    ),
+    "ldap": (
+        f"{_OWASP}/attacks/LDAP_Injection",
+        "https://cheatsheetseries.owasp.org/cheatsheets/LDAP_Injection_Prevention_Cheat_Sheet.html",
+    ),
+    "xpath": (
+        f"{_OWASP}/attacks/XPATH_Injection",
+        "https://cheatsheetseries.owasp.org/cheatsheets/Injection_Prevention_Cheat_Sheet.html",
+    ),
+    "ssi": (
+        f"{_OWASP}/attacks/Server-Side_Includes_(SSI)_Injection",
+        "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/07-Input_Validation_Testing/08-Testing_for_SSI_Injection",
     ),
 }
 
@@ -396,3 +441,39 @@ class SsrfInternalCheck(_InjectionCheck):
     default_severity = Severity.HIGH
     cwe = (918,)
     references = _REFERENCES["ssrf-internal"]
+
+
+@register
+class LdapInjectionCheck(_InjectionCheck):
+    """LDAP injection — a filter-parser error or a widened result set (spec 014)."""
+
+    id = "injection.ldap"
+    name = "LDAP injection"
+    kind = "ldap"
+    default_severity = Severity.HIGH
+    cwe = (90,)
+    references = _REFERENCES["ldap"]
+
+
+@register
+class XpathInjectionCheck(_InjectionCheck):
+    """XPath / XQuery injection — an expression-parser error or a boolean split (spec 014)."""
+
+    id = "injection.xpath"
+    name = "XPath injection"
+    kind = "xpath"
+    default_severity = Severity.HIGH
+    cwe = (643,)
+    references = _REFERENCES["xpath"]
+
+
+@register
+class SsiInjectionCheck(_InjectionCheck):
+    """Server-Side Includes / ESI injection — a directive the server evaluated (spec 014)."""
+
+    id = "injection.ssi"
+    name = "Server-Side Includes (SSI) injection"
+    kind = "ssi"
+    default_severity = Severity.HIGH
+    cwe = (97, 94)
+    references = _REFERENCES["ssi"]

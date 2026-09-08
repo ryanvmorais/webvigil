@@ -36,6 +36,8 @@ _IDEMPOTENT = frozenset({"GET", "HEAD", "OPTIONS", "TRACE"})
 _REDIRECT_KEEPS_METHOD = frozenset({307, 308})
 
 _Params = dict[str, str] | list[tuple[str, str]]
+# A multipart file part: field name -> (filename, content, content type) (spec 014 upload).
+_Files = dict[str, tuple[str, bytes, str]]
 
 # Backoff between retries; module-level so tests can shrink them.
 BACKOFF_BASE_S = 0.5
@@ -244,6 +246,7 @@ class HttpClient:
         params: _Params | None = None,
         data: _Params | None = None,
         content: str | bytes | None = None,
+        files: _Files | None = None,
         headers: dict[str, str] | None = None,
         allow_out_of_scope: bool = False,
         crafted: bool = False,
@@ -258,10 +261,14 @@ class HttpClient:
             params (dict[str, str] | list[tuple[str, str]] | None): Merged into
                 the query string.
             data (dict[str, str] | list[tuple[str, str]] | None): A urlencoded
-                form body.
+                form body (or the non-file fields of a multipart body when
+                ``files`` is set).
             content (str | bytes | None): A raw request body (spec 012 XXE) —
-                mutually exclusive with ``data``; set the ``Content-Type`` via
-                ``headers``.
+                mutually exclusive with ``data`` / ``files``; set the
+                ``Content-Type`` via ``headers``.
+            files (dict[str, tuple[str, bytes, str]] | None): Multipart file
+                parts, ``field -> (filename, content, content type)`` (spec 014
+                file upload) — mutually exclusive with ``content``.
             headers (dict[str, str] | None): Extra request headers.
             allow_out_of_scope (bool): Skip the scope guard for this request.
                 Defaults to ``False``.
@@ -279,6 +286,8 @@ class HttpClient:
             RequestFailed: When the request fails after exhausting retries.
         """
         method = method.upper()
+        if content is not None and files is not None:
+            raise ValueError("request() takes content or files, not both")
         if not allow_out_of_scope and not self._guard.allows(url):
             self.stats.blocked_out_of_scope += 1
             self._guard.check(url)  # raises OutOfScopeError
@@ -288,12 +297,20 @@ class HttpClient:
         current_method = method
         current_params = params
         current_data = data
+        current_files = files
         hops: list[RedirectHop] = []
         redirected_out = False
         final_location: str | None = None
 
         raw = await self._request_with_retry(
-            current_method, current_url, headers, current_params, current_data, content, crafted
+            current_method,
+            current_url,
+            headers,
+            current_params,
+            current_data,
+            content,
+            current_files,
+            crafted,
         )
         for _ in range(_MAX_REDIRECT_HOPS):
             if raw.status_code not in _REDIRECT_STATUS or "location" not in raw.headers:
@@ -306,9 +323,22 @@ class HttpClient:
             hops.append(RedirectHop(current_url, target_url, raw.status_code))
             current_url = target_url
             if raw.status_code not in _REDIRECT_KEEPS_METHOD:
-                current_method, current_params, current_data, content = "GET", None, None, None
+                current_method, current_params, current_data, content, current_files = (
+                    "GET",
+                    None,
+                    None,
+                    None,
+                    None,
+                )
             raw = await self._request_with_retry(
-                current_method, current_url, headers, current_params, current_data, content, crafted
+                current_method,
+                current_url,
+                headers,
+                current_params,
+                current_data,
+                content,
+                current_files,
+                crafted,
             )
 
         return Response(
@@ -332,6 +362,7 @@ class HttpClient:
         params: _Params | None,
         data: _Params | None,
         content: str | bytes | None,
+        files: _Files | None,
         crafted: bool,
     ) -> httpx.Response:
         """
@@ -349,6 +380,8 @@ class HttpClient:
                 parameters.
             data (dict[str, str] | list[tuple[str, str]] | None): Form body.
             content (str | bytes | None): Raw request body.
+            files (dict[str, tuple[str, bytes, str]] | None): Multipart file
+                parts (spec 014).
             crafted (bool): Whether to count this against ``crafted_requests``.
 
         Returns:
@@ -395,6 +428,7 @@ class HttpClient:
                         params=params,  # type: ignore[arg-type]
                         data=data,  # type: ignore[arg-type]
                         content=content,
+                        files=files,
                         headers=req_headers,
                     )
             except (httpx.TransportError, httpx.TimeoutException) as exc:

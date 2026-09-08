@@ -57,7 +57,11 @@ _INJECTION_LINKS = (
     '<a href="/greet?name=guest">greet</a> '
     # spec 012: a language cookie (CRLF), a reset page (host header), a methods route.
     '<a href="/set-lang?lang=en">set-lang</a> '
-    '<a href="/reset">reset</a> <a href="/resource">resource</a>'
+    '<a href="/reset">reset</a> <a href="/resource">resource</a> '
+    # spec 014: an LDAP-filter search, an XPath-over-XML lookup, an SSI-processing page.
+    '<a href="/dir?user=jdoe">dir</a> '
+    '<a href="/xdoc?node=Dune">xdoc</a> '
+    '<a href="/page?tpl=hi">page</a>'
 )
 # spec 013: the insecure index also carries a cross-origin script with no SRI, a session
 # token handed to a third-party link, and an internal IP in a comment — inlined here rather
@@ -84,6 +88,10 @@ _FORMS = (
     # the CSRF check stays quiet; the stored-XSS pass fuzzes the `body` field.
     '<form method="post" action="/guestbook">'
     '<input type="hidden" name="csrf_token" value="gbtok"><textarea name="body"></textarea></form>'
+    # spec 014: a file-upload form the UploadScanner pass probes (opt-in --file-upload). It
+    # carries a CSRF token so the passive CSRF check stays quiet.
+    '<form method="post" action="/upload" enctype="multipart/form-data">'
+    '<input type="hidden" name="csrf_token" value="uptok"><input type="file" name="avatar"></form>'
 )
 _PAGE = f"<!doctype html><html><body><h1>Demo</h1>{_LINKS} {_INJECTION_LINKS}{_FORMS}</body></html>"
 
@@ -302,6 +310,154 @@ def _resource_insecure(request: Request) -> Response:
     response = PlainTextResponse("the resource")
     response.headers["allow"] = "GET, POST, PUT, DELETE, TRACE, OPTIONS"
     return response
+
+
+# --- spec 014: file upload + LDAP / XPath / SSI (insecure) -----------------------
+# Every sink is faked offline and deterministically (the "fixture simulates the sink"
+# pattern from spec 006 SLEEP / spec 011 shell / spec 012 CRLF). No real PHP / LDAP / XPath.
+
+_CTYPE_BY_EXT = {
+    ".html": "text/html",
+    ".htm": "text/html",
+    ".xhtml": "application/xhtml+xml",
+    ".svg": "image/svg+xml",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".txt": "text/plain",
+}
+_LDAP_ALL_USERS = "\n".join(f"uid=user{i},ou=people,dc=demo" for i in range(120))
+_LDAP_ONE_USER = "uid=jdoe,ou=people,dc=demo"
+_XML_CATALOGUE = (
+    "<book><title>Dune</title></book>",
+    "<book><title>Neuromancer</title></book>",
+    "<book><title>Snow Crash</title></book>",
+)
+
+
+def _guess_ctype(name: str) -> str:
+    for ext, ctype in _CTYPE_BY_EXT.items():
+        if name.lower().endswith(ext):
+            return ctype
+    return "application/octet-stream"
+
+
+def _run_marker_script(body: bytes) -> bytes:
+    text = body.decode("utf-8", "replace")  # collapse "marker:<?php echo A*B; ?>" to "marker:AB"
+    match = re.search(r"echo (\d+)\*(\d+)|print\((\d+)\*(\d+)\)", text)
+    if match is None:
+        return body
+    nums = [int(x) for x in match.groups() if x]
+    return (text.split(":", 1)[0] + ":" + str(nums[0] * nums[1])).encode()
+
+
+async def _upload_insecure(request: Request) -> Response:
+    form = await request.form()
+    field = next((v for v in form.values() if hasattr(v, "filename")), None)
+    if field is None:
+        return PlainTextResponse("no file", status_code=400)
+    raw_name = getattr(field, "filename", None) or "file"
+    name = raw_name.rsplit("/", 1)[-1].split("%00")[0]
+    body = await field.read()  # type: ignore[union-attr]
+    request.app.state.uploads[name] = body
+    if "../" in raw_name or "..%2f" in raw_name.lower():
+        request.app.state.root_uploads[name] = body  # traversal: also written at the web root
+    return HTMLResponse(f'<a href="/files/{name}">saved</a>')
+
+
+async def _files_insecure(request: Request) -> Response:
+    name = request.path_params["name"]
+    store = request.app.state.uploads
+    if request.method == "PUT":
+        store[name] = await request.body()
+        return PlainTextResponse("created", status_code=201)
+    body = store.get(name)
+    if body is None:
+        return PlainTextResponse("not found", status_code=404)
+    if name.lower().endswith((".php", ".phtml", ".php5", ".jsp", ".asp", ".aspx")):
+        return Response(_run_marker_script(body), media_type="text/html")  # "executed"
+    return Response(body, media_type=_guess_ctype(name))  # served inline, no attachment
+
+
+def _root_file_insecure(request: Request) -> Response:
+    name = request.path_params["fname"]
+    body = request.app.state.root_uploads.get(name)
+    if body is None:
+        return PlainTextResponse("not found", status_code=404)
+    return Response(body, media_type=_guess_ctype(name))
+
+
+def _dir_insecure(request: Request) -> Response:
+    user = request.query_params.get("user", "")  # spliced into an LDAP filter
+    if user.count("(") != user.count(")") and "=" not in user:
+        return PlainTextResponse(
+            "javax.naming.directory.InvalidSearchFilterException: Bad search filter",
+            status_code=500,
+        )
+    return PlainTextResponse(_LDAP_ALL_USERS if "*" in user else _LDAP_ONE_USER)
+
+
+def _xdoc_insecure(request: Request) -> Response:
+    node = request.query_params.get("node", "")  # concatenated into an XPath expression
+    if node.count("'") % 2 == 1 and " or " not in node.lower():
+        return PlainTextResponse(
+            "lxml.etree.XPathEvalError: Invalid expression, line 1", status_code=500
+        )
+    widened = "'1'='1" in node or "1=1" in node.replace(" ", "")
+    return PlainTextResponse("\n".join(_XML_CATALOGUE if widened else _XML_CATALOGUE[:1]))
+
+
+def _page_insecure(request: Request) -> Response:
+    tpl = request.query_params.get("tpl", "")  # reflected into a page an SSI processor evaluates
+    out = tpl.replace('<!--#echo var="DATE_LOCAL"-->', "Mon, 08 Sep 2026 12:00:00 GMT")
+    out = out.replace(
+        "<!--#printenv-->", "DOCUMENT_ROOT=/var/www\nHTTP_HOST=demo.test\nSERVER_SOFTWARE=Apache"
+    )
+    out = out.replace("<esi:vars>$(HTTP_HOST)</esi:vars>", "demo.test")
+    out = re.sub(
+        r'<!--#echo var="wv[0-9a-f]+"-->',
+        "[an error occurred while processing this directive]",
+        out,
+    )
+    return HTMLResponse(f"<!doctype html><div>{out}</div>")
+
+
+# --- spec 014: the safe equivalents (hardened) ----------------------------------
+
+
+async def _upload_hardened(request: Request) -> Response:
+    form = await request.form()
+    field = next((v for v in form.values() if hasattr(v, "filename")), None)
+    allowed = (getattr(field, "filename", "") or "").lower().endswith((".png", ".jpg", ".jpeg"))
+    if field is None or not allowed:
+        return PlainTextResponse("file type not allowed", status_code=400)
+    request.app.state.uploads[f"{int(time.time() * 1000)}.png"] = await field.read()  # type: ignore[union-attr]
+    return PlainTextResponse("stored")
+
+
+async def _files_hardened(request: Request) -> Response:
+    if request.method == "PUT":
+        return PlainTextResponse("Method Not Allowed", status_code=405)
+    body = request.app.state.uploads.get(request.path_params["name"])
+    if body is None:
+        return PlainTextResponse("not found", status_code=404)
+    response = Response(body, media_type="application/octet-stream")
+    response.headers["content-disposition"] = "attachment"
+    return response
+
+
+def _dir_hardened(request: Request) -> Response:
+    return PlainTextResponse(_LDAP_ONE_USER)  # parameterised lookup — payloads change nothing
+
+
+def _xdoc_hardened(request: Request) -> Response:
+    return PlainTextResponse(_XML_CATALOGUE[0])  # parameterised lookup
+
+
+def _page_hardened(request: Request) -> Response:
+    return HTMLResponse(
+        f"<!doctype html><div>{html.escape(request.query_params.get('tpl', ''))}</div>"
+    )
 
 
 # --- spec 013: OpenAPI import -----------------------------------------------------
@@ -612,6 +768,11 @@ _INJECTION_ROUTES = {
         ("/set-lang", _set_lang_insecure, ["GET"]),
         ("/reset", _reset_insecure, ["GET"]),
         ("/resource", _resource_insecure, ["GET", "POST", "PUT", "DELETE", "TRACE", "OPTIONS"]),
+        ("/upload", _upload_insecure, ["POST"]),
+        ("/files/{name}", _files_insecure, ["GET", "PUT"]),
+        ("/dir", _dir_insecure, ["GET"]),
+        ("/xdoc", _xdoc_insecure, ["GET"]),
+        ("/page", _page_insecure, ["GET"]),
         ("/openapi.json", _openapi_doc, ["GET"]),
         ("/api/find", _api_find_insecure, ["GET"]),
         ("/api/items", _api_items, ["POST"]),
@@ -636,6 +797,11 @@ _INJECTION_ROUTES = {
         ("/set-lang", _set_lang_hardened, ["GET"]),
         ("/reset", _reset_hardened, ["GET"]),
         ("/resource", _resource_hardened, ["GET", "POST", "OPTIONS"]),
+        ("/upload", _upload_hardened, ["POST"]),
+        ("/files/{name}", _files_hardened, ["GET", "PUT"]),
+        ("/dir", _dir_hardened, ["GET"]),
+        ("/xdoc", _xdoc_hardened, ["GET"]),
+        ("/page", _page_hardened, ["GET"]),
         ("/openapi.json", _openapi_doc, ["GET"]),
         ("/api/find", _api_find_hardened, ["GET"]),
         ("/api/items", _api_items, ["POST"]),
@@ -698,9 +864,13 @@ def make_app(profile: str) -> Starlette:
     routes.append(Route("/login", _login, methods=["GET", "POST"]))
     if is_insecure:
         routes += [Route(path, view) for path, view in _INSECURE_EXTRA_ROUTES]
+        # spec 014: a catch-all so a traversal-named upload is retrievable at the web root.
+        routes.append(Route("/{fname}", _root_file_insecure, methods=["GET"]))
 
     app = Starlette(routes=routes, middleware=[Middleware(_recorder(requests))])
     app.state.requests = requests
     app.state.guestbook = []  # spec 008: reset per app so the suite stays deterministic
     app.state.profile = ""
+    app.state.uploads = {}  # spec 014: reset per app
+    app.state.root_uploads = {}
     return app

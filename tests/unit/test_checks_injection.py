@@ -12,6 +12,7 @@ from __future__ import annotations
 from tests.support import make_context, make_page
 from webvigil.checks.injection.checks import (
     CrlfCheck,
+    LdapInjectionCheck,
     OpenRedirectCheck,
     OsCommandInjectionCheck,
     PathTraversalCheck,
@@ -19,10 +20,12 @@ from webvigil.checks.injection.checks import (
     SqliBooleanBasedCheck,
     SqliErrorBasedCheck,
     SqliTimeBasedCheck,
+    SsiInjectionCheck,
     SsrfInternalCheck,
     SsrfMetadataCheck,
     StoredXssCheck,
     TemplateInjectionCheck,
+    XpathInjectionCheck,
     XxeCheck,
 )
 from webvigil.checks.injection.models import InjectionHit
@@ -67,6 +70,9 @@ _ALL = [
     (TemplateInjectionCheck, "ssti"),
     (CrlfCheck, "crlf"),
     (XxeCheck, "xxe"),
+    (LdapInjectionCheck, "ldap"),
+    (XpathInjectionCheck, "xpath"),
+    (SsiInjectionCheck, "ssi"),
 ]
 
 
@@ -227,3 +233,19 @@ async def test_crlf_and_xxe_check_metadata() -> None:
     findings = await CrlfCheck().run(ctx)
     assert len(findings) == 1 and findings[0].location.param == "lang"
     assert await XxeCheck().run(ctx) == []
+
+
+async def test_ldap_xpath_ssi_check_metadata_and_finding_shape() -> None:
+    """The three spec-014 checks are HIGH with their CWEs and each renders its own kind."""
+    assert (LdapInjectionCheck.id, LdapInjectionCheck.cwe) == ("injection.ldap", (90,))
+    assert (XpathInjectionCheck.id, XpathInjectionCheck.cwe) == ("injection.xpath", (643,))
+    assert XpathInjectionCheck.category is Category.INJECTION
+    assert SsiInjectionCheck.id == "injection.ssi" and 97 in SsiInjectionCheck.cwe
+    for check in (LdapInjectionCheck, XpathInjectionCheck, SsiInjectionCheck):
+        assert check.default_severity is Severity.HIGH
+        assert check.mode is ScanMode.ACTIVE
+
+    ctx = make_context(make_page(), observations=Observations(injection_hits=(_hit("ldap"),)))
+    findings = await LdapInjectionCheck().run(ctx)
+    assert len(findings) == 1 and findings[0].location.param == "q"
+    assert await XpathInjectionCheck().run(ctx) == []

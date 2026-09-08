@@ -123,6 +123,17 @@ def scan(
             ),
         ),
     ] = None,
+    file_upload: Annotated[
+        bool | None,
+        typer.Option(
+            "--file-upload/--no-file-upload",
+            help=(
+                "Test for unrestricted file upload during an Active scan: upload benign marker "
+                "files through discovered upload forms and fetch them back. Off by default "
+                "(writes files the target keeps)."
+            ),
+        ),
+    ] = None,
     cookie: Annotated[
         list[str] | None,
         typer.Option(
@@ -180,6 +191,7 @@ def scan(
             time_based_cmdi=time_based_cmdi,
             stored_xss=stored_xss,
             xxe=xxe,
+            file_upload=file_upload,
             cookie=cookie,
             header=header,
             openapi=openapi,
@@ -209,6 +221,7 @@ def scan(
         cookie_count=len(cfg.auth.cookies),
         header_count=len(cfg.auth.headers),
         osv_online=cfg.deps.osv_online,
+        file_upload=cfg.injection.file_upload and cfg.scan.mode is ScanMode.ACTIVE,
     )
     raise typer.Exit(int(evaluate(result, cfg.report.fail_on)))
 
@@ -260,6 +273,7 @@ def _build_config(
     time_based_cmdi: bool | None,
     stored_xss: bool | None,
     xxe: bool | None,
+    file_upload: bool | None,
     cookie: list[str] | None,
     header: list[str] | None,
     openapi: str | None,
@@ -275,9 +289,9 @@ def _build_config(
     Args:
         config (Path | None): Path to a ``webvigil.toml``, or ``None``.
         mode, scope, max_pages, delay, fail_on, authorized_by, probe,
-            time_based_sqli, time_based_cmdi, stored_xss, xxe, cookie, header,
-            openapi, osv_online: The optional CLI overrides; ``None`` means "not
-            passed".
+            time_based_sqli, time_based_cmdi, stored_xss, xxe, file_upload,
+            cookie, header, openapi, osv_online: The optional CLI overrides;
+            ``None`` means "not passed".
         verify_tls (bool): The resolved TLS-verification flag.
 
     Returns:
@@ -323,6 +337,8 @@ def _build_config(
         injection_overrides["stored_xss"] = stored_xss
     if xxe is not None:
         injection_overrides["xxe"] = xxe
+    if file_upload is not None:
+        injection_overrides["file_upload"] = file_upload
 
     auth_overrides: dict[str, object] = {}
     if cookie is not None:
@@ -388,6 +404,7 @@ def _emit(
     cookie_count: int = 0,
     header_count: int = 0,
     osv_online: bool = False,
+    file_upload: bool = False,
 ) -> None:
     """
     Emit the scan output: the terminal summary, or a rendered report.
@@ -408,10 +425,16 @@ def _emit(
             Defaults to 0.
         osv_online (bool): Whether OSV.dev ran, for the summary. Defaults to
             ``False``.
+        file_upload (bool): Whether the file-upload pass ran, for the summary.
+            Defaults to ``False``.
     """
     if output_format is None:
         _render.summary(
-            result, cookie_count=cookie_count, header_count=header_count, osv_online=osv_online
+            result,
+            cookie_count=cookie_count,
+            header_count=header_count,
+            osv_online=osv_online,
+            file_upload=file_upload,
         )
         return
     rendered = get_reporter(output_format).render(result)
@@ -421,7 +444,11 @@ def _emit(
         return
     sys.stdout.write(rendered + "\n")
     _render.summary(
-        result, cookie_count=cookie_count, header_count=header_count, osv_online=osv_online
+        result,
+        cookie_count=cookie_count,
+        header_count=header_count,
+        osv_online=osv_online,
+        file_upload=file_upload,
     )
 
 

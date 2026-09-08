@@ -52,7 +52,7 @@ probe = false            # opt-in: GET a curated list of well-known sensitive pa
 [injection]
 # Active-injection tuning (spec 006). Only consulted on an Active scan
 # (mode = "active"); ignored by a passive scan.
-request_budget = 600      # max crafted requests per scan; hitting it is a warning
+request_budget = 650      # max crafted requests per scan; hitting it is a warning
 max_injection_points = 200  # max query params / form fields tested; excess is a warning
 time_based_sqli = true    # send time-delay SQLi payloads (slower); --no-time-based-sqli overrides
 time_based_cmdi = true    # spec 011: send time-delay OS-command-injection payloads (slower);
@@ -63,6 +63,10 @@ stored_xss = false        # spec 008: two-phase stored-XSS pass. Submits marker 
 xxe = false               # spec 012: re-send POST bodies as XML with an external-entity
                           # payload. Off by default (rewrites the body; most endpoints 400).
                           # --xxe overrides
+file_upload = false       # spec 014: upload benign marker files through discovered upload
+                          # forms and fetch them back. Off by default (writes files the
+                          # target keeps and WebVigil cannot delete). --file-upload overrides
+upload_budget = 80        # spec 014: total requests the file-upload pass may spend
 envelope_url_sample = 15  # spec 012: pages the request-envelope pass re-requests with a
                           # poisoned Host / an OPTIONS probe
 envelope_budget = 120     # spec 012: total requests the request-envelope pass may spend

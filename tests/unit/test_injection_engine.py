@@ -243,6 +243,32 @@ def test_xxe_kind_is_dropped_unless_the_opt_in_is_on() -> None:
     assert "xxe" in on.selected_kinds
 
 
+def test_ldap_xpath_ssi_are_registered_and_mapped() -> None:
+    """The three spec-014 detectors are in the table and each check id maps to its kind."""
+    assert {"ldap", "xpath", "ssi"} <= set(_DETECTORS)
+    assert KIND_BY_CHECK_ID["injection.ldap"] == "ldap"
+    assert KIND_BY_CHECK_ID["injection.xpath"] == "xpath"
+    assert KIND_BY_CHECK_ID["injection.ssi"] == "ssi"
+    # slow / broad families sit past the fast 006 detectors, still ahead of ssrf.
+    assert _BASE_ORDER.index("xss") < _BASE_ORDER.index("ldap") < _BASE_ORDER.index("ssrf")
+    assert _BASE_ORDER.index("xss") < _BASE_ORDER.index("xpath") < _BASE_ORDER.index("ssrf")
+    assert _BASE_ORDER.index("xss") < _BASE_ORDER.index("ssi") < _BASE_ORDER.index("ssrf")
+
+
+def test_ldap_xpath_ssi_are_front_loaded_for_a_matching_point() -> None:
+    """A ``user`` point front-loads ``ldap``; a ``tpl`` point front-loads ``ssi``."""
+    http = _FakeHttp(lambda url, p: _resp())
+    scanner = _scanner(http, kinds={"xss", "ldap", "xpath", "ssi", "sqli-error"})
+    uid_point = InjectionPoint("GET", "https://example.com/dir", "uid", "x", (("uid", "x"),))
+    assert scanner._ordered_kinds(uid_point)[0] == "ldap"
+    node_point = InjectionPoint("GET", "https://example.com/x", "node", "x", (("node", "x"),))
+    assert scanner._ordered_kinds(node_point)[0] == "xpath"
+    tpl_point = InjectionPoint("GET", "https://example.com/p", "tpl", "x", (("tpl", "x"),))
+    assert scanner._ordered_kinds(tpl_point)[0] == "ssi"
+    plain = InjectionPoint("GET", "https://example.com/s", "colour", "1", (("colour", "1"),))
+    assert scanner._ordered_kinds(plain)[0] not in {"ldap", "xpath", "ssi"}
+
+
 def test_time_sub_budget_is_enabled_by_time_based_cmdi_alone() -> None:
     """With ``time_based_sqli`` off but ``time_based_cmdi`` on, the sleep budget is non-zero."""
     http = _FakeHttp(lambda url, p: _resp())

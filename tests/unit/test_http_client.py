@@ -175,6 +175,42 @@ async def test_307_redirect_keeps_the_body_and_method(httpx_mock: object) -> Non
 
 
 # ---------------------------------------------------------------------------
+# Multipart file parts (spec 014 file upload)
+# ---------------------------------------------------------------------------
+
+
+async def test_files_sends_a_multipart_body(httpx_mock: object) -> None:
+    """``request(files=)`` produces a ``multipart/form-data`` body carrying the part."""
+    httpx_mock.add_response(status_code=200)  # type: ignore[attr-defined]
+    async with _http() as http:
+        await http.request(
+            "POST",
+            "https://example.com/upload",
+            data={"caption": "hi"},
+            files={"avatar": ("wv1.php", b"<?php echo 6*7; ?>", "application/octet-stream")},
+        )
+    sent = httpx_mock.get_requests()  # type: ignore[attr-defined]
+    assert sent[0].headers["content-type"].startswith("multipart/form-data")
+    body = sent[0].read()
+    assert b'filename="wv1.php"' in body
+    assert b"<?php echo 6*7; ?>" in body
+    assert b'name="caption"' in body
+
+
+async def test_files_and_content_are_mutually_exclusive(httpx_mock: object) -> None:
+    """Passing both ``content`` and ``files`` is a ``ValueError`` before any request."""
+    async with _http() as http:
+        with pytest.raises(ValueError, match="content or files"):
+            await http.request(
+                "POST",
+                "https://example.com/upload",
+                content=b"raw",
+                files={"f": ("a.txt", b"x", "text/plain")},
+            )
+    assert not httpx_mock.get_requests()  # type: ignore[attr-defined]
+
+
+# ---------------------------------------------------------------------------
 # Static cookies on in-scope requests only (spec 007 RF-01, RF-02, ADR-1)
 # ---------------------------------------------------------------------------
 

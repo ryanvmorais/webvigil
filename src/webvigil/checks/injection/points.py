@@ -478,6 +478,98 @@ def is_headerlike(point: InjectionPoint) -> bool:
     return point.param.lower() in _HEADERLIKE_NAMES
 
 
+# Parameters whose value commonly lands in an LDAP search filter, an XPath expression, or a
+# page an SSI/ESI processor evaluates (spec 014). Kept deliberately narrow — a front-loaded
+# detector on a generic name (``id`` / ``q`` / ``name``) crowds the per-point budget and
+# starves the slow ``sqli-time`` detector. Each of ``ldap`` / ``xpath`` / ``ssi`` still runs
+# on any point from ``_BASE_ORDER``, budget permitting; these lists only re-prioritise the
+# points where that detector is the likely find.
+_LDAPLIKE_NAMES = frozenset(
+    {
+        "user",
+        "username",
+        "uid",
+        "cn",
+        "dn",
+        "sn",
+        "givenname",
+        "ou",
+        "member",
+        "memberof",
+        "principal",
+        "samaccountname",
+        "distinguishedname",
+    }
+)
+_XPATHLIKE_NAMES = frozenset(
+    {
+        "xpath",
+        "xpq",
+        "xml",
+        "xquery",
+        "xsl",
+        "xslt",
+        "node",
+        "nodeset",
+        "xnode",
+        "xexpr",
+        "xmlfilter",
+    }
+)
+_SSILIKE_NAMES = frozenset(
+    {
+        "ssi",
+        "shtml",
+        "include",
+        "file",
+        "page",
+        "tpl",
+        "template",
+        "tmpl",
+        "partial",
+        "fragment",
+        "snippet",
+    }
+)
+
+
+def is_ldaplike(point: InjectionPoint) -> bool:
+    """
+    Args:
+        point (InjectionPoint): The point to classify.
+
+    Returns:
+        bool: ``True`` when the parameter name looks like it feeds an LDAP search
+            filter — the LDAP detector front-loads these (spec 014).
+    """
+    return point.param.lower() in _LDAPLIKE_NAMES
+
+
+def is_xpathlike(point: InjectionPoint) -> bool:
+    """
+    Args:
+        point (InjectionPoint): The point to classify.
+
+    Returns:
+        bool: ``True`` when the parameter name looks like it feeds an XPath /
+            XQuery expression — the XPath detector front-loads these (spec 014).
+    """
+    return point.param.lower() in _XPATHLIKE_NAMES
+
+
+def is_ssilike(point: InjectionPoint) -> bool:
+    """
+    Args:
+        point (InjectionPoint): The point to classify.
+
+    Returns:
+        bool: ``True`` when the parameter name looks like it is reflected into a
+            page an SSI / ESI processor evaluates — the SSI detector front-loads
+            these (spec 014).
+    """
+    return point.param.lower() in _SSILIKE_NAMES
+
+
 def build_request(
     point: InjectionPoint, value: str
 ) -> tuple[str, str, list[tuple[str, str]], dict[str, str] | None]:

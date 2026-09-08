@@ -57,6 +57,13 @@ def test_category_content_is_a_plain_string_member() -> None:
     assert Category("CONTENT") is Category.CONTENT
 
 
+def test_category_upload_is_a_plain_string_member() -> None:
+    """``Category.UPLOAD`` (spec 014) is a ``StrEnum`` value that serialises to ``"UPLOAD"``."""
+    assert Category.UPLOAD == "UPLOAD"
+    assert str(Category.UPLOAD) == "UPLOAD"
+    assert Category("UPLOAD") is Category.UPLOAD
+
+
 # ---------------------------------------------------------------------------
 # Fingerprinting
 # ---------------------------------------------------------------------------

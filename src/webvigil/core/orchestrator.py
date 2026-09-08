@@ -27,6 +27,7 @@ from webvigil.checks.injection.engine import KIND_BY_CHECK_ID, InjectionScanner
 from webvigil.checks.injection.models import InjectionHit
 from webvigil.checks.injection.stored import StoredXssScanner
 from webvigil.checks.registry import iter_checks, load_plugins, unknown_check_ids
+from webvigil.checks.upload.scanner import UploadHit, UploadScanner
 from webvigil.core.config import ScanConfig
 from webvigil.core.context import Detection, Observations, Page, ScanContext
 from webvigil.core.errors import ActiveModeNotAuthorized
@@ -42,6 +43,7 @@ from webvigil.http.client import HttpClient
 _PROBE_FAMILIES = frozenset({"vcs", "config", "manifest", "backup", "debug", "sourcemap"})
 _STORED_CHECK_ID = "injection.xss.stored"
 _ENVELOPE_CHECK_IDS = frozenset({"injection.host-header", "http.methods.unsafe"})
+_UPLOAD_CHECK_ID = "upload.unrestricted"
 
 
 class Orchestrator:
@@ -101,6 +103,10 @@ class Orchestrator:
             warnings.append(
                 "stored-XSS testing requires --mode active — the stored pass did not run"
             )
+        if self._config.injection.file_upload and self._config.scan.mode is not ScanMode.ACTIVE:
+            warnings.append(
+                "file-upload testing requires --mode active — the upload pass did not run"
+            )
         technologies: tuple[Technology, ...] = ()
         async with HttpClient(target, self._config) as http:
             operations = await self._load_openapi(http, target, warnings)
@@ -130,6 +136,7 @@ class Orchestrator:
             envelope_hits = await self._scan_envelope(
                 check_types, http, target, pages, forms, warnings
             )
+            upload_hits = await self._scan_upload(check_types, http, target, pages, forms, warnings)
             context = ScanContext(
                 config=self._config,
                 target=target,
@@ -143,6 +150,7 @@ class Orchestrator:
                     probe_hits=probe_hits,
                     injection_hits=injection_hits + stored_hits,
                     envelope_hits=envelope_hits,
+                    upload_hits=upload_hits,
                 ),
             )
             findings, errors = await self._run_checks(check_types, context)
@@ -351,6 +359,48 @@ class Orchestrator:
             hits = await scanner.run()
         except Exception as exc:  # a pass bug must not abort the whole scan
             warnings.append(f"request-envelope pass failed: {exc or type(exc).__name__}")
+            return ()
+        warnings.extend(scanner.warnings)
+        return tuple(hits)
+
+    async def _scan_upload(
+        self,
+        check_types: Sequence[type[Check]],
+        http: HttpClient,
+        target: Target,
+        pages: tuple[Page, ...],
+        forms: tuple[Form, ...],
+        warnings: list[str],
+    ) -> tuple[UploadHit, ...]:
+        """
+        Run the file-upload pass when it is Active, selected, and opted in (spec 014).
+
+        A no-op returning ``()`` in Passive Mode, when ``[injection] file_upload``
+        is off, or when ``upload.unrestricted`` is not selected. A pass bug is
+        caught here and downgraded to a warning.
+
+        Args:
+            check_types (Sequence[type[Check]]): The checks selected for the run.
+            http (HttpClient): The shared, scope-guarded HTTP client.
+            target (Target): The normalized target.
+            pages (tuple[Page, ...]): The pages the crawler discovered.
+            forms (tuple[Form, ...]): The parsed ``<form>`` inventory.
+            warnings (list[str]): Scan-level warning list, appended to in place.
+
+        Returns:
+            tuple[UploadHit, ...]: The confirmed unrestricted-upload hits.
+        """
+        if self._config.scan.mode is not ScanMode.ACTIVE:
+            return ()
+        if not self._config.injection.file_upload:
+            return ()
+        if not any(check.id == _UPLOAD_CHECK_ID for check in check_types):
+            return ()
+        try:
+            scanner = UploadScanner(http, target, self._config, pages, forms)
+            hits = await scanner.run()
+        except Exception as exc:  # a pass bug must not abort the whole scan
+            warnings.append(f"file-upload pass failed: {exc or type(exc).__name__}")
             return ()
         warnings.extend(scanner.warnings)
         return tuple(hits)

@@ -238,8 +238,8 @@ class InjectionSection(_Section):
 
     Attributes:
         request_budget (int): Total crafted requests the injection pass may
-            spend. Defaults to 600 (raised from 500 in spec 011, which added the
-            command-injection and SSTI detector families).
+            spend. Defaults to 650 (raised from 500 in spec 011 and 600 in
+            spec 014, each of which added detector families).
         max_injection_points (int): Cap on enumerated injection points.
             Defaults to 200.
         time_based_sqli (bool): Send time-delay SQLi payloads. Defaults to
@@ -255,6 +255,12 @@ class InjectionSection(_Section):
         xxe (bool): Run the opt-in XXE step (spec 012) — re-send each POST
             point's body as XML with an external-entity payload. Off by
             default: it rewrites the request body and most endpoints reject it.
+        file_upload (bool): Run the opt-in file-upload pass (spec 014) — upload
+            benign marker files through discovered upload forms and fetch them
+            back. Off by default: it writes files the target stores and WebVigil
+            cannot reliably delete (like ``stored_xss``).
+        upload_budget (int): Total requests the file-upload pass may spend.
+            Defaults to 80.
         envelope_url_sample (int): Cap on the pages the request-envelope pass
             (spec 012) re-requests with a poisoned Host / an OPTIONS probe.
             Defaults to 15.
@@ -262,13 +268,15 @@ class InjectionSection(_Section):
             spend. Defaults to 120.
     """
 
-    request_budget: int = 600
+    request_budget: int = 650
     max_injection_points: int = 200
     time_based_sqli: bool = True
     time_based_cmdi: bool = True
     time_based_delay_s: int = 5
     stored_xss: bool = False
     xxe: bool = False
+    file_upload: bool = False
+    upload_budget: int = 80
     envelope_url_sample: int = 15
     envelope_budget: int = 120
 
@@ -386,8 +394,9 @@ class ScanConfig(_Section):
                 fields to override. ``scan`` covers spec 013's ``openapi``;
                 ``auth`` covers spec 013's ``headers``; ``injection`` covers
                 spec 006 tuning plus spec 008's ``stored_xss``, spec 011's
-                ``time_based_cmdi``, and spec 012's ``xxe`` / ``envelope_*``;
-                ``deps`` covers spec 010's ``osv_online``.
+                ``time_based_cmdi``, spec 012's ``xxe`` / ``envelope_*``, and
+                spec 014's ``file_upload``; ``deps`` covers spec 010's
+                ``osv_online``.
 
         Returns:
             ScanConfig: A new, validated configuration.

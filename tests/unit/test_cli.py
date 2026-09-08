@@ -224,6 +224,16 @@ def test_list_checks_lists_the_spec_013_passive_checks() -> None:
     assert "CONTENT" in result.stdout
 
 
+def test_list_checks_lists_the_spec_014_checks() -> None:
+    """``list-checks`` includes the four spec-014 checks and the UPLOAD category."""
+    result = runner.invoke(app_mod.app, ["list-checks"])
+    assert "injection.ldap" in result.stdout
+    assert "injection.xpath" in result.stdout
+    assert "injection.ssi" in result.stdout
+    assert "upload.unrestricted" in result.stdout
+    assert "UPLOAD" in result.stdout
+
+
 def test_no_time_based_sqli_flag_disables_it_over_a_config_file(tmp_path: Path) -> None:
     """``--no-time-based-sqli`` overrides a config file that enabled it."""
     cfg = tmp_path / "webvigil.toml"
@@ -252,6 +262,16 @@ def test_xxe_flag_enables_it_over_a_config_file(tmp_path: Path) -> None:
     cfg.write_text("[injection]\nxxe = false\n", "utf-8")
     runner.invoke(app_mod.app, ["scan", "https://example.com", "--config", str(cfg), "--xxe"])
     assert _StubOrchestrator.last_config.injection.xxe is True  # type: ignore[attr-defined]
+
+
+def test_file_upload_flag_enables_it_over_a_config_file(tmp_path: Path) -> None:
+    """``--file-upload`` turns the spec-014 upload pass on over an off config value."""
+    cfg = tmp_path / "webvigil.toml"
+    cfg.write_text("[injection]\nfile_upload = false\n", "utf-8")
+    runner.invoke(
+        app_mod.app, ["scan", "https://example.com", "--config", str(cfg), "--file-upload"]
+    )
+    assert _StubOrchestrator.last_config.injection.file_upload is True  # type: ignore[attr-defined]
 
 
 def test_stored_xss_flag_enables_it_over_a_config_file(tmp_path: Path) -> None:
@@ -313,6 +333,31 @@ def test_active_scan_summary_reports_injection_findings() -> None:
         ["scan", "https://example.com", "--mode", "active", "--authorized-by", "me"],
     )
     assert "Active injection: 2 findings" in result.stderr
+
+
+def test_file_upload_summary_note_appears_only_with_the_flag() -> None:
+    """The summary notes that files were left on the target only when ``--file-upload`` ran."""
+    _StubOrchestrator.result = make_result(
+        make_finding(check_id="upload.unrestricted", severity=Severity.HIGH), mode=ScanMode.ACTIVE
+    )
+    with_flag = runner.invoke(
+        app_mod.app,
+        [
+            "scan",
+            "https://example.com",
+            "--mode",
+            "active",
+            "--authorized-by",
+            "me",
+            "--file-upload",
+        ],
+    )
+    assert "File-upload testing: enabled" in with_flag.stderr
+    without = runner.invoke(
+        app_mod.app,
+        ["scan", "https://example.com", "--mode", "active", "--authorized-by", "me"],
+    )
+    assert "File-upload testing" not in without.stderr
 
 
 # ---------------------------------------------------------------------------

@@ -126,18 +126,20 @@ def test_disclosure_override_wins_over_file() -> None:
 def test_injection_section_defaults_and_round_trips(tmp_path: Path) -> None:
     """``[injection]`` has the documented budget/point/time-based defaults and round-trips."""
     defaults = ScanConfig().injection
-    assert defaults.request_budget == 600
+    assert defaults.request_budget == 650
     assert defaults.max_injection_points == 200
     assert defaults.time_based_sqli is True
     assert defaults.time_based_cmdi is True
     assert defaults.time_based_delay_s == 5
     assert defaults.stored_xss is False
     assert defaults.xxe is False
+    assert defaults.file_upload is False
+    assert defaults.upload_budget == 80
     assert defaults.envelope_url_sample == 15
     path = tmp_path / "webvigil.toml"
     path.write_text(
         "[injection]\nrequest_budget = 40\ntime_based_sqli = false\n"
-        "time_based_cmdi = false\nstored_xss = true\nxxe = true\n",
+        "time_based_cmdi = false\nstored_xss = true\nxxe = true\nfile_upload = true\n",
         "utf-8",
     )
     loaded = ScanConfig.load(path).injection
@@ -146,6 +148,7 @@ def test_injection_section_defaults_and_round_trips(tmp_path: Path) -> None:
     assert loaded.time_based_cmdi is False
     assert loaded.stored_xss is True
     assert loaded.xxe is True
+    assert loaded.file_upload is True
 
 
 def test_unknown_injection_key_is_rejected(tmp_path: Path) -> None:
@@ -181,6 +184,12 @@ def test_xxe_override_wins_over_file() -> None:
     """The ``--xxe`` flag turns the spec-012 XXE step on over an off file value."""
     base = ScanConfig.model_validate({"injection": {"xxe": False}})
     assert base.with_overrides(injection={"xxe": True}).injection.xxe is True
+
+
+def test_file_upload_override_wins_over_file() -> None:
+    """The ``--file-upload`` flag turns the spec-014 upload pass on over an off file value."""
+    base = ScanConfig.model_validate({"injection": {"file_upload": False}})
+    assert base.with_overrides(injection={"file_upload": True}).injection.file_upload is True
 
 
 # ---------------------------------------------------------------------------

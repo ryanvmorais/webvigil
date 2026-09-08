@@ -91,6 +91,8 @@ class Category(StrEnum):
             header (allowed methods, TRACE / XST).
         CONTENT (str): What a page's HTML tells the browser to load
             (Subresource Integrity, mixed content).
+        UPLOAD (str): How the application handles an uploaded file (its type,
+            its content, and where it is served back from).
     """
 
     HEADERS = "HEADERS"
@@ -103,6 +105,7 @@ class Category(StrEnum):
     CSRF = "CSRF"
     HTTP = "HTTP"
     CONTENT = "CONTENT"
+    UPLOAD = "UPLOAD"
 
 
 class ScanMode(StrEnum):

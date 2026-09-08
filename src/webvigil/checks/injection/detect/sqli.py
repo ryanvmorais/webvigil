@@ -7,10 +7,9 @@ before emitting a hit (RF-13).
 
 from __future__ import annotations
 
-from difflib import SequenceMatcher
-
 from webvigil.checks.injection import payloads
 from webvigil.checks.injection.detect import DetectCtx, normalize_body
+from webvigil.checks.injection.detect._diff import ratio, two_sided_split
 from webvigil.checks.injection.models import Baseline, InjectionHit, InjectionPoint
 from webvigil.core.findings import Confidence, Severity
 
@@ -18,20 +17,7 @@ _ERROR_ID = "injection.sqli.error-based"
 _BOOLEAN_ID = "injection.sqli.boolean-based"
 _TIME_ID = "injection.sqli.time-based"
 
-_SIMILARITY = 0.95  # TRUE-vs-baseline floor
-_GAP = 0.90  # FALSE-vs-baseline ceiling
-
-
-def _ratio(a: str, b: str) -> float:
-    """
-    Args:
-        a (str): First string.
-        b (str): Second string.
-
-    Returns:
-        float: A fast upper-bound similarity ratio in ``[0, 1]``.
-    """
-    return SequenceMatcher(None, a, b).quick_ratio()
+_GAP = 0.90  # FALSE-vs-baseline ceiling — the page-stability guard reuses it
 
 
 def _point_evidence(point: InjectionPoint) -> tuple[str, str]:
@@ -111,12 +97,12 @@ async def detect_boolean(
         false_r = await ctx.send(point, point.original + false_p)
         if true_r is None or false_r is None:
             return []
-        if not _splits(baseline.norm_body, true_r.text, false_r.text):
+        if not two_sided_split(baseline.norm_body, true_r.text, false_r.text):
             continue
 
         # The page must be stable between two identical requests, or the split is noise.
         restated = await ctx.send(point, point.original)
-        if restated is None or _ratio(baseline.norm_body, normalize_body(restated.text)) < _GAP:
+        if restated is None or ratio(baseline.norm_body, normalize_body(restated.text)) < _GAP:
             return []
 
         # Confirm: the same pair must reproduce the split.
@@ -124,7 +110,7 @@ async def detect_boolean(
         false2_r = await ctx.send(point, point.original + false_p)
         if true2_r is None or false2_r is None:
             return []
-        if not _splits(baseline.norm_body, true2_r.text, false2_r.text):
+        if not two_sided_split(baseline.norm_body, true2_r.text, false2_r.text):
             continue
 
         return [
@@ -144,31 +130,14 @@ async def detect_boolean(
                     ("FALSE payload", point.original + false_p),
                     (
                         "Response similarity",
-                        f"TRUE {_ratio(baseline.norm_body, normalize_body(true_r.text)):.2f} vs "
-                        f"FALSE {_ratio(baseline.norm_body, normalize_body(false_r.text)):.2f} "
+                        f"TRUE {ratio(baseline.norm_body, normalize_body(true_r.text)):.2f} vs "
+                        f"FALSE {ratio(baseline.norm_body, normalize_body(false_r.text)):.2f} "
                         "(baseline = 1.00)",
                     ),
                 ),
             )
         ]
     return []
-
-
-def _splits(baseline_norm: str, true_body: str, false_body: str) -> bool:
-    """
-    Args:
-        baseline_norm (str): The normalised baseline body.
-        true_body (str): The TRUE-payload response body.
-        false_body (str): The FALSE-payload response body.
-
-    Returns:
-        bool: ``True`` when TRUE stays close to the baseline (>= ``_SIMILARITY``)
-            and FALSE diverges (<= ``_GAP``).
-    """
-    return (
-        _ratio(baseline_norm, normalize_body(true_body)) >= _SIMILARITY
-        and _ratio(baseline_norm, normalize_body(false_body)) <= _GAP
-    )
 
 
 async def detect_time(

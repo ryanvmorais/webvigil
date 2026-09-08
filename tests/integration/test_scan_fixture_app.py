@@ -87,8 +87,9 @@ def scan(monkeypatch: pytest.MonkeyPatch):
     """Yield an ``async`` runner that scans the fixture app for a given profile.
 
     The returned callable takes the profile name plus optional ``probe`` /
-    ``active`` / ``cookies`` / ``stored_xss`` / ``osv_online`` / ``osv_up``
-    switches, assembles the :class:`ScanConfig`, points the engine's HTTP client
+    ``active`` / ``cookies`` / ``stored_xss`` / ``xxe`` / ``file_upload`` /
+    ``openapi`` / ``osv_online`` / ``osv_up`` switches, assembles the
+    :class:`ScanConfig`, points the engine's HTTP client
     (and, for OSV, its provider) at in-process transports, runs the scan, and
     returns the :class:`ScanResult`. The built app is stashed on ``scan.holder``
     so a test can read ``app.state.requests``.
@@ -104,6 +105,7 @@ def scan(monkeypatch: pytest.MonkeyPatch):
         headers: list[str] | None = None,
         stored_xss: bool = False,
         xxe: bool = False,
+        file_upload: bool = False,
         openapi: str | None = None,
         osv_online: bool = False,
         osv_up: bool = True,
@@ -120,15 +122,20 @@ def scan(monkeypatch: pytest.MonkeyPatch):
         }
         if active or stored_xss:
             # A wider page budget for the stored-XSS re-crawl: an active scan of the insecure
-            # profile now fuzzes ~10 injection points (spec 011 added /ping, /greet and the
-            # cmdi/ssti detectors), and every POST-form payload leaves a guestbook entry the
-            # Phase-B re-crawl then has to walk past to reach the marker's own entry.
+            # profile now fuzzes ~13 injection points (spec 011 added /ping, /greet; spec 014
+            # added /dir?user, /xdoc?node, /page?tpl and the ldap/xpath/ssi detectors), and
+            # every POST-form
+            # payload leaves a guestbook entry the Phase-B re-crawl walks past to reach the
+            # marker's own entry. The request budget is raised past the model default so the
+            # slow sqli-time / stored-XSS phases still run on this unusually dense fixture.
             raw["scan"] = {"mode": "active", "max_pages": 90}
             raw["active"] = {"authorized_by": "integration test"}
             raw["injection"] = {
                 "time_based_delay_s": 2,
+                "request_budget": 1200,
                 "stored_xss": stored_xss,
                 "xxe": xxe,
+                "file_upload": file_upload,
                 # keep the spec-012 envelope pass small for the fixture (14-ish URLs)
                 "envelope_url_sample": 20,
                 "envelope_budget": 130,
@@ -265,15 +272,16 @@ async def test_hardened_profile_reports_nothing(scan) -> None:
 
 
 async def test_crawler_reaches_the_linked_pages(scan) -> None:
-    """The crawler reaches all 17 linked pages of the fixture app (index, forms, endpoints)."""
+    """The crawler reaches all 20 linked pages of the fixture app (index, forms, endpoints)."""
     result = await scan("hardened")
     # /, /about, /contact + the injectable endpoints linked from the index: /search, /item,
-    # /download, /go (spec 006), /fetch, /webhook (spec 009), /ping, /greet (spec 011) and
-    # /set-lang, /reset, /resource (spec 012) + the GET /search?q= the crawler submits from
-    # the search form + /account (→ /login for an anonymous scan) (spec 007 RF-05) +
-    # /guestbook (spec 008 RF-13). The spec-013 /openapi.json + /api/* routes are linked from
-    # no page — only --openapi reaches them.
-    assert result.metadata.pages_scanned == 17
+    # /download, /go (spec 006), /fetch, /webhook (spec 009), /ping, /greet (spec 011),
+    # /set-lang, /reset, /resource (spec 012) and /dir, /xdoc, /page (spec 014) + the GET
+    # /search?q= the crawler submits from the search form + /account (→ /login for an
+    # anonymous scan) (spec 007 RF-05) + /guestbook (spec 008 RF-13). The spec-013
+    # /openapi.json + /api/* routes and the spec-014 /upload + /files routes are linked from
+    # no page.
+    assert result.metadata.pages_scanned == 20
 
 
 # ---------------------------------------------------------------------------
@@ -505,6 +513,62 @@ async def test_active_injection_scan_is_deterministic(scan) -> None:
     first = {(f.check_id, f.fingerprint) for f in (await scan("insecure", active=True)).findings}
     second = {(f.check_id, f.fingerprint) for f in (await scan("insecure", active=True)).findings}
     assert first == second
+
+
+# ---------------------------------------------------------------------------
+# File upload + LDAP / XPath / SSI (spec 014)
+# ---------------------------------------------------------------------------
+
+
+async def test_ldap_xpath_ssi_detectors_fire_on_the_insecure_profile(scan) -> None:
+    """An active scan of the insecure profile finds the three spec-014 injection sinks."""
+    result = await scan("insecure", active=True)
+    reported = {f.check_id for f in result.findings}
+    assert "injection.ldap" in reported
+    assert "injection.xpath" in reported
+    assert "injection.ssi" in reported
+
+
+async def test_file_upload_pass_finds_the_unrestricted_endpoint_only_with_the_opt_in(scan) -> None:
+    """``--file-upload`` uploads markers through ``/upload`` and proves several outcomes."""
+    without = await scan("insecure", active=True)
+    assert not any(f.check_id == "upload.unrestricted" for f in without.findings)
+    log = scan.holder["app"].state.requests  # type: ignore[attr-defined]
+    assert not any(entry.startswith("POST /upload") for entry in log)
+
+    result = await scan("insecure", active=True, file_upload=True)
+    uploads = [f for f in result.findings if f.check_id == "upload.unrestricted"]
+    outcomes = {f.location.method for f in uploads}
+    assert uploads
+    severities = {f.severity.name for f in uploads}
+    assert "CRITICAL" in severities or "HIGH" in severities
+    assert "PUT" in outcomes or "POST" in outcomes
+
+
+async def test_hardened_profile_reports_no_spec_014_findings(scan) -> None:
+    """The hardened profile yields zero LDAP / XPath / SSI / upload findings."""
+    result = await scan("hardened", active=True, file_upload=True)
+    assert not any(
+        f.check_id in {"injection.ldap", "injection.xpath", "injection.ssi", "upload.unrestricted"}
+        for f in result.findings
+    )
+
+
+async def test_passive_scan_sends_no_spec_014_payloads(scan) -> None:
+    """A passive scan uploads nothing and sends no LDAP / XPath / SSI payload or PUT."""
+    await scan("insecure", file_upload=True)  # opt-in ignored: passive
+    log = scan.holder["app"].state.requests  # type: ignore[attr-defined]
+    assert not any(entry.startswith(("POST /upload", "PUT ")) for entry in log)
+    assert not any(")(" in entry or "1'='1" in entry or "%23echo" in entry for entry in log)
+
+
+async def test_file_upload_scan_is_deterministic(scan) -> None:
+    """Two active ``--file-upload`` scans produce the same upload finding fingerprints."""
+    a = await scan("insecure", active=True, file_upload=True)
+    b = await scan("insecure", active=True, file_upload=True)
+    fa = sorted(f.fingerprint for f in a.findings if f.check_id == "upload.unrestricted")
+    fb = sorted(f.fingerprint for f in b.findings if f.check_id == "upload.unrestricted")
+    assert fa == fb and fa
 
 
 # ---------------------------------------------------------------------------

@@ -71,6 +71,7 @@ def summary(
     cookie_count: int = 0,
     header_count: int = 0,
     osv_online: bool = False,
+    file_upload: bool = False,
 ) -> None:
     """
     Print the human-readable scan summary to stderr.
@@ -87,6 +88,8 @@ def summary(
             for the authenticated-scan line. Defaults to 0.
         osv_online (bool): Whether the OSV.dev lookup ran, for the advisory-
             sources line. Defaults to ``False``.
+        file_upload (bool): Whether the spec-014 file-upload pass ran, for a
+            note that files were written to the target. Defaults to ``False``.
     """
     meta = result.metadata
     table = Table(title=f"WebVigil — {meta.target}", title_justify="left")
@@ -125,6 +128,11 @@ def summary(
         if injected:
             _console.print(
                 f"[red]Active injection: {injected} finding{'' if injected == 1 else 's'}[/]"
+            )
+        if file_upload:
+            _console.print(
+                "[dim]File-upload testing: enabled — benign marker files were left on the "
+                "target[/]"
             )
 
     if cookie_count or header_count:

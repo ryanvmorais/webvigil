@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from webvigil.checks.disclosure.probe import ProbeHit
     from webvigil.checks.envelope.scanner import EnvelopeHit
     from webvigil.checks.injection.models import InjectionHit
+    from webvigil.checks.upload.scanner import UploadHit
     from webvigil.crawler.forms import Form
     from webvigil.http.client import HttpClient, RedirectHop, Response
 
@@ -176,6 +177,8 @@ class Observations:
         envelope_hits (tuple[EnvelopeHit, ...]): Confirmed hits from the
             request-envelope pass (host-header injection, unsafe HTTP methods —
             spec 012). Defaults to empty.
+        upload_hits (tuple[UploadHit, ...]): Confirmed hits from the file-upload
+            pass (spec 014). Defaults to empty.
         warnings (list[str]): Non-fatal notices a check wants surfaced on the
             result. Defaults to empty.
     """
@@ -185,6 +188,7 @@ class Observations:
     probe_hits: tuple[ProbeHit, ...] = ()
     injection_hits: tuple[InjectionHit, ...] = ()
     envelope_hits: tuple[EnvelopeHit, ...] = ()
+    upload_hits: tuple[UploadHit, ...] = ()
     _technologies: dict[tuple[str, str | None], Technology] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
 
