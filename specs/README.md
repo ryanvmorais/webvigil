@@ -12,9 +12,10 @@ WebVigil is built with spec-driven development. Each feature is designed as a sp
   related / origin`.
 - **Fases e portões:** `requirements → design → tasks → implementação`. Cada fase termina
   com aprovação humana explícita antes de avançar.
-- **Status válidos:** `draft` → `approved` → `in progress` → `done`. (`origin: conception`
-  para specs escritas antes da implementação; `reverse-engineering` só para documentar
-  algo já finalizado.)
+- **Status válidos:** `planned` → `draft` → `approved` → `in progress` → `done`.
+  (`planned`: entrada de roadmap, sem arquivos de spec ainda. `origin: conception` para
+  specs escritas antes da implementação; `reverse-engineering` só para documentar algo já
+  finalizado.)
 - **Rastreabilidade:** requisitos são `RF-NN` (funcionais) e `RNF-NN` (não-funcionais);
   cada tarefa e decisão de design cita o(s) requisito(s) que satisfaz.
 - **Idioma:** specs em inglês (regra do projeto). A conversa com o Ryan segue em português.
@@ -33,11 +34,15 @@ WebVigil is built with spec-driven development. Each feature is designed as a sp
 | [`008-stored-xss`](008-stored-xss/) | stored/persistent XSS: passada `StoredXssScanner` em duas fases (injeta marcadores `<wvstored…>` nos injection points da `006`, depois um re-crawl de 1 hop procurando o marcador renderizado sem escape noutra página); Active Mode + opt-in `--stored-xss` (grava dados no alvo) | `v0.8` | **done** |
 | [`009-ssrf`](009-ssrf/) | SSRF **in-band**: um detector `ssrf` na passada da `006` que envia payloads de URL e prova o fetch server-side pelo response do alvo — marcador de metadata de nuvem (`injection.ssrf.metadata`, CRITICAL), assinatura de `file://` / banner de serviço interno / erro de conexão ecoando a URL (`injection.ssrf.internal`, HIGH). `is_urllike` prioriza params com cara de URL; sem flag, sem config. SSRF cega adiada | `v0.9` | **done** |
 | [`010-osv-online`](010-osv-online/) | provider OSV.dev online para o fingerprint de dependências da `004`: passo `_osv_lookup` no orquestrador (opt-in `--osv-online` / `[deps] osv_online`) que faz um `querybatch` + um `query` por pacote na `api.osv.dev`, normaliza pro `Advisory` nativo e mescla com o match Retire.js offline (dedup por identificador); falha vira warning, sem cache | `v0.10` | **done** |
+| [`011-rce-injection`](011-rce-injection/) | injeção server-side in-band que falta na passada da `006`: OS command injection (echo-based + time-based) e SSTI (polyglot → avaliação aritmética no response). Sob `--mode active`; novos detectores no `InjectionScanner` | `v0.11` | **planned** |
+| [`012-protocol-injection`](012-protocol-injection/) | classes de request/parser que ZAP/Wapiti cobrem e a `006` não: CRLF / HTTP response splitting, host header injection (poisoning de reset de senha), XXE in-band (error-based / entidade refletida), e um check de métodos HTTP permitidos (`TRACE` / verb tampering) | `v0.12` | **planned** |
+| [`013-auth-and-api-surface`](013-auth-and-api-surface/) | largura de auth + superfície de API: auth por header/bearer (`--header "Authorization: …"` — destrava scan de API real, adiado da `007`), import de schema OpenAPI para semear injection points, e checks passivos ausentes (SRI ausente, mixed content, session id na URL, IP privado no corpo) | `v0.13` | **planned** |
+| [`014-file-upload`](014-file-upload/) | **opcional / backlog:** detecção de upload sem restrição (extensão / content-type / conteúdo servido de volta) + checks ativos residuais. A `v1.0` pode sair após a `013` se a `014` não se justificar | `v0.14` | **planned** |
 
 > A 002 foi dividida: `002-web-api` (backend) e `003-web-ui` (Next.js). O roadmap
 > original tratava as duas como uma spec só; as demais foram renumeradas.
 >
-> **`008`–`010` eram as três dívidas técnicas acumuladas**, atacáveis em qualquer ordem —
+> **`008` a `010` eram as três dívidas técnicas acumuladas**, atacáveis em qualquer ordem —
 > **todas entregues**. `008-stored-xss` (`v0.8`): passada em duas fases com re-crawl de 1
 > hop atrás do marcador que ela mesma gravou (opt-in `--stored-xss`). `010-osv-online`
 > (`v0.10`): provider OSV.dev online opt-in (`--osv-online`), follow-up da `004`.
@@ -52,7 +57,22 @@ WebVigil is built with spec-driven development. Each feature is designed as a sp
 > virar uma spec *bring-your-own-collaborator* (a WebVigil dispara payloads para um domínio
 > que você passa, sem hospedar nem armazenar nada) — não planejada.
 >
-> **Login automático, auth por header e testes de sessão** (fixation, invalidação no
-> logout, id fraco) estavam na linha original da `007`; saíram para uma spec futura — cada
-> um exige o fluxo de login stateful ou Active Mode. A `007` entregou cookie estático +
-> CSRF passivo + crawl de forms `GET`.
+> **Login automático e testes de sessão** (fixation, invalidação no logout, id fraco)
+> estavam na linha original da `007`; seguem numa spec futura — cada um exige o fluxo de
+> login stateful ou Active Mode. A `007` entregou cookie estático + CSRF passivo + crawl de
+> forms `GET`. **Auth por header/bearer foi agendada na `013`** (não precisa de login
+> stateful).
+>
+> **`011` a `014` são a linha de "paridade real" com ZAP/Wapiti** no recorte que a WebVigil
+> se propõe a cobrir: as classes de injeção que um revisor notaria faltando (command
+> injection, SSTI, CRLF, host header, XXE, upload) e a largura mínima de auth/API. Todas
+> **in-band, sem browser, sem OAST** — os não-objetivos abaixo continuam valendo e viram a
+> seção "Scope and limitations" do README na `v1.0`:
+>
+> - **Crawl de SPA renderizada em JS** — sem browser headless; escaneie a API direto ou
+>   alimente URLs de um crawler seu.
+> - **Blind / OAST** (blind XSS/SSRF/RCE, XXE OOB) — ver [`docs/notes/why-not-oast.md`](../docs/notes/why-not-oast.md).
+> - **Base de templates estilo Nuclei**, fuzzing exaustivo, enum de CMS, brute-force de login.
+>
+> Sequência: `011` → `012` → `013` → (`014` se valer) → `v1.0` (README "Scope and
+> limitations" + descrição no GitHub).
