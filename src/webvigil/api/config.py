@@ -15,7 +15,23 @@ _ENV_PREFIX = "WEBVIGIL_"
 
 
 class WebConfig(BaseModel):
-    """Everything the Web API needs to run. API-only — the engine never reads this."""
+    """
+    Everything the Web API needs to run. API-only — the engine never reads this.
+
+    Attributes:
+        database_path (Path): SQLite file path. Defaults to ``webvigil.db``.
+        host (str): Bind host. Defaults to ``127.0.0.1``.
+        port (int): Bind port. Defaults to 8000.
+        session_secret (str | None): Pinned JWT signing secret; when ``None`` a
+            secret is generated and stored in the database on first use.
+        session_ttl_hours (int): Session lifetime, in hours. Defaults to 12.
+        cookie_secure (bool): Set the ``Secure`` flag on the session cookie.
+            Defaults to ``False`` (development over HTTP).
+        auto_migrate (bool): Run ``alembic upgrade head`` on startup. Defaults
+            to ``True``.
+        cors_origins (list[str]): Allowed CORS origins. Defaults to empty (the
+            bundled UI is same-origin).
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -30,9 +46,20 @@ class WebConfig(BaseModel):
 
     @classmethod
     def load(cls, path: str | Path | None = None) -> WebConfig:
-        """Build a config from the ``[web]`` table of ``path`` then env vars.
+        """
+        Build a config from the ``[web]`` table of ``path``, then env vars.
 
-        When ``path`` is omitted, ``WEBVIGIL_CONFIG`` is used if it is set.
+        Args:
+            path (str | Path | None): Path to a ``webvigil.toml``. When omitted,
+                ``WEBVIGIL_CONFIG`` is used if set; when that is also unset, only
+                defaults and env vars apply.
+
+        Returns:
+            WebConfig: The validated configuration.
+
+        Raises:
+            ConfigError: If the file is missing, is not valid TOML, has a
+                non-table ``[web]``, or fails model validation.
         """
         path = path if path is not None else os.environ.get("WEBVIGIL_CONFIG")
         data: dict[str, Any] = {}
@@ -58,6 +85,14 @@ class WebConfig(BaseModel):
 
 
 def _env_overrides() -> dict[str, Any]:
+    """
+    Read ``WEBVIGIL_*`` environment variables into a config-field mapping.
+
+    Returns:
+        dict[str, Any]: The overrides, with ``port`` / ``session_ttl_hours``
+            coerced to ``int``, the boolean flags parsed loosely, and
+            ``cors_origins`` split on commas.
+    """
     out: dict[str, Any] = {}
     mapping = {
         "DATABASE_PATH": "database_path",

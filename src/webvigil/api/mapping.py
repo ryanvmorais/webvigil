@@ -1,4 +1,6 @@
-"""Conversions between the engine models, the DB rows, and a rebuilt ``ScanResult``."""
+"""
+Conversions between the engine models, the DB rows, and a rebuilt ``ScanResult``.
+"""
 
 from __future__ import annotations
 
@@ -25,7 +27,18 @@ from webvigil.core import (
 
 
 def build_scan_config(scan: Scan) -> ScanConfig:
-    """Turn a stored ``Scan`` into the ``ScanConfig`` the engine expects."""
+    """
+    Turn a stored ``Scan`` into the ``ScanConfig`` the engine expects.
+
+    Maps the row's mode / scope and its stored ``options`` onto config-section
+    overrides, adding an ``[active]`` attestation for an Active scan.
+
+    Args:
+        scan (Scan): The stored scan.
+
+    Returns:
+        ScanConfig: The merged, validated engine configuration.
+    """
     options = scan.options or {}
     scan_overrides: dict[str, object] = {"mode": scan.mode, "scope": scan.scope}
     for key in ("max_pages", "follow_robots"):
@@ -49,7 +62,17 @@ def build_scan_config(scan: Scan) -> ScanConfig:
 
 
 def store_result(session: Session, scan_id: int, result: ScanResult) -> None:
-    """Persist a completed scan: metadata onto the row, one ``finding`` row per finding."""
+    """
+    Persist a completed scan: metadata onto the row, one ``finding`` row per finding.
+
+    Args:
+        session (Session): An open session; committed here.
+        scan_id (int): The scan being completed.
+        result (ScanResult): The engine's result.
+
+    Raises:
+        LookupError: If the scan row has disappeared.
+    """
     scan = session.get(Scan, scan_id)
     if scan is None:  # pragma: no cover - the runner always has a row
         raise LookupError(f"scan {scan_id} disappeared")
@@ -86,7 +109,17 @@ def store_result(session: Session, scan_id: int, result: ScanResult) -> None:
 
 
 def rows_to_result(scan: Scan, findings: list[FindingRow]) -> ScanResult:
-    """Rebuild the engine's ``ScanResult`` from stored rows, for the reporters (RF-19)."""
+    """
+    Rebuild the engine's ``ScanResult`` from stored rows, for the reporters (RF-19).
+
+    Args:
+        scan (Scan): The stored scan.
+        findings (list[FindingRow]): Its stored findings.
+
+    Returns:
+        ScanResult: A result equivalent to what the engine produced, so any
+            reporter can re-render it.
+    """
     metadata = ScanMetadata(
         target=scan.target,
         mode=ScanMode(scan.mode),
@@ -108,6 +141,14 @@ def rows_to_result(scan: Scan, findings: list[FindingRow]) -> ScanResult:
 
 
 def _row_to_finding(row: FindingRow) -> Finding:
+    """
+    Args:
+        row (FindingRow): A stored finding.
+
+    Returns:
+        Finding: The engine model, with severity / confidence integers mapped
+            back to their enums.
+    """
     return Finding(
         check_id=row.check_id,
         severity=Severity(row.severity),
@@ -124,7 +165,15 @@ def _row_to_finding(row: FindingRow) -> Finding:
 
 
 def _as_utc(value: datetime | None) -> datetime:
-    """SQLite hands back naive datetimes; the engine wrote them in UTC."""
+    """
+    Args:
+        value (datetime | None): A datetime from SQLite (naive, but written in
+            UTC), or ``None``.
+
+    Returns:
+        datetime: ``value`` made timezone-aware in UTC, or the current time when
+            ``value`` is ``None``.
+    """
     if value is None:
         return utcnow()
     return value if value.tzinfo is not None else value.replace(tzinfo=UTC)

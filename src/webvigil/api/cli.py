@@ -1,4 +1,8 @@
-"""The ``webvigil-web`` command: serve the API, run migrations, reset the password (RF-29)."""
+"""
+The ``webvigil-web`` command: serve the API, run migrations, reset the password (RF-29).
+
+The command docstrings double as Typer ``--help`` text, so they stay terse.
+"""
 
 from __future__ import annotations
 
@@ -80,4 +84,5 @@ def reset_password(
 
 
 def main() -> None:
+    """Console-script entry point for ``webvigil-web`` (see ``project.scripts``)."""
     app()

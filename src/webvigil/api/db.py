@@ -1,4 +1,5 @@
-"""SQLModel tables, the engine factory, and the Alembic upgrade wrapper (RF-23, RF-24, RF-25).
+"""
+SQLModel tables, the engine factory, and the Alembic upgrade wrapper (RF-23, RF-24, RF-25).
 
 This module is API-only. The engine never imports it.
 """
@@ -21,10 +22,27 @@ _MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
 
 def utcnow() -> datetime:
+    """
+    Returns:
+        datetime: The current time, timezone-aware in UTC.
+    """
     return datetime.now(UTC)
 
 
 class ScanStatus(StrEnum):
+    """
+    Lifecycle state of a stored scan.
+
+    Attributes:
+        QUEUED (str): Waiting for the runner's execution slot.
+        RUNNING (str): Currently executing.
+        COMPLETED (str): Finished; findings are stored.
+        FAILED (str): Ended with a controlled engine error or a crash.
+        CANCELLED (str): Cancelled by the user.
+        INTERRUPTED (str): Left ``RUNNING`` by a process that died; recovered on
+            the next startup.
+    """
+
     QUEUED = "queued"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -44,6 +62,17 @@ TERMINAL_STATUSES: frozenset[ScanStatus] = frozenset(
 
 
 class User(SQLModel, table=True):
+    """
+    The single account (first-run setup creates it).
+
+    Attributes:
+        id (int | None): Primary key.
+        username (str): Unique, indexed login name.
+        password_hash (str): Argon2 hash.
+        created_at (datetime): When the account was created (UTC).
+        updated_at (datetime): When it was last changed, e.g. a password reset.
+    """
+
     __tablename__ = "user"
 
     id: int | None = Field(default=None, primary_key=True)
@@ -54,6 +83,35 @@ class User(SQLModel, table=True):
 
 
 class Scan(SQLModel, table=True):
+    """
+    One scan request and its result metadata.
+
+    Attributes:
+        id (int | None): Primary key.
+        target (str): The requested target URL.
+        mode (str): ``"passive"`` or ``"active"``.
+        scope (str): ``"host"`` or ``"subdomains"``.
+        options (dict[str, Any]): The extra overrides from the request
+            (``max_pages``, ``delay_ms``, ``follow_robots``, ``fail_on``,
+            ``disabled_checks``).
+        status (ScanStatus): Lifecycle state; stored as its string value in a
+            plain, indexed ``String`` column.
+        authorized_by (str | None): Active-Mode attestation.
+        tool_version (str | None): WebVigil version that ran the scan.
+        error (str | None): Failure message, when ``status`` is ``FAILED`` /
+            ``INTERRUPTED``.
+        created_at (datetime): When the request was queued (indexed).
+        started_at (datetime | None): When execution began.
+        finished_at (datetime | None): When execution ended.
+        pages_scanned (int): Pages the crawler fetched.
+        counts (dict[str, int]): Finding count per severity name.
+        check_errors (list[dict[str, Any]]): Serialised
+            :class:`~webvigil.core.result.CheckError` entries.
+        warnings (list[str]): Scan warnings.
+        technologies (list[dict[str, Any]]): Detected-technology inventory
+            (spec 004, RF-17); empty for pre-004 scans.
+    """
+
     __tablename__ = "scan"
 
     id: int | None = Field(default=None, primary_key=True)
@@ -61,7 +119,6 @@ class Scan(SQLModel, table=True):
     mode: str
     scope: str
     options: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
-    # Plain string column (stores the StrEnum value, e.g. "queued") rather than a DB enum.
     status: ScanStatus = Field(
         default=ScanStatus.QUEUED,
         sa_column=Column("status", String, index=True, nullable=False),
@@ -76,11 +133,32 @@ class Scan(SQLModel, table=True):
     counts: dict[str, int] = Field(default_factory=dict, sa_column=Column(JSON))
     check_errors: list[dict[str, Any]] = Field(default_factory=list, sa_column=Column(JSON))
     warnings: list[str] = Field(default_factory=list, sa_column=Column(JSON))
-    # Detected-technology inventory (spec 004, RF-17). Additive; NULL for pre-004 scans.
     technologies: list[dict[str, Any]] = Field(default_factory=list, sa_column=Column(JSON))
 
 
 class Finding(SQLModel, table=True):
+    """
+    One stored finding, belonging to a :class:`Scan`.
+
+    Attributes:
+        id (int | None): Primary key.
+        scan_id (int): Owning scan; ``ON DELETE CASCADE``.
+        check_id (str): The check that produced it.
+        severity (int): The :class:`~webvigil.core.findings.Severity` integer
+            value.
+        confidence (int): The :class:`~webvigil.core.findings.Confidence`
+            integer value.
+        title (str): One-line summary.
+        description (str): Full explanation.
+        location (dict[str, Any]): Serialised
+            :class:`~webvigil.core.findings.Location`.
+        remediation (str): How to fix it.
+        evidence (list[dict[str, Any]]): Serialised evidence items.
+        cwe (list[int]): CWE ids.
+        references (list[str]): Further-reading URLs.
+        fingerprint (str): Stable dedup identity.
+    """
+
     __tablename__ = "finding"
 
     id: int | None = Field(default=None, primary_key=True)
@@ -99,6 +177,14 @@ class Finding(SQLModel, table=True):
 
 
 class Setting(SQLModel, table=True):
+    """
+    A single key/value row for process-wide settings (currently just the session secret).
+
+    Attributes:
+        key (str): Setting name (primary key).
+        value (str): Its string value.
+    """
+
     __tablename__ = "setting"
 
     key: str = Field(primary_key=True)
@@ -106,7 +192,16 @@ class Setting(SQLModel, table=True):
 
 
 def make_engine(config: WebConfig) -> Engine:
-    """Create the SQLite engine, enabling WAL and foreign-key enforcement per connection."""
+    """
+    Create the SQLite engine, enabling WAL and foreign-key enforcement per connection.
+
+    Args:
+        config (WebConfig): Supplies ``database_path``; the parent directory is
+            created if needed.
+
+    Returns:
+        Engine: The configured SQLAlchemy engine.
+    """
     path = config.database_path
     if path.parent and not path.parent.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -117,6 +212,7 @@ def make_engine(config: WebConfig) -> Engine:
 
     @event.listens_for(engine, "connect")
     def _set_pragmas(dbapi_connection: Any, _record: Any) -> None:
+        """Enable WAL journalling and foreign-key enforcement on every new connection."""
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA journal_mode=WAL")
         cursor.execute("PRAGMA foreign_keys=ON")
@@ -127,7 +223,16 @@ def make_engine(config: WebConfig) -> Engine:
 
 @contextmanager
 def session_scope(engine: Engine) -> Iterator[Session]:
-    """A session that commits on clean exit and rolls back on error."""
+    """
+    A transactional session context.
+
+    Args:
+        engine (Engine): The DB engine.
+
+    Yields:
+        Session: A session that commits on a clean exit and rolls back on any
+            exception.
+    """
     with Session(engine) as session:
         try:
             yield session
@@ -138,7 +243,12 @@ def session_scope(engine: Engine) -> Iterator[Session]:
 
 
 def run_alembic_upgrade(config: WebConfig) -> None:
-    """Run ``alembic upgrade head`` against the configured database."""
+    """
+    Run ``alembic upgrade head`` against the configured database.
+
+    Args:
+        config (WebConfig): Supplies ``database_path``.
+    """
     from alembic import command
     from alembic.config import Config as AlembicConfig
 

@@ -23,10 +23,26 @@ SESSION_COOKIE = "webvigil_session"
 
 
 def hash_password(password: str) -> str:
+    """
+    Args:
+        password (str): The plaintext password.
+
+    Returns:
+        str: An Argon2 hash string (algorithm, parameters, salt, and digest).
+    """
     return _hasher.hash(password)
 
 
 def verify_password(password: str, hashed: str) -> bool:
+    """
+    Args:
+        password (str): The plaintext password to check.
+        hashed (str): The stored Argon2 hash.
+
+    Returns:
+        bool: ``True`` when the password matches; ``False`` on mismatch or a
+            malformed hash.
+    """
     try:
         _hasher.verify(hashed, password)
     except (VerificationError, InvalidHashError):
@@ -35,13 +51,32 @@ def verify_password(password: str, hashed: str) -> bool:
 
 
 def create_token(user_id: int, secret: str, ttl_hours: int) -> str:
+    """
+    Mint a signed session token.
+
+    Args:
+        user_id (int): The user the token authenticates.
+        secret (str): The HS256 signing secret.
+        ttl_hours (int): Token lifetime, in hours.
+
+    Returns:
+        str: The encoded JWT.
+    """
     now = datetime.now(UTC)
     payload = {"sub": str(user_id), "iat": now, "exp": now + timedelta(hours=ttl_hours)}
     return jwt.encode(payload, secret, algorithm=_ALGORITHM)
 
 
 def decode_token(token: str, secret: str) -> int | None:
-    """Return the user id in a valid, unexpired token, or ``None``."""
+    """
+    Args:
+        token (str): A session JWT.
+        secret (str): The HS256 signing secret.
+
+    Returns:
+        int | None: The user id from a valid, unexpired, well-formed token, or
+            ``None``.
+    """
     try:
         payload = jwt.decode(token, secret, algorithms=[_ALGORITHM])
         return int(payload["sub"])
@@ -50,6 +85,14 @@ def decode_token(token: str, secret: str) -> int | None:
 
 
 def set_session_cookie(response: Response, token: str, config: WebConfig) -> None:
+    """
+    Attach the session cookie (``HttpOnly``, ``SameSite=Lax``) to ``response``.
+
+    Args:
+        response (Response): The response to set the cookie on.
+        token (str): The session JWT.
+        config (WebConfig): Supplies the TTL and the ``Secure`` flag.
+    """
     response.set_cookie(
         SESSION_COOKIE,
         token,
@@ -62,11 +105,28 @@ def set_session_cookie(response: Response, token: str, config: WebConfig) -> Non
 
 
 def clear_session_cookie(response: Response) -> None:
+    """
+    Delete the session cookie.
+
+    Args:
+        response (Response): The response to clear the cookie on.
+    """
     response.delete_cookie(SESSION_COOKIE, path="/")
 
 
 def resolve_session_secret(engine: Engine, config: WebConfig) -> str:
-    """Pinned secret from config, else the stored one, else a freshly generated + stored one."""
+    """
+    Determine the JWT signing secret for this process.
+
+    Args:
+        engine (Engine): The DB engine, for the stored fallback.
+        config (WebConfig): Supplies the pinned secret, if any.
+
+    Returns:
+        str: ``config.session_secret`` when set; otherwise the secret stored in
+            the ``setting`` table; otherwise a fresh one, which is stored and
+            logged as a warning.
+    """
     if config.session_secret:
         return config.session_secret
     with session_scope(engine) as session:
