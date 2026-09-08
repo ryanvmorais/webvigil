@@ -109,6 +109,19 @@ Camadas, de cima para baixo:
    injection cega (sem output, sem timing) fica de fora — mesmo motivo da SSRF cega.
    `_PER_POINT_REQUEST_CAP` subiu de 30 → 35 e `request_budget` de 500 → 600 (mais
    famílias de detector por ponto).
+   `injection.crlf` (HIGH) / `injection.host-header` (MEDIUM) / `injection.xxe` (HIGH) /
+   `http.methods.unsafe` (MEDIUM, `Category.HTTP` nova) (spec 012): request-envelope
+   injection **in-band**. `crlf` é detector novo no `InjectionScanner` (payload `%0d%0a` →
+   header/cookie/body injetado que o `httpx` parseia de volta, não reflexão de texto).
+   `xxe` é detector opt-in (`[injection] xxe` / `--xxe`, default off, só POST points,
+   re-envia o body como XML com entidade externa → assinatura de arquivo ou erro de parser).
+   `host-header` + `http.methods.unsafe` vêm de uma passada nova `EnvelopeScanner`
+   (`webvigil.checks.envelope`, modelo do `DisclosureProbe`) que re-pede uma amostra de URLs
+   crawleadas com `Host`/`X-Forwarded-*` = `webvigil.invalid` (sentinela em URL absoluta /
+   `Location` / `<base>` / canonical) e com `OPTIONS`/`TRACE` (XST, verbos perigosos
+   anunciados). Nunca envia verbo destrutivo. XXE cega e HTTP request smuggling ficam fora
+   (colaborador / raw socket). `TRACE` entrou em `_IDEMPOTENT`; `HttpClient.request` ganhou
+   `content=`.
    `injection.xss.stored` (spec 008):
    passada `StoredXssScanner` separada
    (depois da refletida, opt-in `--stored-xss` / `[injection] stored_xss`, default off —
@@ -146,6 +159,6 @@ no CI. `webvigil.cli` e `webvigil.api` não se importam. A Web UI só fala com a
 ## Fluxo de trabalho
 
 - **Spec-driven development** via `/spec`. Specs em `specs/NNN-nome/` (requirements → design → tasks → implementação), com portão de aprovação humana em cada fase. Convenções e roadmap em [`specs/README.md`](specs/README.md).
-- Estado: `001-foundation` (CLI `v0.1`), `002-web-api` (API `v0.2`), `003-web-ui` (dashboard `v0.3`), `004-deps-fingerprint` (`v0.4`), `005-info-disclosure` (`v0.5`), `006-active-injection` (`v0.6`), `007-auth-flows` (`v0.7`), `008-stored-xss` (`v0.8`), `009-ssrf` (SSRF in-band, `v0.9`), `010-osv-online` (`v0.10`) e `011-rce-injection` (command injection + SSTI in-band, `v0.11`) **concluídas**. O roadmap de dívida técnica está zerado. `012`-`014` estão `planned` (ver [`specs/README.md`](specs/README.md)): protocol/parser injection (CRLF, host header, XXE, métodos HTTP), auth+API surface (auth por header, import OpenAPI), file upload. **SSRF cega e command injection cega** (coletor OAST) ficam fora do roadmap — cruzam "o engine só fala com o alvo" e a distribuição repo-only. Pendências ainda abertas, da 007: login automático, testes de sessão (cada uma exige fluxo de login stateful ou Active Mode). Nenhuma spec em andamento.
+- Estado: `001-foundation` (CLI `v0.1`), `002-web-api` (API `v0.2`), `003-web-ui` (dashboard `v0.3`), `004-deps-fingerprint` (`v0.4`), `005-info-disclosure` (`v0.5`), `006-active-injection` (`v0.6`), `007-auth-flows` (`v0.7`), `008-stored-xss` (`v0.8`), `009-ssrf` (SSRF in-band, `v0.9`), `010-osv-online` (`v0.10`), `011-rce-injection` (command injection + SSTI in-band, `v0.11`) e `012-protocol-injection` (CRLF, host header, XXE opt-in, métodos HTTP, `v0.12`) **concluídas**. O roadmap de dívida técnica está zerado. `013`-`014` estão `planned` (ver [`specs/README.md`](specs/README.md)): auth+API surface (auth por header, import OpenAPI, checks passivos ausentes), file upload. **SSRF cega, command injection cega, XXE cega e HTTP request smuggling** ficam fora do roadmap — exigem coletor OAST ou raw socket, cruzam "o engine só fala com o alvo" e a distribuição repo-only. Pendências ainda abertas, da 007: login automático, testes de sessão (cada uma exige fluxo de login stateful ou Active Mode). Nenhuma spec em andamento.
 - Ao fim de cada sessão: `/preparar-commits` (Conventional Commits) e `/atualizar-docs`.
 - Commits em inglês, padrão Conventional Commits.

@@ -35,7 +35,7 @@ WebVigil is built with spec-driven development. Each feature is designed as a sp
 | [`009-ssrf`](009-ssrf/) | SSRF **in-band**: um detector `ssrf` na passada da `006` que envia payloads de URL e prova o fetch server-side pelo response do alvo — marcador de metadata de nuvem (`injection.ssrf.metadata`, CRITICAL), assinatura de `file://` / banner de serviço interno / erro de conexão ecoando a URL (`injection.ssrf.internal`, HIGH). `is_urllike` prioriza params com cara de URL; sem flag, sem config. SSRF cega adiada | `v0.9` | **done** |
 | [`010-osv-online`](010-osv-online/) | provider OSV.dev online para o fingerprint de dependências da `004`: passo `_osv_lookup` no orquestrador (opt-in `--osv-online` / `[deps] osv_online`) que faz um `querybatch` + um `query` por pacote na `api.osv.dev`, normaliza pro `Advisory` nativo e mescla com o match Retire.js offline (dedup por identificador); falha vira warning, sem cache | `v0.10` | **done** |
 | [`011-rce-injection`](011-rce-injection/) | injeção server-side in-band que faltava na passada da `006`: OS command injection (echo aritmético + time-based, `injection.cmdi.os` CRITICAL) e SSTI (polyglot → assinatura de erro → avaliação aritmética, `injection.ssti` HIGH). Dois detectores novos no `InjectionScanner`, `[injection] time_based_cmdi`, fixture `/ping` + `/greet` | `v0.11` | **done** |
-| [`012-protocol-injection`](012-protocol-injection/) | classes de request/parser que ZAP/Wapiti cobrem e a `006` não: CRLF / HTTP response splitting, host header injection (poisoning de reset de senha), XXE in-band (error-based / entidade refletida), e um check de métodos HTTP permitidos (`TRACE` / verb tampering) | `v0.12` | **planned** |
+| [`012-protocol-injection`](012-protocol-injection/) | request-envelope injection in-band: `injection.crlf` (HIGH — header/body split que o `httpx` parseia de volta), `injection.host-header` (MEDIUM/HIGH — sentinela refletida em URL absoluta/`Location`/`<base>`), `injection.xxe` (HIGH, opt-in `--xxe` — content-type flip nos POST points), `http.methods.unsafe` (MEDIUM, `Category.HTTP` — XST + verbos perigosos anunciados). Detectores `crlf`/`xxe` no `InjectionScanner`; passada nova `EnvelopeScanner` pra host-header + métodos | `v0.12` | **done** |
 | [`013-auth-and-api-surface`](013-auth-and-api-surface/) | largura de auth + superfície de API: auth por header/bearer (`--header "Authorization: …"` — destrava scan de API real, adiado da `007`), import de schema OpenAPI para semear injection points, e checks passivos ausentes (SRI ausente, mixed content, session id na URL, IP privado no corpo) | `v0.13` | **planned** |
 | [`014-file-upload`](014-file-upload/) | **opcional / backlog:** detecção de upload sem restrição (extensão / content-type / conteúdo servido de volta) + checks ativos residuais. A `v1.0` pode sair após a `013` se a `014` não se justificar | `v0.14` | **planned** |
 
@@ -66,14 +66,15 @@ WebVigil is built with spec-driven development. Each feature is designed as a sp
 > **`011` a `014` são a linha de "paridade real" com ZAP/Wapiti** no recorte que a WebVigil
 > se propõe a cobrir: as classes de injeção que um revisor notaria faltando (command
 > injection, SSTI, CRLF, host header, XXE, upload) e a largura mínima de auth/API. Todas
-> **in-band, sem browser, sem OAST**. A `011` (command injection + SSTI) **está entregue**;
-> os não-objetivos abaixo continuam valendo e viram a seção "Scope and limitations" do
-> README na `v1.0`:
+> **in-band, sem browser, sem OAST**. A `011` (command injection + SSTI) e a `012` (CRLF,
+> host header, XXE opt-in, métodos HTTP) **estão entregues**; os não-objetivos abaixo
+> continuam valendo e viram a seção "Scope and limitations" do README na `v1.0`:
 >
 > - **Crawl de SPA renderizada em JS** — sem browser headless; escaneie a API direto ou
 >   alimente URLs de um crawler seu.
-> - **Blind / OAST** (blind XSS/SSRF/RCE, XXE OOB) — ver [`docs/notes/why-not-oast.md`](../docs/notes/why-not-oast.md).
+> - **Blind / OAST** (blind XSS/SSRF/RCE, XXE OOB) e **HTTP request smuggling** — ver
+>   [`docs/notes/why-not-oast.md`](../docs/notes/why-not-oast.md).
 > - **Base de templates estilo Nuclei**, fuzzing exaustivo, enum de CMS, brute-force de login.
 >
-> Sequência: `011` → `012` → `013` → (`014` se valer) → `v1.0` (README "Scope and
+> Sequência: `011` → `012` (feitas) → `013` → (`014` se valer) → `v1.0` (README "Scope and
 > limitations" + descrição no GitHub).

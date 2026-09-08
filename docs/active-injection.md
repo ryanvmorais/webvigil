@@ -34,6 +34,10 @@ no out-of-band collaborator.
 | `injection.ssrf.internal` | HIGH | A URL payload reaches a loopback / internal resource (recognizable service banner), reads a local file via `file://`, or an SSRF-shaped connection error names the injected URL — each absent from the baseline. |
 | `injection.cmdi.os` | CRITICAL | A shell-metacharacter break plus `echo <marker>=$((a*b))` makes the shell return the *computed* product next to a per-request marker (absent from the baseline), **or** a `sleep`/`ping -n` payload delays the response past a zero-delay control and scales with a half-length probe. This is RCE. |
 | `injection.ssti` | HIGH | A polyglot draws a template-engine parse error, then an arithmetic payload (`{{a*b}}`, `${a*b}`, `<%= a*b %>`, …) returns the *evaluated* product glued to a per-request marker, absent from the baseline. The engine is named when identifiable (`{{7*'7'}}` → `7777777` Jinja2, `49` Twig). |
+| `injection.crlf` | HIGH | A `%0d%0a`-prefixed payload makes the app write an attacker header line (or, with a double CRLF, a whole body) that the HTTP client parsed back, absent from the baseline. |
+| `injection.host-header` | MEDIUM / HIGH | A request with a poisoned `Host` / `X-Forwarded-*` header comes back with the sentinel host in an absolute URL, `Location`, `<base>`, or a canonical tag — absent from the plain-`GET` baseline. HIGH in a reset / redirect context. |
+| `injection.xxe` | HIGH | *(opt-in `--xxe`)* A POST body re-sent as XML with an external-entity payload returns a `/etc/passwd` / `win.ini` signature or a named XML-parser error, absent from the baseline. |
+| `http.methods.unsafe` | MEDIUM | `TRACE` is enabled and echoes the request (Cross-Site Tracing), or `OPTIONS` advertises `PUT` / `DELETE` / `PATCH` / `CONNECT` on an application route. `Category.HTTP`. |
 
 Every finding's `location` carries the `method`, `url`, and `param`; its evidence carries
 the injection point, the payload sent, and the proof.
@@ -168,6 +172,46 @@ timing effect (`; curl http://attacker/`) needs an out-of-band collaborator the 
 hosts — the same reason blind SSRF is off the roadmap
 ([`docs/notes/why-not-oast.md`](notes/why-not-oast.md)). The time-based detector is the
 in-band substitute; for the rest, pair with your own collaborator.
+
+## Request-envelope injection
+
+`injection.crlf`, `injection.host-header`, `injection.xxe` and `http.methods.unsafe` (v0.12)
+test the *request envelope* — the headers the app trusts, the parsers it feeds, the methods
+it exposes — rather than a parameter value.
+
+**CRLF injection** (`injection.crlf`, CWE-113) — the detector appends `%0d%0a`-prefixed
+payloads to a parameter and checks whether the *response* carries an injected header
+(`X-WvInjected: <token>`) that `httpx` parsed back, an injected `Set-Cookie`, or — with a
+double CRLF — a whole split body. A payload merely reflected in the page *text* is not a
+CRLF hit (that is reflected XSS). Modern servers strip CR/LF from header values, so a real
+target can be a false negative even when vulnerable.
+
+**Host-header injection** (`injection.host-header`, CWE-644) — a bounded pass
+(`EnvelopeScanner`) re-requests a sample of crawled URLs with `Host` /
+`X-Forwarded-Host` / `X-Forwarded-Server` / `X-Host` / `X-Original-Host` set to
+`webvigil.invalid`, and flags the sentinel reflected in an absolute URL, `Location`,
+`<base href>`, or `<link rel=canonical>` — absent from the plain-`GET` baseline. MEDIUM,
+HIGH when the reflection is in a `Location` or a password-reset-looking link. WebVigil never
+connects to the sentinel — it is a header value on a request to the in-scope target.
+
+**XXE** (`injection.xxe`, CWE-611) — **opt-in** (`--xxe` / `[injection] xxe`, off by
+default because it rewrites the request body). For each POST injection point the detector
+re-sends the body as `application/xml` / `text/xml` with an external-entity payload
+(`file:///etc/passwd` SYSTEM entity, an in-scope parameter-entity DTD, a bounded
+nested-entity payload) and flags a file-content signature (HIGH) or a named XML-parser
+error (MEDIUM). **Blind / out-of-band XXE is not covered** — it needs a collaborator, the
+same call as blind SSRF.
+
+**HTTP methods** (`http.methods.unsafe`, `Category.HTTP`, CWE-650 / 693) — the
+`EnvelopeScanner` sends `OPTIONS` to the URL sample and one `TRACE` per host. `TRACE`
+enabled and echoing the request is Cross-Site Tracing (XST); `PUT` / `DELETE` / `PATCH` /
+`CONNECT` advertised in `Allow` on a non-static route is a finding (WebVigil does not verify
+they are reachable unauthenticated). The pass sends **only** `OPTIONS` and `TRACE` — never
+a state-changing verb.
+
+**Not covered:** HTTP request smuggling (needs raw-socket framing control), web-cache-
+poisoning *confirmation* (WebVigil flags the reflected unkeyed input, it does not prove the
+cache stored the response), and blind XXE.
 
 ## Non-destructive posture
 
