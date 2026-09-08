@@ -1,5 +1,8 @@
 """
 Header checks: vulnerable fixture reports, hardened fixture is silent — RF-16, RF-17.
+
+All cases build a page with ``make_page`` and run the check with ``make_context``;
+none issue HTTP.
 """
 
 from __future__ import annotations
@@ -33,11 +36,18 @@ _ALL_HEADER_CHECKS = [
 
 @pytest.mark.parametrize("check_cls", _ALL_HEADER_CHECKS)
 async def test_hardened_response_produces_no_findings(check_cls: type) -> None:
+    """Every header check is silent against the fully hardened response-header set."""
     ctx = make_context(make_page(headers=hardened_headers(), text="<html></html>"))
     assert await check_cls().run(ctx) == []
 
 
+# ---------------------------------------------------------------------------
+# CSP
+# ---------------------------------------------------------------------------
+
+
 async def test_csp_missing() -> None:
+    """No ``Content-Security-Policy`` header is a MEDIUM "missing" finding."""
     ctx = make_context(make_page(headers={}))
     findings = await CspCheck().run(ctx)
     assert [f.fingerprint for f in findings]
@@ -46,6 +56,7 @@ async def test_csp_missing() -> None:
 
 
 async def test_csp_unsafe_inline_is_flagged() -> None:
+    """``'unsafe-inline'`` anywhere in a source list is flagged."""
     ctx = make_context(
         make_page(headers={"content-security-policy": "script-src 'self' 'unsafe-inline'"})
     )
@@ -53,7 +64,13 @@ async def test_csp_unsafe_inline_is_flagged() -> None:
     assert any("unsafe-inline" in title for title in keys)
 
 
+# ---------------------------------------------------------------------------
+# HSTS
+# ---------------------------------------------------------------------------
+
+
 async def test_hsts_missing_on_https_only() -> None:
+    """A missing HSTS header is flagged on HTTPS; on plaintext HTTP the TLS check owns it."""
     https = await HstsCheck().run(make_context(make_page(headers={})))
     assert https and https[0].severity is Severity.MEDIUM
 
@@ -62,25 +79,34 @@ async def test_hsts_missing_on_https_only() -> None:
 
 
 async def test_hsts_weaknesses() -> None:
+    """A short ``max-age`` and a missing ``includeSubDomains`` are each reported."""
     ctx = make_context(make_page(headers={"strict-transport-security": "max-age=100"}))
     keys = {f.title for f in await HstsCheck().run(ctx)}
     assert any("max-age" in k for k in keys)
     assert any("includeSubDomains" in k for k in keys)
 
 
+# ---------------------------------------------------------------------------
+# Frame options, sniffing, referrer, revealing
+# ---------------------------------------------------------------------------
+
+
 async def test_frame_options_missing_but_ok_with_frame_ancestors() -> None:
+    """Either ``X-Frame-Options`` or a CSP ``frame-ancestors`` satisfies the check."""
     assert await FrameOptionsCheck().run(make_context(make_page(headers={})))
     ok = make_context(make_page(headers={"content-security-policy": "frame-ancestors 'none'"}))
     assert await FrameOptionsCheck().run(ok) == []
 
 
 async def test_content_type_options() -> None:
+    """The check wants ``X-Content-Type-Options: nosniff`` exactly."""
     assert await ContentTypeOptionsCheck().run(make_context(make_page(headers={})))
     ok = make_context(make_page(headers={"x-content-type-options": "nosniff"}))
     assert await ContentTypeOptionsCheck().run(ok) == []
 
 
 async def test_referrer_policy_missing_and_leaking() -> None:
+    """A missing policy is flagged; so is a present-but-leaking value like ``unsafe-url``."""
     assert await ReferrerPolicyCheck().run(make_context(make_page(headers={})))
     leaking = make_context(make_page(headers={"referrer-policy": "unsafe-url"}))
     findings = await ReferrerPolicyCheck().run(leaking)
@@ -88,6 +114,7 @@ async def test_referrer_policy_missing_and_leaking() -> None:
 
 
 async def test_revealing_headers() -> None:
+    """Version-bearing ``Server`` / ``X-Powered-By`` are flagged; a bare ``Server`` is not."""
     ctx = make_context(
         make_page(headers={"server": "Apache/2.4.41 (Ubuntu)", "x-powered-by": "PHP/8.1.2"})
     )

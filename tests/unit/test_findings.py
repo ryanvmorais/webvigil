@@ -8,6 +8,16 @@ from webvigil.core import Confidence, EvidenceItem, Finding, Location, Severity,
 
 
 def _finding(url: str = "https://example.com/", dedup_key: str = "missing") -> Finding:
+    """
+    Build a minimal CSP finding for the fingerprint / immutability tests.
+
+    Args:
+        url (str): The location URL.
+        dedup_key (str): The fingerprint dedup key.
+
+    Returns:
+        Finding: The assembled finding.
+    """
     location = Location(url=url, header="Content-Security-Policy")
     return Finding(
         check_id="http.headers.csp",
@@ -21,18 +31,31 @@ def _finding(url: str = "https://example.com/", dedup_key: str = "missing") -> F
     )
 
 
+# ---------------------------------------------------------------------------
+# Severity
+# ---------------------------------------------------------------------------
+
+
 def test_severity_is_ordered() -> None:
+    """Severity compares INFO < LOW < ... < CRITICAL and resolves from its name."""
     assert Severity.INFO < Severity.LOW < Severity.MEDIUM < Severity.HIGH < Severity.CRITICAL
     assert Severity.from_name("high") is Severity.HIGH
 
 
+# ---------------------------------------------------------------------------
+# Fingerprinting
+# ---------------------------------------------------------------------------
+
+
 def test_fingerprint_is_stable_across_calls() -> None:
+    """The same inputs always hash to the same 16-char digest."""
     loc = Location(url="https://example.com/", header="X")
     assert compute_fingerprint("c", loc, "k") == compute_fingerprint("c", loc, "k")
     assert len(compute_fingerprint("c", loc, "k")) == 16
 
 
 def test_fingerprint_varies_with_inputs() -> None:
+    """Changing the check id, the location, or the dedup key changes the fingerprint."""
     loc = Location(url="https://example.com/", header="X")
     other = Location(url="https://example.com/other", header="X")
     assert compute_fingerprint("c", loc, "k") != compute_fingerprint("c", loc, "k2")
@@ -41,11 +64,18 @@ def test_fingerprint_varies_with_inputs() -> None:
 
 
 def test_equal_findings_share_a_fingerprint() -> None:
+    """Two findings built identically collapse; a different dedup key keeps them apart."""
     assert _finding().fingerprint == _finding().fingerprint
     assert _finding(dedup_key="a").fingerprint != _finding(dedup_key="b").fingerprint
 
 
+# ---------------------------------------------------------------------------
+# Value objects
+# ---------------------------------------------------------------------------
+
+
 def test_finding_is_frozen() -> None:
+    """A ``Finding`` rejects attribute assignment."""
     finding = _finding()
     try:
         finding.title = "changed"  # type: ignore[misc]
@@ -55,6 +85,7 @@ def test_finding_is_frozen() -> None:
 
 
 def test_evidence_item_trims_long_content() -> None:
+    """``EvidenceItem.of`` bounds the content and appends a truncation marker."""
     item = EvidenceItem.of("body", "x" * 5000)
     assert len(item.content) < 5000
     assert item.content.endswith("[truncated]")

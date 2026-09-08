@@ -21,6 +21,11 @@ from webvigil.core import (
 
 
 def _result() -> ScanResult:
+    """
+    Returns:
+        ScanResult: A result with one finding, one check error and one warning —
+            enough to exercise every branch of the JSON serialisation.
+    """
     loc = Location(url="https://example.com/", header="Strict-Transport-Security")
     finding = Finding(
         check_id="http.headers.hsts",
@@ -54,11 +59,13 @@ def _result() -> ScanResult:
 
 
 def test_json_round_trip_is_lossless() -> None:
+    """Serialising a result to JSON and back reproduces it exactly (the canonical format)."""
     original = _result()
     restored = ScanResult.model_validate_json(original.model_dump_json())
     assert restored == original
 
 
 def test_severity_counts_has_all_buckets() -> None:
+    """Every severity name is present in the counts, at zero, even with no findings."""
     counts = ScanResult.severity_counts(())
     assert counts == {"INFO": 0, "LOW": 0, "MEDIUM": 0, "HIGH": 0, "CRITICAL": 0}

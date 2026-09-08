@@ -1,5 +1,10 @@
 """
 The DEPS checks: finding shape, INFO for unknown version, the inventory — RF-09, RF-10, RF-12.
+
+The autouse ``_mini_provider`` fixture swaps the process-wide offline provider
+for one backed by ``tests/data/retirejs-mini.json`` — a two-library slice — so
+the tests do not depend on the real vendored database. ``osv_advisories`` is set
+directly on ``Observations`` to stand in for the orchestrator's OSV lookup pass.
 """
 
 from __future__ import annotations
@@ -25,6 +30,7 @@ _MINI = Path(__file__).parent.parent / "data" / "retirejs-mini.json"
 
 @pytest.fixture(autouse=True)
 def _mini_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Point ``check._provider`` at a :class:`RetireJsProvider` over the mini database."""
     rules = RetireJsRules.from_raw(
         json.loads(_MINI.read_text("utf-8")),
         Provenance(
@@ -37,22 +43,47 @@ def _mini_provider(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _ctx(*detections: Detection):
+    """
+    Args:
+        *detections (Detection): The fingerprint-pass detections to seed.
+
+    Returns:
+        ScanContext: A context whose ``observations.detections`` holds them.
+    """
     return make_context(make_page(), observations=Observations(detections=detections))
 
 
 def _det(
     name: str, version: str | None, method: DetectionMethod = DetectionMethod.FILENAME
 ) -> Detection:
+    """
+    Args:
+        name (str): Library name.
+        version (str | None): Detected version, or ``None``.
+        method (DetectionMethod): How it was detected. Defaults to
+            ``FILENAME``.
+
+    Returns:
+        Detection: A detection with a synthetic source URL and marker.
+    """
     return Detection(name, version, method, f"https://example.com/{name}.js", f"{name}-marker")
 
 
+# ---------------------------------------------------------------------------
+# The offline (Retire.js) path
+# ---------------------------------------------------------------------------
+
+
 async def test_metadata() -> None:
+    """The two checks carry the expected category, mode and default severity."""
     assert VulnerableLibraryCheck.category is Category.DEPS
     assert VulnerableLibraryCheck.mode is ScanMode.PASSIVE
     assert LibraryDetectedCheck.default_severity is Severity.INFO
 
 
 async def test_vulnerable_library_finding_shape() -> None:
+    """A matched version produces a finding carrying the advisory ids, CWE, refs and remediation,
+    and records the library as vulnerable on the inventory."""
     ctx = _ctx(_det("jquery", "1.4.0"))
     findings = await VulnerableLibraryCheck().run(ctx)
 
@@ -72,6 +103,7 @@ async def test_vulnerable_library_finding_shape() -> None:
 
 
 async def test_clean_version_is_inventory_only_no_finding() -> None:
+    """A safe version still lands on the inventory, marked not vulnerable, with no finding."""
     ctx = _ctx(_det("jquery", "3.6.0"))
     findings = await VulnerableLibraryCheck().run(ctx)
     assert findings == []
@@ -79,6 +111,7 @@ async def test_clean_version_is_inventory_only_no_finding() -> None:
 
 
 async def test_library_detected_only_for_unknown_version() -> None:
+    """``LibraryDetectedCheck`` fires only for version-less detections, at INFO / LOW."""
     ctx = _ctx(_det("jquery", None, DetectionMethod.URI), _det("lodash", "3.0.0"))
 
     info = await LibraryDetectedCheck().run(ctx)
@@ -92,6 +125,7 @@ async def test_library_detected_only_for_unknown_version() -> None:
 
 
 async def test_both_checks_share_one_inventory_entry_per_library() -> None:
+    """Running both checks over the same library yields one inventory row per (name, version)."""
     detections = (_det("jquery", "1.4.0"), _det("jquery", None, DetectionMethod.URI))
     ctx = make_context(make_page(), observations=Observations(detections=detections))
 
@@ -105,6 +139,7 @@ async def test_both_checks_share_one_inventory_entry_per_library() -> None:
 async def test_multiple_advisories_take_the_highest_severity(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """When a version matches two advisories, the finding takes the higher severity."""
     # jquery 1.4.0 matches only the "below 1.6.3" entry in the mini DB (medium). Add a
     # high-severity entry that also covers it.
     raw = json.loads(_MINI.read_text("utf-8"))
@@ -130,7 +165,21 @@ async def test_multiple_advisories_take_the_highest_severity(
     assert findings[0].severity is Severity.HIGH
 
 
+# ---------------------------------------------------------------------------
+# Merging the OSV lookup pass with the offline match
+# ---------------------------------------------------------------------------
+
+
 def _osv(*ids: str, severity: Severity = Severity.HIGH, safe: str | None = None) -> Advisory:
+    """
+    Args:
+        *ids (str): Advisory identifiers; the first also forms the OSV URL.
+        severity (Severity): The advisory severity. Defaults to ``HIGH``.
+        safe (str | None): First safe version, if any.
+
+    Returns:
+        Advisory: A native advisory as the OSV lookup pass would leave it.
+    """
     return Advisory(
         identifiers=ids,
         summary="from osv",
@@ -143,6 +192,7 @@ def _osv(*ids: str, severity: Severity = Severity.HIGH, safe: str | None = None)
 
 
 async def test_osv_advisory_creates_a_finding_where_retirejs_found_nothing() -> None:
+    """An OSV advisory for an offline-clean library still produces a finding."""
     # lodash 5.0.0 is clean in the mini DB, but the OSV lookup pass left an advisory for it.
     ctx = make_context(
         make_page(),
@@ -160,6 +210,7 @@ async def test_osv_advisory_creates_a_finding_where_retirejs_found_nothing() -> 
 
 
 async def test_osv_and_retirejs_advisories_for_the_same_cve_merge_into_one_finding() -> None:
+    """Both sources naming the same CVE collapse to one finding at the higher severity."""
     # jquery 1.4.0 -> Retire.js CVE-2011-4969 (medium). OSV returns the same CVE at HIGH.
     ctx = make_context(
         make_page(),

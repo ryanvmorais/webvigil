@@ -1,5 +1,9 @@
 """
 Probe-fed disclosure checks: family filtering, finding shape, evidence — RF-08, RF-10.
+
+``_hit`` builds a :class:`~webvigil.checks.disclosure.probe.ProbeHit` as the
+orchestrator's probe pass would leave it; ``_ctx`` puts those on
+``Observations.probe_hits``. The checks issue no HTTP.
 """
 
 from __future__ import annotations
@@ -28,6 +32,16 @@ _DISCLOSURE_IDS = {
 
 
 def _hit(family: str, check_id: str, path: str, severity: Severity) -> ProbeHit:
+    """
+    Args:
+        family (str): The probe family.
+        check_id (str): The probe-fed check the hit feeds.
+        path (str): The reachable path (also forms the URL).
+        severity (Severity): Severity carried on the hit.
+
+    Returns:
+        ProbeHit: A hit with a fixed redacted body and HIGH confidence.
+    """
     return ProbeHit(
         family=family,
         check_id=check_id,
@@ -44,12 +58,20 @@ def _hit(family: str, check_id: str, path: str, severity: Severity) -> ProbeHit:
 
 
 def _ctx(*hits: ProbeHit):
+    """
+    Args:
+        *hits (ProbeHit): The probe hits to seed.
+
+    Returns:
+        ScanContext: A context whose ``observations.probe_hits`` holds them.
+    """
     return make_context(
         make_page(url="https://t.example/"), observations=Observations(probe_hits=hits)
     )
 
 
 async def test_each_check_emits_only_its_family() -> None:
+    """A check turns only the hits of its own family into findings, carrying the redacted body."""
     ctx = _ctx(
         _hit("vcs", "disclosure.vcs.exposed", "/.git/config", Severity.HIGH),
         _hit("config", "disclosure.config.dotenv-exposed", "/.env", Severity.HIGH),
@@ -66,16 +88,19 @@ async def test_each_check_emits_only_its_family() -> None:
 
 
 async def test_severity_comes_from_the_hit_not_the_class_default() -> None:
+    """The finding takes the hit's severity even when it differs from the check's default."""
     ctx = _ctx(_hit("config", "disclosure.config.dotenv-exposed", "/web.config", Severity.MEDIUM))
     findings = await DotenvExposedCheck().run(ctx)
     assert findings[0].severity is Severity.MEDIUM  # class default is HIGH
 
 
 async def test_no_hits_no_findings() -> None:
+    """With no probe hits, a probe-fed check produces nothing."""
     assert await VcsExposedCheck().run(_ctx()) == []
 
 
 async def test_dedup_key_is_the_path() -> None:
+    """Two hits at different paths stay two findings (the path is the dedup key)."""
     ctx = _ctx(
         _hit("vcs", "disclosure.vcs.exposed", "/.git/config", Severity.HIGH),
         _hit("vcs", "disclosure.vcs.exposed", "/app/.git/config", Severity.HIGH),
@@ -85,6 +110,7 @@ async def test_dedup_key_is_the_path() -> None:
 
 
 def test_all_eight_disclosure_checks_are_registered() -> None:
+    """The registry exposes exactly the eight disclosure check ids, all under the right category."""
     ids = {check.id for check in all_checks() if check.id.startswith("disclosure.")}
     assert ids == _DISCLOSURE_IDS
     for check in all_checks():

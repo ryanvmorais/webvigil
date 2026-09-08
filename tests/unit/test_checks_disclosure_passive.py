@@ -1,5 +1,8 @@
 """
 Passive disclosure checks: error pages and directory listings — RF-01, RF-02, RNF-05.
+
+Fixed HTML fragments (``_WERKZEUG`` / ``_TRACE`` / ``_INDEX`` / ``_CLEAN``) stand
+in for crawled response bodies; the checks read those bodies and issue no HTTP.
 """
 
 from __future__ import annotations
@@ -17,7 +20,13 @@ _INDEX = '<title>Index of /uploads</title><h1>Index of /uploads</h1><a href="s.s
 _CLEAN = "<html><body><h1>Welcome</h1><a href='/about'>about</a></body></html>"
 
 
+# ---------------------------------------------------------------------------
+# Error pages / stack traces
+# ---------------------------------------------------------------------------
+
+
 async def test_error_page_check_flags_the_interactive_debugger_as_high() -> None:
+    """A Werkzeug-debugger page is HIGH severity and HIGH confidence (code-execution surface)."""
     ctx = make_context(make_page(url="https://t.example/boom", text=_WERKZEUG))
     findings = await ErrorPageCheck().run(ctx)
     assert len(findings) == 1
@@ -28,12 +37,14 @@ async def test_error_page_check_flags_the_interactive_debugger_as_high() -> None
 
 
 async def test_error_page_check_flags_a_plain_trace_as_medium() -> None:
+    """A non-interactive stack trace is MEDIUM."""
     ctx = make_context(make_page(text=_TRACE))
     findings = await ErrorPageCheck().run(ctx)
     assert findings and findings[0].severity is Severity.MEDIUM
 
 
 async def test_error_page_check_dedupes_per_framework_across_pages() -> None:
+    """The same framework's trace on two pages yields one finding, not two."""
     pages = [
         make_page(url="https://t.example/a", text=_TRACE),
         make_page(url="https://t.example/b", text=_TRACE),
@@ -44,11 +55,18 @@ async def test_error_page_check_dedupes_per_framework_across_pages() -> None:
 
 
 async def test_error_page_check_is_quiet_on_a_generic_page() -> None:
+    """A page with no framework chrome does not match."""
     ctx = make_context(make_page(text=_CLEAN))
     assert await ErrorPageCheck().run(ctx) == []
 
 
+# ---------------------------------------------------------------------------
+# Directory listings
+# ---------------------------------------------------------------------------
+
+
 async def test_directory_listing_check_reports_one_per_url() -> None:
+    """A server-generated index yields one MEDIUM finding sampling the listed entries."""
     ctx = make_context(make_page(url="https://t.example/uploads/", text=_INDEX))
     findings = await DirectoryListingCheck().run(ctx)
     assert len(findings) == 1
@@ -59,10 +77,12 @@ async def test_directory_listing_check_reports_one_per_url() -> None:
 
 
 async def test_directory_listing_check_is_quiet_on_a_normal_page() -> None:
+    """A normal page is not mistaken for an index."""
     ctx = make_context(make_page(text=_CLEAN))
     assert await DirectoryListingCheck().run(ctx) == []
 
 
 def test_both_checks_are_registered_under_disclosure() -> None:
+    """Both passive checks carry ``Category.DISCLOSURE``."""
     assert ErrorPageCheck.category is Category.DISCLOSURE
     assert DirectoryListingCheck.category is Category.DISCLOSURE

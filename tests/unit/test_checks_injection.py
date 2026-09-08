@@ -1,5 +1,10 @@
 """
-The six injection checks filter hits by kind into findings — spec 006 RF-08..RF-11.
+The injection checks filter hits by kind into findings — spec 006 RF-08..RF-11,
+plus stored XSS (spec 008) and SSRF (spec 009).
+
+``_hit`` builds an :class:`~webvigil.checks.injection.models.InjectionHit` as the
+scanner passes would leave it on ``Observations.injection_hits``; the checks
+issue no HTTP.
 """
 
 from __future__ import annotations
@@ -22,6 +27,14 @@ from webvigil.core.findings import Category, Confidence, ScanMode, Severity
 
 
 def _hit(kind: str) -> InjectionHit:
+    """
+    Args:
+        kind (str): The detector kind the hit carries.
+
+    Returns:
+        InjectionHit: A HIGH-severity hit at ``POST https://example.com/s`` on
+            parameter ``q``.
+    """
     return InjectionHit(
         kind=kind,
         check_id="x",
@@ -50,6 +63,7 @@ _ALL = [
 
 
 async def test_each_check_emits_only_its_own_kind() -> None:
+    """Given one hit of every kind, each check turns exactly its own into a finding."""
     hits = tuple(_hit(kind) for _, kind in _ALL)
     ctx = make_context(make_page(), observations=Observations(injection_hits=hits))
     for check_cls, kind in _ALL:
@@ -64,18 +78,21 @@ async def test_each_check_emits_only_its_own_kind() -> None:
 
 
 async def test_checks_are_active_injection_category() -> None:
+    """Every injection check is ``Category.INJECTION`` and Active-only."""
     for check_cls, _ in _ALL:
         assert check_cls.category is Category.INJECTION
         assert check_cls.mode is ScanMode.ACTIVE
 
 
 async def test_no_hits_means_no_findings() -> None:
+    """With no hits on the context, every injection check is silent."""
     ctx = make_context(make_page(), observations=Observations())
     for check_cls, _ in _ALL:
         assert await check_cls().run(ctx) == []
 
 
 async def test_stored_xss_check_metadata_and_finding() -> None:
+    """The stored-XSS finding is located at the injection point; the render page is evidence."""
     assert StoredXssCheck.id == "injection.xss.stored"
     assert StoredXssCheck.default_severity is Severity.HIGH
     hit = InjectionHit(
@@ -105,6 +122,7 @@ async def test_stored_xss_check_metadata_and_finding() -> None:
 
 
 async def test_ssrf_checks_metadata_and_finding_shape() -> None:
+    """The metadata check emits a CRITICAL CWE-918 finding; the internal check ignores that kind."""
     assert SsrfMetadataCheck.id == "injection.ssrf.metadata"
     assert SsrfMetadataCheck.default_severity is Severity.CRITICAL
     assert SsrfInternalCheck.default_severity is Severity.HIGH

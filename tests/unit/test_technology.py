@@ -16,12 +16,23 @@ from webvigil.core.technology import DetectionMethod, Technology
 def _tech(
     name: str, version: str | None, *, method: DetectionMethod = DetectionMethod.FILENAME
 ) -> Technology:
+    """
+    Args:
+        name (str): Library name.
+        version (str | None): Detected version, or ``None``.
+        method (DetectionMethod): How it was detected. Defaults to
+            ``FILENAME``.
+
+    Returns:
+        Technology: An inventory entry with a synthetic source URL.
+    """
     return Technology(
         name=name, version=version, detection=method, source_url=f"https://x/{name}.js"
     )
 
 
 def test_observations_dedup_on_name_and_version() -> None:
+    """One entry per (name, version), first write wins, sorted by name then version."""
     obs = Observations()
     obs.add_technology(_tech("jquery", "1.12.4"))
     obs.add_technology(_tech("jquery", "1.12.4", method=DetectionMethod.URI))  # ignored
@@ -38,6 +49,7 @@ def test_observations_dedup_on_name_and_version() -> None:
 
 
 def test_observations_warnings_accumulate() -> None:
+    """``add_warning`` appends in call order."""
     obs = Observations()
     obs.add_warning("one")
     obs.add_warning("two")
@@ -45,6 +57,7 @@ def test_observations_warnings_accumulate() -> None:
 
 
 def test_detection_is_frozen_and_hashable() -> None:
+    """``Detection`` is a frozen, hashable dataclass."""
     d = Detection(
         "jquery", "1.12.4", DetectionMethod.FILENAME, "https://x/jquery.js", "jquery-1.12.4.min.js"
     )
@@ -52,6 +65,7 @@ def test_detection_is_frozen_and_hashable() -> None:
 
 
 def test_scan_result_round_trips_technologies() -> None:
+    """The technology inventory survives the JSON round-trip, ``vulnerable`` flag included."""
     meta = ScanMetadata(
         target="https://example.com/",
         mode=ScanMode.PASSIVE,

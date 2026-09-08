@@ -1,5 +1,8 @@
 """
 Cookie-flag check: vulnerable and hardened fixtures — RF-18.
+
+Every case builds a ``Set-Cookie`` value by hand and runs the check through
+``_run``; nothing here issues HTTP.
 """
 
 from __future__ import annotations
@@ -10,11 +13,23 @@ from webvigil.core.findings import Severity
 
 
 async def _run(*set_cookies: str, url: str = "https://example.com/") -> list:
+    """
+    Run the cookie-flag check against a page carrying the given ``Set-Cookie`` values.
+
+    Args:
+        *set_cookies (str): Raw ``Set-Cookie`` header values.
+        url (str): The page URL; its scheme decides whether ``Secure`` is
+            expected.
+
+    Returns:
+        list: The findings the check produced.
+    """
     page = make_page(url=url, set_cookies=set_cookies)
     return await CookieFlagsCheck().run(make_context(page))
 
 
 async def test_insecure_session_cookie_is_flagged() -> None:
+    """A bare session cookie is flagged for missing Secure, HttpOnly and SameSite at once."""
     findings = await _run("session=abc; Path=/")
     keys = {f.fingerprint: f for f in findings}
     titles = {f.title for f in findings}
@@ -25,21 +40,25 @@ async def test_insecure_session_cookie_is_flagged() -> None:
 
 
 async def test_hardened_cookie_produces_no_findings() -> None:
+    """A ``__Host-`` cookie that is Secure, HttpOnly, Path=/ and SameSite is silent."""
     findings = await _run("__Host-session=abc; Secure; HttpOnly; Path=/; SameSite=Lax")
     assert findings == []
 
 
 async def test_host_prefix_violation() -> None:
+    """A ``__Host-`` cookie with a non-root Path breaks the prefix contract."""
     findings = await _run("__Host-session=abc; Secure; HttpOnly; Path=/app; SameSite=Lax")
     assert any("__Host-" in f.title for f in findings)
 
 
 async def test_samesite_none_without_secure() -> None:
+    """``SameSite=None`` without ``Secure`` is a MEDIUM finding (browsers reject the pair)."""
     findings = await _run("t=1; HttpOnly; SameSite=None; Path=/")
     assert any("SameSite=None" in f.title for f in findings)
     assert any(f.severity is Severity.MEDIUM for f in findings)
 
 
 async def test_http_site_does_not_require_secure() -> None:
+    """Over plaintext HTTP the missing-``Secure`` finding is suppressed."""
     findings = await _run("t=1; HttpOnly; SameSite=Lax; Path=/", url="http://example.com/")
     assert findings == []
