@@ -1,4 +1,10 @@
-"""The FastAPI application factory and its lifespan."""
+"""
+The FastAPI application factory and its lifespan.
+
+The route-handler docstrings double as the OpenAPI endpoint descriptions, so
+they stay to a sentence or two; the private helpers carry the full
+Args/Returns sections.
+"""
 
 from __future__ import annotations
 
@@ -21,10 +27,24 @@ def create_app(
     *,
     orchestrator_factory: OrchestratorFactory | None = None,
 ) -> FastAPI:
+    """
+    Build the FastAPI app: wire the lifespan, optional CORS, and the routers.
+
+    Args:
+        config (WebConfig | None): The Web-API config; loaded from file / env
+            when ``None``.
+        orchestrator_factory (OrchestratorFactory | None): Test seam passed
+            through to the :class:`~webvigil.api.runner.ScanRunner`; ``None``
+            uses the real orchestrator.
+
+    Returns:
+        FastAPI: The configured application.
+    """
     cfg = config or WebConfig.load()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        """Startup: migrate, open the engine, resolve the secret, recover, start the runner."""
         if cfg.auto_migrate:
             run_alembic_upgrade(cfg)
         engine = make_engine(cfg)

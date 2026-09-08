@@ -1,7 +1,9 @@
-"""Alembic environment for the WebVigil Web API.
+"""
+Alembic environment for the WebVigil Web API.
 
-The database URL is supplied by ``webvigil.api.db.run_alembic_upgrade`` (programmatic) or,
-for a bare ``alembic`` shell command, derived from ``WebConfig`` / ``WEBVIGIL_CONFIG``.
+The database URL is supplied by ``webvigil.api.db.run_alembic_upgrade``
+(programmatic) or, for a bare ``alembic`` shell command, derived from
+``WebConfig`` / ``WEBVIGIL_CONFIG``.
 """
 
 from __future__ import annotations
@@ -22,6 +24,12 @@ _PLACEHOLDER_URL = "driver://user:pass@localhost/dbname"
 
 
 def _database_url() -> str:
+    """
+    Returns:
+        str: The ``sqlalchemy.url`` set programmatically by
+            :func:`~webvigil.api.db.run_alembic_upgrade`, else a SQLite URL
+            derived from ``WebConfig`` (the bare ``alembic`` command path).
+    """
     url = config.get_main_option("sqlalchemy.url")
     if url and url != _PLACEHOLDER_URL:
         return url
@@ -30,6 +38,7 @@ def _database_url() -> str:
 
 
 def run_migrations_offline() -> None:
+    """Emit SQL for the migrations without a live connection (``alembic upgrade --sql``)."""
     context.configure(
         url=_database_url(),
         target_metadata=target_metadata,
@@ -42,6 +51,7 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
+    """Run the migrations against a live connection (the normal path, batch mode for SQLite)."""
     section = config.get_section(config.config_ini_section, {})
     section["sqlalchemy.url"] = _database_url()
     connectable = engine_from_config(section, prefix="sqlalchemy.", poolclass=pool.NullPool)

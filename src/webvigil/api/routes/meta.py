@@ -1,4 +1,6 @@
-"""Health, the check catalogue, and scan-form defaults (RF-20, RF-21, RF-22)."""
+"""
+Health, the check catalogue, and scan-form defaults (RF-20, RF-21, RF-22).
+"""
 
 from __future__ import annotations
 
@@ -15,11 +17,13 @@ router = APIRouter(tags=["meta"])
 
 @router.get("/health")
 def health() -> HealthOut:
+    """Liveness probe and tool version. The only unauthenticated endpoint besides setup."""
     return HealthOut(status="ok", version=__version__)
 
 
 @router.get("/checks")
 def list_checks(_user: CurrentUser) -> list[CheckOut]:
+    """The full check catalogue — the same list as ``webvigil list-checks``, with metadata."""
     load_plugins()
     return [
         CheckOut(
@@ -37,6 +41,7 @@ def list_checks(_user: CurrentUser) -> list[CheckOut]:
 
 @router.get("/config/defaults")
 def config_defaults(_user: CurrentUser) -> ScanDefaults:
+    """The default scan options, so the UI's new-scan form can pre-fill sensible values."""
     defaults = ScanConfig()
     return ScanDefaults(
         mode=defaults.scan.mode.value,

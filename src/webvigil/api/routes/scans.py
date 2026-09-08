@@ -1,4 +1,6 @@
-"""Scan CRUD, the queue, and findings (RF-08..RF-17)."""
+"""
+Scan CRUD, the queue, and findings (RF-08..RF-17).
+"""
 
 from __future__ import annotations
 
@@ -27,6 +29,7 @@ _LIST_LIMIT_MAX = 100
 async def create_scan(
     body: ScanCreate, _user: CurrentUser, session: SessionDep, runner: RunnerDep
 ) -> ScanOut:
+    """Queue a scan and wake the runner. Returns the new scan row (status ``queued``)."""
     scan = Scan(
         target=Target.parse(body.target).entry_url,
         mode=body.mode.value,
@@ -50,6 +53,7 @@ def list_scans(
     limit: int = Query(default=_LIST_LIMIT_DEFAULT, ge=1, le=_LIST_LIMIT_MAX),
     cursor: str | None = None,
 ) -> Page[ScanSummary]:
+    """Newest scans first, optionally filtered by ``status``, cursor-paginated by ``limit``."""
     statement = select(Scan).order_by(col(Scan.created_at).desc(), col(Scan.id).desc())
     if scan_status is not None:
         statement = statement.where(Scan.status == scan_status)
@@ -71,6 +75,7 @@ def list_scans(
 
 @router.get("/{scan_id}")
 def get_scan(scan_id: int, _user: CurrentUser, session: SessionDep) -> ScanOut:
+    """One scan's full detail — metadata, options, and the detected-technology inventory."""
     return ScanOut.from_row(_load(session, scan_id))
 
 
@@ -82,6 +87,8 @@ def list_findings(
     severity: str | None = None,
     check_id: str | None = None,
 ) -> list[FindingOut]:
+    """A scan's findings, optionally filtered by ``check_id`` or a minimum ``severity``,
+    sorted severity-descending then check id / URL / sub-location."""
     _load(session, scan_id)
     statement = select(FindingRow).where(FindingRow.scan_id == scan_id)
     if check_id is not None:
@@ -108,6 +115,7 @@ def list_findings(
 async def cancel_scan(
     scan_id: int, _user: CurrentUser, session: SessionDep, runner: RunnerDep
 ) -> None:
+    """Cancel a running or queued scan. 409 if it is already finished or not cancellable."""
     scan = _load(session, scan_id)
     if ScanStatus(scan.status) in TERMINAL_STATUSES:
         raise HTTPException(status.HTTP_409_CONFLICT, "scan is already finished")
@@ -117,6 +125,7 @@ async def cancel_scan(
 
 @router.delete("/{scan_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_scan(scan_id: int, _user: CurrentUser, session: SessionDep) -> None:
+    """Delete a finished scan and its findings (cascade). 409 if it is still active."""
     scan = _load(session, scan_id)
     if ScanStatus(scan.status) not in TERMINAL_STATUSES:
         raise HTTPException(status.HTTP_409_CONFLICT, "cancel the scan before deleting it")
@@ -125,6 +134,17 @@ def delete_scan(scan_id: int, _user: CurrentUser, session: SessionDep) -> None:
 
 
 def _load(session: SessionDep, scan_id: int) -> Scan:
+    """
+    Args:
+        session (SessionDep): The request-scoped session.
+        scan_id (int): The scan to load.
+
+    Returns:
+        Scan: The scan row.
+
+    Raises:
+        HTTPException: 404 when there is no such scan.
+    """
     scan = session.get(Scan, scan_id)
     if scan is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "scan not found")
@@ -132,6 +152,14 @@ def _load(session: SessionDep, scan_id: int) -> Scan:
 
 
 def _location_key(location: dict[str, object]) -> str:
+    """
+    Args:
+        location (dict[str, object]): A serialised
+            :class:`~webvigil.core.findings.Location`.
+
+    Returns:
+        str: The salient sub-location (param / header / cookie), or ``""``.
+    """
     for key in ("param", "header", "cookie"):
         value = location.get(key)
         if value:
@@ -140,11 +168,28 @@ def _location_key(location: dict[str, object]) -> str:
 
 
 def _encode_cursor(scan: Scan) -> str:
+    """
+    Args:
+        scan (Scan): The last row of a page.
+
+    Returns:
+        str: An opaque, URL-safe cursor encoding its ``created_at`` and ``id``.
+    """
     raw = f"{scan.created_at.isoformat()}|{scan.id}"
     return base64.urlsafe_b64encode(raw.encode()).decode()
 
 
 def _decode_cursor(cursor: str) -> tuple[datetime, int]:
+    """
+    Args:
+        cursor (str): A cursor from :func:`_encode_cursor`.
+
+    Returns:
+        tuple[datetime, int]: The ``created_at`` and ``id`` to page after.
+
+    Raises:
+        HTTPException: 422 when the cursor is malformed.
+    """
     try:
         raw = base64.urlsafe_b64decode(cursor.encode()).decode()
         created_at, scan_id = raw.rsplit("|", 1)
