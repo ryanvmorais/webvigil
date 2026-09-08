@@ -1,3 +1,8 @@
+/**
+ * Auth and first-run-setup hooks — the queries behind the setup gate and the auth
+ * guard, and the login / logout / setup / change-password mutations. Each wraps one
+ * `/api/*` endpoint; the auth queries never retry so a 401 resolves immediately.
+ */
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";

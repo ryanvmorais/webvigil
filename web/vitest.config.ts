@@ -1,3 +1,8 @@
+/**
+ * Vitest config for the component/unit suite: jsdom environment, the same `@/` alias as
+ * tsconfig, and `vitest.setup.ts` for the global test hooks. The Playwright e2e suite is
+ * separate (`playwright.config.ts`).
+ */
 import { resolve } from "node:path";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";

@@ -1,3 +1,8 @@
+/**
+ * Single-scan hooks for the detail view: the polled read (until the scan reaches a
+ * terminal status) plus the cancel and delete mutations. An {@link ApiError} (4xx) is
+ * never retried; a transient network error is retried twice.
+ */
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";

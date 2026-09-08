@@ -1,3 +1,8 @@
+/**
+ * Global test setup: jest-dom + jest-axe matchers, MSW lifecycle (unmocked requests
+ * error), DOM cleanup after each test, and the jsdom shims (`matchMedia`,
+ * `ResizeObserver`, …) that Radix and sonner expect.
+ */
 import "@testing-library/jest-dom/vitest";
 
 import { cleanup } from "@testing-library/react";

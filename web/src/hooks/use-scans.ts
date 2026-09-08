@@ -1,3 +1,8 @@
+/**
+ * Scan-list hooks: the cursor-paginated infinite query behind the list view, polled
+ * while any loaded row is still running, and the create-scan mutation that redirects
+ * to the new scan's detail page.
+ */
 "use client";
 
 import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";

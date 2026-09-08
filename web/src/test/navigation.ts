@@ -1,3 +1,8 @@
+/**
+ * `next/navigation` test double. `mockNavigation()` installs router/pathname/search
+ * spies and turns `redirect()` / `notFound()` into throwable {@link RedirectError} /
+ * {@link NotFoundError}, so a test can assert the navigation a component triggers.
+ */
 import { vi } from "vitest";
 
 export class RedirectError extends Error {

@@ -1,3 +1,8 @@
+/**
+ * Test data builders — one `make*` per API shape, each taking a `Partial` of overrides
+ * so a test states only the fields it cares about. Ids come from a module counter, so
+ * every built object is unique within a test file.
+ */
 import type { CheckOut, FindingOut, ScanOut, ScanSummary, TechnologyOut } from "@/lib/api";
 
 let seq = 0;
