@@ -344,6 +344,65 @@ def is_shell_param(point: InjectionPoint) -> bool:
     return point.param.lower() in _SHELL_NAMES
 
 
+# Parameters whose value commonly lands in a *response header* — a redirect, a language
+# cookie, a filename in Content-Disposition (spec 012). The CRLF detector front-loads these.
+_HEADERLIKE_NAMES = frozenset(
+    {
+        "url",
+        "redirect",
+        "redirect_uri",
+        "redir",
+        "next",
+        "return",
+        "returnurl",
+        "return_to",
+        "goto",
+        "dest",
+        "destination",
+        "continue",
+        "to",
+        "out",
+        "link",
+        "callback",
+        "lang",
+        "language",
+        "locale",
+        "region",
+        "country",
+        "currency",
+        "market",
+        "site",
+        "ref",
+        "referer",
+        "referrer",
+        "source",
+        "utm_source",
+        "filename",
+        "file",
+        "name",
+        "download",
+        "attachment",
+        "title",
+        "id",
+        "page",
+        "view",
+    }
+)
+
+
+def is_headerlike(point: InjectionPoint) -> bool:
+    """
+    Args:
+        point (InjectionPoint): The point to classify.
+
+    Returns:
+        bool: ``True`` when the parameter name is one whose value often reaches a
+            response header — the CRLF detector front-loads these and sends its
+            full payload set only for them (spec 012).
+    """
+    return point.param.lower() in _HEADERLIKE_NAMES
+
+
 def build_request(
     point: InjectionPoint, value: str
 ) -> tuple[str, str, list[tuple[str, str]], dict[str, str] | None]:

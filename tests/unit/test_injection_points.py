@@ -16,6 +16,7 @@ from webvigil.checks.injection.points import (
     build_request,
     enumerate_points,
     is_commandlike,
+    is_headerlike,
     is_pathlike,
     is_redirect_name,
     is_urllike,
@@ -138,6 +139,17 @@ def test_is_commandlike_is_name_only() -> None:
         "GET", "https://example.com/s", "note", "a; rm -rf /", (("note", "a; rm -rf /"),)
     )
     assert not is_commandlike(shell_value)  # value shape is not a signal
+
+
+def test_is_headerlike_is_name_only() -> None:
+    """``is_headerlike`` fires on names whose value often reaches a response header."""
+    pages = (make_page(url="https://example.com/x?url=a&lang=en&next=/a&csrf=t&password=p"),)
+    points = {p.param: p for p in enumerate_points(pages, (), max_points=100)[0]}
+    assert is_headerlike(points["url"])
+    assert is_headerlike(points["lang"])
+    assert is_headerlike(points["next"])
+    assert not is_headerlike(points["csrf"])
+    assert not is_headerlike(points["password"])
 
 
 def test_build_request_get_carries_a_pair_list() -> None:

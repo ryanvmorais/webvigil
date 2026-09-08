@@ -87,6 +87,8 @@ class Category(StrEnum):
         DISCLOSURE (str): Information disclosure (stack traces, exposed paths).
         INJECTION (str): Active injection (XSS, SQLi, traversal, redirect, SSRF).
         CSRF (str): Cross-site request forgery protection on forms.
+        HTTP (str): HTTP-protocol behaviour not tied to a single response
+            header (allowed methods, TRACE / XST).
     """
 
     HEADERS = "HEADERS"
@@ -97,6 +99,7 @@ class Category(StrEnum):
     DISCLOSURE = "DISCLOSURE"
     INJECTION = "INJECTION"
     CSRF = "CSRF"
+    HTTP = "HTTP"
 
 
 class ScanMode(StrEnum):

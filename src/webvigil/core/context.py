@@ -22,6 +22,7 @@ from webvigil.core.technology import DetectionMethod, Technology
 if TYPE_CHECKING:
     from webvigil.checks.deps.advisories import Advisory
     from webvigil.checks.disclosure.probe import ProbeHit
+    from webvigil.checks.envelope.scanner import EnvelopeHit
     from webvigil.checks.injection.models import InjectionHit
     from webvigil.crawler.forms import Form
     from webvigil.http.client import HttpClient, RedirectHop, Response
@@ -172,6 +173,9 @@ class Observations:
             reached. Defaults to empty.
         injection_hits (tuple[InjectionHit, ...]): Confirmed hits from the
             active-injection and stored-XSS passes. Defaults to empty.
+        envelope_hits (tuple[EnvelopeHit, ...]): Confirmed hits from the
+            request-envelope pass (host-header injection, unsafe HTTP methods —
+            spec 012). Defaults to empty.
         warnings (list[str]): Non-fatal notices a check wants surfaced on the
             result. Defaults to empty.
     """
@@ -180,6 +184,7 @@ class Observations:
     osv_advisories: Mapping[tuple[str, str], tuple[Advisory, ...]] = field(default_factory=dict)
     probe_hits: tuple[ProbeHit, ...] = ()
     injection_hits: tuple[InjectionHit, ...] = ()
+    envelope_hits: tuple[EnvelopeHit, ...] = ()
     _technologies: dict[tuple[str, str | None], Technology] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
 

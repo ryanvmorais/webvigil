@@ -42,14 +42,23 @@ class Sender(Protocol):
     """The bound send function a detector calls; it owns the budget accounting."""
 
     async def __call__(
-        self, point: InjectionPoint, value: str, *, time_based: bool = False
+        self,
+        point: InjectionPoint,
+        value: str,
+        *,
+        time_based: bool = False,
+        content_type: str | None = None,
     ) -> Response | None:
         """
         Args:
             point (InjectionPoint): The point to replay.
-            value (str): The value to place in the point's slot.
+            value (str): The value to place in the point's slot, or — when
+                ``content_type`` is set — the raw request body (spec 012 XXE).
             time_based (bool): Charge this against the time-based sub-budget.
                 Defaults to ``False``.
+            content_type (str | None): When set, POST ``value`` as a raw body
+                with this ``Content-Type`` instead of building a form request
+                (spec 012 XXE). Defaults to ``None``.
 
         Returns:
             Response | None: The response, or ``None`` when a budget cap left no
@@ -70,9 +79,12 @@ class DetectCtx:
         time_based_cmdi (bool): The configured ``[injection] time_based_cmdi`` —
             gates the command-injection detector's sleep stage (spec 011).
             Defaults to ``True``.
+        self_url (str): An in-scope URL (the target origin) for the spec-012 XXE
+            parameter-entity DTD probe. Defaults to ``""``.
     """
 
     send: Sender
     delay_s: int
     host: str
     time_based_cmdi: bool = True
+    self_url: str = ""

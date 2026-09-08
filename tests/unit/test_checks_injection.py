@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from tests.support import make_context, make_page
 from webvigil.checks.injection.checks import (
+    CrlfCheck,
     OpenRedirectCheck,
     OsCommandInjectionCheck,
     PathTraversalCheck,
@@ -22,6 +23,7 @@ from webvigil.checks.injection.checks import (
     SsrfMetadataCheck,
     StoredXssCheck,
     TemplateInjectionCheck,
+    XxeCheck,
 )
 from webvigil.checks.injection.models import InjectionHit
 from webvigil.core.context import Observations
@@ -63,6 +65,8 @@ _ALL = [
     (SsrfInternalCheck, "ssrf-internal"),
     (OsCommandInjectionCheck, "cmdi"),
     (TemplateInjectionCheck, "ssti"),
+    (CrlfCheck, "crlf"),
+    (XxeCheck, "xxe"),
 ]
 
 
@@ -192,3 +196,34 @@ async def test_cmdi_and_ssti_check_metadata_and_finding_shape() -> None:
     assert findings[0].severity is Severity.CRITICAL
     assert findings[0].location.param == "host"
     assert await TemplateInjectionCheck().run(ctx) == []  # ignores a cmdi-kind hit
+
+
+async def test_crlf_and_xxe_check_metadata() -> None:
+    """``injection.crlf`` is HIGH CWE-113; ``injection.xxe`` is HIGH CWE-611 (spec 012)."""
+    assert CrlfCheck.id == "injection.crlf"
+    assert CrlfCheck.default_severity is Severity.HIGH
+    assert 113 in CrlfCheck.cwe
+    assert XxeCheck.id == "injection.xxe"
+    assert XxeCheck.default_severity is Severity.HIGH
+    assert 611 in XxeCheck.cwe
+
+    hit = InjectionHit(
+        kind="crlf",
+        check_id="injection.crlf",
+        method="GET",
+        url="https://example.com/set-lang",
+        param="lang",
+        severity=Severity.HIGH,
+        confidence=Confidence.HIGH,
+        title="CRLF injection via the 'lang' parameter",
+        payload="en\r\nX-WvInjected: abc",
+        evidence=(
+            ("Injection point", "GET https://example.com/set-lang — parameter 'lang'"),
+            ("Payload", "en\r\nX-WvInjected: abc"),
+            ("Injected (response header)", "X-WvInjected: abc"),
+        ),
+    )
+    ctx = make_context(make_page(), observations=Observations(injection_hits=(hit,)))
+    findings = await CrlfCheck().run(ctx)
+    assert len(findings) == 1 and findings[0].location.param == "lang"
+    assert await XxeCheck().run(ctx) == []

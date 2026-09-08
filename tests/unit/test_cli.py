@@ -205,8 +205,13 @@ def test_list_checks_lists_the_injection_checks() -> None:
     assert "injection.ssrf.internal" in result.stdout
     assert "injection.cmdi.os" in result.stdout
     assert "injection.ssti" in result.stdout
+    assert "injection.crlf" in result.stdout
+    assert "injection.xxe" in result.stdout
+    assert "injection.host-header" in result.stdout
+    assert "http.methods.unsafe" in result.stdout
     assert "CRITICAL" in result.stdout  # ssrf.metadata, cmdi.os
     assert "INJECTION" in result.stdout
+    assert "HTTP" in result.stdout  # http.methods.unsafe category (spec 012)
 
 
 def test_no_time_based_sqli_flag_disables_it_over_a_config_file(tmp_path: Path) -> None:
@@ -229,6 +234,14 @@ def test_no_time_based_cmdi_flag_disables_it_over_a_config_file(tmp_path: Path) 
         ["scan", "https://example.com", "--config", str(cfg), "--no-time-based-cmdi"],
     )
     assert _StubOrchestrator.last_config.injection.time_based_cmdi is False  # type: ignore[attr-defined]
+
+
+def test_xxe_flag_enables_it_over_a_config_file(tmp_path: Path) -> None:
+    """``--xxe`` turns the spec-012 XXE step on over an off config value."""
+    cfg = tmp_path / "webvigil.toml"
+    cfg.write_text("[injection]\nxxe = false\n", "utf-8")
+    runner.invoke(app_mod.app, ["scan", "https://example.com", "--config", str(cfg), "--xxe"])
+    assert _StubOrchestrator.last_config.injection.xxe is True  # type: ignore[attr-defined]
 
 
 def test_stored_xss_flag_enables_it_over_a_config_file(tmp_path: Path) -> None:

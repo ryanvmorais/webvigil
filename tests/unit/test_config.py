@@ -132,10 +132,12 @@ def test_injection_section_defaults_and_round_trips(tmp_path: Path) -> None:
     assert defaults.time_based_cmdi is True
     assert defaults.time_based_delay_s == 5
     assert defaults.stored_xss is False
+    assert defaults.xxe is False
+    assert defaults.envelope_url_sample == 15
     path = tmp_path / "webvigil.toml"
     path.write_text(
         "[injection]\nrequest_budget = 40\ntime_based_sqli = false\n"
-        "time_based_cmdi = false\nstored_xss = true\n",
+        "time_based_cmdi = false\nstored_xss = true\nxxe = true\n",
         "utf-8",
     )
     loaded = ScanConfig.load(path).injection
@@ -143,6 +145,7 @@ def test_injection_section_defaults_and_round_trips(tmp_path: Path) -> None:
     assert loaded.time_based_sqli is False
     assert loaded.time_based_cmdi is False
     assert loaded.stored_xss is True
+    assert loaded.xxe is True
 
 
 def test_unknown_injection_key_is_rejected(tmp_path: Path) -> None:
@@ -172,6 +175,12 @@ def test_time_based_cmdi_override_wins_over_file() -> None:
     assert (
         base.with_overrides(injection={"time_based_cmdi": False}).injection.time_based_cmdi is False
     )
+
+
+def test_xxe_override_wins_over_file() -> None:
+    """The ``--xxe`` flag turns the spec-012 XXE step on over an off file value."""
+    base = ScanConfig.model_validate({"injection": {"xxe": False}})
+    assert base.with_overrides(injection={"xxe": True}).injection.xxe is True
 
 
 # ---------------------------------------------------------------------------

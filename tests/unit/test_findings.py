@@ -5,6 +5,7 @@ Finding model, fingerprinting, and severity ordering — RF-12, RF-13.
 from __future__ import annotations
 
 from webvigil.core import Confidence, EvidenceItem, Finding, Location, Severity, compute_fingerprint
+from webvigil.core.findings import Category
 
 
 def _finding(url: str = "https://example.com/", dedup_key: str = "missing") -> Finding:
@@ -40,6 +41,13 @@ def test_severity_is_ordered() -> None:
     """Severity compares INFO < LOW < ... < CRITICAL and resolves from its name."""
     assert Severity.INFO < Severity.LOW < Severity.MEDIUM < Severity.HIGH < Severity.CRITICAL
     assert Severity.from_name("high") is Severity.HIGH
+
+
+def test_category_http_is_a_plain_string_member() -> None:
+    """``Category.HTTP`` (spec 012) is a ``StrEnum`` value that serialises to ``"HTTP"``."""
+    assert Category.HTTP == "HTTP"
+    assert str(Category.HTTP) == "HTTP"
+    assert Category("HTTP") is Category.HTTP
 
 
 # ---------------------------------------------------------------------------

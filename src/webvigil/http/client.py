@@ -29,7 +29,7 @@ _MAX_ATTEMPTS = 3
 _MAX_REDIRECT_HOPS = 10
 _RETRY_STATUS = frozenset({500, 502, 503, 504})
 _REDIRECT_STATUS = frozenset({301, 302, 303, 307, 308})
-_IDEMPOTENT = frozenset({"GET", "HEAD", "OPTIONS"})
+_IDEMPOTENT = frozenset({"GET", "HEAD", "OPTIONS", "TRACE"})
 # A 307/308 replays the method and body; a 301/302/303 becomes a bodyless GET.
 _REDIRECT_KEEPS_METHOD = frozenset({307, 308})
 
@@ -240,6 +240,7 @@ class HttpClient:
         *,
         params: _Params | None = None,
         data: _Params | None = None,
+        content: str | bytes | None = None,
         headers: dict[str, str] | None = None,
         allow_out_of_scope: bool = False,
         crafted: bool = False,
@@ -255,6 +256,9 @@ class HttpClient:
                 the query string.
             data (dict[str, str] | list[tuple[str, str]] | None): A urlencoded
                 form body.
+            content (str | bytes | None): A raw request body (spec 012 XXE) —
+                mutually exclusive with ``data``; set the ``Content-Type`` via
+                ``headers``.
             headers (dict[str, str] | None): Extra request headers.
             allow_out_of_scope (bool): Skip the scope guard for this request.
                 Defaults to ``False``.
@@ -286,7 +290,7 @@ class HttpClient:
         final_location: str | None = None
 
         raw = await self._request_with_retry(
-            current_method, current_url, headers, current_params, current_data, crafted
+            current_method, current_url, headers, current_params, current_data, content, crafted
         )
         for _ in range(_MAX_REDIRECT_HOPS):
             if raw.status_code not in _REDIRECT_STATUS or "location" not in raw.headers:
@@ -299,9 +303,9 @@ class HttpClient:
             hops.append(RedirectHop(current_url, target_url, raw.status_code))
             current_url = target_url
             if raw.status_code not in _REDIRECT_KEEPS_METHOD:
-                current_method, current_params, current_data = "GET", None, None
+                current_method, current_params, current_data, content = "GET", None, None, None
             raw = await self._request_with_retry(
-                current_method, current_url, headers, current_params, current_data, crafted
+                current_method, current_url, headers, current_params, current_data, content, crafted
             )
 
         return Response(
@@ -324,6 +328,7 @@ class HttpClient:
         headers: dict[str, str] | None,
         params: _Params | None,
         data: _Params | None,
+        content: str | bytes | None,
         crafted: bool,
     ) -> httpx.Response:
         """
@@ -340,6 +345,7 @@ class HttpClient:
             params (dict[str, str] | list[tuple[str, str]] | None): Query
                 parameters.
             data (dict[str, str] | list[tuple[str, str]] | None): Form body.
+            content (str | bytes | None): Raw request body.
             crafted (bool): Whether to count this against ``crafted_requests``.
 
         Returns:
@@ -378,6 +384,7 @@ class HttpClient:
                         url,
                         params=params,  # type: ignore[arg-type]
                         data=data,  # type: ignore[arg-type]
+                        content=content,
                         headers=req_headers,
                     )
             except (httpx.TransportError, httpx.TimeoutException) as exc:

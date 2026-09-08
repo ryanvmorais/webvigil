@@ -215,6 +215,34 @@ def test_cmdi_and_ssti_are_front_loaded_for_a_command_shaped_point() -> None:
     assert scanner._ordered_kinds(plain_point)[0] not in {"cmdi", "ssti"}
 
 
+def test_crlf_and_xxe_are_registered_and_mapped() -> None:
+    """``crlf`` / ``xxe`` are in the detector table; each check id maps to its kind (spec 012)."""
+    assert "crlf" in _DETECTORS and "xxe" in _DETECTORS
+    assert KIND_BY_CHECK_ID["injection.crlf"] == "crlf"
+    assert KIND_BY_CHECK_ID["injection.xxe"] == "xxe"
+    assert _BASE_ORDER.index("crlf") > _BASE_ORDER.index("xss")
+    assert _BASE_ORDER[-1] == "ssrf"
+
+
+def test_crlf_is_front_loaded_for_a_headerlike_point() -> None:
+    """A ``lang`` point front-loads ``crlf``; a plain ``x`` point does not."""
+    http = _FakeHttp(lambda url, p: _resp())
+    scanner = _scanner(http, kinds={"xss", "crlf", "sqli-error"})
+    lang_point = InjectionPoint("GET", "https://example.com/l", "lang", "en", (("lang", "en"),))
+    assert scanner._ordered_kinds(lang_point)[0] == "crlf"
+    plain = InjectionPoint("GET", "https://example.com/s", "x", "1", (("x", "1"),))
+    assert scanner._ordered_kinds(plain)[0] != "crlf"
+
+
+def test_xxe_kind_is_dropped_unless_the_opt_in_is_on() -> None:
+    """``xxe`` runs only when ``[injection] xxe`` is set."""
+    http = _FakeHttp(lambda url, p: _resp())
+    off = _scanner(http, kinds={"xxe"}, config=InjectionSection())
+    assert "xxe" not in off.selected_kinds
+    on = _scanner(http, kinds={"xxe"}, config=InjectionSection(xxe=True))
+    assert "xxe" in on.selected_kinds
+
+
 def test_time_sub_budget_is_enabled_by_time_based_cmdi_alone() -> None:
     """With ``time_based_sqli`` off but ``time_based_cmdi`` on, the sleep budget is non-zero."""
     http = _FakeHttp(lambda url, p: _resp())

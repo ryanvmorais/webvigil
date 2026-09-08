@@ -36,6 +36,7 @@ def _load_builtin_checks() -> None:
         csrf,
         deps,
         disclosure,
+        envelope,
         headers,
         injection,
         tls,

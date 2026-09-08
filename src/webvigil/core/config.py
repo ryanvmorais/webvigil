@@ -195,6 +195,14 @@ class InjectionSection(_Section):
         stored_xss (bool): Run the opt-in stored/persistent-XSS pass. Off by
             default: the pass submits marker payloads the target stores and
             does not remove them (see ``docs/active-injection.md``).
+        xxe (bool): Run the opt-in XXE step (spec 012) — re-send each POST
+            point's body as XML with an external-entity payload. Off by
+            default: it rewrites the request body and most endpoints reject it.
+        envelope_url_sample (int): Cap on the pages the request-envelope pass
+            (spec 012) re-requests with a poisoned Host / an OPTIONS probe.
+            Defaults to 15.
+        envelope_budget (int): Total requests the request-envelope pass may
+            spend. Defaults to 120.
     """
 
     request_budget: int = 600
@@ -203,6 +211,9 @@ class InjectionSection(_Section):
     time_based_cmdi: bool = True
     time_based_delay_s: int = 5
     stored_xss: bool = False
+    xxe: bool = False
+    envelope_url_sample: int = 15
+    envelope_budget: int = 120
 
 
 class DepsSection(_Section):
@@ -316,8 +327,9 @@ class ScanConfig(_Section):
                 ``http``, ``report``, ``active``, ``auth``, ``checks``,
                 ``disclosure``, ``injection``, ``deps``) to a dict of the
                 fields to override. ``injection`` covers spec 006 tuning plus
-                spec 008's ``stored_xss`` and spec 011's ``time_based_cmdi``;
-                ``deps`` covers spec 010's ``osv_online``.
+                spec 008's ``stored_xss``, spec 011's ``time_based_cmdi``, and
+                spec 012's ``xxe`` / ``envelope_*``; ``deps`` covers spec 010's
+                ``osv_online``.
 
         Returns:
             ScanConfig: A new, validated configuration.

@@ -7,9 +7,11 @@ jQuery), spec 005 (exposed .git/.env/backups, a listing, a stack trace), spec
 cookie-gated ``/account`` area, a tokenless POST form, a ``/logout`` link the
 crawler must not follow), spec 008 (a guestbook and a behind-login profile page
 that render stored input unescaped on a later request), spec 009 (two "fetch
-this URL" endpoints) and spec 011 (a shell-backed ``/ping`` and a
-template-backed ``/greet``). The app is plain HTTP by nature, so the integration
-test disables ``tls.https``; TLS cases live in the socket-based unit tests.
+this URL" endpoints), spec 011 (a shell-backed ``/ping`` and a template-backed
+``/greet``) and spec 012 (a CRLF ``/set-lang``, a host-header ``/reset``, an XML
+``/api/xml`` and a ``/resource`` that advertises TRACE / PUT). The app is plain
+HTTP by nature, so the integration test disables ``tls.https``; TLS cases live in
+the socket-based unit tests.
 
 The route handlers are one-liners with inline comments per spec; only
 :func:`make_app` and the middleware factory carry a docstring.
@@ -22,6 +24,7 @@ import re
 import sqlite3
 import time
 from collections.abc import Callable
+from urllib.parse import unquote
 
 import jinja2
 from starlette.applications import Starlette
@@ -45,10 +48,17 @@ _INJECTION_LINKS = (
     '<a href="/webhook?callback=/ping">webhook</a> '
     # spec 011: a shell-backed "ping" and a template-backed "greet".
     '<a href="/ping?host=127.0.0.1">ping</a> '
-    '<a href="/greet?name=guest">greet</a>'
+    '<a href="/greet?name=guest">greet</a> '
+    # spec 012: a language cookie (CRLF), a reset page (host header), a methods route.
+    '<a href="/set-lang?lang=en">set-lang</a> '
+    '<a href="/reset">reset</a> <a href="/resource">resource</a>'
 )
 _FORMS = (
     '<form method="get" action="/search"><input name="q"></form>'
+    # spec 012: a POST endpoint the opt-in XXE step re-sends as XML. It carries a CSRF token
+    # so the passive CSRF check stays quiet — XXE is the point here, not CSRF.
+    '<form method="post" action="/api/xml">'
+    '<input type="hidden" name="csrf_token" value="xmltok"><input name="data" value="{}"></form>'
     '<form method="post" action="/comment">'
     '<input type="hidden" name="csrf" value="tok123"><textarea name="body"></textarea></form>'
     '<form method="post" action="/login">'
@@ -230,6 +240,52 @@ def _greet_insecure(request: Request) -> Response:
     except jinja2.exceptions.TemplateError as exc:
         return PlainTextResponse(f"jinja2.exceptions.{type(exc).__name__}: {exc}", status_code=500)
     return HTMLResponse(body)
+
+
+# --- spec 012: request-envelope endpoints (insecure) -----------------------------
+
+
+def _set_lang_insecure(request: Request) -> Response:
+    lang = unquote(request.query_params.get("lang", "en"))  # written raw into Set-Cookie
+    response = PlainTextResponse(f"lang set to {lang.splitlines()[0] if lang else 'en'}")
+    # Starlette/h11 reject a raw CRLF in a header value, so the fixture simulates a permissive
+    # server: it parses the injected header line(s) out of the value and sets them as real,
+    # valid headers (same "fixture simulates the sink" pattern as spec 006 SLEEP / spec 011).
+    for line in lang.split("\r\n")[1:]:
+        if ":" in line:
+            key, _, val = line.partition(":")
+            response.headers[key.strip()] = val.strip()
+    response.headers["set-cookie"] = f"lang={lang.split(chr(13))[0]}"
+    return response
+
+
+def _reset_insecure(request: Request) -> Response:
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host", "localhost")
+    return HTMLResponse(
+        f"<!doctype html><p>To reset your password, click "
+        f'<a href="https://{host}/reset/confirm?token=abc123">this link</a>.</p>'
+    )
+
+
+async def _xml_insecure(request: Request) -> Response:
+    body = (await request.body()).decode("utf-8", "replace")  # entity-resolving parser
+    low = body.lower()
+    if "file:///etc/passwd" in low or "file:///c:/windows" in low:
+        return PlainTextResponse(_ETC_PASSWD)
+    if "<!doctype" in low or "<!entity" in low:
+        return PlainTextResponse(
+            "lxml.etree.XMLSyntaxError: Entity 'xxe' not defined, line 1", status_code=500
+        )
+    return PlainTextResponse("ok")
+
+
+def _resource_insecure(request: Request) -> Response:
+    if request.method == "TRACE":
+        echoed = "\r\n".join(f"{k}: {v}" for k, v in request.headers.items())
+        return PlainTextResponse(f"TRACE {request.url.path} HTTP/1.1\r\n{echoed}")
+    response = PlainTextResponse("the resource")
+    response.headers["allow"] = "GET, POST, PUT, DELETE, TRACE, OPTIONS"
+    return response
 
 
 def _go_insecure(request: Request) -> Response:
@@ -443,6 +499,36 @@ def _greet_hardened(request: Request) -> Response:
     return HTMLResponse(template.render(name=name))
 
 
+# --- spec 012: the safe equivalents (hardened) -----------------------------------
+
+
+def _set_lang_hardened(request: Request) -> Response:
+    lang = request.query_params.get("lang", "en")
+    lang = lang if lang in {"en", "pt", "es"} else "en"
+    response = PlainTextResponse(f"lang set to {lang}")
+    response.headers["set-cookie"] = f"lang={lang}; Secure; HttpOnly; SameSite=Lax; Path=/"
+    return response
+
+
+def _reset_hardened(request: Request) -> Response:
+    return HTMLResponse(
+        "<!doctype html><p>To reset your password, click "
+        '<a href="https://app.example.com/reset/confirm?token=abc123">this link</a>.</p>'
+    )
+
+
+def _xml_hardened(request: Request) -> Response:
+    return PlainTextResponse("DTDs are not permitted in this document", status_code=400)
+
+
+def _resource_hardened(request: Request) -> Response:
+    if request.method == "TRACE":
+        return PlainTextResponse("Method Not Allowed", status_code=405)
+    response = PlainTextResponse("the resource")
+    response.headers["allow"] = "GET, POST, OPTIONS"
+    return response
+
+
 _INSECURE_EXTRA_ROUTES: tuple[tuple[str, Callable[[Request], Response]], ...] = (
     (_VULNERABLE_JS_PATH, _vulnerable_js),
     ("/uploads/", _html(_LISTING_PAGE)),
@@ -463,6 +549,10 @@ _INJECTION_ROUTES = {
         ("/webhook", _webhook_insecure, ["GET"]),
         ("/ping", _ping_insecure, ["GET"]),
         ("/greet", _greet_insecure, ["GET"]),
+        ("/set-lang", _set_lang_insecure, ["GET"]),
+        ("/reset", _reset_insecure, ["GET"]),
+        ("/resource", _resource_insecure, ["GET", "POST", "PUT", "DELETE", "TRACE", "OPTIONS"]),
+        ("/api/xml", _xml_insecure, ["POST"]),
         ("/comment", _comment_insecure, ["POST"]),
         ("/account", _account("session", _ACCOUNT_INSECURE), ["GET"]),
         ("/account/settings", _account_settings("session", escape=False), ["GET"]),
@@ -480,6 +570,10 @@ _INJECTION_ROUTES = {
         ("/webhook", _fetch_hardened, ["GET"]),
         ("/ping", _ping_hardened, ["GET"]),
         ("/greet", _greet_hardened, ["GET"]),
+        ("/set-lang", _set_lang_hardened, ["GET"]),
+        ("/reset", _reset_hardened, ["GET"]),
+        ("/resource", _resource_hardened, ["GET", "POST", "OPTIONS"]),
+        ("/api/xml", _xml_hardened, ["POST"]),
         ("/comment", _comment_hardened, ["POST"]),
         ("/account", _account("__Host-session", _ACCOUNT_HARDENED), ["GET"]),
         ("/account/settings", _account_settings("__Host-session", escape=True), ["GET"]),

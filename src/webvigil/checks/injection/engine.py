@@ -13,12 +13,14 @@ from collections.abc import Awaitable, Callable
 
 from webvigil.checks.injection.detect import DetectCtx, normalize_body
 from webvigil.checks.injection.detect import cmdi as cmdi_detect
+from webvigil.checks.injection.detect import crlf as crlf_detect
 from webvigil.checks.injection.detect import redirect as redirect_detect
 from webvigil.checks.injection.detect import sqli as sqli_detect
 from webvigil.checks.injection.detect import ssrf as ssrf_detect
 from webvigil.checks.injection.detect import ssti as ssti_detect
 from webvigil.checks.injection.detect import traversal as traversal_detect
 from webvigil.checks.injection.detect import xss as xss_detect
+from webvigil.checks.injection.detect import xxe as xxe_detect
 from webvigil.checks.injection.models import (
     ActiveBudget,
     Baseline,
@@ -30,6 +32,7 @@ from webvigil.checks.injection.points import (
     build_request,
     enumerate_points,
     is_commandlike,
+    is_headerlike,
     is_pathlike,
     is_redirect_name,
     is_urllike,
@@ -50,6 +53,12 @@ _TIME_BASED_SLEEP_CAP = 8
 
 _Detector = Callable[[InjectionPoint, Baseline, DetectCtx], Awaitable[list[InjectionHit]]]
 
+
+def _is_post(point: InjectionPoint) -> bool:
+    """A POST point front-loads the opt-in ``xxe`` detector (spec 012)."""
+    return point.method == "POST"
+
+
 _DETECTORS: dict[str, _Detector] = {
     "xss": xss_detect.detect,
     "sqli-error": sqli_detect.detect_error,
@@ -58,13 +67,15 @@ _DETECTORS: dict[str, _Detector] = {
     "traversal": traversal_detect.detect,
     "redirect": redirect_detect.detect,
     "ssti": ssti_detect.detect,
+    "crlf": crlf_detect.detect,
     "cmdi": cmdi_detect.detect,
+    "xxe": xxe_detect.detect,
     "ssrf": ssrf_detect.detect,
 }
-# ``ssti`` is broad and ``cmdi`` / ``ssrf`` carry slow or large payload sets, so all three
-# sit near the end where they cannot starve the fast 006 detectors on a point with an
-# unhelpful name; ``_ordered_kinds`` front-loads each to position 0 for a point its
-# heuristic matches.
+# ``ssti`` / ``crlf`` are broad and ``cmdi`` / ``xxe`` / ``ssrf`` carry slow, large, or
+# body-rewriting payload sets, so they sit near the end where they cannot starve the fast
+# 006 detectors on a point with an unhelpful name; ``_ordered_kinds`` front-loads each to
+# position 0 for a point its heuristic matches.
 _BASE_ORDER = (
     "xss",
     "sqli-error",
@@ -72,8 +83,10 @@ _BASE_ORDER = (
     "traversal",
     "redirect",
     "ssti",
+    "crlf",
     "sqli-time",
     "cmdi",
+    "xxe",
     "ssrf",
 )
 
@@ -88,6 +101,10 @@ KIND_BY_CHECK_ID: dict[str, str] = {
     # time stage is gated by DetectCtx.time_based_cmdi, not by dropping a kind.
     "injection.cmdi.os": "cmdi",
     "injection.ssti": "ssti",
+    # spec 012: CRLF is a value injection; XXE re-sends the POST body as XML and runs only
+    # when [injection] xxe is on (dropped from selected_kinds below, like sqli-time).
+    "injection.crlf": "crlf",
+    "injection.xxe": "xxe",
     # spec 009: both SSRF checks are fed by the one "ssrf" detector, which emits
     # kind="ssrf-metadata" / "ssrf-internal" hits the two checks filter on.
     "injection.ssrf.metadata": "ssrf",
@@ -118,7 +135,8 @@ class InjectionScanner:
             forms (tuple[Form, ...]): The parsed form inventory.
             selected_kinds (set[str]): Detector kinds to run, derived from the
                 selected checks; ``sqli-time`` is dropped when
-                ``time_based_sqli`` is off.
+                ``time_based_sqli`` is off and ``xxe`` when ``[injection] xxe``
+                is off.
             per_point_limit (int): Cap on requests per injection point. Defaults
                 to ``_PER_POINT_REQUEST_CAP``.
         """
@@ -128,7 +146,9 @@ class InjectionScanner:
         self._pages = pages
         self._forms = forms
         self.selected_kinds = {
-            k for k in selected_kinds if k != "sqli-time" or config.time_based_sqli
+            k
+            for k in selected_kinds
+            if (k != "sqli-time" or config.time_based_sqli) and (k != "xxe" or config.xxe)
         }
         self._budget = ActiveBudget(
             request_limit=config.request_budget,
@@ -142,6 +162,7 @@ class InjectionScanner:
             delay_s=config.time_based_delay_s,
             host=target.host,
             time_based_cmdi=config.time_based_cmdi,
+            self_url=target.origin,
         )
 
     async def run(self) -> InjectionReport:
@@ -196,6 +217,10 @@ class InjectionScanner:
             (is_urllike, "ssrf"),
             (is_commandlike, "cmdi"),
             (is_commandlike, "ssti"),
+            (is_headerlike, "crlf"),
+            # xxe is opt-in and only runs on POST points — front-load it so the per-point
+            # cap does not stop the pass before it (it sits last in _BASE_ORDER).
+            (_is_post, "xxe"),
         ):
             if predicate(point) and kind in kinds:
                 kinds.remove(kind)
@@ -225,19 +250,29 @@ class InjectionScanner:
         )
 
     async def _send(
-        self, point: InjectionPoint, value: str, *, time_based: bool = False
+        self,
+        point: InjectionPoint,
+        value: str,
+        *,
+        time_based: bool = False,
+        content_type: str | None = None,
     ) -> Response | None:
         """
         The :class:`~webvigil.checks.injection.detect.Sender` bound into ``DetectCtx``.
 
         Reserves budget first — time-based requests against the time sub-budget
-        — then replays the point with ``value``.
+        — then replays the point with ``value``. When ``content_type`` is set
+        (spec 012 XXE), ``value`` is POSTed as a raw body with that
+        ``Content-Type`` instead of a form.
 
         Args:
             point (InjectionPoint): The point to replay.
-            value (str): The value to place in the point's slot.
+            value (str): The value to place in the point's slot, or the raw
+                request body when ``content_type`` is set.
             time_based (bool): Charge against the time-based sub-budget.
                 Defaults to ``False``.
+            content_type (str | None): POST ``value`` as a raw body with this
+                ``Content-Type``. Defaults to ``None``.
 
         Returns:
             Response | None: The response, or ``None`` when the budget is spent
@@ -245,8 +280,16 @@ class InjectionScanner:
         """
         if not (self._budget.take_time_based() if time_based else self._budget.take()):
             return None
-        method, url, params, data = build_request(point, value)
         try:
+            if content_type is not None:
+                return await self._http.request(
+                    "POST",
+                    point.base_url,
+                    content=value,
+                    headers={"content-type": content_type},
+                    crafted=True,
+                )
+            method, url, params, data = build_request(point, value)
             return await self._http.request(
                 method, url, params=params or None, data=data, crafted=True
             )

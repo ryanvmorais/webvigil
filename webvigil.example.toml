@@ -53,6 +53,12 @@ time_based_cmdi = true    # spec 011: send time-delay OS-command-injection paylo
 time_based_delay_s = 5    # the D in SLEEP(D); keep it below [http] timeout_s
 stored_xss = false        # spec 008: two-phase stored-XSS pass. Submits marker payloads the
                           # target stores and does NOT remove. --stored-xss overrides
+xxe = false               # spec 012: re-send POST bodies as XML with an external-entity
+                          # payload. Off by default (rewrites the body; most endpoints 400).
+                          # --xxe overrides
+envelope_url_sample = 15  # spec 012: pages the request-envelope pass re-requests with a
+                          # poisoned Host / an OPTIONS probe
+envelope_budget = 120     # spec 012: total requests the request-envelope pass may spend
 
 [deps]
 # Dependency-fingerprint tuning (spec 004, spec 010).

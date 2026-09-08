@@ -113,6 +113,16 @@ def scan(
             ),
         ),
     ] = None,
+    xxe: Annotated[
+        bool | None,
+        typer.Option(
+            "--xxe/--no-xxe",
+            help=(
+                "Test for XXE during an Active scan: re-send each POST body as XML with an "
+                "external-entity payload. Off by default (rewrites the request body)."
+            ),
+        ),
+    ] = None,
     cookie: Annotated[
         list[str] | None,
         typer.Option(
@@ -153,6 +163,7 @@ def scan(
             time_based_sqli=time_based_sqli,
             time_based_cmdi=time_based_cmdi,
             stored_xss=stored_xss,
+            xxe=xxe,
             cookie=cookie,
             osv_online=osv_online,
         )
@@ -229,6 +240,7 @@ def _build_config(
     time_based_sqli: bool | None,
     time_based_cmdi: bool | None,
     stored_xss: bool | None,
+    xxe: bool | None,
     cookie: list[str] | None,
     osv_online: bool | None,
 ) -> ScanConfig:
@@ -242,7 +254,7 @@ def _build_config(
     Args:
         config (Path | None): Path to a ``webvigil.toml``, or ``None``.
         mode, scope, max_pages, delay, fail_on, authorized_by, probe,
-            time_based_sqli, time_based_cmdi, stored_xss, cookie, osv_online: The
+            time_based_sqli, time_based_cmdi, stored_xss, xxe, cookie, osv_online: The
             optional CLI overrides; ``None`` means "not passed".
         verify_tls (bool): The resolved TLS-verification flag.
 
@@ -285,6 +297,8 @@ def _build_config(
         injection_overrides["time_based_cmdi"] = time_based_cmdi
     if stored_xss is not None:
         injection_overrides["stored_xss"] = stored_xss
+    if xxe is not None:
+        injection_overrides["xxe"] = xxe
 
     auth_overrides: dict[str, object] = {}
     if cookie is not None:

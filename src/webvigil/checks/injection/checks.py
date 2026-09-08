@@ -78,6 +78,18 @@ _DESCRIPTION: dict[str, str] = {
         "engine evaluated it (an arithmetic expression returned its result). Most template "
         "engines expose enough of the host language to reach remote code execution."
     ),
+    "crlf": (
+        "A value supplied in this parameter is written into a response header without stripping "
+        "carriage-return / line-feed. WebVigil injected its own header line (or, with a double "
+        "CRLF, a whole response body) and the server sent it back. This enables response "
+        "splitting, Set-Cookie injection / session fixation, and cache poisoning."
+    ),
+    "xxe": (
+        "An endpoint parsed a WebVigil-supplied XML body with an entity-resolving parser: an "
+        "external-entity declaration was expanded (a local file was read) or produced a parser "
+        "error naming the entity. XXE reads local files and, via SYSTEM URLs, can reach "
+        "internal services (SSRF)."
+    ),
 }
 
 _SQLI_FIX = (
@@ -121,6 +133,16 @@ _REMEDIATION: dict[str, str] = {
         "Never build template source from user input. Pass user values as template data "
         "(context variables), not into the template string. Use a sandboxed, logic-less engine "
         "for user-authored templates, and keep the template directory out of user control."
+    ),
+    "crlf": (
+        "Reject or strip CR / LF from any user value before it reaches a response header. "
+        "Prefer a framework header API that rejects control characters; do not build headers "
+        "(Location, Set-Cookie) by string concatenation."
+    ),
+    "xxe": (
+        "Disable DOCTYPE / DTD processing and external-entity resolution in the XML parser "
+        "(e.g. defusedxml, or set the parser to forbid DTDs). Do not accept XML where JSON "
+        "would do."
     ),
     "xss-stored": (
         "Context-encode all untrusted output (HTML entity, attribute, JavaScript-string, or "
@@ -170,6 +192,14 @@ _REFERENCES: dict[str, tuple[str, ...]] = {
     "ssti": (
         "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/07-Input_Validation_Testing/18-Testing_for_Server-side_Template_Injection",
         "https://portswigger.net/research/server-side-template-injection",
+    ),
+    "crlf": (
+        f"{_OWASP}/attacks/HTTP_Response_Splitting",
+        "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/07-Input_Validation_Testing/15-Testing_for_HTTP_Splitting_Smuggling",
+    ),
+    "xxe": (
+        "https://cheatsheetseries.owasp.org/cheatsheets/XML_External_Entity_Prevention_Cheat_Sheet.html",
+        f"{_OWASP}/attacks/XML_External_Entity_(XXE)_Processing",
     ),
 }
 
@@ -318,6 +348,30 @@ class TemplateInjectionCheck(_InjectionCheck):
     default_severity = Severity.HIGH
     cwe = (1336, 94)
     references = _REFERENCES["ssti"]
+
+
+@register
+class CrlfCheck(_InjectionCheck):
+    """CRLF injection / HTTP response splitting: a parameter written into a header (spec 012)."""
+
+    id = "injection.crlf"
+    name = "CRLF injection / HTTP response splitting"
+    kind = "crlf"
+    default_severity = Severity.HIGH
+    cwe = (113, 93)
+    references = _REFERENCES["crlf"]
+
+
+@register
+class XxeCheck(_InjectionCheck):
+    """XML external entity from a POST body re-sent as XML (spec 012, opt-in)."""
+
+    id = "injection.xxe"
+    name = "XML external entity (XXE)"
+    kind = "xxe"
+    default_severity = Severity.HIGH
+    cwe = (611, 827)
+    references = _REFERENCES["xxe"]
 
 
 @register

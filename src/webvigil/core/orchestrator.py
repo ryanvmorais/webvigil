@@ -22,6 +22,7 @@ from webvigil.checks.deps.rules import RetireJsRules
 from webvigil.checks.deps.staleness import staleness_warning
 from webvigil.checks.disclosure.catalogue import load_catalogue
 from webvigil.checks.disclosure.probe import DisclosureProbe, ProbeHit
+from webvigil.checks.envelope.scanner import EnvelopeHit, EnvelopeScanner
 from webvigil.checks.injection.engine import KIND_BY_CHECK_ID, InjectionScanner
 from webvigil.checks.injection.models import InjectionHit
 from webvigil.checks.injection.stored import StoredXssScanner
@@ -39,6 +40,7 @@ from webvigil.http.client import HttpClient
 
 _PROBE_FAMILIES = frozenset({"vcs", "config", "manifest", "backup", "debug", "sourcemap"})
 _STORED_CHECK_ID = "injection.xss.stored"
+_ENVELOPE_CHECK_IDS = frozenset({"injection.host-header", "http.methods.unsafe"})
 
 
 class Orchestrator:
@@ -114,6 +116,9 @@ class Orchestrator:
             stored_hits = await self._inject_stored(
                 check_types, http, target, pages, forms, warnings
             )
+            envelope_hits = await self._scan_envelope(
+                check_types, http, target, pages, forms, warnings
+            )
             context = ScanContext(
                 config=self._config,
                 target=target,
@@ -126,6 +131,7 @@ class Orchestrator:
                     osv_advisories=osv_advisories,
                     probe_hits=probe_hits,
                     injection_hits=injection_hits + stored_hits,
+                    envelope_hits=envelope_hits,
                 ),
             )
             findings, errors = await self._run_checks(check_types, context)
@@ -262,6 +268,46 @@ class Orchestrator:
         report = await DisclosureProbe(http, target, load_catalogue(), pages).run()
         warnings.extend(report.warnings)
         return tuple(report.hits)
+
+    async def _scan_envelope(
+        self,
+        check_types: Sequence[type[Check]],
+        http: HttpClient,
+        target: Target,
+        pages: tuple[Page, ...],
+        forms: tuple[Form, ...],
+        warnings: list[str],
+    ) -> tuple[EnvelopeHit, ...]:
+        """
+        Run the request-envelope pass when the scan is Active and a check it feeds is selected.
+
+        A no-op returning ``()`` in Passive Mode or when neither
+        ``injection.host-header`` nor ``http.methods.unsafe`` is selected. A pass
+        bug is caught here and downgraded to a warning.
+
+        Args:
+            check_types (Sequence[type[Check]]): The checks selected for the run.
+            http (HttpClient): The shared, scope-guarded HTTP client.
+            target (Target): The normalized target.
+            pages (tuple[Page, ...]): The pages the crawler discovered.
+            forms (tuple[Form, ...]): The parsed ``<form>`` inventory.
+            warnings (list[str]): Scan-level warning list, appended to in place.
+
+        Returns:
+            tuple[EnvelopeHit, ...]: The confirmed host-header / HTTP-methods hits.
+        """
+        if self._config.scan.mode is not ScanMode.ACTIVE:
+            return ()
+        if not any(check.id in _ENVELOPE_CHECK_IDS for check in check_types):
+            return ()
+        try:
+            scanner = EnvelopeScanner(http, target, self._config, pages, forms)
+            hits = await scanner.run()
+        except Exception as exc:  # a pass bug must not abort the whole scan
+            warnings.append(f"request-envelope pass failed: {exc or type(exc).__name__}")
+            return ()
+        warnings.extend(scanner.warnings)
+        return tuple(hits)
 
     async def _inject(
         self,

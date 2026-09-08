@@ -101,6 +101,7 @@ def scan(monkeypatch: pytest.MonkeyPatch):
         active: bool = False,
         cookies: list[str] | None = None,
         stored_xss: bool = False,
+        xxe: bool = False,
         osv_online: bool = False,
         osv_up: bool = True,
     ) -> ScanResult:
@@ -121,7 +122,14 @@ def scan(monkeypatch: pytest.MonkeyPatch):
             # Phase-B re-crawl then has to walk past to reach the marker's own entry.
             raw["scan"] = {"mode": "active", "max_pages": 90}
             raw["active"] = {"authorized_by": "integration test"}
-            raw["injection"] = {"time_based_delay_s": 2, "stored_xss": stored_xss}
+            raw["injection"] = {
+                "time_based_delay_s": 2,
+                "stored_xss": stored_xss,
+                "xxe": xxe,
+                # keep the spec-012 envelope pass small for the fixture (14-ish URLs)
+                "envelope_url_sample": 20,
+                "envelope_budget": 130,
+            }
         if cookies is not None:
             raw["auth"] = {"cookies": cookies}
         if osv_online:
@@ -251,13 +259,14 @@ async def test_hardened_profile_reports_nothing(scan) -> None:
 
 
 async def test_crawler_reaches_the_linked_pages(scan) -> None:
-    """The crawler reaches all 14 linked pages of the fixture app (index, forms, endpoints)."""
+    """The crawler reaches all 17 linked pages of the fixture app (index, forms, endpoints)."""
     result = await scan("hardened")
     # /, /about, /contact + the injectable endpoints linked from the index: /search, /item,
-    # /download, /go (spec 006), /fetch, /webhook (spec 009) and /ping, /greet (spec 011)
-    # + the GET /search?q= the crawler submits from the search form + /account (→ /login for
-    # an anonymous scan) (spec 007 RF-05) + /guestbook (spec 008 RF-13)
-    assert result.metadata.pages_scanned == 14
+    # /download, /go (spec 006), /fetch, /webhook (spec 009), /ping, /greet (spec 011) and
+    # /set-lang, /reset, /resource (spec 012) + the GET /search?q= the crawler submits from
+    # the search form + /account (→ /login for an anonymous scan) (spec 007 RF-05) +
+    # /guestbook (spec 008 RF-13)
+    assert result.metadata.pages_scanned == 17
 
 
 # ---------------------------------------------------------------------------
@@ -347,12 +356,71 @@ async def test_rce_scan_is_deterministic(scan) -> None:
     assert fa == fb and fa
 
 
+async def test_crlf_injection_found_on_the_insecure_set_lang_endpoint(scan) -> None:
+    """The ``/set-lang`` endpoint writes ``lang`` into a header unfiltered — a HIGH CRLF hit."""
+    result = await scan("insecure", active=True)
+    crlf = [f for f in result.findings if f.check_id == "injection.crlf"]
+    assert crlf, "expected a CRLF-injection finding"
+    assert any(f.location.param == "lang" for f in crlf)
+    assert crlf[0].severity.name == "HIGH"
+
+
+async def test_host_header_injection_found_on_the_insecure_reset_page(scan) -> None:
+    """The ``/reset`` link is built from the request Host header — a host-header finding."""
+    result = await scan("insecure", active=True)
+    hh = [f for f in result.findings if f.check_id == "injection.host-header"]
+    assert hh, "expected a host-header-injection finding"
+    assert any(
+        "Forwarded-Host" in (f.location.param or "") or f.location.param == "Host" for f in hh
+    )
+
+
+async def test_trace_and_dangerous_methods_reported_on_the_insecure_profile(scan) -> None:
+    """``/resource`` advertises TRACE + PUT + DELETE and echoes TRACE — a methods finding."""
+    result = await scan("insecure", active=True)
+    methods = [f for f in result.findings if f.check_id == "http.methods.unsafe"]
+    assert methods, "expected an unsafe-HTTP-methods finding"
+    assert any("/resource" in (f.location.url or "") for f in methods)
+
+
+async def test_xxe_found_only_with_the_opt_in(scan) -> None:
+    """``/api/xml`` resolves entities, but the XXE step runs only with ``--xxe``."""
+    without = await scan("insecure", active=True)
+    assert not any(f.check_id == "injection.xxe" for f in without.findings)
+    with_optin = await scan("insecure", active=True, xxe=True)
+    xxe = [f for f in with_optin.findings if f.check_id == "injection.xxe"]
+    assert xxe and xxe[0].severity.name == "HIGH"
+
+
+async def test_hardened_profile_reports_no_envelope_findings(scan) -> None:
+    """The hardened profile validates lang / builds a fixed reset URL / limits methods."""
+    result = await scan("hardened", active=True, xxe=True)
+    assert not any(
+        f.check_id
+        in {"injection.crlf", "injection.host-header", "http.methods.unsafe", "injection.xxe"}
+        for f in result.findings
+    )
+
+
+async def test_envelope_scan_is_deterministic(scan) -> None:
+    """Two active scans produce the same request-envelope finding fingerprints."""
+    ids = {"injection.crlf", "injection.host-header", "http.methods.unsafe"}
+    fa = sorted(
+        f.fingerprint for f in (await scan("insecure", active=True)).findings if f.check_id in ids
+    )
+    fb = sorted(
+        f.fingerprint for f in (await scan("insecure", active=True)).findings if f.check_id in ids
+    )
+    assert fa == fb and fa
+
+
 async def test_passive_scan_issues_no_crafted_request(scan) -> None:
-    """A passive scan sends no payload — no ``SLEEP``, no ``etc/passwd`` in the request log."""
+    """A passive scan sends no payload: no ``SLEEP`` / ``etc/passwd`` / ``OPTIONS`` / ``TRACE``."""
     result = await scan("insecure", active=False)
     assert not any(f.check_id.startswith("injection.") for f in result.findings)
     log = scan.holder["app"].state.requests  # type: ignore[attr-defined]
     assert all("SLEEP" not in entry and "etc/passwd" not in entry for entry in log)
+    assert not any(entry.startswith(("OPTIONS ", "TRACE ")) for entry in log)
 
 
 async def test_hardened_profile_active_reports_nothing(scan) -> None:
