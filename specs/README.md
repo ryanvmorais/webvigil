@@ -37,7 +37,7 @@ WebVigil is built with spec-driven development. Each feature is designed as a sp
 | [`011-rce-injection`](011-rce-injection/) | injeção server-side in-band que faltava na passada da `006`: OS command injection (echo aritmético + time-based, `injection.cmdi.os` CRITICAL) e SSTI (polyglot → assinatura de erro → avaliação aritmética, `injection.ssti` HIGH). Dois detectores novos no `InjectionScanner`, `[injection] time_based_cmdi`, fixture `/ping` + `/greet` | `v0.11` | **done** |
 | [`012-protocol-injection`](012-protocol-injection/) | request-envelope injection in-band: `injection.crlf` (HIGH — header/body split que o `httpx` parseia de volta), `injection.host-header` (MEDIUM/HIGH — sentinela refletida em URL absoluta/`Location`/`<base>`), `injection.xxe` (HIGH, opt-in `--xxe` — content-type flip nos POST points), `http.methods.unsafe` (MEDIUM, `Category.HTTP` — XST + verbos perigosos anunciados). Detectores `crlf`/`xxe` no `InjectionScanner`; passada nova `EnvelopeScanner` pra host-header + métodos | `v0.12` | **done** |
 | [`013-auth-and-api-surface`](013-auth-and-api-surface/) | largura de auth + superfície de API: auth por header/bearer (`--header "Name: Value"` / `[auth] headers`, mesma disciplina de segredo do cookie da `007`), import de OpenAPI 3.x / Swagger 2.0 JSON (`--openapi <path\|url>`) que semeia o crawl (URLs de operações GET → `Crawler.extra_seeds`) e a passada de injeção (query / path / campos de body form-urlencoded → `enumerate_points`, `source="openapi"`), e quatro checks passivos: `content.sri.missing`, `content.mixed` (`Category.CONTENT` nova), `disclosure.session-id-in-url`, `disclosure.private-ip`. Sem dependência nova; JSON só; sem fuzz de folha de body JSON; GET/POST só | `v0.13` | **done** |
-| [`014-file-upload`](014-file-upload/) | **opcional / backlog:** detecção de upload sem restrição (extensão / content-type / conteúdo servido de volta) + checks ativos residuais. A `v1.0` pode sair após a `013` se a `014` não se justificar | `v0.14` | **planned** |
+| [`014-file-upload`](014-file-upload/) | LDAP / XPath / SSI injection **in-band** (assinatura de erro do parser + diferencial, forma do `sqli`; `ssi` só prova avaliação) e detecção de upload sem restrição **opt-in** (`--file-upload`): `UploadScanner` sobe marcadores benignos por form de upload, busca de volta e prova execução server-side (CRITICAL), render inline (HIGH), traversal de nome (HIGH) ou aceite de tipo arbitrário (MEDIUM); um probe `PUT` de marcador. `Category.UPLOAD` nova; `HttpClient.request(files=)` novo. Varredura de fronteiras de cobertura ativa (EL/`eval`/NoSQLi/HPP/RFI/cega/smuggling → fora, documentado) | `v0.14` | **done** |
 
 > A 002 foi dividida: `002-web-api` (backend) e `003-web-ui` (Next.js). O roadmap
 > original tratava as duas como uma spec só; as demais foram renumeradas.
@@ -63,14 +63,13 @@ WebVigil is built with spec-driven development. Each feature is designed as a sp
 > forms `GET`. **Auth por header/bearer foi agendada na `013`** (não precisa de login
 > stateful).
 >
-> **`011` a `014` são a linha de "paridade real" com ZAP/Wapiti** no recorte que a WebVigil
+> **`011` a `014` eram a linha de "paridade real" com ZAP/Wapiti** no recorte que a WebVigil
 > se propõe a cobrir: as classes de injeção que um revisor notaria faltando (command
-> injection, SSTI, CRLF, host header, XXE, upload) e a largura mínima de auth/API. Todas
-> **in-band, sem browser, sem OAST**. A `011` (command injection + SSTI), a `012` (CRLF,
-> host header, XXE opt-in, métodos HTTP) e a `013` (auth por header, import OpenAPI, quatro
-> checks passivos) **estão entregues**; só a `014` (file upload, opcional) fica antes da
-> `v1.0`. Os não-objetivos abaixo continuam valendo e viram a seção "Scope and limitations"
-> do README na `v1.0`:
+> injection, SSTI, CRLF, host header, XXE, LDAP, XPath, SSI, upload) e a largura mínima de
+> auth/API. Todas **in-band, sem browser, sem OAST**. **`011`–`014` estão entregues** — a
+> `014` fechou a linha (LDAP / XPath / SSI injection + file upload opt-in) e varreu as
+> fronteiras de cobertura ativa. Próximo: `v1.0`. Os não-objetivos abaixo continuam valendo
+> e viram a seção "Scope and limitations" do README na `v1.0`:
 >
 > - **Crawl de SPA renderizada em JS** — sem browser headless; escaneie a API direto (a
 >   `013` importa OpenAPI) ou alimente URLs de um crawler seu.
@@ -79,7 +78,10 @@ WebVigil is built with spec-driven development. Each feature is designed as a sp
 > - **OpenAPI em YAML** e **fuzz campo a campo de body JSON** — limites da `013` (JSON só,
 >   sem dependência nova; params de query / path / body form-urlencoded são fuzzados), não
 >   permanentes.
+> - **Expression-language injection (SpEL/OGNL), `eval()` code injection, NoSQLi, HTTP
+>   parameter pollution, RFI** — fora da `014` (deferidas ou sem oráculo in-band confiável);
+>   accounting completo em [`docs/active-injection.md`](../docs/active-injection.md#coverage-boundaries).
 > - **Base de templates estilo Nuclei**, fuzzing exaustivo, enum de CMS, brute-force de login.
 >
-> Sequência: `011` → `012` → `013` (feitas) → (`014` se valer) → `v1.0` (README "Scope and
-> limitations" + descrição no GitHub).
+> Sequência: `011` → `012` → `013` → `014` (feitas) → `v1.0` (README "Scope and limitations"
+> + descrição no GitHub).

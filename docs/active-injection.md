@@ -38,6 +38,10 @@ no out-of-band collaborator.
 | `injection.host-header` | MEDIUM / HIGH | A request with a poisoned `Host` / `X-Forwarded-*` header comes back with the sentinel host in an absolute URL, `Location`, `<base>`, or a canonical tag — absent from the plain-`GET` baseline. HIGH in a reset / redirect context. |
 | `injection.xxe` | HIGH | *(opt-in `--xxe`)* A POST body re-sent as XML with an external-entity payload returns a `/etc/passwd` / `win.ini` signature or a named XML-parser error, absent from the baseline. |
 | `http.methods.unsafe` | MEDIUM | `TRACE` is enabled and echoes the request (Cross-Site Tracing), or `OPTIONS` advertises `PUT` / `DELETE` / `PATCH` / `CONNECT` on an application route. `Category.HTTP`. |
+| `injection.ldap` | HIGH / MEDIUM | A filter-breaking metacharacter draws an LDAP-parser error absent from the baseline (HIGH), or an always-true filter (`*`) widens the result set while an always-false one does not (MEDIUM). |
+| `injection.xpath` | HIGH / MEDIUM | An expression-breaking character draws an XPath / XQuery parser error absent from the baseline (HIGH), or a `' or '1'='1` / `' and '1'='2` pair reproduces a two-sided boolean split (MEDIUM). |
+| `injection.ssi` | HIGH / MEDIUM | An `<!--#echo var="DATE_LOCAL"-->` / `<!--#printenv-->` / `<esi:vars>` directive is *evaluated* into output absent from the baseline (HIGH), or an undefined-variable marker draws the SSI processor's error string (MEDIUM). Never sends `#exec` / `#include`. |
+| `upload.unrestricted` | CRITICAL–MEDIUM | *(opt-in `--file-upload`)* A benign marker file uploaded with a dangerous name / type comes back **executed** (CRITICAL), **served inline** as `text/html` / `image/svg+xml` (HIGH), **written outside the upload directory** by a `../` filename (HIGH), accepted via **`PUT`** and served back (HIGH), or merely stored as a download of a type that should be rejected (MEDIUM). `Category.UPLOAD`. |
 
 Every finding's `location` carries the `method`, `url`, and `param`; its evidence carries
 the injection point, the payload sent, and the proof.
@@ -95,7 +99,7 @@ An authenticated scan (`--cookie`) carries its cookies through both phases, so t
 high-value behind-login sinks are covered.
 
 **Budget.** Phase A and the re-crawl share the `[injection] request_budget`; the re-crawl
-is additionally capped at 60 pages (and by `[scan] max_pages`). Hitting either is a warning.
+is additionally capped at 120 pages (and by `[scan] max_pages`). Hitting either is a warning.
 
 **Markers are not cleaned up.** WebVigil does not know the target's data model, so it does
 not delete the `wvstored…` rows it wrote. Run `--stored-xss` against dev / staging, never a
@@ -216,9 +220,93 @@ a state-changing verb.
 poisoning *confirmation* (WebVigil flags the reflected unkeyed input, it does not prove the
 cache stored the response), and blind XXE.
 
+## LDAP / XPath / SSI injection
+
+`injection.ldap`, `injection.xpath` and `injection.ssi` (v0.14) are three more detectors in
+the `InjectionScanner` pass — value injections with the same shape as SQLi (an error
+signature plus a differential), for the sinks a reviewer would expect WebVigil to cover.
+
+**LDAP injection** (`injection.ldap`, CWE-90) — an *error probe* appends `)` / `*)(` / `(|`
+to break the search filter; a hit needs an LDAP-parser signature
+(`javax.naming.directory`, `Bad search filter`, `com.sun.jndi.ldap`, …) absent from the
+baseline. A *boolean probe* sends an always-matching filter and an always-failing one; a
+hit needs the matching filter to return materially more than the baseline while the failing
+one does not. WebVigil parses no LDAP itself.
+
+**XPath / XQuery injection** (`injection.xpath`, CWE-643) — an *error probe* (`'`, `"`, `]`,
+`count(//*`) draws an XPath-parser signature (`XPathEvalError`, `org.jaxen`,
+`Expression must evaluate to a node-set`, …); a *boolean probe* (`' or '1'='1` vs
+`' and '1'='2`) reproduces the classic true-tracks-baseline / false-diverges split. Each of
+`ldap` / `xpath` / `ssi` is front-loaded only for parameters whose name is distinctly that
+class's (`uid` / `cn` / `dn` for LDAP; `xpath` / `xquery` / `node` for XPath; `include` /
+`shtml` / `tpl` for SSI) — on a generic name it still runs, from the shared detector order,
+budget permitting.
+
+**SSI / ESI injection** (`injection.ssi`, CWE-97) — the detector injects an
+`<!--#echo var="DATE_LOCAL"-->` / `<!--#printenv-->` / `<esi:vars>$(HTTP_HOST)</esi:vars>`
+directive and flags the *evaluated* output — a rendered date, an environment dump, the host
+— that the baseline did not carry. A directive reflected **verbatim** is not a hit (that is
+XSS territory). An undefined-variable marker drawing the SSI processor's error string
+(`[an error occurred while processing this directive]`) is a MEDIUM hit. The detector
+**never sends `<!--#exec cmd=…-->` or `<!--#include file=…-->`** — command execution and
+file inclusion via SSI are `injection.cmdi.os` / `injection.traversal.path` territory, and
+sending those would make `ssi` a destructive detector.
+
+**Not covered:** LDAP / XPath / SSI attacks that produce no error and no observable
+differential (truly blind), and expression-language injection (SpEL / OGNL) — see
+[Coverage boundaries](#coverage-boundaries).
+
+## File upload — `--file-upload` (opt-in)
+
+`upload.unrestricted` (v0.14, `Category.UPLOAD`, CWE-434) tests whether an endpoint stores
+an uploaded file and serves it back without validating its type or content. It is **opt-in**
+because the pass writes files the target keeps and WebVigil cannot reliably delete — the
+same discipline as `--stored-xss`.
+
+```bash
+webvigil scan https://staging.example.com --mode active --authorized-by me --file-upload
+```
+
+When it is on and `upload.unrestricted` is selected, a `UploadScanner` pass runs after the
+injection pass. For every discovered `<form>` with a `type="file"` field (auth- and
+destruction-shaped forms excluded) it uploads a small set of **benign marker files**, each
+a few hundred inert bytes carrying a `wv<token>` marker:
+
+- **server-side execution** — a `.php` / `.phtml` / `.jsp` / `.asp` file whose body is
+  `wv<token>:<?php echo 6*7; ?>`. If it comes back as `wv<token>:42` (the computed product,
+  no `<?php` source), the server executed it — **CRITICAL**, remote code execution.
+- **client-side execution** — a `.html` / `.svg` file with a `<script>` comment. If it is
+  served back inline as `text/html` / `image/svg+xml` with no `Content-Disposition:
+  attachment`, script runs in the site origin — **HIGH**, stored XSS via upload.
+- **extension / content-type bypass** — the same content under `wv<token>.php.jpg`,
+  `wv<token>.pHtml`, `wv<token>.html%00.jpg`, and with an `image/jpeg` part type on an
+  `.html` name.
+- **filename path traversal** — a part named `../../wv<token>-trav.html`; if it is
+  retrievable from the web root (outside every upload directory) — **HIGH**.
+
+An upload is a finding only when the stored file is **retrieved** (from a link in the upload
+response, a conventional prefix like `/uploads/` or `/files/`, or the web root for the
+traversal case) and one of the outcomes above holds. A file that is stored and retrievable
+but served as `application/octet-stream` + `attachment` is a **MEDIUM** "accepts an
+arbitrary type" finding.
+
+One more probe: a single **`PUT`** of a benign marker to the entry directory, fetched back
+with a `GET`. This is the only state-changing verb WebVigil sends beyond `GET` / `POST`, it
+is sent only under `--file-upload`, and the body is inert. (Spec 012's request-envelope pass
+deliberately never sent `PUT`; `--file-upload` re-opens it for this one bounded probe.)
+
+**Not covered:** archive extraction (zip-slip), decompression bombs, image-library RCE
+(ImageTragick and similar — Nuclei territory, version-specific payloads), antivirus / EDR
+evasion, polyglot files, and any upload whose effect is only observable out-of-band
+(an uploaded XML that triggers blind XXE, an uploaded file that makes the server fetch a
+URL). WebVigil does not clean up the marker files it uploads — they are benign and the
+behaviour is documented, like a stored-XSS marker.
+
 ## Non-destructive posture
 
-- **`GET` and `POST` only** — never `PUT`, `PATCH`, `DELETE`.
+- **`GET` and `POST` only** — with the single exception of the `--file-upload` `PUT` probe
+  (one benign marker to the entry directory, only under the opt-in). Never `PATCH`,
+  `DELETE`, or `PUT` anywhere else.
 - **Forms that look like authentication or destruction are not fuzzed** — the heuristic
   matches `login`, `logout`, `register`, `delete`, `password`, `checkout`, `pay`,
   `transfer`, and similar in the action or field names. It is best-effort: a login form at
@@ -230,38 +318,55 @@ cache stored the response), and blind XXE.
 
 ```toml
 [injection]
-request_budget = 600        # max crafted requests per scan; hitting it is a warning
+request_budget = 650        # max crafted requests per scan; hitting it is a warning
 max_injection_points = 200  # max params / fields tested; excess is a warning
 time_based_sqli = true      # --no-time-based-sqli overrides
 time_based_cmdi = true      # spec 011: time-delay command-injection payloads; --no-time-based-cmdi overrides
 time_based_delay_s = 5      # the D in SLEEP(D) / sleep D; keep below [http] timeout_s
 stored_xss = false          # run the two-phase stored-XSS pass; --stored-xss overrides
+xxe = false                 # spec 012: re-send POST bodies as XML; --xxe overrides
+file_upload = false         # spec 014: upload benign markers through upload forms; --file-upload overrides
+upload_budget = 80          # spec 014: total requests the file-upload pass may spend
 ```
 
-Per point the pass sends at most 35 crafted requests (raised from 30 in v0.11, which added
-the command-injection and SSTI detector families); the time-based detectors share a cap of
-8 sleep-inducing requests per scan; the stored-XSS re-crawl fetches at most 60 pages.
-Hitting any cap is a scan **warning**, not an error.
+Per point the pass sends at most 38 crafted requests (raised from 30 in v0.11 for the
+command-injection / SSTI families and 35 in v0.14 for LDAP / XPath / SSI); the time-based
+detectors share a cap of 8 sleep-inducing requests per scan; the stored-XSS re-crawl
+fetches at most 120 pages; the file-upload pass has its own `upload_budget`. Hitting any cap
+is a scan **warning**, not an error.
 
 Disable any check by id (`[checks] disabled`). Disabling **every** `injection.*` id skips
 the pass entirely — no enumeration, no crafted request.
 
 ## What it does not do
 
-- **Stored XSS** ships in v0.8 behind `--stored-xss` (see above). **DOM XSS** still needs a
-  JavaScript engine (out of scope since spec 001).
-- **In-band SSRF** ships in v0.9 (`injection.ssrf.metadata` / `injection.ssrf.internal`,
-  see above). **Blind SSRF** needs an out-of-band collaborator the scanner hosts — out of
-  scope, not on the roadmap; pair with your own collaborator instead.
-- **OS command injection** and **SSTI** ship in v0.11 (`injection.cmdi.os` /
-  `injection.ssti`, see above). **Truly blind command injection** (no output, no timing)
-  needs a collaborator — out of scope, like blind SSRF.
-- **No XXE, CRLF, host-header injection, or other injection classes** yet.
 - **No exploitation.** A confirmed SQLi is proved with one bounded marker; WebVigil does
   not dump the database or read further files.
 - **No parameter mining.** It fuzzes parameters the target actually exposes, not guessed
   ones.
 - **No WAF evasion.** Payloads are a small static in-repo set with no mutation engine.
+
+### Coverage boundaries
+
+WebVigil's active coverage stops at what is **in-band-provable, without a headless browser,
+without an out-of-band collaborator, and without a false-positive-prone oracle** — the line
+held since spec 006. What that leaves out, and why:
+
+| Class | Why it is out |
+|---|---|
+| DOM XSS, client-side prototype pollution | needs a JavaScript engine — out of scope since spec 001. |
+| Blind SSRF / XSS / command injection, out-of-band XXE | needs a hosted collaborator (Burp Collaborator, interactsh). Pair WebVigil with your own; see [`docs/notes/why-not-oast.md`](notes/why-not-oast.md). |
+| Expression-language injection (SpEL / OGNL / JEXL), `eval()` code injection | deferred (spec 011); the SSTI machinery could be extended but it is a spec-sized surface of its own. |
+| NoSQL injection, HTTP parameter pollution | no reliable in-band oracle — high false-positive rate. |
+| Remote file inclusion | the blind form needs a collaborator; the in-band form overlaps SSRF / traversal. |
+| Session fixation, logout invalidation, weak session id, verb-based auth bypass | needs a stateful login flow WebVigil does not have. |
+| HTTP request smuggling, web-cache-poisoning confirmation | needs raw-socket framing control / cache-behaviour analysis. |
+| Archive extraction (zip-slip), image-library RCE, AV evasion | destructive, resource-heavy, or Nuclei-style version-specific payloads. |
+
+Everything **in scope** ships: reflected & stored XSS, SQLi (error / boolean / time), path
+traversal, open redirect, in-band SSRF, OS command injection, SSTI, CRLF, host-header
+injection, in-band XXE (opt-in), HTTP methods, LDAP / XPath / SSI injection, and
+unrestricted file upload (opt-in).
 
 ## A target to try it on
 
