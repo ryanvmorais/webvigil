@@ -1,4 +1,6 @@
-"""Fingerprinter: sources, scope handling, and the fetch cap — RF-01..RF-04, RNF-07."""
+"""
+Fingerprinter: sources, scope handling, and the fetch cap — RF-01..RF-04, RNF-07.
+"""
 
 from __future__ import annotations
 

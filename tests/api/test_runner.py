@@ -1,4 +1,6 @@
-"""ScanRunner: queue, execution, cancellation, restart recovery — RF-09, RF-10, RF-14, RF-16."""
+"""
+ScanRunner: queue, execution, cancellation, restart recovery — RF-09, RF-10, RF-14, RF-16.
+"""
 
 from __future__ import annotations
 

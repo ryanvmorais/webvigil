@@ -1,4 +1,6 @@
-"""Orchestrator wiring for the dependency fingerprint pass — RF-12, RF-22, ADR-1, ADR-3."""
+"""
+Orchestrator wiring for the dependency fingerprint pass — RF-12, RF-22, ADR-1, ADR-3.
+"""
 
 from __future__ import annotations
 

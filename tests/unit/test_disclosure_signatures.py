@@ -1,4 +1,6 @@
-"""Error-page and directory-listing signatures — RF-01, RF-02, RNF-05."""
+"""
+Error-page and directory-listing signatures — RF-01, RF-02, RNF-05.
+"""
 
 from __future__ import annotations
 

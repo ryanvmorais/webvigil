@@ -1,4 +1,6 @@
-"""Injection-point enumeration and the fuzz / skip heuristics — spec 006 RF-04, RF-06."""
+"""
+Injection-point enumeration and the fuzz / skip heuristics — spec 006 RF-04, RF-06.
+"""
 
 from __future__ import annotations
 

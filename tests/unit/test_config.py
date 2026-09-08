@@ -1,4 +1,6 @@
-"""Config model, TOML loading, and CLI-override precedence — RF-26."""
+"""
+Config model, TOML loading, and CLI-override precedence — RF-26.
+"""
 
 from __future__ import annotations
 

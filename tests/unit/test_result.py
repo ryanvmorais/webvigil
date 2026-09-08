@@ -1,4 +1,6 @@
-"""ScanResult JSON round-trip — RF-21."""
+"""
+ScanResult JSON round-trip — RF-21.
+"""
 
 from __future__ import annotations
 

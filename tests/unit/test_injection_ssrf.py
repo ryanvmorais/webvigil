@@ -1,4 +1,6 @@
-"""In-band SSRF detector — spec 009 RF-01..RF-08, RF-13."""
+"""
+In-band SSRF detector — spec 009 RF-01..RF-08, RF-13.
+"""
 
 from __future__ import annotations
 

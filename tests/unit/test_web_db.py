@@ -1,4 +1,6 @@
-"""Database layer: migrations, pragmas, and model/migration parity — RF-23, RF-24."""
+"""
+Database layer: migrations, pragmas, and model/migration parity — RF-23, RF-24.
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,6 @@
-"""RetireJsRules: the real DB compiles, and identify() reads each source — RF-05, RF-06."""
+"""
+RetireJsRules: the real DB compiles, and identify() reads each source — RF-05, RF-06.
+"""
 
 from __future__ import annotations
 

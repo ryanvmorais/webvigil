@@ -1,4 +1,6 @@
-"""Orchestrator: mode gating, check selection, error isolation, dedupe — RF-11, RF-15."""
+"""
+Orchestrator: mode gating, check selection, error isolation, dedupe — RF-11, RF-15.
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,6 @@
-"""The DEPS checks: finding shape, INFO for unknown version, the inventory — RF-09, RF-10, RF-12."""
+"""
+The DEPS checks: finding shape, INFO for unknown version, the inventory — RF-09, RF-10, RF-12.
+"""
 
 from __future__ import annotations
 

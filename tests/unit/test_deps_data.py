@@ -1,4 +1,6 @@
-"""The vendored Retire.js data ships in the package and loads from there — RF-06, Risks."""
+"""
+The vendored Retire.js data ships in the package and loads from there — RF-06, Risks.
+"""
 
 from __future__ import annotations
 

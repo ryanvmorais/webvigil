@@ -1,4 +1,6 @@
-"""CLI: output routing, exit codes, active-mode gate, offline re-render — RF-24, RF-25, RF-15."""
+"""
+CLI: output routing, exit codes, active-mode gate, offline re-render — RF-24, RF-25, RF-15.
+"""
 
 from __future__ import annotations
 

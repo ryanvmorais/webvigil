@@ -1,4 +1,6 @@
-"""Reflected-XSS detector — spec 006 RF-08, RF-13."""
+"""
+Reflected-XSS detector — spec 006 RF-08, RF-13.
+"""
 
 from __future__ import annotations
 

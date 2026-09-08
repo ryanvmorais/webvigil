@@ -1,4 +1,6 @@
-"""CORS check: reflective origin, wildcard+credentials, null — RF-20."""
+"""
+CORS check: reflective origin, wildcard+credentials, null — RF-20.
+"""
 
 from __future__ import annotations
 

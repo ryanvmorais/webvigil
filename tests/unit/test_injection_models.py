@@ -1,4 +1,6 @@
-"""``ActiveBudget`` accounting — spec 006 (take / take_time_based) and spec 008 (take_recrawl)."""
+"""
+``ActiveBudget`` accounting — spec 006 (take / take_time_based) and spec 008 (take_recrawl).
+"""
 
 from __future__ import annotations
 

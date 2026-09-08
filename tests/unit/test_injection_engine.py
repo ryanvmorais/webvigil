@@ -1,4 +1,6 @@
-"""InjectionScanner: budget, gating, and one shared baseline per point — spec 006 RF-12."""
+"""
+InjectionScanner: budget, gating, and one shared baseline per point — spec 006 RF-12.
+"""
 
 from __future__ import annotations
 

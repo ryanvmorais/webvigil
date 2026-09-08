@@ -1,4 +1,6 @@
-"""The stored-XSS pass: Phase A injection, Phase B re-crawl, and correlation — spec 008."""
+"""
+The stored-XSS pass: Phase A injection, Phase B re-crawl, and correlation — spec 008.
+"""
 
 from __future__ import annotations
 

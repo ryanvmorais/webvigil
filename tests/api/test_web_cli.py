@@ -1,4 +1,6 @@
-"""The webvigil-web command: migrate, reset-password, serve — RF-29."""
+"""
+The webvigil-web command: migrate, reset-password, serve — RF-29.
+"""
 
 from __future__ import annotations
 

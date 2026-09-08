@@ -1,4 +1,6 @@
-"""Security helpers: hashing, JWT lifetime, secret resolution — RF-02, RF-04, RF-07."""
+"""
+Security helpers: hashing, JWT lifetime, secret resolution — RF-02, RF-04, RF-07.
+"""
 
 from __future__ import annotations
 

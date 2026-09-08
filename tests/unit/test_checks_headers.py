@@ -1,4 +1,6 @@
-"""Header checks: vulnerable fixture reports, hardened fixture is silent — RF-16, RF-17."""
+"""
+Header checks: vulnerable fixture reports, hardened fixture is silent — RF-16, RF-17.
+"""
 
 from __future__ import annotations
 

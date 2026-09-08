@@ -1,4 +1,6 @@
-"""Open-redirect detector — spec 006 RF-11, RF-13."""
+"""
+Open-redirect detector — spec 006 RF-11, RF-13.
+"""
 
 from __future__ import annotations
 

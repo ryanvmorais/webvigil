@@ -1,4 +1,6 @@
-"""End-to-end: insecure profile reports the expected findings, hardened reports none — RF-27."""
+"""
+End-to-end: insecure profile reports the expected findings, hardened reports none — RF-27.
+"""
 
 from __future__ import annotations
 

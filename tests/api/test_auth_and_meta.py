@@ -1,4 +1,6 @@
-"""Setup, login, session, password change, and the meta routes — RF-01..06, RF-20..22."""
+"""
+Setup, login, session, password change, and the meta routes — RF-01..06, RF-20..22.
+"""
 
 from __future__ import annotations
 

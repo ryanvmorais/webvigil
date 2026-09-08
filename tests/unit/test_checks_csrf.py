@@ -1,4 +1,6 @@
-"""csrf.form.no-token — a state-changing form with no anti-CSRF token — spec 007 RF-08/09."""
+"""
+csrf.form.no-token — a state-changing form with no anti-CSRF token — spec 007 RF-08/09.
+"""
 
 from __future__ import annotations
 

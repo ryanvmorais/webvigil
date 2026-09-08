@@ -1,4 +1,6 @@
-"""The technology inventory: Observations dedup/order and ScanResult round-trip — RF-12, RF-14."""
+"""
+The technology inventory: Observations dedup/order and ScanResult round-trip — RF-12, RF-14.
+"""
 
 from __future__ import annotations
 

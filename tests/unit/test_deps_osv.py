@@ -1,4 +1,5 @@
-"""OsvProvider: normalisation, severity mapping, name mapping, and the batched I/O — spec 010.
+"""
+OsvProvider: normalisation, severity mapping, name mapping, and the batched I/O — spec 010.
 
 Every test uses ``httpx.MockTransport``; nothing here touches the real network (RF-16).
 """

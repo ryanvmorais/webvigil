@@ -1,4 +1,6 @@
-"""Form discovery from crawled page bodies — spec 006 RF-05, ADR-3; spec 007 RF-05."""
+"""
+Form discovery from crawled page bodies — spec 006 RF-05, ADR-3; spec 007 RF-05.
+"""
 
 from __future__ import annotations
 

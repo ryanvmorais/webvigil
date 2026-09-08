@@ -1,4 +1,6 @@
-"""TLS probe: version detection and certificate retrieval — RF-19."""
+"""
+TLS probe: version detection and certificate retrieval — RF-19.
+"""
 
 from __future__ import annotations
 

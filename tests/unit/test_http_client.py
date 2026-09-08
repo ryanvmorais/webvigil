@@ -1,4 +1,6 @@
-"""HttpClient: retries, scope guard, and manual redirect handling — RF-05, RF-04, RF-03."""
+"""
+HttpClient: retries, scope guard, and manual redirect handling — RF-05, RF-04, RF-03.
+"""
 
 from __future__ import annotations
 

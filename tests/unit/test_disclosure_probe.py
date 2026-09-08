@@ -1,4 +1,6 @@
-"""DisclosureProbe: calibration, validation, derived probes, the cap — RF-04..RF-09, RNF-04."""
+"""
+DisclosureProbe: calibration, validation, derived probes, the cap — RF-04..RF-09, RNF-04.
+"""
 
 from __future__ import annotations
 

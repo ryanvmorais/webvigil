@@ -1,4 +1,6 @@
-"""The six injection checks filter hits by kind into findings — spec 006 RF-08..RF-11."""
+"""
+The six injection checks filter hits by kind into findings — spec 006 RF-08..RF-11.
+"""
 
 from __future__ import annotations
 

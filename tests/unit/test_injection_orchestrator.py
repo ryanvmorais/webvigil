@@ -1,4 +1,6 @@
-"""Orchestrator wiring for the active-injection pass — spec 006 RF-01, RF-12, ADR-2."""
+"""
+Orchestrator wiring for the active-injection pass — spec 006 RF-01, RF-12, ADR-2.
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,6 @@
-"""Reporters: JSON round-trip, SARIF schema, HTML self-containment, determinism — RF-21..23."""
+"""
+Reporters: JSON round-trip, SARIF schema, HTML self-containment, determinism — RF-21..23.
+"""
 
 from __future__ import annotations
 

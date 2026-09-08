@@ -1,4 +1,6 @@
-"""Cookie-flag check: vulnerable and hardened fixtures — RF-18."""
+"""
+Cookie-flag check: vulnerable and hardened fixtures — RF-18.
+"""
 
 from __future__ import annotations
 

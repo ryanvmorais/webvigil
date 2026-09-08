@@ -1,4 +1,6 @@
-"""The curated probe catalogue loads, expands, and validates — RF-05, ADR-4, Risks."""
+"""
+The curated probe catalogue loads, expands, and validates — RF-05, ADR-4, Risks.
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,6 @@
-"""Path-traversal detector — spec 006 RF-10, RF-13."""
+"""
+Path-traversal detector — spec 006 RF-10, RF-13.
+"""
 
 from __future__ import annotations
 

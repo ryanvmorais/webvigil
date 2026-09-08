@@ -1,4 +1,6 @@
-"""Probe-fed disclosure checks: family filtering, finding shape, evidence — RF-08, RF-10."""
+"""
+Probe-fed disclosure checks: family filtering, finding shape, evidence — RF-08, RF-10.
+"""
 
 from __future__ import annotations
 

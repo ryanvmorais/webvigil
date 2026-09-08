@@ -1,4 +1,6 @@
-"""TLS/HTTPS check: certificate, redirect, and mixed-content findings — RF-19."""
+"""
+TLS/HTTPS check: certificate, redirect, and mixed-content findings — RF-19.
+"""
 
 from __future__ import annotations
 

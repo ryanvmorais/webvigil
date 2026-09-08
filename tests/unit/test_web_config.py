@@ -1,4 +1,6 @@
-"""WebConfig: defaults, TOML [web] table, env overrides — RF-31."""
+"""
+WebConfig: defaults, TOML [web] table, env overrides — RF-31.
+"""
 
 from __future__ import annotations
 

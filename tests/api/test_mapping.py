@@ -1,4 +1,6 @@
-"""ScanResult ⇄ DB rows round-trips losslessly — RF-19."""
+"""
+ScanResult ⇄ DB rows round-trips losslessly — RF-19.
+"""
 
 from __future__ import annotations
 

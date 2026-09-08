@@ -1,4 +1,6 @@
-"""Link / form safety heuristics — spec 007 RF-03, ADR-5."""
+"""
+Link / form safety heuristics — spec 007 RF-03, ADR-5.
+"""
 
 from __future__ import annotations
 

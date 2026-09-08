@@ -1,4 +1,6 @@
-"""Report download: formats, headers, byte-identity, and non-terminal 409 — RF-18, RF-19."""
+"""
+Report download: formats, headers, byte-identity, and non-terminal 409 — RF-18, RF-19.
+"""
 
 from __future__ import annotations
 

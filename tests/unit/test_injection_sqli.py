@@ -1,4 +1,6 @@
-"""SQL-injection detectors — spec 006 RF-09, RF-13."""
+"""
+SQL-injection detectors — spec 006 RF-09, RF-13.
+"""
 
 from __future__ import annotations
 

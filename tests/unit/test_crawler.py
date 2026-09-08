@@ -1,4 +1,6 @@
-"""Crawler discovery: max_pages, de-dup, robots, and sitemap handling — RF-07."""
+"""
+Crawler discovery: max_pages, de-dup, robots, and sitemap handling — RF-07.
+"""
 
 from __future__ import annotations
 

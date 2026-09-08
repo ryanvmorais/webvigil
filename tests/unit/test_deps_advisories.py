@@ -1,4 +1,6 @@
-"""RetireJsProvider: range semantics, severity mapping, first safe version — RF-07, RF-08."""
+"""
+RetireJsProvider: range semantics, severity mapping, first safe version — RF-07, RF-08.
+"""
 
 from __future__ import annotations
 

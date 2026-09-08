@@ -1,4 +1,6 @@
-"""Reporters render the technology inventory — RF-13, RF-14."""
+"""
+Reporters render the technology inventory — RF-13, RF-14.
+"""
 
 from __future__ import annotations
 

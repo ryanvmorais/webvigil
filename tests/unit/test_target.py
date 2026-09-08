@@ -1,4 +1,6 @@
-"""Target parsing, URL normalization, and scope checks — RF-01, RF-02."""
+"""
+Target parsing, URL normalization, and scope checks — RF-01, RF-02.
+"""
 
 from __future__ import annotations
 

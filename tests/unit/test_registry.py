@@ -1,4 +1,6 @@
-"""Check registration, discovery, and selection — RF-09, RF-11."""
+"""
+Check registration, discovery, and selection — RF-09, RF-11.
+"""
 
 from __future__ import annotations
 

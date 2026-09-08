@@ -1,4 +1,6 @@
-"""Passive disclosure checks: error pages and directory listings — RF-01, RF-02, RNF-05."""
+"""
+Passive disclosure checks: error pages and directory listings — RF-01, RF-02, RNF-05.
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,6 @@
-"""RateLimiter: concurrency cap and per-host delay spacing — RF-03."""
+"""
+RateLimiter: concurrency cap and per-host delay spacing — RF-03.
+"""
 
 from __future__ import annotations
 

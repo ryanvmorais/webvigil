@@ -1,4 +1,6 @@
-"""Scan routes: create, queue, lifecycle, cancel, delete, list, findings — RF-08..RF-17."""
+"""
+Scan routes: create, queue, lifecycle, cancel, delete, list, findings — RF-08..RF-17.
+"""
 
 from __future__ import annotations
 

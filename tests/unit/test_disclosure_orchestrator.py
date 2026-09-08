@@ -1,4 +1,6 @@
-"""Orchestrator wiring for the disclosure probe pass — RF-04, RF-09, ADR-2."""
+"""
+Orchestrator wiring for the disclosure probe pass — RF-04, RF-09, ADR-2.
+"""
 
 from __future__ import annotations
 

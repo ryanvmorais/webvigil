@@ -1,4 +1,6 @@
-"""Secret redaction for probe evidence — RNF-06, ADR-9."""
+"""
+Secret redaction for probe evidence — RNF-06, ADR-9.
+"""
 
 from __future__ import annotations
 

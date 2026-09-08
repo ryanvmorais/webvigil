@@ -1,4 +1,6 @@
-"""Finding model, fingerprinting, and severity ordering — RF-12, RF-13."""
+"""
+Finding model, fingerprinting, and severity ordering — RF-12, RF-13.
+"""
 
 from __future__ import annotations
 
