@@ -1,7 +1,8 @@
-"""Shared test fixtures: a localhost TLS server backed by trustme certificates.
+"""
+Shared test fixtures: a localhost TLS server backed by trustme certificates.
 
 Value builders (``make_page`` / ``make_context`` / ``hardened_headers``) live in
-``tests.support``.
+:mod:`tests.support`.
 """
 
 from __future__ import annotations
@@ -19,11 +20,21 @@ import trustme
 
 @dataclass
 class RunningTlsServer:
+    """
+    The address of a started test TLS server.
+
+    Attributes:
+        host (str): Always ``"127.0.0.1"``.
+        port (int): The OS-assigned port.
+    """
+
     host: str
     port: int
 
 
 class _TlsServer:
+    """A single-threaded localhost TLS listener that accepts a handshake and drops it."""
+
     def __init__(self, context: ssl.SSLContext) -> None:
         self._context = context
         self._sock = socket.socket()
@@ -63,12 +74,24 @@ class _TlsServer:
 
 @pytest.fixture(scope="session")
 def tls_ca() -> trustme.CA:
+    """
+    Returns:
+        trustme.CA: A session-wide throwaway certificate authority.
+    """
     return trustme.CA()
 
 
 @pytest.fixture
 def tls_server(tls_ca: trustme.CA):
-    """Return a factory that starts a localhost TLS server with the given options."""
+    """
+    Args:
+        tls_ca (trustme.CA): The session CA to issue leaf certificates from.
+
+    Returns:
+        Callable: A context-manager factory ``_factory(*, max_version=None,
+            cert=None)`` that starts a localhost TLS server and yields its
+            :class:`RunningTlsServer` address.
+    """
 
     @contextlib.contextmanager
     def _factory(

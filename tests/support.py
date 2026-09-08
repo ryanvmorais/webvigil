@@ -38,7 +38,14 @@ _HARDENED_HEADERS: dict[str, str] = {
 
 
 def hardened_headers(**overrides: str) -> dict[str, str]:
-    """A response-header set that passes every v0.1 header check."""
+    """
+    Args:
+        **overrides (str): Header values to replace or add.
+
+    Returns:
+        dict[str, str]: A response-header set that passes every v0.1 header
+            check, with ``overrides`` applied on top.
+    """
     return {**_HARDENED_HEADERS, **overrides}
 
 
@@ -51,6 +58,20 @@ def make_page(
     text: str = "<html><body>ok</body></html>",
     content_type: str = "text/html; charset=utf-8",
 ) -> Page:
+    """
+    Build a :class:`~webvigil.core.context.Page` for a check test.
+
+    Args:
+        url (str): The page URL (also the requested URL).
+        status (int): HTTP status. Defaults to 200.
+        headers (dict[str, str] | None): Extra response headers.
+        set_cookies (Sequence[str]): Raw ``Set-Cookie`` values to add.
+        text (str): Response body.
+        content_type (str): The ``Content-Type`` header value.
+
+    Returns:
+        Page: The assembled page.
+    """
     pairs: list[tuple[str, str]] = [("content-type", content_type)]
     pairs += list((headers or {}).items())
     pairs += [("set-cookie", value) for value in set_cookies]
@@ -74,6 +95,24 @@ def make_context(
     forms: Sequence[Form] | None = None,
     observations: Observations | None = None,
 ) -> ScanContext:
+    """
+    Build a :class:`~webvigil.core.context.ScanContext` around ``page``.
+
+    Args:
+        page (Page): The entry page.
+        pages (Sequence[Page] | None): The full page set; defaults to
+            ``(page,)``.
+        target_url (str | None): Target to parse; defaults to the page URL.
+        http (object): The HTTP client; passive checks never touch it, so a
+            plain object is fine.
+        config (ScanConfig | None): The scan config; defaults to
+            :class:`~webvigil.core.config.ScanConfig`.
+        forms (Sequence[Form] | None): The form inventory.
+        observations (Observations | None): The observations side channel.
+
+    Returns:
+        ScanContext: The assembled context.
+    """
     resolved_pages = tuple(pages) if pages is not None else (page,)
     return ScanContext(
         config=config or ScanConfig(),
@@ -97,6 +136,22 @@ def make_finding(
     dedup_key: str = "missing",
     references: tuple[str, ...] = ("https://owasp.org/www-project-secure-headers/",),
 ) -> Finding:
+    """
+    Build a :class:`~webvigil.core.findings.Finding` for a reporter / API test.
+
+    Args:
+        check_id (str): The check id.
+        severity (Severity): The severity.
+        url (str): The location URL.
+        header (str | None): The location header; ignored when ``param`` is set.
+        param (str | None): The location parameter.
+        method (str): The location HTTP method.
+        dedup_key (str): The fingerprint dedup key.
+        references (tuple[str, ...]): The reference URLs.
+
+    Returns:
+        Finding: The assembled finding, with a computed fingerprint.
+    """
     location = Location(url=url, header=None if param else header, param=param, method=method)
     return Finding(
         check_id=check_id,
@@ -121,6 +176,22 @@ def make_result(
     technologies: Sequence[Technology] = (),
     mode: ScanMode = ScanMode.PASSIVE,
 ) -> ScanResult:
+    """
+    Build a :class:`~webvigil.core.result.ScanResult` with fixed metadata.
+
+    Args:
+        *findings (Finding): The findings to include; severity counts are
+            derived from them.
+        errors (Sequence[CheckError]): Per-check errors.
+        warnings (Sequence[str]): Scan warnings.
+        authorized_by (str | None): Active-Mode attestation on the metadata.
+        authenticated (bool): The ``authenticated`` metadata flag.
+        technologies (Sequence[Technology]): The detected-technology inventory.
+        mode (ScanMode): The scan mode on the metadata.
+
+    Returns:
+        ScanResult: The assembled result.
+    """
     findings = tuple(findings)
     metadata = ScanMetadata(
         target="https://example.com/",

@@ -1,4 +1,6 @@
-"""Smoke tests for the project scaffold."""
+"""
+Smoke tests for the project scaffold.
+"""
 
 from __future__ import annotations
 

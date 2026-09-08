@@ -1,12 +1,17 @@
-"""A minimal Starlette target app with an ``insecure`` and a ``hardened`` profile.
+"""
+A minimal Starlette target app with an ``insecure`` and a ``hardened`` profile.
 
-Covers spec 001 (headers/cookies/CORS/revealing), spec 004 (a vulnerable jQuery), spec 005
-(exposed .git/.env/backups, a listing, a stack trace), spec 006 (reflected XSS, SQLi, path
-traversal, open redirect), spec 007 (a cookie-gated ``/account`` area, a tokenless POST
-form, a ``/logout`` link the crawler must not follow) and spec 008 (a guestbook and a
-behind-login profile page that render stored input unescaped on a later request). The app
-is plain HTTP by nature, so the integration test disables ``tls.https``; TLS cases live in
-the socket-based unit tests.
+Covers spec 001 (headers/cookies/CORS/revealing), spec 004 (a vulnerable
+jQuery), spec 005 (exposed .git/.env/backups, a listing, a stack trace), spec
+006 (reflected XSS, SQLi, path traversal, open redirect), spec 007 (a
+cookie-gated ``/account`` area, a tokenless POST form, a ``/logout`` link the
+crawler must not follow), spec 008 (a guestbook and a behind-login profile page
+that render stored input unescaped on a later request) and spec 009 (two "fetch
+this URL" endpoints). The app is plain HTTP by nature, so the integration test
+disables ``tls.https``; TLS cases live in the socket-based unit tests.
+
+The route handlers are one-liners with inline comments per spec; only
+:func:`make_app` and the middleware factory carry a docstring.
 """
 
 from __future__ import annotations
@@ -432,6 +437,16 @@ _INJECTION_ROUTES = {
 
 
 def _recorder(sink: list[str]) -> Callable[[ASGIApp], ASGIApp]:
+    """
+    Args:
+        sink (list[str]): List each request line (``"<method> <path>?<query>"``)
+            is appended to.
+
+    Returns:
+        Callable[[ASGIApp], ASGIApp]: Middleware that records every HTTP request
+            into ``sink`` — the tests assert on what the scan actually sent.
+    """
+
     class _Recorder:
         def __init__(self, app: ASGIApp) -> None:
             self._app = app
@@ -446,6 +461,18 @@ def _recorder(sink: list[str]) -> Callable[[ASGIApp], ASGIApp]:
 
 
 def make_app(profile: str) -> Starlette:
+    """
+    Build the target app in one of the two profiles.
+
+    Args:
+        profile (str): ``"insecure"`` for the vulnerable app (weak headers,
+            reflected/stored sinks, exposed paths), anything else for the
+            hardened equivalent.
+
+    Returns:
+        Starlette: The app; ``app.state.requests`` records every request and
+            ``app.state.guestbook`` is reset per app for determinism.
+    """
     is_insecure = profile == "insecure"
     handler = _insecure if is_insecure else _hardened
     requests: list[str] = []

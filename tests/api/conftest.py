@@ -1,4 +1,6 @@
-"""Fixtures for the Web API tests: a fresh app + SQLite DB per test."""
+"""
+Fixtures for the Web API tests: a fresh app + SQLite DB per test.
+"""
 
 from __future__ import annotations
 
@@ -43,12 +45,20 @@ class BlockingOrchestrator:
 
 @pytest.fixture(autouse=True)
 def _reset_fake_result() -> Iterator[None]:
+    """Restore ``FakeOrchestrator.result`` to its default before each test."""
     FakeOrchestrator.result = make_result(make_finding())
     yield
 
 
 @pytest.fixture
 def web_config(tmp_path: Path) -> WebConfig:
+    """
+    Args:
+        tmp_path (Path): pytest's per-test temp directory.
+
+    Returns:
+        WebConfig: A config with a fresh SQLite path and a fixed session secret.
+    """
     return WebConfig(
         database_path=tmp_path / "webvigil.db",
         session_secret="test-session-secret-long-enough-for-hs256",
@@ -58,12 +68,22 @@ def web_config(tmp_path: Path) -> WebConfig:
 
 @pytest.fixture
 def web_engine(web_config: WebConfig) -> Engine:
+    """
+    Returns:
+        Engine: A migrated engine over the per-test database, for tests that
+            touch the DB directly.
+    """
     run_alembic_upgrade(web_config)
     return make_engine(web_config)
 
 
 @pytest.fixture
 def client(web_config: WebConfig) -> Iterator[TestClient]:
+    """
+    Yields:
+        TestClient: A client for an app wired to :class:`FakeOrchestrator`, with
+            its lifespan run.
+    """
     app = create_app(web_config, orchestrator_factory=FakeOrchestrator)
     with TestClient(app) as test_client:
         yield test_client
@@ -71,6 +91,11 @@ def client(web_config: WebConfig) -> Iterator[TestClient]:
 
 @pytest.fixture
 def auth_client(client: TestClient) -> TestClient:
+    """
+    Returns:
+        TestClient: The same client after completing first-run setup and
+            logging in as ``admin``.
+    """
     assert client.post("/api/setup", json=ADMIN).status_code == 201
     assert client.post("/api/auth/login", json=ADMIN).status_code == 204
     return client
