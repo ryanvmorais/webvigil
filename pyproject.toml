@@ -1,3 +1,15 @@
+# =============================================================================
+# Project configuration (PEP 621) — built with Hatchling, managed with uv.
+#
+#   [project]                        metadata + engine/CLI runtime dependencies
+#   [project.optional-dependencies]  web    the Web API extra (uv sync --extra web)
+#   [dependency-groups] dev          lint / type / test tooling (installed by default)
+#   [tool.*]                         config for ruff, black, mypy, import-linter, pytest
+#
+# Exact versions of the whole graph (direct + transitive) are pinned in uv.lock
+# (`uv lock`); the lines below are lower-bound floors only.
+# =============================================================================
+
 [project]
 name = "webvigil"
 version = "0.0.0"
@@ -70,6 +82,7 @@ dev = [
     "trustme>=1.1",
 ]
 
+# --- Packaging (Hatchling) ---------------------------------------------------
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -84,6 +97,7 @@ artifacts = [
     "src/webvigil/checks/disclosure/data/*.toml",
 ]
 
+# --- Lint (ruff: replaces flake8 + isort, reads pyproject natively) ----------
 [tool.ruff]
 line-length = 100
 target-version = "py312"
@@ -92,6 +106,8 @@ src = ["src", "tests"]
 extend-exclude = ["src/webvigil/api/migrations/versions"]
 
 [tool.ruff.lint]
+# pycodestyle, pyflakes, isort, pyupgrade, bugbear, flake8-simplify,
+# flake8-comprehensions, ruff-native.
 select = ["E", "F", "I", "UP", "B", "SIM", "C4", "RUF"]
 
 [tool.ruff.lint.isort]
@@ -101,10 +117,12 @@ known-first-party = ["webvigil"]
 # FastAPI's parameter markers are designed to be called in argument defaults.
 extend-immutable-calls = ["fastapi.Query", "fastapi.Path", "fastapi.Body", "fastapi.Header"]
 
+# --- Format (black) ---------------------------------------------------------
 [tool.black]
 line-length = 100
 target-version = ["py312"]
 
+# --- Types (mypy, strict) --------------------------------------------------
 [tool.mypy]
 python_version = "3.12"
 strict = true
@@ -119,12 +137,14 @@ exclude = ["^src/webvigil/api/migrations/versions/"]
 module = ["selectolax.*"]
 ignore_missing_imports = true
 
+# --- Tests (pytest) --------------------------------------------------------
 [tool.pytest.ini_options]
 addopts = "-ra -q"
 testpaths = ["tests"]
 asyncio_mode = "auto"
 pythonpath = ["."]
 
+# --- Architecture contract (import-linter — RNF-01 / ADR-1) ---------------
 [tool.importlinter]
 root_package = "webvigil"
 include_external_packages = true
