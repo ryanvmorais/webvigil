@@ -221,7 +221,7 @@ def test_osv_online_override_wins_over_file() -> None:
 
 
 # ---------------------------------------------------------------------------
-# The [auth] section (spec 007)
+# The [auth] section (spec 007, spec 013)
 # ---------------------------------------------------------------------------
 
 
@@ -246,9 +246,9 @@ def test_auth_cookie_without_a_valid_pair_is_rejected(tmp_path: Path, bad: str) 
 
 
 def test_unknown_auth_key_is_rejected(tmp_path: Path) -> None:
-    """A key under ``[auth]`` that is not ``cookies`` (e.g. ``headers``) is rejected."""
+    """A key under ``[auth]`` that is neither ``cookies`` nor ``headers`` is rejected."""
     path = tmp_path / "webvigil.toml"
-    path.write_text("[auth]\ncookies = []\nheaders = ['X: 1']\n", "utf-8")
+    path.write_text("[auth]\ncookies = []\ntokens = ['x']\n", "utf-8")
     with pytest.raises(ConfigError):
         ScanConfig.load(path)
 
@@ -258,6 +258,34 @@ def test_auth_cookies_override_replaces_the_file_list() -> None:
     base = ScanConfig.model_validate({"auth": {"cookies": ["a=1", "b=2"]}})
     merged = base.with_overrides(auth={"cookies": ["c=3"]})
     assert merged.auth.cookies == ["c=3"]
+
+
+def test_auth_headers_default_empty_and_round_trip(tmp_path: Path) -> None:
+    """``[auth] headers`` defaults empty; ``header_pairs`` splits on the first colon (spec 013)."""
+    assert ScanConfig().auth.headers == []
+    assert ScanConfig().auth.header_pairs == ()
+    path = tmp_path / "webvigil.toml"
+    path.write_text(
+        "[auth]\nheaders = ['Authorization: Bearer a:b:c', 'X-Tenant: acme']\n", "utf-8"
+    )
+    loaded = ScanConfig.load(path).auth
+    assert loaded.header_pairs == (("Authorization", "Bearer a:b:c"), ("X-Tenant", "acme"))
+
+
+@pytest.mark.parametrize("bad", ["no-colon-here", ": value", "   : v", "Host: evil.example"])
+def test_auth_header_that_is_malformed_or_reserved_is_rejected(tmp_path: Path, bad: str) -> None:
+    """A header with no ``:``, an empty name, or a reserved name is rejected at load time."""
+    path = tmp_path / "webvigil.toml"
+    path.write_text(f"[auth]\nheaders = ['{bad}']\n", "utf-8")
+    with pytest.raises(ConfigError):
+        ScanConfig.load(path)
+
+
+def test_auth_headers_override_replaces_the_file_list() -> None:
+    """A ``headers`` override replaces the whole file list rather than merging (spec 013)."""
+    base = ScanConfig.model_validate({"auth": {"headers": ["Authorization: Bearer old"]}})
+    merged = base.with_overrides(auth={"headers": ["X-API-Key: new"]})
+    assert merged.auth.headers == ["X-API-Key: new"]
 
 
 # ---------------------------------------------------------------------------
@@ -271,3 +299,21 @@ def test_submit_forms_defaults_on_and_round_trips(tmp_path: Path) -> None:
     path = tmp_path / "webvigil.toml"
     path.write_text("[scan]\nsubmit_forms = false\n", "utf-8")
     assert ScanConfig.load(path).scan.submit_forms is False
+
+
+def test_openapi_defaults_off_and_round_trips(tmp_path: Path) -> None:
+    """``[scan] openapi`` defaults to ``None`` and its path / cap round-trip (spec 013)."""
+    assert ScanConfig().scan.openapi is None
+    assert ScanConfig().scan.openapi_max_operations == 150
+    path = tmp_path / "webvigil.toml"
+    path.write_text("[scan]\nopenapi = 'openapi.json'\nopenapi_max_operations = 40\n", "utf-8")
+    loaded = ScanConfig.load(path).scan
+    assert loaded.openapi == "openapi.json"
+    assert loaded.openapi_max_operations == 40
+
+
+def test_openapi_override_wins_over_file() -> None:
+    """A ``scan.openapi`` override beats the file value (spec 013)."""
+    base = ScanConfig.model_validate({"scan": {"openapi": "old.json"}})
+    merged = base.with_overrides(scan={"openapi": "https://target.example/openapi.json"})
+    assert merged.scan.openapi == "https://target.example/openapi.json"

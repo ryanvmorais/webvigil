@@ -30,7 +30,13 @@ import jinja2
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
+from starlette.responses import (
+    HTMLResponse,
+    JSONResponse,
+    PlainTextResponse,
+    RedirectResponse,
+    Response,
+)
 from starlette.routing import Route
 from starlette.types import ASGIApp, Receive, Scope, Send
 
@@ -47,11 +53,21 @@ _INJECTION_LINKS = (
     '<a href="/fetch?url=/preview">fetch</a> '
     '<a href="/webhook?callback=/ping">webhook</a> '
     # spec 011: a shell-backed "ping" and a template-backed "greet".
-    '<a href="/ping?host=127.0.0.1">ping</a> '
+    '<a href="/ping?host=localhost">ping</a> '
     '<a href="/greet?name=guest">greet</a> '
     # spec 012: a language cookie (CRLF), a reset page (host header), a methods route.
     '<a href="/set-lang?lang=en">set-lang</a> '
     '<a href="/reset">reset</a> <a href="/resource">resource</a>'
+)
+# spec 013: the insecure index also carries a cross-origin script with no SRI, a session
+# token handed to a third-party link, and an internal IP in a comment — inlined here rather
+# than on a new page so the crawl count (and the spec-008 stored-XSS re-crawl budget) is
+# unchanged. Both profiles serve /openapi.json + /api/find + /api/items, reached only via
+# --openapi.
+_SPEC_013_INSECURE = (
+    "<!-- upstream backend 10.13.37.1 -->"
+    '<script src="https://cdn.example.com/analytics.js"></script>'
+    '<a href="https://partner.example/sso?access_token=WV013SECRETTOKEN">partner login</a>'
 )
 _FORMS = (
     '<form method="get" action="/search"><input name="q"></form>'
@@ -79,7 +95,7 @@ _VULNERABLE_JS_PATH = "/static/jquery-1.7.1.min.js"
 _DISCLOSURE_LINKS = '<a href="/uploads/">uploads</a> <a href="/boom">boom</a>'
 _INSECURE_PAGE = (
     f"<!doctype html><html><body><h1>Demo</h1>{_LINKS} {_INJECTION_LINKS} {_DISCLOSURE_LINKS}"
-    f"{_FORMS}"
+    f"{_FORMS}{_SPEC_013_INSECURE}"
     f'<script src="{_VULNERABLE_JS_PATH}"></script></body></html>'
 )
 _VULNERABLE_JS = "/*! jQuery v1.7.1 jquery.com | jquery.org/license */\n!function(){}();\n"
@@ -286,6 +302,50 @@ def _resource_insecure(request: Request) -> Response:
     response = PlainTextResponse("the resource")
     response.headers["allow"] = "GET, POST, PUT, DELETE, TRACE, OPTIONS"
     return response
+
+
+# --- spec 013: OpenAPI import -----------------------------------------------------
+# The passive content / leakage checks are exercised from the insecure index page
+# (_SPEC_013_INSECURE, above). These two operations are linked from no HTML page and are
+# reached only via ``--openapi``.
+
+_OPENAPI_DOC: dict[str, object] = {
+    "openapi": "3.1.0",
+    "servers": [{"url": "/"}],
+    "paths": {
+        "/api/find": {"get": {"parameters": [{"name": "q", "in": "query"}]}},
+        "/api/items": {
+            "post": {
+                "requestBody": {
+                    "content": {
+                        "application/x-www-form-urlencoded": {
+                            "schema": {"type": "object", "properties": {"name": {"type": "string"}}}
+                        }
+                    }
+                }
+            }
+        },
+    },
+}
+
+
+def _openapi_doc(request: Request) -> Response:
+    return JSONResponse(_OPENAPI_DOC)
+
+
+def _api_find_insecure(request: Request) -> Response:
+    q = request.query_params.get("q", "")  # reflected unescaped
+    return HTMLResponse(f"<!doctype html><h1>Matches for {q}</h1>")
+
+
+def _api_find_hardened(request: Request) -> Response:
+    q = html.escape(request.query_params.get("q", ""))
+    return HTMLResponse(f"<!doctype html><h1>Matches for {q}</h1>")
+
+
+async def _api_items(request: Request) -> Response:
+    form = await request.form()
+    return HTMLResponse(f"<!doctype html><p>created {html.escape(str(form.get('name', '')))}</p>")
 
 
 def _go_insecure(request: Request) -> Response:
@@ -552,6 +612,9 @@ _INJECTION_ROUTES = {
         ("/set-lang", _set_lang_insecure, ["GET"]),
         ("/reset", _reset_insecure, ["GET"]),
         ("/resource", _resource_insecure, ["GET", "POST", "PUT", "DELETE", "TRACE", "OPTIONS"]),
+        ("/openapi.json", _openapi_doc, ["GET"]),
+        ("/api/find", _api_find_insecure, ["GET"]),
+        ("/api/items", _api_items, ["POST"]),
         ("/api/xml", _xml_insecure, ["POST"]),
         ("/comment", _comment_insecure, ["POST"]),
         ("/account", _account("session", _ACCOUNT_INSECURE), ["GET"]),
@@ -573,6 +636,9 @@ _INJECTION_ROUTES = {
         ("/set-lang", _set_lang_hardened, ["GET"]),
         ("/reset", _reset_hardened, ["GET"]),
         ("/resource", _resource_hardened, ["GET", "POST", "OPTIONS"]),
+        ("/openapi.json", _openapi_doc, ["GET"]),
+        ("/api/find", _api_find_hardened, ["GET"]),
+        ("/api/items", _api_items, ["POST"]),
         ("/api/xml", _xml_hardened, ["POST"]),
         ("/comment", _comment_hardened, ["POST"]),
         ("/account", _account("__Host-session", _ACCOUNT_HARDENED), ["GET"]),

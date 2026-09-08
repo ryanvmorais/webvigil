@@ -5,8 +5,10 @@ No component talks to ``httpx`` directly — they all go through
 :class:`HttpClient`, so politeness, retries, timeouts, and scope enforcement
 apply uniformly (RF-05, RF-03, RF-04). :meth:`HttpClient.request` carries any
 HTTP method through the same machinery; :meth:`HttpClient.get` is a thin wrapper
-over it (spec 006 ADR-9). Configured ``[auth]`` cookies (spec 007) are attached
-to requests whose host is the target host and to no other.
+over it (spec 006 ADR-9). Configured ``[auth]`` cookies (spec 007) and headers
+(spec 013 — a bearer token, an API key) are attached to requests whose host is
+the target host and to no other, and never reach a report, a log line, or the
+scan metadata.
 """
 
 from __future__ import annotations
@@ -156,8 +158,9 @@ class HttpClient:
         """
         self._target = target
         self._config = config
-        # spec 007: attached to target-host requests only, never stored or logged elsewhere.
+        # spec 007 / spec 013: attached to target-host requests only, never stored or logged.
         self._cookie_header = config.auth.as_header
+        self._auth_headers = config.auth.header_pairs
         self._guard = ScopeGuard(target)
         self.limiter = RateLimiter(config.http.concurrency, config.http.delay_ms)
         self.stats = HttpStats()
@@ -332,7 +335,7 @@ class HttpClient:
         crafted: bool,
     ) -> httpx.Response:
         """
-        Send one request with retry and the ``[auth]`` cookie handling, no redirect loop.
+        Send one request with retry and the ``[auth]`` cookie / header handling, no redirect loop.
 
         Idempotent methods are retried on a transport error and on a retryable
         5xx; a non-idempotent method is retried only on a pre-send connect
@@ -365,6 +368,13 @@ class HttpClient:
             req_headers["cookie"] = (
                 f"{existing}; {self._cookie_header}" if existing else self._cookie_header
             )
+        # spec 013: configured [auth] headers, target-host only, without clobbering a header
+        # the caller already set for this request (case-insensitive).
+        if self._auth_headers and _host_of(url) == self._target.host:
+            present = {name.lower() for name in req_headers}
+            for name, value in self._auth_headers:
+                if name.lower() not in present:
+                    req_headers[name] = value
         last_error: str = "unknown error"
         for attempt in range(_MAX_ATTEMPTS):
             if attempt:

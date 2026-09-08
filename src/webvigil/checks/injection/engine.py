@@ -42,6 +42,7 @@ from webvigil.core.context import Page
 from webvigil.core.errors import OutOfScopeError, RequestFailed
 from webvigil.core.target import Target
 from webvigil.crawler.forms import Form
+from webvigil.crawler.openapi import ApiOperation
 from webvigil.http.client import HttpClient, Response
 
 # Raised from 30 (spec 006) to 35 in spec 011: the cmdi + ssti detector families now share a
@@ -124,6 +125,7 @@ class InjectionScanner:
         forms: tuple[Form, ...],
         selected_kinds: set[str],
         *,
+        operations: tuple[ApiOperation, ...] = (),
         per_point_limit: int = _PER_POINT_REQUEST_CAP,
     ) -> None:
         """
@@ -137,6 +139,9 @@ class InjectionScanner:
                 selected checks; ``sqli-time`` is dropped when
                 ``time_based_sqli`` is off and ``xxe`` when ``[injection] xxe``
                 is off.
+            operations (tuple[ApiOperation, ...]): Operations from an
+                ``--openapi`` import, expanded into extra injection points
+                (spec 013). Defaults to empty.
             per_point_limit (int): Cap on requests per injection point. Defaults
                 to ``_PER_POINT_REQUEST_CAP``.
         """
@@ -145,6 +150,7 @@ class InjectionScanner:
         self._config = config
         self._pages = pages
         self._forms = forms
+        self._operations = operations
         self.selected_kinds = {
             k
             for k in selected_kinds
@@ -174,7 +180,10 @@ class InjectionScanner:
                 warnings (point cap, budget exhausted).
         """
         points, warnings = enumerate_points(
-            self._pages, self._forms, max_points=self._config.max_injection_points
+            self._pages,
+            self._forms,
+            self._operations,
+            max_points=self._config.max_injection_points,
         )
         report = InjectionReport(warnings=list(warnings))
         for point in points:

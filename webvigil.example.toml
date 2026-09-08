@@ -9,6 +9,10 @@ max_pages = 50            # crawler page-count limit
 follow_robots = true      # respect robots.txt during crawling
 submit_forms = true       # submit safe GET forms (search, filters) during the crawl to
                           # widen coverage; POST forms are never submitted by the crawler
+# openapi = "openapi.json"  # spec 013: a local .json path or an in-scope URL returning JSON
+                          # (an OpenAPI 3.x / Swagger 2.0 document). Its operations seed the
+                          # crawl and the injection pass. CLI: --openapi <path|url>
+# openapi_max_operations = 150  # cap on operations seeded from the import; excess is a warning
 
 [http]
 concurrency = 8           # max simultaneous requests
@@ -26,11 +30,14 @@ fail_on = "none"          # "none" | "info" | "low" | "medium" | "high" | "criti
 # [active]
 # authorized_by = "Jane Doe / Engagement #1234"
 
-# Authenticated scan (spec 007). Each entry is "name=value" and is sent only on requests to
-# the target host — never off-host, never written to a report or the scan metadata.
-# CLI: --cookie "name=value" (repeatable), which replaces this list.
+# Authenticated scan (spec 007, spec 013). Cookies are "name=value"; headers are
+# "Name: Value" (a bearer token, an API key). Both are sent only on requests to the target
+# host — never off-host, never written to a report or the scan metadata. Host and
+# Content-Length are rejected. CLI: --cookie "name=value" / --header "Name: Value"
+# (both repeatable), which replace the respective list.
 [auth]
 cookies = []
+headers = []
 
 # Suppress specific checks by id.
 # [checks]

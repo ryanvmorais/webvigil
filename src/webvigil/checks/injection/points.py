@@ -10,11 +10,12 @@ forms. Forms that look like authentication or destruction are dropped here
 from __future__ import annotations
 
 import re
-from urllib.parse import parse_qsl, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, quote, urlsplit, urlunsplit
 
 from webvigil.checks.injection.models import InjectionPoint
 from webvigil.core.context import Page
 from webvigil.crawler.forms import Form
+from webvigil.crawler.openapi import ApiOperation
 
 # Input types worth putting a payload in. Everything else (hidden, submit, checkbox,
 # radio, file, password, select, ...) is submitted with its discovered value but not fuzzed.
@@ -224,18 +225,26 @@ def _base_of(url: str) -> tuple[str, tuple[tuple[str, str], ...]]:
 
 
 def enumerate_points(
-    pages: tuple[Page, ...], forms: tuple[Form, ...], *, max_points: int
+    pages: tuple[Page, ...],
+    forms: tuple[Form, ...],
+    operations: tuple[ApiOperation, ...] = (),
+    *,
+    max_points: int,
 ) -> tuple[list[InjectionPoint], list[str]]:
     """
     Enumerate the injection points to test.
 
-    Query parameters from every OK page plus fuzzable fields of every form that
-    is not auth- or destruction-shaped, de-duplicated by
-    :attr:`InjectionPoint.key`, sorted, and capped at ``max_points``.
+    Query parameters from every OK page, fuzzable fields of every form that is
+    not auth- or destruction-shaped, and the query / path / form-body parameters
+    of every ``--openapi`` operation (spec 013) — de-duplicated by
+    :attr:`InjectionPoint.key` (an operation parameter the crawl already found
+    is one point), sorted, and capped at ``max_points``.
 
     Args:
         pages (tuple[Page, ...]): The crawled pages.
         forms (tuple[Form, ...]): The parsed form inventory.
+        operations (tuple[ApiOperation, ...]): Operations from an OpenAPI import.
+            Defaults to empty.
         max_points (int): Hard cap on the number of points returned.
 
     Returns:
@@ -250,10 +259,7 @@ def enumerate_points(
             continue
         base, pairs = _base_of(page.requested_url)
         for name, value in pairs:
-            point = InjectionPoint("GET", base, name, value, pairs, source="query")
-            if point.key not in seen:
-                seen.add(point.key)
-                points.append(point)
+            _add(InjectionPoint("GET", base, name, value, pairs, source="query"), seen, points)
 
     for form in forms:
         blob = form.action + " " + " ".join(f.name for f in form.fields)
@@ -264,12 +270,17 @@ def enumerate_points(
         for field in form.fields:
             if field.type not in _FUZZ_TYPES:
                 continue
-            point = InjectionPoint(
-                form.method, base, field.name, field.value, fields, query=query, source="form"
+            _add(
+                InjectionPoint(
+                    form.method, base, field.name, field.value, fields, query=query, source="form"
+                ),
+                seen,
+                points,
             )
-            if point.key not in seen:
-                seen.add(point.key)
-                points.append(point)
+
+    for operation in operations:
+        for point in _operation_points(operation):
+            _add(point, seen, points)
 
     points.sort(key=lambda p: (p.base_url, p.param, p.method))
     warnings: list[str] = []
@@ -279,6 +290,70 @@ def enumerate_points(
         )
         points = points[:max_points]
     return points, warnings
+
+
+def _add(point: InjectionPoint, seen: set[str], points: list[InjectionPoint]) -> None:
+    """
+    Append ``point`` unless one with the same :attr:`InjectionPoint.key` is already present.
+
+    Args:
+        point (InjectionPoint): The candidate point.
+        seen (set[str]): The keys already added, updated in place.
+        points (list[InjectionPoint]): The accumulating list, appended in place.
+    """
+    if point.key not in seen:
+        seen.add(point.key)
+        points.append(point)
+
+
+def _operation_points(operation: ApiOperation) -> list[InjectionPoint]:
+    """
+    Synthesize the injection points of one OpenAPI operation (spec 013 RF-09).
+
+    A GET operation contributes its query parameters; a POST operation its
+    form-urlencoded body fields (its query parameters ride along unfuzzed as
+    :attr:`InjectionPoint.query` so the endpoint stays reachable). Both
+    contribute their path parameters as ``"openapi-path"`` points that
+    :func:`build_request` substitutes into the URL template.
+
+    Args:
+        operation (ApiOperation): The operation to expand.
+
+    Returns:
+        list[InjectionPoint]: Zero or more points, all ``source`` ``"openapi"``
+            or ``"openapi-path"``.
+    """
+    out: list[InjectionPoint] = []
+    if operation.method == "GET":
+        for name, value in operation.query:
+            out.append(
+                InjectionPoint("GET", operation.url, name, value, operation.query, source="openapi")
+            )
+    else:
+        for name, value in operation.body_fields:
+            out.append(
+                InjectionPoint(
+                    "POST",
+                    operation.url,
+                    name,
+                    value,
+                    operation.body_fields,
+                    query=operation.query,
+                    source="openapi",
+                )
+            )
+    for name, value in operation.path_params:
+        out.append(
+            InjectionPoint(
+                operation.method,
+                operation.url_template,
+                name,
+                value,
+                operation.path_params,
+                source="openapi-path",
+            )
+        )
+    return out
 
 
 def is_redirect_name(point: InjectionPoint) -> bool:
@@ -420,8 +495,17 @@ def build_request(
         tuple[str, str, list[tuple[str, str]], dict[str, str] | None]: The
             ``(method, url, params, data)`` — for a GET, ``data`` is ``None`` and
             ``params`` carries the fuzzed pairs; for a POST, ``params`` carries
-            the action's own query and ``data`` the fuzzed body.
+            the action's own query and ``data`` the fuzzed body. For an
+            ``"openapi-path"`` point the payload is substituted into the ``{name}``
+            URL template and neither ``params`` nor ``data`` is set (spec 013).
     """
+    if point.source == "openapi-path":
+        url = point.base_url
+        for name, current in point.params:
+            replacement = value if name == point.param else current
+            url = url.replace("{" + name + "}", quote(replacement, safe=""))
+        return point.method, url, [], None
+
     fuzzed = [(name, value if name == point.param else current) for name, current in point.params]
     if point.method == "GET":
         return "GET", point.base_url, fuzzed, None

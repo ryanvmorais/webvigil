@@ -214,6 +214,16 @@ def test_list_checks_lists_the_injection_checks() -> None:
     assert "HTTP" in result.stdout  # http.methods.unsafe category (spec 012)
 
 
+def test_list_checks_lists_the_spec_013_passive_checks() -> None:
+    """``list-checks`` includes the four spec-013 checks and the CONTENT category."""
+    result = runner.invoke(app_mod.app, ["list-checks"])
+    assert "content.sri.missing" in result.stdout
+    assert "content.mixed" in result.stdout
+    assert "disclosure.session-id-in-url" in result.stdout
+    assert "disclosure.private-ip" in result.stdout
+    assert "CONTENT" in result.stdout
+
+
 def test_no_time_based_sqli_flag_disables_it_over_a_config_file(tmp_path: Path) -> None:
     """``--no-time-based-sqli`` overrides a config file that enabled it."""
     cfg = tmp_path / "webvigil.toml"
@@ -336,6 +346,57 @@ def test_a_malformed_cookie_is_a_clean_error() -> None:
     assert result.exit_code != 0
     assert "invalid cookie" in result.stderr
     assert "Traceback" not in result.stderr
+
+
+def test_header_flags_populate_the_auth_config(tmp_path: Path) -> None:
+    """Repeated ``--header`` flags become ``auth.headers`` and replace a config-file list."""
+    runner.invoke(
+        app_mod.app,
+        [
+            "scan",
+            "https://example.com",
+            "--header",
+            "Authorization: Bearer abc",
+            "--header",
+            "X-API-Key: k",
+        ],
+    )
+    assert _StubOrchestrator.last_config.auth.headers == [  # type: ignore[attr-defined]
+        "Authorization: Bearer abc",
+        "X-API-Key: k",
+    ]
+    cfg = tmp_path / "webvigil.toml"
+    cfg.write_text("[auth]\nheaders = ['X-Old: 1']\n", "utf-8")
+    runner.invoke(
+        app_mod.app,
+        ["scan", "https://example.com", "--config", str(cfg), "--header", "X-New: 2"],
+    )
+    assert _StubOrchestrator.last_config.auth.headers == ["X-New: 2"]  # type: ignore[attr-defined]
+
+
+def test_a_malformed_header_is_a_clean_error() -> None:
+    """A malformed ``--header`` value is a clean error message, not a traceback."""
+    result = runner.invoke(app_mod.app, ["scan", "https://example.com", "--header", "nope"])
+    assert result.exit_code != 0
+    assert "invalid header" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
+def test_summary_counts_both_cookies_and_headers() -> None:
+    """The authenticated-scan line reports cookies and ``[auth]`` headers, counts only."""
+    result = runner.invoke(
+        app_mod.app,
+        [
+            "scan",
+            "https://example.com",
+            "--cookie",
+            "session=abc",
+            "--header",
+            "Authorization: Bearer secret-xyz",
+        ],
+    )
+    assert "Authenticated scan: 1 cookie + 1 header supplied" in result.stderr
+    assert "secret-xyz" not in result.stderr
 
 
 def test_list_checks_lists_the_csrf_check() -> None:

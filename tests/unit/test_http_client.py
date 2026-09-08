@@ -26,16 +26,28 @@ def _no_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(client_mod, "BACKOFF_JITTER_S", 0.0)
 
 
-def _http(scope: Scope = Scope.HOST, *, cookies: list[str] | None = None) -> HttpClient:
+def _http(
+    scope: Scope = Scope.HOST,
+    *,
+    cookies: list[str] | None = None,
+    headers: list[str] | None = None,
+) -> HttpClient:
     """
     Args:
         scope (Scope): The target scope. Defaults to ``Scope.HOST``.
         cookies (list[str] | None): Static ``name=value`` cookies to configure.
+        headers (list[str] | None): Static ``Name: Value`` ``[auth]`` headers
+            to configure (spec 013).
 
     Returns:
         HttpClient: A client for ``https://example.com`` at ``scope``.
     """
-    config = ScanConfig.model_validate({"auth": {"cookies": cookies}} if cookies else {})
+    auth: dict[str, list[str]] = {}
+    if cookies:
+        auth["cookies"] = cookies
+    if headers:
+        auth["headers"] = headers
+    config = ScanConfig.model_validate({"auth": auth} if auth else {})
     return HttpClient(Target.parse("https://example.com", scope=scope), config)
 
 
@@ -203,3 +215,38 @@ async def test_caller_cookie_header_is_kept_and_the_configured_value_appended(
         await http.request("GET", "https://example.com/", headers={"cookie": "theme=dark"})
     sent = httpx_mock.get_requests()  # type: ignore[attr-defined]
     assert sent[0].headers["cookie"] == "theme=dark; session=abc123"
+
+
+# ---------------------------------------------------------------------------
+# Static [auth] headers on in-scope requests only (spec 013 RF-03, RF-04)
+# ---------------------------------------------------------------------------
+
+
+async def test_configured_header_is_sent_on_a_target_host_request(httpx_mock: object) -> None:
+    """Configured ``[auth]`` headers reach a target-host request."""
+    httpx_mock.add_response(status_code=200)  # type: ignore[attr-defined]
+    async with _http(headers=["Authorization: Bearer tkn", "X-Tenant: acme"]) as http:
+        await http.get("https://example.com/api/me")
+    sent = httpx_mock.get_requests()  # type: ignore[attr-defined]
+    assert sent[0].headers["authorization"] == "Bearer tkn"
+    assert sent[0].headers["x-tenant"] == "acme"
+
+
+async def test_configured_header_is_absent_on_an_out_of_scope_request(httpx_mock: object) -> None:
+    """An ``[auth]`` header is never attached to an out-of-scope request."""
+    httpx_mock.add_response(status_code=200)  # type: ignore[attr-defined]
+    async with _http(headers=["Authorization: Bearer tkn"]) as http:
+        await http.get("https://cdn.other.test/lib.js", allow_out_of_scope=True)
+    sent = httpx_mock.get_requests()  # type: ignore[attr-defined]
+    assert "authorization" not in sent[0].headers
+
+
+async def test_caller_header_wins_over_a_configured_auth_header(httpx_mock: object) -> None:
+    """A header the caller set for the request is not overwritten by an ``[auth]`` entry."""
+    httpx_mock.add_response(status_code=200)  # type: ignore[attr-defined]
+    async with _http(headers=["Authorization: Bearer configured"]) as http:
+        await http.request(
+            "GET", "https://example.com/", headers={"authorization": "Bearer caller"}
+        )
+    sent = httpx_mock.get_requests()  # type: ignore[attr-defined]
+    assert sent[0].headers["authorization"] == "Bearer caller"

@@ -22,6 +22,40 @@ from webvigil.checks.injection.points import (
     is_urllike,
 )
 from webvigil.crawler.forms import Form, FormField
+from webvigil.crawler.openapi import ApiOperation
+
+
+def _operation(
+    method: str = "GET",
+    url: str = "https://example.com/api/search",
+    *,
+    url_template: str | None = None,
+    query: tuple[tuple[str, str], ...] = (),
+    path_params: tuple[tuple[str, str], ...] = (),
+    body_fields: tuple[tuple[str, str], ...] = (),
+) -> ApiOperation:
+    """
+    Args:
+        method (str): ``"GET"`` or ``"POST"``. Defaults to ``"GET"``.
+        url (str): The concrete operation URL. Defaults to a search endpoint.
+        url_template (str | None): The ``{name}`` template; defaults to ``url``.
+        query (tuple[tuple[str, str], ...]): Query parameters.
+        path_params (tuple[tuple[str, str], ...]): Path parameters.
+        body_fields (tuple[tuple[str, str], ...]): Form-body fields.
+
+    Returns:
+        ApiOperation: The assembled operation.
+    """
+    return ApiOperation(
+        method=method,
+        url=url,
+        url_template=url_template or url,
+        query=query,
+        path_params=path_params,
+        body_fields=body_fields,
+        body_json=None,
+        operation_id="",
+    )
 
 
 def _form(*fields: FormField, method: str = "GET", action: str = "https://example.com/s") -> Form:
@@ -175,3 +209,63 @@ def test_build_request_post_uses_a_dict_body_and_keeps_the_action_query() -> Non
     assert (method, url) == ("POST", "https://example.com/c")
     assert params == [("ref", "1")]
     assert data == {"body": "PAY", "csrf": "tok"}
+
+
+# ---------------------------------------------------------------------------
+# OpenAPI operations become points (spec 013 RF-09)
+# ---------------------------------------------------------------------------
+
+
+def test_a_get_operation_contributes_query_and_path_points() -> None:
+    """A GET operation's query and path parameters become points with the right source."""
+    operation = _operation(
+        url="https://example.com/api/users/1",
+        url_template="https://example.com/api/users/{id}",
+        query=(("q", "wv"),),
+        path_params=(("id", "1"),),
+    )
+    points = {p.param: p for p in enumerate_points((), (), (operation,), max_points=100)[0]}
+    assert points["q"].source == "openapi"
+    assert points["q"].base_url == "https://example.com/api/users/1"
+    assert points["id"].source == "openapi-path"
+    assert points["id"].base_url == "https://example.com/api/users/{id}"
+
+
+def test_a_post_operation_contributes_body_field_points() -> None:
+    """A POST operation's form-body fields become POST points; its query rides along."""
+    operation = _operation(
+        method="POST",
+        url="https://example.com/api/items",
+        query=(("v", "2"),),
+        body_fields=(("name", "wv"), ("qty", "1")),
+    )
+    points = {p.param: p for p in enumerate_points((), (), (operation,), max_points=100)[0]}
+    assert points["name"].method == "POST"
+    assert points["name"].query == (("v", "2"),)
+    assert "v" not in points  # the query parameter is not itself fuzzed on a POST
+
+
+def test_an_operation_parameter_the_crawl_already_found_is_one_point() -> None:
+    """An operation query point with the same key as a crawled query point is de-duplicated."""
+    page = make_page(url="https://example.com/api/search?q=real")
+    operation = _operation(url="https://example.com/api/search", query=(("q", "wv"),))
+    points, _ = enumerate_points((page,), (), (operation,), max_points=100)
+    q_points = [p for p in points if p.param == "q"]
+    assert len(q_points) == 1
+    assert q_points[0].original == "real"  # the crawl-observed value wins
+
+
+def test_build_request_substitutes_an_openapi_path_payload() -> None:
+    """An ``openapi-path`` point fills the template, URL-encoding the payload."""
+    point = InjectionPoint(
+        "GET",
+        "https://example.com/api/users/{id}/posts/{slug}",
+        "id",
+        "1",
+        (("id", "1"), ("slug", "hello")),
+        source="openapi-path",
+    )
+    method, url, params, data = build_request(point, "../etc")
+    assert method == "GET"
+    assert url == "https://example.com/api/users/..%2Fetc/posts/hello"
+    assert params == [] and data is None

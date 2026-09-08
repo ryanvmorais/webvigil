@@ -43,6 +43,12 @@ class ScanSection(_Section):
         submit_forms (bool): Submit safe ``GET`` forms — search, filters —
             during the crawl to widen the surface (spec 007, RF-06). ``POST``
             forms are never submitted by the crawler. Defaults to ``True``.
+        openapi (str | None): A local ``.json`` path or an in-scope URL
+            returning JSON — an OpenAPI 3.0 / 3.1 or Swagger 2.0 document
+            whose operations seed the crawl and the injection pass (spec
+            013). ``None`` (the default) disables the import.
+        openapi_max_operations (int): Cap on the operations seeded from the
+            import; the excess is a scan warning. Defaults to 150.
     """
 
     mode: ScanMode = ScanMode.PASSIVE
@@ -50,6 +56,8 @@ class ScanSection(_Section):
     max_pages: int = 50
     follow_robots: bool = True
     submit_forms: bool = True
+    openapi: str | None = None
+    openapi_max_operations: int = 150
 
 
 class HttpSection(_Section):
@@ -106,19 +114,25 @@ class ActiveSection(_Section):
 
 class AuthSection(_Section):
     """
-    Static credentials for an authenticated scan (spec 007). Cookies only in v0.7.
+    Static credentials for an authenticated scan (spec 007, spec 013).
 
-    Each ``cookies`` entry is a ``name=value`` string.
-    :class:`~webvigil.http.client.HttpClient` attaches them to requests whose
-    host is the target host and to no other, and no cookie value ever reaches
-    a report, a log line, or the scan metadata (RF-01, RF-02).
+    Each ``cookies`` entry is a ``name=value`` string; each ``headers`` entry
+    is a ``Name: Value`` string (a bearer token, an API key, a tenant header —
+    spec 013). :class:`~webvigil.http.client.HttpClient` attaches both to
+    requests whose host is the target host and to no other, and no cookie or
+    header ever reaches a report, a log line, or the scan metadata (RF-01,
+    RF-02, spec 013 RF-03, RF-04).
 
     Attributes:
         cookies (list[str]): Cookie pairs, each ``"name=value"``. Defaults to
             empty (an unauthenticated scan).
+        headers (list[str]): Request headers, each ``"Name: Value"``. Defaults
+            to empty. ``Host`` and ``Content-Length`` are rejected — the
+            transport computes them.
     """
 
     cookies: list[str] = []
+    headers: list[str] = []
 
     @field_validator("cookies")
     @classmethod
@@ -141,6 +155,37 @@ class AuthSection(_Section):
                 raise ValueError(f"invalid cookie {entry!r}: expected 'name=value'")
         return raw
 
+    @field_validator("headers")
+    @classmethod
+    def _check_headers(cls, raw: list[str]) -> list[str]:
+        """
+        Reject a header entry that is not a ``Name: Value`` pair or names a reserved header.
+
+        The value may be empty and may itself contain ``:`` (a URL, a
+        timestamp); only the name — everything before the first ``:`` — is
+        constrained. ``Host`` and ``Content-Length`` are computed by the
+        transport and a user override would corrupt the request.
+
+        Args:
+            raw (list[str]): The configured header entries.
+
+        Returns:
+            list[str]: ``raw`` unchanged when every entry is well formed.
+
+        Raises:
+            ValueError: If an entry has no ``:``, an empty name, or names a
+                reserved header.
+        """
+        for entry in raw:
+            name, sep, _value = entry.partition(":")
+            if not sep or not name.strip():
+                raise ValueError(f"invalid header {entry!r}: expected 'Name: Value'")
+            if name.strip().lower() in {"host", "content-length"}:
+                raise ValueError(
+                    f"header {name.strip()!r} is computed by the transport and cannot be set"
+                )
+        return raw
+
     @property
     def as_header(self) -> str:
         """
@@ -149,6 +194,18 @@ class AuthSection(_Section):
                 are configured.
         """
         return "; ".join(entry.strip() for entry in self.cookies)
+
+    @property
+    def header_pairs(self) -> tuple[tuple[str, str], ...]:
+        """
+        Returns:
+            tuple[tuple[str, str], ...]: One ``(name, value)`` per ``headers``
+                entry, each stripped; the value keeps any ``:`` after the first.
+        """
+        return tuple(
+            (name.strip(), value.strip())
+            for name, _sep, value in (entry.partition(":") for entry in self.headers)
+        )
 
 
 class ChecksSection(_Section):
@@ -326,10 +383,11 @@ class ScanConfig(_Section):
             **sections (dict[str, Any]): Maps a section name (``scan``,
                 ``http``, ``report``, ``active``, ``auth``, ``checks``,
                 ``disclosure``, ``injection``, ``deps``) to a dict of the
-                fields to override. ``injection`` covers spec 006 tuning plus
-                spec 008's ``stored_xss``, spec 011's ``time_based_cmdi``, and
-                spec 012's ``xxe`` / ``envelope_*``; ``deps`` covers spec 010's
-                ``osv_online``.
+                fields to override. ``scan`` covers spec 013's ``openapi``;
+                ``auth`` covers spec 013's ``headers``; ``injection`` covers
+                spec 006 tuning plus spec 008's ``stored_xss``, spec 011's
+                ``time_based_cmdi``, and spec 012's ``xxe`` / ``envelope_*``;
+                ``deps`` covers spec 010's ``osv_online``.
 
         Returns:
             ScanConfig: A new, validated configuration.

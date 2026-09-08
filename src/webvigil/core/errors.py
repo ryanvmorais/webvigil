@@ -69,3 +69,14 @@ class DuplicateCheckId(WebVigilError):
 
 class ConfigError(WebVigilError):
     """The configuration file or CLI overrides could not be resolved into a valid config."""
+
+
+class OpenApiError(WebVigilError):
+    """
+    The ``--openapi`` document could not be loaded into usable operations (spec 013).
+
+    Raised for a missing file, a non-200 or non-JSON URL response, a body that
+    is not valid JSON, or JSON that is not a recognizable OpenAPI / Swagger
+    document. A document that parses but yields no acted-on operations is a scan
+    warning, not this error.
+    """

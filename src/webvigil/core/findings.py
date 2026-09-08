@@ -89,6 +89,8 @@ class Category(StrEnum):
         CSRF (str): Cross-site request forgery protection on forms.
         HTTP (str): HTTP-protocol behaviour not tied to a single response
             header (allowed methods, TRACE / XST).
+        CONTENT (str): What a page's HTML tells the browser to load
+            (Subresource Integrity, mixed content).
     """
 
     HEADERS = "HEADERS"
@@ -100,6 +102,7 @@ class Category(StrEnum):
     INJECTION = "INJECTION"
     CSRF = "CSRF"
     HTTP = "HTTP"
+    CONTENT = "CONTENT"
 
 
 class ScanMode(StrEnum):

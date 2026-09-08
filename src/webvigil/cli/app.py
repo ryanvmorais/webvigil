@@ -130,6 +130,22 @@ def scan(
             help='Send this cookie on in-scope requests ("name=value"). Repeatable.',
         ),
     ] = None,
+    header: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--header",
+            help='Send this header on in-scope requests ("Name: Value", e.g. a bearer token). '
+            "Repeatable.",
+        ),
+    ] = None,
+    openapi: Annotated[
+        str | None,
+        typer.Option(
+            "--openapi",
+            help="Seed the scan from an OpenAPI 3.x / Swagger 2.0 JSON document "
+            "(a local path or an in-scope URL).",
+        ),
+    ] = None,
     osv_online: Annotated[
         bool | None,
         typer.Option(
@@ -165,6 +181,8 @@ def scan(
             stored_xss=stored_xss,
             xxe=xxe,
             cookie=cookie,
+            header=header,
+            openapi=openapi,
             osv_online=osv_online,
         )
     except ConfigError as exc:
@@ -189,6 +207,7 @@ def scan(
         output_format,
         output,
         cookie_count=len(cfg.auth.cookies),
+        header_count=len(cfg.auth.headers),
         osv_online=cfg.deps.osv_online,
     )
     raise typer.Exit(int(evaluate(result, cfg.report.fail_on)))
@@ -242,6 +261,8 @@ def _build_config(
     stored_xss: bool | None,
     xxe: bool | None,
     cookie: list[str] | None,
+    header: list[str] | None,
+    openapi: str | None,
     osv_online: bool | None,
 ) -> ScanConfig:
     """
@@ -254,8 +275,9 @@ def _build_config(
     Args:
         config (Path | None): Path to a ``webvigil.toml``, or ``None``.
         mode, scope, max_pages, delay, fail_on, authorized_by, probe,
-            time_based_sqli, time_based_cmdi, stored_xss, xxe, cookie, osv_online: The
-            optional CLI overrides; ``None`` means "not passed".
+            time_based_sqli, time_based_cmdi, stored_xss, xxe, cookie, header,
+            openapi, osv_online: The optional CLI overrides; ``None`` means "not
+            passed".
         verify_tls (bool): The resolved TLS-verification flag.
 
     Returns:
@@ -273,6 +295,8 @@ def _build_config(
         scan_overrides["scope"] = scope
     if max_pages is not None:
         scan_overrides["max_pages"] = max_pages
+    if openapi is not None:
+        scan_overrides["openapi"] = openapi
 
     http_overrides: dict[str, object] = {"verify_tls": verify_tls}
     if delay is not None:
@@ -303,6 +327,8 @@ def _build_config(
     auth_overrides: dict[str, object] = {}
     if cookie is not None:
         auth_overrides["cookies"] = cookie
+    if header is not None:
+        auth_overrides["headers"] = header
 
     deps_overrides: dict[str, object] = {}
     if osv_online is not None:
@@ -360,6 +386,7 @@ def _emit(
     output: Path | None,
     *,
     cookie_count: int = 0,
+    header_count: int = 0,
     osv_online: bool = False,
 ) -> None:
     """
@@ -377,11 +404,15 @@ def _emit(
         output (Path | None): Where to write the report, or ``None`` for
             stdout.
         cookie_count (int): Cookies supplied, for the summary. Defaults to 0.
+        header_count (int): ``[auth]`` headers supplied, for the summary.
+            Defaults to 0.
         osv_online (bool): Whether OSV.dev ran, for the summary. Defaults to
             ``False``.
     """
     if output_format is None:
-        _render.summary(result, cookie_count=cookie_count, osv_online=osv_online)
+        _render.summary(
+            result, cookie_count=cookie_count, header_count=header_count, osv_online=osv_online
+        )
         return
     rendered = get_reporter(output_format).render(result)
     if output is not None:
@@ -389,7 +420,9 @@ def _emit(
         _render.status(f"wrote {output_format} report to {output}")
         return
     sys.stdout.write(rendered + "\n")
-    _render.summary(result, cookie_count=cookie_count, osv_online=osv_online)
+    _render.summary(
+        result, cookie_count=cookie_count, header_count=header_count, osv_online=osv_online
+    )
 
 
 def _write_or_print(rendered: str, output: Path | None, output_format: str) -> None:

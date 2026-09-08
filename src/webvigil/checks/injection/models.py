@@ -28,8 +28,12 @@ class InjectionPoint:
         params (tuple[tuple[str, str], ...]): The full query (GET) or body
             (POST) set, including ``param``.
         query (tuple[tuple[str, str], ...]): A query string on a POST form's
-            action, kept as-is. Defaults to empty.
-        source (str): ``"query"`` or ``"form"``. Defaults to ``"query"``.
+            action (or an OpenAPI POST operation's query), kept as-is. Defaults
+            to empty.
+        source (str): ``"query"``, ``"form"``, ``"openapi"`` (a query / body
+            parameter of an imported operation), or ``"openapi-path"`` (a path
+            segment — ``base_url`` holds the ``{name}`` template). Defaults to
+            ``"query"``.
     """
 
     method: str

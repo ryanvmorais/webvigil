@@ -51,6 +51,12 @@ _BASE_CANON = re.compile(
 )
 # A reflection whose surrounding text is a reset / verification link is account takeover.
 _RESET_CONTEXT = re.compile(r"reset|token|password|confirm|verif|activat|magic", re.I)
+# A TRACE echo reflects the whole request, including any [auth] cookie / header WebVigil
+# attached (spec 013 RNF-04) — mask those header lines before they enter the evidence.
+_SECRET_HEADER_LINE = re.compile(
+    r"(?im)^\s*(authorization|cookie|proxy-authorization|x-api-key|x-auth-token|"
+    r"api-key|x-amz-security-token|x-csrf-token)\s*:.*$"
+)
 _STATIC_TYPES = ("image/", "font/", "text/css", "javascript", "application/octet-stream")
 _STATIC_EXT = re.compile(r"\.(?:css|js|mjs|png|jpe?g|gif|svg|webp|ico|woff2?|ttf|map|pdf)$", re.I)
 
@@ -261,6 +267,7 @@ class EnvelopeScanner:
             return []
         if token not in resp.text and "TRACE " not in resp.text:
             return []
+        echoed = _SECRET_HEADER_LINE.sub(r"\1: ***redacted***", resp.text)
         return [
             EnvelopeHit(
                 check_id=_METHODS_ID,
@@ -271,7 +278,7 @@ class EnvelopeScanner:
                 confidence=Confidence.HIGH,
                 title="Cross-Site Tracing (XST): TRACE is enabled and echoes the request",
                 evidence=(
-                    ("TRACE response", resp.text[:200]),
+                    ("TRACE response", echoed[:200]),
                     (
                         "Impact",
                         "TRACE reflects request headers, defeating HttpOnly cookie protection",

@@ -50,6 +50,13 @@ def test_category_http_is_a_plain_string_member() -> None:
     assert Category("HTTP") is Category.HTTP
 
 
+def test_category_content_is_a_plain_string_member() -> None:
+    """``Category.CONTENT`` (spec 013) is a ``StrEnum`` value that serialises to ``"CONTENT"``."""
+    assert Category.CONTENT == "CONTENT"
+    assert str(Category.CONTENT) == "CONTENT"
+    assert Category("CONTENT") is Category.CONTENT
+
+
 # ---------------------------------------------------------------------------
 # Fingerprinting
 # ---------------------------------------------------------------------------

@@ -36,6 +36,7 @@ from webvigil.core.target import Target
 from webvigil.core.technology import Technology
 from webvigil.crawler.crawler import Crawler
 from webvigil.crawler.forms import Form
+from webvigil.crawler.openapi import ApiOperation, load_openapi
 from webvigil.http.client import HttpClient
 
 _PROBE_FAMILIES = frozenset({"vcs", "config", "manifest", "backup", "debug", "sourcemap"})
@@ -71,10 +72,10 @@ class Orchestrator:
         """
         Run a full scan and return its result.
 
-        Parses ``raw_target``, enforces the Active-Mode gate, crawls in scope,
-        runs the fingerprint / OSV / disclosure-probe / injection passes,
-        fans the selected checks over a shared context, dedupes, and assembles
-        the result.
+        Parses ``raw_target``, enforces the Active-Mode gate, loads any
+        ``--openapi`` document, crawls in scope, runs the fingerprint / OSV /
+        disclosure-probe / injection passes, fans the selected checks over a
+        shared context, dedupes, and assembles the result.
 
         Args:
             raw_target (str): The target as typed by the user; ``https://`` is
@@ -88,6 +89,8 @@ class Orchestrator:
             InvalidTargetError: If ``raw_target`` cannot be parsed.
             ActiveModeNotAuthorized: If Active Mode is requested without an
                 ``authorized_by`` attestation.
+            OpenApiError: If ``[scan] openapi`` is set but cannot be loaded
+                (spec 013).
         """
         started_at = datetime.now(UTC)
         target = Target.parse(raw_target, scope=self._config.scan.scope)
@@ -100,7 +103,13 @@ class Orchestrator:
             )
         technologies: tuple[Technology, ...] = ()
         async with HttpClient(target, self._config) as http:
-            crawler = Crawler(http, target, self._config)
+            operations = await self._load_openapi(http, target, warnings)
+            crawler = Crawler(
+                http,
+                target,
+                self._config,
+                extra_seeds=[op.url for op in operations if op.method == "GET"],
+            )
             pages = tuple(await crawler.discover())
             forms = crawler.forms
             if crawler.skipped_destructive:
@@ -112,7 +121,9 @@ class Orchestrator:
             detections = await self._fingerprint(check_types, http, target, pages, warnings)
             osv_advisories = await self._osv_lookup(check_types, detections, warnings)
             probe_hits = await self._probe_disclosure(check_types, http, target, pages, warnings)
-            injection_hits = await self._inject(check_types, http, target, pages, forms, warnings)
+            injection_hits = await self._inject(
+                check_types, http, target, pages, forms, warnings, operations
+            )
             stored_hits = await self._inject_stored(
                 check_types, http, target, pages, forms, warnings
             )
@@ -149,7 +160,7 @@ class Orchestrator:
             finished_at=datetime.now(UTC),
             pages_scanned=len(pages),
             counts=ScanResult.severity_counts(deduped),
-            authenticated=bool(self._config.auth.cookies),
+            authenticated=bool(self._config.auth.cookies or self._config.auth.headers),
         )
         return ScanResult(
             metadata=metadata,
@@ -158,6 +169,41 @@ class Orchestrator:
             errors=tuple(errors),
             warnings=tuple(warnings),
         )
+
+    async def _load_openapi(
+        self, http: HttpClient, target: Target, warnings: list[str]
+    ) -> tuple[ApiOperation, ...]:
+        """
+        Load the ``[scan] openapi`` document into seed operations, before the crawl (spec 013).
+
+        A no-op returning ``()`` when ``[scan] openapi`` is unset. A document
+        that will not load is fatal (the user asked for it explicitly); a
+        document that yields no operations is a warning and the scan continues.
+
+        Args:
+            http (HttpClient): The shared, scope-guarded HTTP client (used only
+                for a URL source).
+            target (Target): The normalized target.
+            warnings (list[str]): Scan-level warning list, appended to in place.
+
+        Returns:
+            tuple[ApiOperation, ...]: The imported operations, or ``()``.
+
+        Raises:
+            OpenApiError: If the document cannot be read or is not a
+                recognizable OpenAPI / Swagger document.
+        """
+        source = self._config.scan.openapi
+        if not source:
+            return ()
+        operations, notes = await load_openapi(
+            source,
+            http=http,
+            target=target,
+            max_operations=self._config.scan.openapi_max_operations,
+        )
+        warnings.extend(notes)
+        return tuple(operations)
 
     async def _fingerprint(
         self,
@@ -317,6 +363,7 @@ class Orchestrator:
         pages: tuple[Page, ...],
         forms: tuple[Form, ...],
         warnings: list[str],
+        operations: tuple[ApiOperation, ...] = (),
     ) -> tuple[InjectionHit, ...]:
         """
         Run the active-injection pass when the scan is Active and a check is selected.
@@ -332,6 +379,9 @@ class Orchestrator:
             pages (tuple[Page, ...]): The pages the crawler discovered.
             forms (tuple[Form, ...]): The parsed ``<form>`` inventory.
             warnings (list[str]): Scan-level warning list, appended to in place.
+            operations (tuple[ApiOperation, ...]): Operations from an
+                ``--openapi`` import, expanded into extra injection points
+                (spec 013). Defaults to empty.
 
         Returns:
             tuple[InjectionHit, ...]: The confirmed reflected-injection hits.
@@ -345,7 +395,13 @@ class Orchestrator:
             return ()
         try:
             report = await InjectionScanner(
-                http, target, self._config.injection, pages, forms, selected
+                http,
+                target,
+                self._config.injection,
+                pages,
+                forms,
+                selected,
+                operations=operations,
             ).run()
         except Exception as exc:  # a detector bug must not abort the whole scan
             warnings.append(f"active injection pass failed: {exc or type(exc).__name__}")

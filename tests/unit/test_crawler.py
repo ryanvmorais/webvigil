@@ -164,6 +164,49 @@ async def test_out_of_scope_links_are_not_followed(httpx_mock: object) -> None:
     assert "https://evil.test/x" not in router.seen
 
 
+async def test_extra_seeds_are_fetched_scope_guarded_and_de_duplicated(httpx_mock: object) -> None:
+    """``extra_seeds`` (spec 013) are crawled, kept in scope, and not re-fetched from a link."""
+    router = _Router(
+        {
+            _SEED: _page(_html("/api/search?q=wv")),
+            "https://example.com/api/search?q=wv": _page(_html()),
+            "https://example.com/api/orphan": _page(_html()),
+        }
+    )
+    httpx_mock.add_callback(router, is_reusable=True)  # type: ignore[attr-defined]
+    seeds = [
+        "https://example.com/api/search?q=wv",  # also linked from the seed page
+        "https://example.com/api/orphan",  # linked from nowhere
+        "https://evil.test/api/leak",  # out of scope
+    ]
+    async with HttpClient(Target.parse(_SEED), ScanConfig()) as http:
+        pages = await Crawler(http, Target.parse(_SEED), ScanConfig(), extra_seeds=seeds).discover()
+    urls = [p.url for p in pages]
+    assert "https://example.com/api/orphan" in urls
+    assert urls.count("https://example.com/api/search?q=wv") == 1
+    assert not any("evil.test" in u for u in router.seen)
+
+
+async def test_an_extra_seed_blocked_by_robots_is_skipped(httpx_mock: object) -> None:
+    """A seed disallowed by ``robots.txt`` is not fetched when ``follow_robots`` is on."""
+    router = _Router(
+        {
+            _SEED: _page(_html()),
+            "https://example.com/robots.txt": (200, "User-agent: *\nDisallow: /api/", "text/plain"),
+            "https://example.com/api/hidden": _page(_html()),
+        }
+    )
+    httpx_mock.add_callback(router, is_reusable=True)  # type: ignore[attr-defined]
+    async with HttpClient(Target.parse(_SEED), ScanConfig()) as http:
+        pages = await Crawler(
+            http,
+            Target.parse(_SEED),
+            ScanConfig(),
+            extra_seeds=["https://example.com/api/hidden"],
+        ).discover()
+    assert all("api/hidden" not in p.url for p in pages)
+
+
 # ---------------------------------------------------------------------------
 # Form-driven crawling and the safety heuristic (spec 007 RF-03, RF-05, RF-06)
 # ---------------------------------------------------------------------------

@@ -146,6 +146,23 @@ async def test_trace_echo_is_an_xst_hit() -> None:
     assert xst and "XST" in xst[0].title
 
 
+async def test_trace_echo_redacts_a_reflected_auth_header() -> None:
+    """A TRACE echo reflecting an Authorization / Cookie header is masked in the evidence."""
+
+    def route(method: str, url: str, headers: dict[str, str]) -> Response:
+        if method == "TRACE":
+            return _resp(
+                "TRACE / HTTP/1.1\r\nauthorization: Bearer wv-secret-xyz\r\ncookie: sid=abc123"
+            )
+        return _resp()
+
+    hits = await _scanner(_FakeHttp(route)).run()
+    xst = next(h for h in hits if h.check_id == "http.methods.unsafe" and h.method == "TRACE")
+    blob = " ".join(content for _label, content in xst.evidence)
+    assert "wv-secret-xyz" not in blob and "sid=abc123" not in blob
+    assert "***redacted***" in blob
+
+
 async def test_pass_never_sends_a_state_changing_verb() -> None:
     http = _FakeHttp(lambda m, u, h: _resp(headers={"allow": "GET, PUT, DELETE, PATCH, CONNECT"}))
     await _scanner(http).run()

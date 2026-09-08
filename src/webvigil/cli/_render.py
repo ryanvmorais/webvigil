@@ -12,8 +12,15 @@ from webvigil.core.result import ScanResult
 
 _console = Console(stderr=True)
 
+# Disclosure checks that are NOT probe-fed "exposed path" findings — excluded from
+# the summary's exposed-path count (spec 013 added the last two).
 _PASSIVE_DISCLOSURE_IDS = frozenset(
-    {"disclosure.debug.error-page", "disclosure.listing.directory-index"}
+    {
+        "disclosure.debug.error-page",
+        "disclosure.listing.directory-index",
+        "disclosure.session-id-in-url",
+        "disclosure.private-ip",
+    }
 )
 
 _SEVERITY_STYLE = {
@@ -58,7 +65,13 @@ def banner(authorized_by: str) -> None:
     )
 
 
-def summary(result: ScanResult, *, cookie_count: int = 0, osv_online: bool = False) -> None:
+def summary(
+    result: ScanResult,
+    *,
+    cookie_count: int = 0,
+    header_count: int = 0,
+    osv_online: bool = False,
+) -> None:
     """
     Print the human-readable scan summary to stderr.
 
@@ -70,6 +83,8 @@ def summary(result: ScanResult, *, cookie_count: int = 0, osv_online: bool = Fal
         result (ScanResult): The completed scan.
         cookie_count (int): Number of ``[auth]`` cookies supplied, for the
             authenticated-scan line. Defaults to 0.
+        header_count (int): Number of ``[auth]`` headers supplied (spec 013),
+            for the authenticated-scan line. Defaults to 0.
         osv_online (bool): Whether the OSV.dev lookup ran, for the advisory-
             sources line. Defaults to ``False``.
     """
@@ -112,11 +127,13 @@ def summary(result: ScanResult, *, cookie_count: int = 0, osv_online: bool = Fal
                 f"[red]Active injection: {injected} finding{'' if injected == 1 else 's'}[/]"
             )
 
-    if cookie_count:
-        _console.print(
-            f"[dim]Authenticated scan: {cookie_count} cookie{'' if cookie_count == 1 else 's'} "
-            "supplied[/]"
-        )
+    if cookie_count or header_count:
+        parts: list[str] = []
+        if cookie_count:
+            parts.append(f"{cookie_count} cookie{'' if cookie_count == 1 else 's'}")
+        if header_count:
+            parts.append(f"{header_count} header{'' if header_count == 1 else 's'}")
+        _console.print(f"[dim]Authenticated scan: {' + '.join(parts)} supplied[/]")
     csrf_forms = sum(1 for f in result.findings if f.check_id == "csrf.form.no-token")
     if csrf_forms:
         _console.print(

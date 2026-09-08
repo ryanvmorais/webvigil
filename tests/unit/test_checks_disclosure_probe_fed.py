@@ -28,6 +28,8 @@ _DISCLOSURE_IDS = {
     "disclosure.backup.file-exposed",
     "disclosure.debug.endpoint-exposed",
     "disclosure.sourcemap.exposed",
+    "disclosure.session-id-in-url",  # spec 013
+    "disclosure.private-ip",  # spec 013
 }
 
 
@@ -109,8 +111,8 @@ async def test_dedup_key_is_the_path() -> None:
     assert len({f.fingerprint for f in findings}) == 2
 
 
-def test_all_eight_disclosure_checks_are_registered() -> None:
-    """The registry exposes exactly the eight disclosure check ids, all under the right category."""
+def test_all_disclosure_checks_are_registered() -> None:
+    """The registry exposes exactly the expected disclosure check ids, all under DISCLOSURE."""
     ids = {check.id for check in all_checks() if check.id.startswith("disclosure.")}
     assert ids == _DISCLOSURE_IDS
     for check in all_checks():

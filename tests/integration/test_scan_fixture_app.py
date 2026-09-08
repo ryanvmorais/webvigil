@@ -27,6 +27,7 @@ from webvigil.core.config import ScanConfig
 from webvigil.core.orchestrator import Orchestrator
 from webvigil.core.result import ScanResult
 from webvigil.http.client import HttpClient
+from webvigil.reporting import get_reporter
 
 _TARGET = "http://demo.test/"
 # The fixture app is plain HTTP; TLS findings are covered by the socket-based unit tests.
@@ -100,8 +101,10 @@ def scan(monkeypatch: pytest.MonkeyPatch):
         probe: bool = False,
         active: bool = False,
         cookies: list[str] | None = None,
+        headers: list[str] | None = None,
         stored_xss: bool = False,
         xxe: bool = False,
+        openapi: str | None = None,
         osv_online: bool = False,
         osv_up: bool = True,
     ) -> ScanResult:
@@ -130,8 +133,11 @@ def scan(monkeypatch: pytest.MonkeyPatch):
                 "envelope_url_sample": 20,
                 "envelope_budget": 130,
             }
-        if cookies is not None:
-            raw["auth"] = {"cookies": cookies}
+        if openapi is not None:
+            raw.setdefault("scan", {})
+            raw["scan"]["openapi"] = openapi  # type: ignore[index]
+        if cookies is not None or headers is not None:
+            raw["auth"] = {"cookies": cookies or [], "headers": headers or []}
         if osv_online:
             raw["deps"] = {"osv_online": True, "osv_base_url": "http://osv.test"}
             handler = _osv_up if osv_up else _osv_down
@@ -265,7 +271,8 @@ async def test_crawler_reaches_the_linked_pages(scan) -> None:
     # /download, /go (spec 006), /fetch, /webhook (spec 009), /ping, /greet (spec 011) and
     # /set-lang, /reset, /resource (spec 012) + the GET /search?q= the crawler submits from
     # the search form + /account (→ /login for an anonymous scan) (spec 007 RF-05) +
-    # /guestbook (spec 008 RF-13)
+    # /guestbook (spec 008 RF-13). The spec-013 /openapi.json + /api/* routes are linked from
+    # no page — only --openapi reaches them.
     assert result.metadata.pages_scanned == 17
 
 
@@ -427,6 +434,60 @@ async def test_hardened_profile_active_reports_nothing(scan) -> None:
     """The hardened profile reports no injection findings under an active scan."""
     result = await scan("hardened", active=True)
     assert not any(f.check_id.startswith("injection.") for f in result.findings)
+
+
+# ---------------------------------------------------------------------------
+# Auth width and API surface (spec 013)
+# ---------------------------------------------------------------------------
+
+_OPENAPI_URL = "http://demo.test/openapi.json"
+
+
+async def test_openapi_import_reaches_an_unlinked_endpoint_and_fuzzes_it(scan) -> None:
+    """``--openapi`` seeds ``/api/find`` (linked from nowhere) and the XSS detector hits it."""
+    result = await scan("insecure", active=True, openapi=_OPENAPI_URL)
+    xss = [
+        f
+        for f in result.findings
+        if f.check_id == "injection.xss.reflected" and "/api/find" in (f.location.url or "")
+    ]
+    assert xss and xss[0].location.param == "q"
+    log = scan.holder["app"].state.requests  # type: ignore[attr-defined]
+    assert any(entry.startswith("GET /api/find?") for entry in log)
+
+
+async def test_content_and_leakage_checks_fire_on_the_insecure_index(scan) -> None:
+    """The passive spec-013 checks flag the insecure index; mixed content stays quiet on HTTP."""
+    result = await scan("insecure")
+    reported = {f.check_id for f in result.findings}
+    assert "content.sri.missing" in reported
+    assert "disclosure.session-id-in-url" in reported
+    assert "disclosure.private-ip" in reported
+    assert "content.mixed" not in reported
+    session = next(f for f in result.findings if f.check_id == "disclosure.session-id-in-url")
+    assert "WV013SECRETTOKEN" not in " ".join(e.content for e in session.evidence)
+
+
+async def test_a_bearer_token_never_appears_in_the_report(scan) -> None:
+    """A ``--header`` bearer token reaches the target but not the rendered JSON report."""
+    result = await scan(
+        "insecure",
+        active=True,
+        openapi=_OPENAPI_URL,
+        headers=["Authorization: Bearer wv-secret-123"],
+    )
+    rendered = get_reporter("json").render(result)
+    assert "wv-secret-123" not in rendered  # never leaves, even via the /resource TRACE echo
+    assert result.metadata.authenticated is True
+
+
+async def test_openapi_scan_is_deterministic(scan) -> None:
+    """Two active scans with the same import produce the same finding fingerprints."""
+    a = await scan("insecure", active=True, openapi=_OPENAPI_URL)
+    b = await scan("insecure", active=True, openapi=_OPENAPI_URL)
+    fa = sorted(f.fingerprint for f in a.findings)
+    fb = sorted(f.fingerprint for f in b.findings)
+    assert fa == fb and fa
 
 
 async def test_the_login_form_is_never_fuzzed(scan) -> None:

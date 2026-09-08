@@ -31,6 +31,7 @@ __all__ = [
 def _load_builtin_checks() -> None:
     """Import the built-in check packages so their ``@register`` calls run at import time."""
     from webvigil.checks import (  # noqa: F401
+        content,
         cookies,
         cors,
         csrf,

@@ -1,8 +1,9 @@
 """
 Lightweight in-scope page discovery (RF-07).
 
-BFS from the seed URL plus any sitemap seeds, following ``<a href>`` links that
-stay in scope, bounded by ``max_pages``. GET only — no JavaScript. Since spec
+BFS from the seed URL plus any sitemap seeds and ``--openapi`` GET operations
+(spec 013), following ``<a href>`` links that stay in scope, bounded by
+``max_pages``. GET only — no JavaScript. Since spec
 007 the crawler also submits safe ``GET`` forms (search, filters) with their
 default values (RF-05) and skips ``logout`` links (always) and — on an
 authenticated crawl — links that look state-changing (RF-03). The ``<form>``
@@ -41,7 +42,14 @@ class Crawler:
     (:attr:`skipped_destructive`).
     """
 
-    def __init__(self, http: HttpClient, target: Target, config: ScanConfig) -> None:
+    def __init__(
+        self,
+        http: HttpClient,
+        target: Target,
+        config: ScanConfig,
+        *,
+        extra_seeds: Sequence[str] = (),
+    ) -> None:
         """
         Args:
             http (HttpClient): The shared, scope-guarded HTTP client.
@@ -49,13 +57,18 @@ class Crawler:
             config (ScanConfig): The resolved scan configuration; supplies
                 ``max_pages``, ``follow_robots``, ``submit_forms``, and whether
                 the crawl is authenticated.
+            extra_seeds (Sequence[str]): Absolute URLs to enqueue before the
+                seed page's own links — the GET operations of an ``--openapi``
+                import (spec 013). Scope / logout / destructive guards and
+                ``max_pages`` still apply.
         """
         self._http = http
         self._target = target
         self._config = config
         self._user_agent = config.http.user_agent
-        self._authenticated = bool(config.auth.cookies)
+        self._authenticated = bool(config.auth.cookies or config.auth.headers)
         self._submit_forms = config.scan.submit_forms
+        self._extra_seeds = tuple(extra_seeds)
         self._forms: dict[_FormKey, Form] = {}
         self._skipped_destructive = 0
 
@@ -96,6 +109,8 @@ class Crawler:
         pages: list[Page] = [await self._fetch(seed)]
 
         queue: deque[str] = deque()
+        for seed in self._extra_seeds:  # spec 013: API operations before the HTML surface
+            self._maybe_enqueue(seed, seen, queue)
         self._enqueue_links(pages[0], seen, queue)
         self._collect_and_enqueue_forms(pages[0], seen, queue)
         await self._enqueue_sitemaps(robots, seen, queue)
