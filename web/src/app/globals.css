@@ -1,10 +1,27 @@
+/*
+ * globals.css — the web UI's only global stylesheet.
+ *
+ * Three concerns, in order:
+ *   1. Tailwind entry (base / components / utilities layers).
+ *   2. Design tokens: the shadcn/ui "slate" palette plus a severity scale.
+ *   3. A thin base-layer reset.
+ * Everything else is utilities in the markup; add a rule here only for what
+ * utilities cannot express.
+ */
+
+/* 1. Tailwind entry — the three layers, emitted in cascade order. */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 /*
- * shadcn/ui "slate" tokens. Light values on bare :root; dark values only inside
- * prefers-color-scheme (RF-02, ADR-8 — no `.dark` class, no toggle).
+ * 2. Design tokens.
+ *
+ * Every value is a bare HSL channel triple ("H S% L%"), wrapped as
+ * `hsl(var(--token))` in tailwind.config.ts so utilities like `bg-background`
+ * and `text-severity-high` resolve to it. Light values sit on bare :root; the
+ * dark set lives only inside a prefers-color-scheme block — RF-02, ADR-8: the
+ * theme follows the OS, there is no `.dark` class and no toggle.
  */
 @layer base {
   :root {
@@ -29,6 +46,9 @@
     --ring: 222.2 84% 4.9%;
     --radius: 0.5rem;
 
+    /* Severity scale — one hue per level, consumed via `text-severity-*` /
+       `border-severity-*` (see SEVERITY_CLASS in src/lib/severity.ts). Names and
+       order mirror the engine's Severity enum. */
     --severity-info: 215.4 16.3% 46.9%;
     --severity-low: 199 89% 48%;
     --severity-medium: 38 92% 50%;
@@ -36,6 +56,7 @@
     --severity-critical: 0 72.2% 50.6%;
   }
 
+  /* Dark set — same token names, overridden only when the OS asks for dark. */
   @media (prefers-color-scheme: dark) {
     :root {
       --background: 222.2 84% 4.9%;
@@ -67,10 +88,15 @@
   }
 }
 
+/* 3. Base reset. */
 @layer base {
+  /* shadcn convention: default every element's border color to the themed
+     token, so components can write `border` without restating the color. */
   * {
     @apply border-border;
   }
+  /* System font stack only — the UI ships no web font, so there is no external
+     request and no layout shift on load. */
   body {
     @apply bg-background text-foreground;
     font-family:
