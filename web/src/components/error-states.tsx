@@ -1,3 +1,8 @@
+/**
+ * The shared loading / empty / error placeholders — `FullPageSpinner`, `Empty`,
+ * `LoadFailed` (with a retry), `NotFound`. Every page composes these instead of
+ * rolling its own, so the states look and read the same everywhere.
+ */
 import { AlertTriangle, Loader2, SearchX } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";

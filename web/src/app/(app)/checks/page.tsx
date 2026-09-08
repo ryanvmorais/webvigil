@@ -1,3 +1,4 @@
+/** `/checks` — the read-only check catalogue (RF-29), filterable by category and mode. */
 "use client";
 
 import { useMemo, useState } from "react";

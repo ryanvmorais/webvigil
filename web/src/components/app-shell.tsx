@@ -1,3 +1,4 @@
+/** The authenticated chrome: top bar with the brand, the primary nav, and the logout menu. */
 "use client";
 
 import { Menu, ShieldCheck } from "lucide-react";

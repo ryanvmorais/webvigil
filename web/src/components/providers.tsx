@@ -1,3 +1,8 @@
+/**
+ * The app-wide TanStack Query provider plus its global error routing: a 401 on any query
+ * or mutation sends the user to `/login` (unless the auth guard owns that probe).
+ * `unauthorizedRedirect` is the pure decision function, unit-tested on its own.
+ */
 "use client";
 
 import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";

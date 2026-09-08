@@ -1,3 +1,8 @@
+/**
+ * `/scans/[id]` — the scan detail view (RF-20..RF-28): metadata, severity summary,
+ * technology inventory, the filterable findings table, and the cancel / delete / report
+ * actions. Polls the scan until it reaches a terminal status.
+ */
 "use client";
 
 import { useQueryClient } from "@tanstack/react-query";

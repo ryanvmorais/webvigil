@@ -1,3 +1,4 @@
+/** `/settings` — the API version (RF-30), the change-password form, and logout. */
 "use client";
 
 import { useState } from "react";

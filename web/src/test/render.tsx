@@ -1,3 +1,7 @@
+/**
+ * Test render helpers: a `QueryClient` with retries and caching off, a provider wrapper,
+ * and `renderWithClient` that combines them and hands the client back for assertions.
+ */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render } from "@testing-library/react";
 import type { ReactElement, ReactNode } from "react";

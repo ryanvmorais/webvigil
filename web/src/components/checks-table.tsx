@@ -1,3 +1,4 @@
+/** The check catalogue as a sortable table (RF-29), filtered by the `category` / `mode` props. */
 "use client";
 
 import { ArrowDown, ArrowUp } from "lucide-react";

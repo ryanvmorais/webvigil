@@ -1,3 +1,4 @@
+/** The scan list as a table — one row per scan, linking to its detail view (RF-11). */
 import Link from "next/link";
 
 import { ModeBadge } from "@/components/mode-badge";

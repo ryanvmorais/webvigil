@@ -1,3 +1,7 @@
+/**
+ * The findings table for a scan (RF-22..RF-24): one expandable row per finding, showing
+ * severity, confidence, location, description, remediation, evidence, and CWE links.
+ */
 "use client";
 
 import { ChevronRight } from "lucide-react";

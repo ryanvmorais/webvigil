@@ -1,3 +1,7 @@
+/**
+ * Scan status as a badge — icon + colour + label, one entry per `ScanStatus`.
+ * `statusLabel` exposes just the human string for reuse (the status filter's options).
+ */
 import {
   Ban,
   CheckCircle2,

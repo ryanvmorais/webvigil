@@ -1,3 +1,7 @@
+/**
+ * `/setup` (RF-06) — first-run: create the single admin account. Client-side checks
+ * mirror the API; a 409 means setup already ran (links to `/login`).
+ */
 "use client";
 
 import Link from "next/link";

@@ -1,3 +1,7 @@
+/**
+ * Root layout: the `<html>`/`<body>` shell, the global stylesheet, and `<Providers>`
+ * (the one client boundary — everything below it can be a Client Component).
+ */
 import type { Metadata } from "next";
 
 import { Providers } from "@/components/providers";

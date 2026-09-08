@@ -1,3 +1,8 @@
+/**
+ * The new-scan form (RF-15..RF-19): react-hook-form + a zod schema that mirrors the API's
+ * validation, pre-filled from `GET /api/config/defaults`. Active mode reveals the
+ * "authorized by" field and a warning. Server-side field errors merge back onto the form.
+ */
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";

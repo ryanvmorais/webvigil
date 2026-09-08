@@ -12,7 +12,7 @@ const ICON: Record<SeverityName, typeof Info> = {
   CRITICAL: AlertOctagon,
 };
 
-// Colour is never the only signal: every badge also carries an icon and the text label (RNF-05).
+/** Severity pill: colour + icon + text label — colour is never the only signal (RNF-05). */
 export function SeverityBadge({ severity }: { severity: string }) {
   const name = isSeverityName(severity) ? severity : "INFO";
   const Icon = ICON[name];

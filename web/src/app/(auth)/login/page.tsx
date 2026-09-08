@@ -1,3 +1,8 @@
+/**
+ * `/login` (RF-07): username + password. A 401 clears the password and shows an inline
+ * error; on success `useLogin` redirects to `?next=` or `/scans`. `<Suspense>`-wrapped
+ * for `useSearchParams`.
+ */
 "use client";
 
 import { useSearchParams } from "next/navigation";

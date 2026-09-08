@@ -1,3 +1,7 @@
+/**
+ * `/scans` — the scan list (RF-11): status filter in the URL, cursor "load more", polled
+ * while anything runs. Wrapped in `<Suspense>` because it reads `useSearchParams`.
+ */
 "use client";
 
 import { Plus } from "lucide-react";

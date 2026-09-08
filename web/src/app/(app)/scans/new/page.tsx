@@ -1,3 +1,4 @@
+/** `/scans/new` — wraps the `<ScanForm>`, which does the validation and the POST. */
 import { ScanForm } from "@/components/scan-form";
 
 export default function NewScanPage() {
