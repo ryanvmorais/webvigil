@@ -7,7 +7,10 @@ and **in production** (non-intrusive checks that are safe to run against live sy
 WebVigil ships as a reusable **scan engine**, a **CLI**, and an optional **web dashboard**
 built on top of the same engine.
 
-> **Status:** early development (`v0.x`). The API, CLI flags, and report formats may change.
+> **Status:** the planned coverage roadmap (`v0.1`–`v0.14`) is complete. The CLI, config,
+> and report formats have been stable across the last several milestones; there is no
+> `1.0` package tag yet. See [Scope and limitations](#scope-and-limitations) for what
+> WebVigil deliberately does not do.
 
 ---
 
@@ -29,7 +32,11 @@ be illegal. See [SECURITY.md](SECURITY.md).
 
 ---
 
-## Planned coverage
+## Coverage
+
+WebVigil was built milestone by milestone against a planned roadmap. Every entry below has
+shipped and links to its docs; each was designed as a spec first, under
+[`specs/`](specs/).
 
 | Version | Focus | Status |
 |---|---|---|
@@ -48,20 +55,65 @@ be illegal. See [SECURITY.md](SECURITY.md).
 | `v0.13` | Header / bearer authentication (`--header`), OpenAPI / Swagger import to seed the crawl and the injection pass (`--openapi`), and four passive checks: missing Subresource Integrity, mixed content, session identifier in a URL, private IP in a body ([docs](docs/api-scanning.md)) | shipped |
 | `v0.14` | Active Mode: LDAP / XPath / SSI injection (in-band, error signature + differential), and opt-in unrestricted file-upload testing (`--file-upload`) — a benign marker uploaded with a dangerous name / type, then fetched back to prove execution, inline rendering, or a path-traversal write ([docs](docs/active-injection.md#file-upload----file-upload-opt-in)) | shipped |
 
-> Stored XSS shipped in `v0.8` (opt-in `--stored-xss`); in-band SSRF in `v0.9`; the OSV.dev
-> online advisory provider in `v0.10` (opt-in `--osv-online`); command injection + SSTI in
-> `v0.11`; request-envelope injection in `v0.12` (XXE opt-in `--xxe`); header/bearer auth +
-> OpenAPI import in `v0.13`; LDAP / XPath / SSI injection + opt-in file upload in `v0.14`
-> (`--file-upload`). **Blind SSRF, truly blind command injection, blind XXE, and HTTP
-> request smuggling are not on the roadmap** — each needs an out-of-band collaborator (a
-> server the scanner hosts and the target calls back to) or raw-socket control, which the
-> "engine talks only to the target" rule and the repository-only distribution rule out. Pair
-> WebVigil with your own collaborator (Burp Collaborator, interactsh) for the blind cases.
-> YAML OpenAPI documents (convert to JSON first) and leaf-level JSON-body fuzzing are `v0.13`
-> limitations, not permanent. Automated login-form flows and session-security tests were on
-> the original `v0.7` line and are not yet scheduled — each needs the stateful login flow or
-> Active Mode. The full accounting of what active coverage deliberately leaves out is in
-> [`docs/active-injection.md`](docs/active-injection.md#coverage-boundaries).
+> The four opt-in switches, all off by default: `--probe` (sensitive-path probing),
+> `--stored-xss` and `--file-upload` (both write to the target), `--xxe` (re-types POST
+> bodies as XML), `--osv-online` (sends library names to `api.osv.dev`). Everything else
+> only reads.
+
+---
+
+## Scope and limitations
+
+WebVigil is deliberately bounded. It is an **in-band** scanner: the engine talks only to the
+target, sends a small static set of payloads, and confirms every active finding against a
+per-request baseline. That line keeps it fast, low-noise, and safe to distribute as a
+repository with no hosted service — at the cost of the classes below. For each, the thing
+to reach for instead.
+
+- **JavaScript-rendered apps.** The crawler parses HTML; it runs no headless browser, so a
+  SPA that builds its DOM in JS exposes almost no surface to the crawl. *Instead:* point
+  `--openapi` at the app's schema to seed the crawl and the injection pass directly, or
+  feed URLs collected by your own browser-based crawler.
+
+- **Blind / out-of-band vulnerabilities.** Blind SSRF, blind command injection, blind /
+  OOB XXE, blind stored XSS with no reflected marker, and HTTP request smuggling all need
+  either a collaborator server the scanner hosts (public domain, DNS/HTTP listeners) or
+  raw-socket control of request framing. Both cross the "engine talks only to the target"
+  rule. *Instead:* pair WebVigil with your own collaborator — Burp Collaborator,
+  [interactsh](https://github.com/projectdiscovery/interactsh). Background:
+  [why blind SSRF is the one thing WebVigil won't do](docs/notes/why-not-oast.md).
+
+- **Some active-scan classes.** Expression-language injection (SpEL / OGNL), `eval()` code
+  injection, NoSQL injection, HTTP parameter pollution, remote file inclusion, DOM XSS,
+  and verb-based auth bypass are out — each is either deferred, has no reliable in-band
+  oracle, or needs a browser. The full table of what is covered and what is not, with the
+  reason for each, is in
+  [`docs/active-injection.md`](docs/active-injection.md#coverage-boundaries).
+
+- **Authentication.** WebVigil authenticates with a **static** cookie (`--cookie`) or
+  header (`--header`) you supply. It does not drive a login form, an OAuth flow, or a
+  token refresh, and it does not test session security (fixation, logout invalidation,
+  weak session identifiers). *Instead:* log in with your browser and paste the session
+  cookie. See [authenticated scanning](docs/authenticated-scanning.md).
+
+- **Not a template scanner.** There is no Nuclei-style CVE-template database, no CMS or
+  plugin enumeration, no exploit matching beyond the vendored Retire.js data and the
+  opt-in OSV.dev lookup. *Instead:* run [Nuclei](https://github.com/projectdiscovery/nuclei)
+  alongside it.
+
+- **Not a fuzzer.** Payloads are a small, documented, in-repository set with no mutation
+  engine and no WAF-evasion tuning; WebVigil tests the parameters a target actually
+  exposes, not guessed ones. *Instead:* a dedicated fuzzer (ffuf, wfuzz) for parameter
+  mining and brute force.
+
+- **Not an exploitation framework.** A confirmed SQLi is proved with one bounded marker,
+  not by dumping the database; a confirmed traversal reads one known file, not the whole
+  disk. WebVigil stops at proof.
+
+- **API-scanning edges.** `--openapi` reads **JSON** only (convert a YAML document first)
+  and fuzzes query / path / form-urlencoded-body parameters — not individual fields of a
+  JSON request body. These are current limits, not permanent ones.
+  See [API scanning](docs/api-scanning.md).
 
 ---
 
@@ -76,7 +128,9 @@ uv run webvigil scan https://example.com --format html --output report.html
 uv run webvigil scan https://example.com --probe   # also probe for exposed .git/.env/backups
 uv run webvigil scan https://example.com --mode active --authorized-by "you / engagement"  # injection + in-band SSRF testing
 uv run webvigil scan https://example.com --mode active --authorized-by me --stored-xss     # + stored XSS (writes markers)
+uv run webvigil scan https://example.com --mode active --authorized-by me --file-upload    # + file-upload testing (writes files)
 uv run webvigil scan https://example.com --cookie "session=<paste from your browser>"      # authenticated scan
+uv run webvigil scan https://example.com --openapi ./openapi.json                          # seed the scan from an API schema
 uv run webvigil scan https://example.com --osv-online                                      # also check libraries against OSV.dev
 uv run webvigil list-checks
 uv run webvigil report report.json --format md      # re-render a saved scan, offline
