@@ -1,5 +1,10 @@
 """
 Path-traversal detector — spec 006 RF-10, RF-13.
+
+Pure detector unit: ``_ctx`` wraps a ``render`` callable as the scanner's
+``send``, so each test decides what the target returns for a given payload and
+no HTTP is issued. ``_PASSWD`` / ``_WININI`` are the real file signatures the
+detector looks for.
 """
 
 from __future__ import annotations
@@ -20,6 +25,13 @@ _WININI = "; for 16-bit app support\n[fonts]\n[extensions]\n"
 
 
 def _resp(text: str) -> Response:
+    """
+    Args:
+        text (str): The response body.
+
+    Returns:
+        Response: A 200 ``text/plain`` response carrying ``text``.
+    """
     return Response(
         url="https://example.com/download",
         requested_url="https://example.com/download",
@@ -32,10 +44,26 @@ def _resp(text: str) -> Response:
 
 
 def _baseline(body: str = "notes") -> Baseline:
+    """
+    Args:
+        body (str): The pre-injection response body.
+
+    Returns:
+        Baseline: The baseline the detector diffs each payload against.
+    """
     return Baseline(200, body, normalize_body(body), len(body), 1.0)
 
 
 def _ctx(render: Callable[[str], Response]) -> DetectCtx:
+    """
+    Args:
+        render (Callable[[str], Response]): Maps an injected value to the response
+            the target would return.
+
+    Returns:
+        DetectCtx: A detector context whose ``send`` calls ``render``.
+    """
+
     async def send(point: InjectionPoint, value: str, *, time_based: bool = False) -> Response:
         return render(value)
 
@@ -43,6 +71,7 @@ def _ctx(render: Callable[[str], Response]) -> DetectCtx:
 
 
 async def test_etc_passwd_disclosure_is_a_hit() -> None:
+    """A payload that pulls back ``/etc/passwd`` content is a hit, with the line as evidence."""
     hits = await traversal.detect(
         _POINT, _baseline(), _ctx(lambda v: _resp(_PASSWD if "etc/passwd" in v else "notes"))
     )
@@ -51,6 +80,7 @@ async def test_etc_passwd_disclosure_is_a_hit() -> None:
 
 
 async def test_win_ini_disclosure_is_a_hit() -> None:
+    """The Windows ``win.ini`` signature is recognised too."""
     hits = await traversal.detect(
         _POINT, _baseline(), _ctx(lambda v: _resp(_WININI if "win.ini" in v.lower() else "notes"))
     )
@@ -58,11 +88,13 @@ async def test_win_ini_disclosure_is_a_hit() -> None:
 
 
 async def test_signature_already_in_the_baseline_is_not_a_hit() -> None:
+    """A file signature already present in the baseline body does not count."""
     hits = await traversal.detect(_POINT, _baseline(_PASSWD), _ctx(lambda v: _resp(_PASSWD)))
     assert hits == []
 
 
 async def test_payload_echoed_without_the_file_is_not_a_hit() -> None:
+    """The payload string bouncing back in an error message is not disclosure."""
     hits = await traversal.detect(
         _POINT, _baseline(), _ctx(lambda v: _resp(f"File not found: {v}"))
     )

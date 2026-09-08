@@ -1,5 +1,10 @@
 """
 Reflected-XSS detector — spec 006 RF-08, RF-13.
+
+Pure detector unit: ``_ctx`` wraps a ``render`` callable as the scanner's
+``send``, so each test decides exactly what the "target" echoes back and no HTTP
+is issued. ``_BASELINE`` is the pre-injection response the detector diffs
+against.
 """
 
 from __future__ import annotations
@@ -18,6 +23,14 @@ _BASELINE = Baseline(200, "<html>base</html>", "base", 17, 1.0)
 
 
 def _resp(text: str, *, content_type: str = "text/html") -> Response:
+    """
+    Args:
+        text (str): The response body.
+        content_type (str): The ``Content-Type`` header. Defaults to ``text/html``.
+
+    Returns:
+        Response: A 200 response carrying ``text``.
+    """
     return Response(
         url="https://example.com/s",
         requested_url="https://example.com/s",
@@ -30,6 +43,15 @@ def _resp(text: str, *, content_type: str = "text/html") -> Response:
 
 
 def _ctx(render: Callable[[str], Response]) -> DetectCtx:
+    """
+    Args:
+        render (Callable[[str], Response]): Maps an injected value to the response
+            the target would return.
+
+    Returns:
+        DetectCtx: A detector context whose ``send`` calls ``render``.
+    """
+
     async def send(point: InjectionPoint, value: str, *, time_based: bool = False) -> Response:
         return render(value)
 
@@ -37,6 +59,7 @@ def _ctx(render: Callable[[str], Response]) -> DetectCtx:
 
 
 async def test_verbatim_reflection_in_html_body_is_a_hit() -> None:
+    """A value echoed verbatim into the HTML body is a HIGH-confidence hit."""
     hits = await xss.detect(
         _POINT, _BASELINE, _ctx(lambda v: _resp(f"<div>you searched {v}</div>"))
     )
@@ -46,6 +69,7 @@ async def test_verbatim_reflection_in_html_body_is_a_hit() -> None:
 
 
 async def test_reflection_inside_a_script_block_is_medium() -> None:
+    """Reflection inside a ``<script>`` block is MEDIUM, with the context recorded."""
     hits = await xss.detect(
         _POINT, _BASELINE, _ctx(lambda v: _resp(f"<script>var q = {v};</script>"))
     )
@@ -54,6 +78,7 @@ async def test_reflection_inside_a_script_block_is_medium() -> None:
 
 
 async def test_entity_encoded_reflection_is_not_a_hit() -> None:
+    """An HTML-entity-encoded reflection is not exploitable, so not a hit."""
     hits = await xss.detect(
         _POINT, _BASELINE, _ctx(lambda v: _resp(f"<div>{html_mod.escape(v)}</div>"))
     )
@@ -61,6 +86,7 @@ async def test_entity_encoded_reflection_is_not_a_hit() -> None:
 
 
 async def test_percent_encoded_reflection_is_not_a_hit() -> None:
+    """A percent-encoded reflection is likewise inert, so not a hit."""
     from urllib.parse import quote
 
     hits = await xss.detect(_POINT, _BASELINE, _ctx(lambda v: _resp(f"<div>{quote(v)}</div>")))
@@ -68,11 +94,13 @@ async def test_percent_encoded_reflection_is_not_a_hit() -> None:
 
 
 async def test_reflection_in_a_plain_text_response_is_not_a_hit() -> None:
+    """Reflection only counts in an HTML response, never in ``text/plain``."""
     hits = await xss.detect(_POINT, _BASELINE, _ctx(lambda v: _resp(v, content_type="text/plain")))
     assert hits == []
 
 
 async def test_no_reflection_short_circuits_after_the_probe() -> None:
+    """When the plain probe is not reflected the detector stops after one request."""
     calls = 0
 
     def render(value: str) -> Response:
@@ -86,6 +114,8 @@ async def test_no_reflection_short_circuits_after_the_probe() -> None:
 
 
 async def test_budget_denial_stops_the_detector() -> None:
+    """When ``send`` returns ``None`` (budget denied) the detector yields nothing."""
+
     async def send(point: InjectionPoint, value: str, *, time_based: bool = False) -> None:
         return None
 

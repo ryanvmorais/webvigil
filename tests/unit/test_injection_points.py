@@ -1,5 +1,11 @@
 """
 Injection-point enumeration and the fuzz / skip heuristics — spec 006 RF-04, RF-06.
+
+Pure functions over synthetic pages and forms — :func:`make_page` supplies the
+crawled pages, ``_form`` the parsed forms, and no HTTP is issued. The tests
+cover which parameters become points, which forms are skipped (auth,
+destructive), the max-points cap, and the name / value shape helpers that
+prioritise a point for a given detector.
 """
 
 from __future__ import annotations
@@ -17,10 +23,20 @@ from webvigil.crawler.forms import Form, FormField
 
 
 def _form(*fields: FormField, method: str = "GET", action: str = "https://example.com/s") -> Form:
+    """
+    Args:
+        *fields (FormField): The form's fields.
+        method (str): The form method. Defaults to ``GET``.
+        action (str): The form action URL, also used as the source URL.
+
+    Returns:
+        Form: The assembled form.
+    """
     return Form(method=method, action=action, enctype="", fields=tuple(fields), source_url=action)
 
 
 def test_query_parameters_become_points() -> None:
+    """Each query parameter becomes one GET point carrying its base URL and original value."""
     page = make_page(url="https://example.com/search?q=hi&lang=en")
     points, warnings = enumerate_points((page,), (), max_points=100)
     assert warnings == []
@@ -32,6 +48,7 @@ def test_query_parameters_become_points() -> None:
 
 
 def test_form_fields_become_points_respecting_the_type_filter() -> None:
+    """Only text-ish fields become points; hidden and checkbox values still travel along."""
     form = _form(
         FormField("q", "text", ""),
         FormField("csrf", "hidden", "tok"),
@@ -47,6 +64,7 @@ def test_form_fields_become_points_respecting_the_type_filter() -> None:
 
 
 def test_authentication_and_destructive_forms_are_skipped() -> None:
+    """Login/delete actions and a password-field form yield no points."""
     for action in ("https://example.com/login", "https://example.com/account/delete"):
         form = _form(FormField("x", "text", ""), action=action)
         assert enumerate_points((), (form,), max_points=100)[0] == []
@@ -55,11 +73,13 @@ def test_authentication_and_destructive_forms_are_skipped() -> None:
 
 
 def test_an_innocuous_form_is_not_skipped() -> None:
+    """A plain search form is left in — one point."""
     form = _form(FormField("q", "text", ""), action="https://example.com/search")
     assert len(enumerate_points((), (form,), max_points=100)[0]) == 1
 
 
 def test_the_same_parameter_on_many_urls_is_one_point() -> None:
+    """A parameter name seen on several URLs is deduplicated to a single point."""
     pages = (
         make_page(url="https://example.com/p?id=1"),
         make_page(url="https://example.com/p?id=2&x=9"),
@@ -69,6 +89,7 @@ def test_the_same_parameter_on_many_urls_is_one_point() -> None:
 
 
 def test_max_points_truncates_and_warns() -> None:
+    """Past ``max_points`` the rest are dropped and a "first N of M" warning is added."""
     page = make_page(url="https://example.com/p?" + "&".join(f"a{i}=1" for i in range(10)))
     points, warnings = enumerate_points((page,), (), max_points=4)
     assert len(points) == 4
@@ -76,6 +97,7 @@ def test_max_points_truncates_and_warns() -> None:
 
 
 def test_priority_helpers() -> None:
+    """``is_redirect_name`` / ``is_pathlike`` fire by parameter name and by value shape."""
     pages = (make_page(url="https://example.com/x?next=/a&file=b&q=c&p=/etc/x"),)
     points = {p.param: p for p in enumerate_points(pages, (), max_points=100)[0]}
     assert is_redirect_name(points["next"]) and not is_redirect_name(points["q"])
@@ -85,6 +107,7 @@ def test_priority_helpers() -> None:
 
 
 def test_is_urllike_by_name_and_by_value() -> None:
+    """``is_urllike`` fires by name, by ``http://`` value, and by a protocol-relative value."""
     pages = (
         make_page(url="https://example.com/x?callback=1&next=/a&q=hello&img=http://cdn/x.png"),
     )
@@ -101,6 +124,7 @@ def test_is_urllike_by_name_and_by_value() -> None:
 
 
 def test_build_request_get_carries_a_pair_list() -> None:
+    """A GET point builds a param pair-list with the payload swapped into its own slot."""
     point = InjectionPoint("GET", "https://example.com/s", "q", "hi", (("q", "hi"), ("lang", "en")))
     method, url, params, data = build_request(point, "PAY")
     assert (method, url, data) == ("GET", "https://example.com/s", None)
@@ -108,6 +132,7 @@ def test_build_request_get_carries_a_pair_list() -> None:
 
 
 def test_build_request_post_uses_a_dict_body_and_keeps_the_action_query() -> None:
+    """A POST point puts fields in the body and keeps the action's own query string."""
     point = InjectionPoint(
         "POST",
         "https://example.com/c",

@@ -1,5 +1,12 @@
 """
 The stored-XSS pass: Phase A injection, Phase B re-crawl, and correlation — spec 008.
+
+Two layers. The ``_detect`` tests feed synthetic markers and rendered pages
+straight into the correlation function — no HTTP. The end-to-end tests drive the
+real :class:`StoredXssScanner` against ``_Guestbook``, a tiny stateful
+``httpx_mock`` router that stores a posted ``body`` and renders it back raw on a
+per-entry page, so a marker submitted in Phase A really is found by the Phase B
+re-crawl.
 """
 
 from __future__ import annotations
@@ -23,7 +30,9 @@ pytestmark = pytest.mark.httpx_mock(assert_all_responses_were_requested=False)
 _TARGET = Target.parse("https://example.com/")
 
 
-# --- _detect / _stored_hit (synthetic markers + pages) ----------------------------
+# ---------------------------------------------------------------------------
+# _detect / _stored_hit — synthetic markers and pages
+# ---------------------------------------------------------------------------
 
 
 def _marker(
@@ -34,15 +43,37 @@ def _marker(
     param: str = "body",
     payloads: tuple[str, ...] | None = None,
 ) -> StoredMarker:
+    """
+    Args:
+        token (str): The correlation token embedded in the marker.
+        method (str): The injection point's method. Defaults to ``POST``.
+        base (str): The injection point's base URL.
+        param (str): The injected parameter name.
+        payloads (tuple[str, ...] | None): The payload strings; a single
+            ``<wvstored{token}>`` if omitted.
+
+    Returns:
+        StoredMarker: The marker as Phase A would have recorded it.
+    """
     point = InjectionPoint(method, base, param, "", ((param, ""),), source="form")
     return StoredMarker(token, point, payloads or (f"<wvstored{token}>",))
 
 
 def _rendered(url: str, text: str, *, content_type: str = "text/html") -> Page:
+    """
+    Args:
+        url (str): The page URL.
+        text (str): The page body.
+        content_type (str): The response content type. Defaults to ``text/html``.
+
+    Returns:
+        Page: A page as the Phase B re-crawl would yield it.
+    """
     return make_page(url=url, text=text, content_type=content_type)
 
 
 def test_detect_flags_a_verbatim_marker_on_a_new_page() -> None:
+    """A marker rendered verbatim on a page the injection did not touch is a stored hit."""
     marker = _marker("t1")
     page = _rendered("https://example.com/guestbook/e/0", "<html><div><wvstoredt1></div></html>")
     hits = _detect({"t1": marker}, [page], {})
@@ -54,6 +85,7 @@ def test_detect_flags_a_verbatim_marker_on_a_new_page() -> None:
 
 
 def test_detect_ignores_an_escaped_or_plain_text_marker() -> None:
+    """An HTML-escaped marker, or one in a ``text/plain`` body, is not exploitable."""
     marker = _marker("t2")
     escaped = _rendered("https://example.com/g/e/0", "<div>&lt;wvstoredt2&gt;</div>")
     plain = _rendered("https://example.com/g/e/1", "<wvstoredt2>", content_type="text/plain")
@@ -61,12 +93,14 @@ def test_detect_ignores_an_escaped_or_plain_text_marker() -> None:
 
 
 def test_detect_ignores_a_marker_already_in_the_pre_injection_body() -> None:
+    """A marker string already present before injection is not attributed to us."""
     marker = _marker("t3")
     page = _rendered("https://example.com/known", "x <wvstoredt3> y")
     assert _detect({"t3": marker}, [page], {"https://example.com/known": "x <wvstoredt3> y"}) == []
 
 
 def test_detect_same_url_is_a_hit_only_for_a_posted_point() -> None:
+    """A marker echoed on its own URL counts for a POST point but not a GET one (reflection)."""
     get_marker = _marker("t4", method="GET", base="https://example.com/search", param="q")
     get_page = _rendered("https://example.com/search", "<div><wvstoredt4></div>")
     assert _detect({"t4": get_marker}, [get_page], {}) == []
@@ -77,6 +111,7 @@ def test_detect_same_url_is_a_hit_only_for_a_posted_point() -> None:
 
 
 def test_detect_reports_one_hit_with_a_count_for_a_multi_page_render() -> None:
+    """A marker rendered on several pages is one hit whose evidence counts the extras."""
     marker = _marker("t6")
     pages = [
         _rendered("https://example.com/guestbook/e/0", "<div><wvstoredt6></div>"),
@@ -87,11 +122,14 @@ def test_detect_reports_one_hit_with_a_count_for_a_multi_page_render() -> None:
     assert "(+1 more page(s))" in dict(hits[0].evidence)["Rendered on"]
 
 
-# --- StoredXssScanner end to end (a stateful guestbook router) --------------------
+# ---------------------------------------------------------------------------
+# StoredXssScanner end to end — a stateful guestbook router
+# ---------------------------------------------------------------------------
 
 
 class _Guestbook:
-    """A tiny stateful target: POST /guestbook stores `body`; /guestbook/e/<i> renders raw."""
+    """A tiny stateful target: POST /guestbook stores ``body``; /guestbook/e/<i> renders it
+    raw; GET /guestbook lists a link per stored entry. Every request is recorded on ``seen``."""
 
     def __init__(self, pages: dict[str, str]) -> None:
         self.pages = pages
@@ -140,6 +178,20 @@ async def _run(
     *,
     config: ScanConfig | None = None,
 ):
+    """
+    Run one stored-XSS pass against ``router``.
+
+    Args:
+        router (_Guestbook): The stateful response router.
+        pages (tuple[Page, ...]): The first-crawl pages the pass starts from.
+        forms (tuple[Form, ...]): The parsed forms Phase A submits markers into.
+        httpx_mock: The ``pytest-httpx`` fixture.
+        config (ScanConfig | None): The scan config; a stored-XSS-enabled default
+            if omitted.
+
+    Returns:
+        StoredXssReport: The pass's report.
+    """
     httpx_mock.add_callback(router, is_reusable=True)  # type: ignore[attr-defined]
     cfg = config or ScanConfig.model_validate({"injection": {"stored_xss": True}})
     async with HttpClient(_TARGET, cfg) as http:
@@ -147,6 +199,7 @@ async def _run(
 
 
 async def test_marker_is_found_on_the_per_entry_page_after_a_recrawl(httpx_mock: object) -> None:
+    """End to end: a marker posted in Phase A is found on ``/guestbook/e/0`` by the re-crawl."""
     seed = '<html><body><a href="/guestbook">gb</a></body></html>'
     gb = _GB_HTML
     router = _Guestbook({"https://example.com/": seed, "https://example.com/guestbook": gb})
@@ -164,9 +217,12 @@ async def test_marker_is_found_on_the_per_entry_page_after_a_recrawl(httpx_mock:
 
 
 async def test_an_escaped_guestbook_yields_no_hit(httpx_mock: object) -> None:
+    """A guestbook that HTML-escapes the stored body renders no live marker — no hit."""
     gb = _GB_HTML
 
     class _Safe(_Guestbook):
+        """A ``_Guestbook`` variant that HTML-escapes the entry before rendering it."""
+
         def __call__(self, request: httpx.Request) -> httpx.Response:
             resp = super().__call__(request)
             if request.method == "GET" and "/guestbook/e/" in str(request.url):
@@ -189,6 +245,7 @@ async def test_an_escaped_guestbook_yields_no_hit(httpx_mock: object) -> None:
 
 
 async def test_form_points_are_submitted_before_query_points(httpx_mock: object) -> None:
+    """Phase A submits form points before query points — the first marker request is the POST."""
     seed = _GB_HTML
     router = _Guestbook({"https://example.com/p": seed})
     pages = (
@@ -201,6 +258,7 @@ async def test_form_points_are_submitted_before_query_points(httpx_mock: object)
 
 
 async def test_an_excluded_form_gets_no_marker(httpx_mock: object) -> None:
+    """A login form is excluded from injection points, so no marker is ever posted to it."""
     login = Form(
         "POST",
         "https://example.com/login",
@@ -215,6 +273,7 @@ async def test_an_excluded_form_gets_no_marker(httpx_mock: object) -> None:
 
 
 async def test_request_budget_caps_phase_a(httpx_mock: object) -> None:
+    """A tiny request budget bounds how many markers Phase A submits."""
     gb = '<form method="post" action="/guestbook"><textarea name="body"></textarea></form>'
     router = _Guestbook({"https://example.com/guestbook": gb})
     pages = (make_page(url="https://example.com/guestbook", text=gb),)
@@ -225,6 +284,7 @@ async def test_request_budget_caps_phase_a(httpx_mock: object) -> None:
 
 
 async def test_recrawl_page_cap_warns(httpx_mock: object) -> None:
+    """When the Phase B re-crawl hits the page cap it stops and warns."""
     gb = '<form method="post" action="/guestbook"><textarea name="body"></textarea></form>'
     router = _Guestbook(
         {"https://example.com/": "<a href='/x'>x</a>", "https://example.com/guestbook": gb}

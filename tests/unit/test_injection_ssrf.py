@@ -1,5 +1,12 @@
 """
 In-band SSRF detector — spec 009 RF-01..RF-08, RF-13.
+
+Pure detector unit: ``_ctx`` wraps a ``render`` callable as the scanner's
+``send``, so each test decides what the target's response would echo for a given
+payload — a cloud-metadata marker, a ``file://`` read, an internal service
+banner, or a connection error quoting the URL — and no HTTP is issued.
+``_AWS_CREDS`` / ``_REDIS`` / ``_PASSWD`` are the real signatures the detector
+proves a server-side fetch by.
 """
 
 from __future__ import annotations
@@ -23,6 +30,14 @@ _PASSWD = "root:x:0:0:root:/root:/bin/bash\ndaemon:x:1:1:daemon:/usr/sbin:/usr/s
 
 
 def _resp(text: str, *, status: int = 200) -> Response:
+    """
+    Args:
+        text (str): The response body.
+        status (int): The status code. Defaults to 200.
+
+    Returns:
+        Response: A ``text/plain`` response carrying ``text``.
+    """
     return Response(
         url="https://example.com/fetch",
         requested_url="https://example.com/fetch",
@@ -35,10 +50,28 @@ def _resp(text: str, *, status: int = 200) -> Response:
 
 
 def _baseline(body: str = "preview of /preview") -> Baseline:
+    """
+    Args:
+        body (str): The pre-injection response body — a marker already here is
+            suppressed rather than reported.
+
+    Returns:
+        Baseline: The baseline each payload's response is compared against.
+    """
     return Baseline(200, body, normalize_body(body), len(body), 1.0)
 
 
 def _ctx(render: Callable[[str], Response | None], *, host: str = "example.com") -> DetectCtx:
+    """
+    Args:
+        render (Callable[[str], Response | None]): Maps an injected value to the
+            target's response, or ``None`` to model a denied request.
+        host (str): The target host, substituted into ``user@host`` payloads.
+
+    Returns:
+        DetectCtx: A detector context whose ``send`` calls ``render``.
+    """
+
     async def send(
         point: InjectionPoint, value: str, *, time_based: bool = False
     ) -> Response | None:
@@ -48,6 +81,7 @@ def _ctx(render: Callable[[str], Response | None], *, host: str = "example.com")
 
 
 async def test_aws_metadata_marker_is_a_critical_hit() -> None:
+    """An AWS credential blob in the response is a CRITICAL, HIGH-confidence hit."""
     hits = await ssrf.detect(
         _POINT,
         _baseline(),
@@ -64,6 +98,7 @@ async def test_aws_metadata_marker_is_a_critical_hit() -> None:
 
 
 async def test_each_metadata_provider_marker_is_detected() -> None:
+    """GCP, Azure, AliCloud and Kubernetes metadata markers are each recognised and named."""
     cases = {
         "GCP": '{"machineType":"projects/1/machineTypes/e2-small","serviceAccounts":{}}',
         "Azure": '{"azEnvironment":"AzurePublicCloud","vmId":"abc","resourceGroupName":"rg"}',
@@ -77,6 +112,7 @@ async def test_each_metadata_provider_marker_is_detected() -> None:
 
 
 async def test_file_scheme_read_is_a_high_hit() -> None:
+    """A ``file://`` payload that returns ``/etc/passwd`` content is a HIGH ssrf-internal hit."""
     hits = await ssrf.detect(
         _POINT,
         _baseline(),
@@ -91,6 +127,8 @@ async def test_file_scheme_read_is_a_high_hit() -> None:
 
 
 async def test_internal_service_fingerprint_is_a_high_hit() -> None:
+    """A loopback payload that returns a Redis banner is a HIGH ssrf-internal hit."""
+
     def render(value: str) -> Response:
         if any(t in value for t in ("127.0.0.1", "localhost", "[::1]")):
             return _resp(_REDIS)
@@ -103,6 +141,8 @@ async def test_internal_service_fingerprint_is_a_high_hit() -> None:
 
 
 async def test_ssrf_error_that_echoes_the_url_is_a_medium_hit() -> None:
+    """A "connection refused" error quoting our URL proves a server-side fetch (MEDIUM)."""
+
     def render(value: str) -> Response:
         if value.startswith(("http://", "https://")):
             return _resp(f"failed to fetch {value}: Connection refused", status=200)
@@ -116,6 +156,8 @@ async def test_ssrf_error_that_echoes_the_url_is_a_medium_hit() -> None:
 
 
 async def test_gateway_status_that_echoes_the_url_is_a_medium_hit() -> None:
+    """A 5xx gateway response quoting our URL is a MEDIUM hit too."""
+
     def render(value: str) -> Response:
         if value.startswith("http://"):
             return _resp(f"upstream error for {value}", status=502)
@@ -126,6 +168,7 @@ async def test_gateway_status_that_echoes_the_url_is_a_medium_hit() -> None:
 
 
 async def test_generic_500_without_the_url_echoed_is_not_a_hit() -> None:
+    """A bare 500 that does not quote our URL is not attributable to us."""
     hits = await ssrf.detect(
         _POINT, _baseline(), _ctx(lambda v: _resp("Internal Server Error", status=500))
     )
@@ -133,16 +176,19 @@ async def test_generic_500_without_the_url_echoed_is_not_a_hit() -> None:
 
 
 async def test_payload_echoed_without_any_marker_is_not_a_hit() -> None:
+    """The payload merely reflected back, with no marker, is not a hit."""
     hits = await ssrf.detect(_POINT, _baseline(), _ctx(lambda v: _resp(f"you asked for {v}")))
     assert hits == []
 
 
 async def test_marker_already_in_the_baseline_is_suppressed() -> None:
+    """A marker present in the baseline body is not reported as a new finding."""
     hits = await ssrf.detect(_POINT, _baseline(_AWS_CREDS), _ctx(lambda v: _resp(_AWS_CREDS)))
     assert hits == []
 
 
 async def test_host_is_substituted_into_the_payload() -> None:
+    """The ``user@host`` bypass payloads carry the real target host."""
     seen: list[str] = []
 
     def render(value: str) -> Response:
@@ -155,6 +201,7 @@ async def test_host_is_substituted_into_the_payload() -> None:
 
 
 async def test_detector_stops_when_send_returns_none() -> None:
+    """When ``send`` returns ``None`` (budget denied) the detector stops there."""
     calls = 0
 
     def render(value: str) -> Response | None:
@@ -168,6 +215,7 @@ async def test_detector_stops_when_send_returns_none() -> None:
 
 
 async def test_first_hit_wins_and_stops_the_scan() -> None:
+    """Once a payload hits, the detector reports it and sends nothing more."""
     seen: list[str] = []
 
     def render(value: str) -> Response:
