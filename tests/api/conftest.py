@@ -1,5 +1,11 @@
 """
 Fixtures for the Web API tests: a fresh app + SQLite DB per test.
+
+Every test gets its own ``web_config`` (a temp-dir SQLite path and a fixed
+session secret), so nothing leaks between tests. ``client`` wires a real app to
+:class:`FakeOrchestrator` (instant, canned result); ``auth_client`` is that
+client already through setup and login. :class:`BlockingOrchestrator` holds a
+scan in RUNNING for the lifecycle tests.
 """
 
 from __future__ import annotations

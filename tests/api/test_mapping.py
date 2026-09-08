@@ -1,5 +1,11 @@
 """
 ScanResult ⇄ DB rows round-trips losslessly — RF-19.
+
+``store_result`` writes an engine :class:`ScanResult` into the ``scan`` /
+``finding`` rows; ``rows_to_result`` rebuilds it. The tests seed a ``scan`` row,
+run a result through both, and assert the rebuilt result renders byte-identically
+to the original — plus the ``build_scan_config`` direction, which turns a stored
+scan's options back into a :class:`ScanConfig`.
 """
 
 from __future__ import annotations
@@ -16,6 +22,15 @@ from webvigil.reporting import get_reporter
 
 
 def _seed_scan(engine: Engine, mode: str = "passive", authorized_by: str | None = None) -> int:
+    """
+    Args:
+        engine (Engine): The per-test database engine.
+        mode (str): The scan mode column value. Defaults to ``"passive"``.
+        authorized_by (str | None): The authorisation column value, if any.
+
+    Returns:
+        int: The id of the inserted RUNNING scan row.
+    """
     with Session(engine) as session:
         scan = Scan(
             target="https://example.com/",
@@ -32,6 +47,7 @@ def _seed_scan(engine: Engine, mode: str = "passive", authorized_by: str | None 
 
 
 def test_store_then_rebuild_is_byte_identical(web_engine: Engine) -> None:
+    """A result stored and rebuilt renders to the same JSON, and the scan flips to COMPLETED."""
     scan_id = _seed_scan(web_engine)
     result = make_result(
         make_finding(check_id="tls.https", severity=Severity.HIGH, dedup_key="no-https"),
@@ -51,6 +67,7 @@ def test_store_then_rebuild_is_byte_identical(web_engine: Engine) -> None:
 
 
 def test_technologies_round_trip_through_the_rows(web_engine: Engine) -> None:
+    """The technology inventory survives the store / rebuild round-trip on the scan row."""
     from webvigil.core.technology import DetectionMethod, Technology
 
     scan_id = _seed_scan(web_engine)
@@ -77,6 +94,7 @@ def test_technologies_round_trip_through_the_rows(web_engine: Engine) -> None:
 
 
 def test_missing_technologies_column_reads_as_empty(web_engine: Engine) -> None:
+    """A pre-spec-004 scan row with a NULL ``technologies`` column rebuilds to an empty tuple."""
     scan_id = _seed_scan(web_engine)
     with Session(web_engine) as session:
         scan = session.get(Scan, scan_id)
@@ -87,6 +105,8 @@ def test_missing_technologies_column_reads_as_empty(web_engine: Engine) -> None:
 
 
 def test_build_scan_config_applies_options() -> None:
+    """``build_scan_config`` maps a stored scan's mode, scope, options and authorisation back
+    into a :class:`ScanConfig`."""
     scan = Scan(
         target="https://example.com/",
         mode="active",
