@@ -1,5 +1,11 @@
 """
 Crawler discovery: max_pages, de-dup, robots, and sitemap handling — RF-07.
+
+The real :class:`Crawler` runs against a ``_Router`` — an ``httpx_mock`` callback
+that serves a URL→``(status, body, content_type)`` map, defaults to 404, and
+records every URL it is asked for, so the "not followed" assertions are real.
+``_discover`` / ``_crawl`` / ``_recrawl`` are the three entry points, each
+wrapping the crawler in a live :class:`HttpClient`.
 """
 
 from __future__ import annotations
@@ -19,6 +25,13 @@ _SEED = "https://example.com/"
 
 
 def _html(*links: str) -> str:
+    """
+    Args:
+        *links (str): The ``href`` values to turn into ``<a>`` tags.
+
+    Returns:
+        str: A minimal HTML page linking to each of ``links``.
+    """
     body = "".join(f'<a href="{href}">x</a>' for href in links)
     return f"<html><body>{body}</body></html>"
 
@@ -38,16 +51,33 @@ class _Router:
 
 
 async def _discover(config: ScanConfig, router: _Router, httpx_mock: object) -> list[Page]:
+    """
+    Args:
+        config (ScanConfig): The scan config.
+        router (_Router): The response router.
+        httpx_mock: The ``pytest-httpx`` fixture.
+
+    Returns:
+        list[Page]: The pages the crawler discovered.
+    """
     httpx_mock.add_callback(router, is_reusable=True)  # type: ignore[attr-defined]
     async with HttpClient(Target.parse(_SEED), config) as http:
         return await Crawler(http, Target.parse(_SEED), config).discover()
 
 
 def _page(html: str) -> tuple[int, str, str]:
+    """
+    Args:
+        html (str): The page body.
+
+    Returns:
+        tuple[int, str, str]: A ``(200, html, "text/html")`` route entry.
+    """
     return (200, html, "text/html; charset=utf-8")
 
 
 async def test_seed_is_always_first_and_max_pages_caps_discovery(httpx_mock: object) -> None:
+    """The seed URL is page one and ``max_pages`` caps the total discovered."""
     router = _Router(
         {
             _SEED: _page(_html("/a", "/b", "/c")),
@@ -64,6 +94,7 @@ async def test_seed_is_always_first_and_max_pages_caps_discovery(httpx_mock: obj
 
 
 async def test_links_are_normalized_and_de_duplicated(httpx_mock: object) -> None:
+    """Fragment, case, and repeat variants of one link collapse to a single fetch."""
     router = _Router(
         {
             _SEED: _page(_html("/a", "/a#top", "/a", "HTTPS://Example.com/a")),
@@ -75,6 +106,7 @@ async def test_links_are_normalized_and_de_duplicated(httpx_mock: object) -> Non
 
 
 async def test_robots_disallow_is_honored(httpx_mock: object) -> None:
+    """A ``Disallow`` in robots.txt keeps the matching path out of the crawl by default."""
     router = _Router(
         {
             "https://example.com/robots.txt": (
@@ -94,6 +126,7 @@ async def test_robots_disallow_is_honored(httpx_mock: object) -> None:
 
 
 async def test_robots_is_ignored_when_follow_robots_is_false(httpx_mock: object) -> None:
+    """With ``follow_robots=False`` a disallowed path is crawled anyway."""
     router = _Router(
         {
             "https://example.com/robots.txt": (
@@ -111,6 +144,7 @@ async def test_robots_is_ignored_when_follow_robots_is_false(httpx_mock: object)
 
 
 async def test_malformed_sitemap_is_ignored(httpx_mock: object) -> None:
+    """A sitemap that is not valid XML is skipped, not fatal."""
     router = _Router(
         {
             "https://example.com/sitemap.xml": (200, "<<<not xml>>>", "application/xml"),
@@ -122,6 +156,7 @@ async def test_malformed_sitemap_is_ignored(httpx_mock: object) -> None:
 
 
 async def test_out_of_scope_links_are_not_followed(httpx_mock: object) -> None:
+    """An off-host link is never requested; an in-scope sibling still is."""
     router = _Router({_SEED: _page(_html("https://evil.test/x", "/local"))})
     router.routes["https://example.com/local"] = _page(_html())
     pages = await _discover(ScanConfig(), router, httpx_mock)
@@ -129,12 +164,23 @@ async def test_out_of_scope_links_are_not_followed(httpx_mock: object) -> None:
     assert "https://evil.test/x" not in router.seen
 
 
-# --- spec 007: form-driven crawling and the safety heuristic (RF-03, RF-05, RF-06) ---
+# ---------------------------------------------------------------------------
+# Form-driven crawling and the safety heuristic (spec 007 RF-03, RF-05, RF-06)
+# ---------------------------------------------------------------------------
 
 _AUTHED = ScanConfig.model_validate({"auth": {"cookies": ["session=abc"]}})
 
 
 async def _crawl(config: ScanConfig, router: _Router, httpx_mock: object) -> Crawler:
+    """
+    Args:
+        config (ScanConfig): The scan config.
+        router (_Router): The response router.
+        httpx_mock: The ``pytest-httpx`` fixture.
+
+    Returns:
+        Crawler: The crawler after ``discover()`` has run, for its ``forms`` and counters.
+    """
     httpx_mock.add_callback(router, is_reusable=True)  # type: ignore[attr-defined]
     async with HttpClient(Target.parse(_SEED), config) as http:
         crawler = Crawler(http, Target.parse(_SEED), config)
@@ -143,6 +189,7 @@ async def _crawl(config: ScanConfig, router: _Router, httpx_mock: object) -> Cra
 
 
 async def test_a_get_search_form_is_submitted(httpx_mock: object) -> None:
+    """A safe GET search form is submitted with empty values and its URL is crawled."""
     router = _Router(
         {
             _SEED: _page('<form method="get" action="/search"><input name="q"></form>'),
@@ -155,6 +202,7 @@ async def test_a_get_search_form_is_submitted(httpx_mock: object) -> None:
 
 
 async def test_a_post_form_is_recorded_but_never_submitted(httpx_mock: object) -> None:
+    """A POST form is inventoried but never sent by the crawler."""
     form = '<form method="post" action="/comment"><textarea name="b"></textarea></form>'
     router = _Router({_SEED: _page(form)})
     crawler = await _crawl(ScanConfig(), router, httpx_mock)
@@ -163,6 +211,7 @@ async def test_a_post_form_is_recorded_but_never_submitted(httpx_mock: object) -
 
 
 async def test_submit_forms_false_disables_form_submission(httpx_mock: object) -> None:
+    """``submit_forms=False`` stops a safe GET form being submitted; it is still inventoried."""
     router = _Router({_SEED: _page('<form method="get" action="/search"><input name="q"></form>')})
     config = ScanConfig.model_validate({"scan": {"submit_forms": False}})
     crawler = await _crawl(config, router, httpx_mock)
@@ -171,6 +220,7 @@ async def test_submit_forms_false_disables_form_submission(httpx_mock: object) -
 
 
 async def test_logout_links_are_never_followed(httpx_mock: object) -> None:
+    """A logout link is skipped whether or not the scan is authenticated."""
     router = _Router(
         {_SEED: _page(_html("/logout", "/ok")), "https://example.com/ok": _page(_html())}
     )
@@ -181,6 +231,7 @@ async def test_logout_links_are_never_followed(httpx_mock: object) -> None:
 
 
 async def test_destructive_links_are_skipped_only_when_authenticated(httpx_mock: object) -> None:
+    """A destructive link is skipped (and counted) only under an authenticated scan."""
     links = _html("/items/5/delete", "/ok")
     router = _Router(
         {
@@ -201,6 +252,7 @@ async def test_destructive_links_are_skipped_only_when_authenticated(httpx_mock:
 
 
 async def test_submitted_form_urls_count_against_max_pages(httpx_mock: object) -> None:
+    """A submitted form URL is a page like any other and counts toward ``max_pages``."""
     router = _Router(
         {
             _SEED: _page(
@@ -216,7 +268,9 @@ async def test_submitted_form_urls_count_against_max_pages(httpx_mock: object) -
     assert len(pages) == 2
 
 
-# --- spec 008: Crawler.recrawl — depth-1 re-crawl from a known frontier (RF-05) ------
+# ---------------------------------------------------------------------------
+# Crawler.recrawl — depth-1 re-crawl from a known frontier (spec 008 RF-05)
+# ---------------------------------------------------------------------------
 
 
 async def _recrawl(
@@ -228,6 +282,19 @@ async def _recrawl(
     max_fetches: int = 50,
     limit: int | None = None,
 ) -> list[Page]:
+    """
+    Args:
+        config (ScanConfig): The scan config.
+        router (_Router): The response router.
+        httpx_mock: The ``pytest-httpx`` fixture.
+        frontier (list[str]): The URLs to re-fetch and follow one hop past.
+        max_fetches (int): The hard fetch cap passed to ``recrawl``.
+        limit (int | None): If set, ``should_fetch`` returns ``False`` after this
+            many grants.
+
+    Returns:
+        list[Page]: The pages the re-crawl fetched.
+    """
     httpx_mock.add_callback(router, is_reusable=True)  # type: ignore[attr-defined]
     budget = [0]
 
@@ -243,6 +310,7 @@ async def _recrawl(
 
 
 async def test_recrawl_refetches_the_frontier_and_follows_one_new_hop(httpx_mock: object) -> None:
+    """The re-crawl re-fetches the frontier and follows exactly one new hop, not two."""
     router = _Router(
         {
             _SEED: _page(_html("/guestbook")),
@@ -261,6 +329,7 @@ async def test_recrawl_refetches_the_frontier_and_follows_one_new_hop(httpx_mock
 
 
 async def test_recrawl_stops_when_should_fetch_returns_false(httpx_mock: object) -> None:
+    """The re-crawl stops asking for pages once ``should_fetch`` says no."""
     router = _Router(
         {
             _SEED: _page(_html("/a")),
@@ -279,6 +348,7 @@ async def test_recrawl_stops_when_should_fetch_returns_false(httpx_mock: object)
 
 
 async def test_recrawl_caps_at_max_fetches(httpx_mock: object) -> None:
+    """``max_fetches`` is a hard ceiling on the re-crawl regardless of the frontier size."""
     router = _Router({f"https://example.com/p{i}": _page(_html()) for i in range(5)})
     pages = await _recrawl(
         ScanConfig(),
@@ -291,6 +361,7 @@ async def test_recrawl_caps_at_max_fetches(httpx_mock: object) -> None:
 
 
 async def test_recrawl_skips_a_new_logout_or_destructive_link(httpx_mock: object) -> None:
+    """The same logout/destructive safety guard applies to links found during the re-crawl."""
     router = _Router(
         {
             _SEED: _page(_html("/logout", "/items/9/delete", "/ok")),

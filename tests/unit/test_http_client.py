@@ -1,5 +1,10 @@
 """
 HttpClient: retries, scope guard, and manual redirect handling — RF-05, RF-04, RF-03.
+
+All requests go through ``pytest-httpx``; the autouse ``_no_backoff`` fixture
+zeroes the retry sleep so the retry tests are instant. ``http.stats`` is the
+observable side channel — retries, blocked-out-of-scope, crafted requests — that
+the assertions read.
 """
 
 from __future__ import annotations
@@ -16,16 +21,26 @@ from webvigil.http.client import HttpClient
 
 @pytest.fixture(autouse=True)
 def _no_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Zero the retry backoff so retry tests do not actually sleep."""
     monkeypatch.setattr(client_mod, "BACKOFF_BASE_S", 0.0)
     monkeypatch.setattr(client_mod, "BACKOFF_JITTER_S", 0.0)
 
 
 def _http(scope: Scope = Scope.HOST, *, cookies: list[str] | None = None) -> HttpClient:
+    """
+    Args:
+        scope (Scope): The target scope. Defaults to ``Scope.HOST``.
+        cookies (list[str] | None): Static ``name=value`` cookies to configure.
+
+    Returns:
+        HttpClient: A client for ``https://example.com`` at ``scope``.
+    """
     config = ScanConfig.model_validate({"auth": {"cookies": cookies}} if cookies else {})
     return HttpClient(Target.parse("https://example.com", scope=scope), config)
 
 
 async def test_retries_then_succeeds(httpx_mock: object) -> None:
+    """A 503 then a 200 is one retry and a success; the retry is counted."""
     httpx_mock.add_response(status_code=503)  # type: ignore[attr-defined]
     httpx_mock.add_response(status_code=200, text="ok")  # type: ignore[attr-defined]
     async with _http() as http:
@@ -35,6 +50,7 @@ async def test_retries_then_succeeds(httpx_mock: object) -> None:
 
 
 async def test_retries_exhausted_raises_request_failed(httpx_mock: object) -> None:
+    """A connect error on every attempt exhausts the two retries and raises ``RequestFailed``."""
     httpx_mock.add_exception(httpx.ConnectError("boom"), is_reusable=True)  # type: ignore[attr-defined]
     async with _http() as http:
         with pytest.raises(RequestFailed):
@@ -43,6 +59,7 @@ async def test_retries_exhausted_raises_request_failed(httpx_mock: object) -> No
 
 
 async def test_out_of_scope_get_raises_before_any_request(httpx_mock: object) -> None:
+    """An off-scope GET is refused by the scope guard before a request goes out."""
     async with _http() as http:
         with pytest.raises(OutOfScopeError):
             await http.get("https://evil.test/")
@@ -51,6 +68,7 @@ async def test_out_of_scope_get_raises_before_any_request(httpx_mock: object) ->
 
 
 async def test_in_scope_redirect_is_followed(httpx_mock: object) -> None:
+    """An in-scope redirect is followed manually and recorded in ``response.history``."""
     httpx_mock.add_response(  # type: ignore[attr-defined]
         url="https://example.com/a", status_code=301, headers={"location": "/b"}
     )
@@ -64,6 +82,7 @@ async def test_in_scope_redirect_is_followed(httpx_mock: object) -> None:
 
 
 async def test_redirect_stops_at_cross_scope_hop(httpx_mock: object) -> None:
+    """A redirect that leaves scope is not followed; the hop is flagged on the response."""
     httpx_mock.add_response(  # type: ignore[attr-defined]
         url="https://example.com/",
         status_code=302,
@@ -76,10 +95,13 @@ async def test_redirect_stops_at_cross_scope_hop(httpx_mock: object) -> None:
     assert response.final_location == "https://evil.test/"
 
 
-# --- spec 006: non-GET verbs and the method-aware retry policy (ADR-9, RF-15) ---
+# ---------------------------------------------------------------------------
+# Non-GET verbs and the method-aware retry policy (spec 006 ADR-9, RF-15)
+# ---------------------------------------------------------------------------
 
 
 async def test_post_honours_the_scope_guard(httpx_mock: object) -> None:
+    """A POST is scope-guarded exactly like a GET."""
     async with _http() as http:
         with pytest.raises(OutOfScopeError):
             await http.request("POST", "https://evil.test/", data={"x": "1"})
@@ -87,6 +109,7 @@ async def test_post_honours_the_scope_guard(httpx_mock: object) -> None:
 
 
 async def test_post_is_not_retried_on_a_5xx(httpx_mock: object) -> None:
+    """A non-idempotent POST is not retried on a 5xx; it counts as a crafted request."""
     httpx_mock.add_response(status_code=503)  # type: ignore[attr-defined]
     async with _http() as http:
         response = await http.request("POST", "https://example.com/f", data={"x": "1"})
@@ -96,6 +119,7 @@ async def test_post_is_not_retried_on_a_5xx(httpx_mock: object) -> None:
 
 
 async def test_post_is_not_retried_on_a_read_timeout(httpx_mock: object) -> None:
+    """A read timeout on a POST may mean the request landed, so it is not retried."""
     httpx_mock.add_exception(httpx.ReadTimeout("slow"))  # type: ignore[attr-defined]
     async with _http() as http:
         with pytest.raises(RequestFailed):
@@ -104,6 +128,7 @@ async def test_post_is_not_retried_on_a_read_timeout(httpx_mock: object) -> None
 
 
 async def test_post_is_retried_on_a_pre_send_connect_error(httpx_mock: object) -> None:
+    """A pre-send connect error cannot have reached the server, so a POST is retried."""
     httpx_mock.add_exception(httpx.ConnectError("refused"), is_reusable=True)  # type: ignore[attr-defined]
     async with _http() as http:
         with pytest.raises(RequestFailed):
@@ -112,6 +137,7 @@ async def test_post_is_retried_on_a_pre_send_connect_error(httpx_mock: object) -
 
 
 async def test_303_redirect_drops_the_body_and_method(httpx_mock: object) -> None:
+    """A 303 turns the follow-up into a bodyless GET."""
     httpx_mock.add_response(  # type: ignore[attr-defined]
         url="https://example.com/a", status_code=303, headers={"location": "/done"}
     )
@@ -124,6 +150,7 @@ async def test_303_redirect_drops_the_body_and_method(httpx_mock: object) -> Non
 
 
 async def test_307_redirect_keeps_the_body_and_method(httpx_mock: object) -> None:
+    """A 307 replays the same method and body to the new location."""
     httpx_mock.add_response(  # type: ignore[attr-defined]
         url="https://example.com/a", status_code=307, headers={"location": "/b"}
     )
@@ -135,10 +162,13 @@ async def test_307_redirect_keeps_the_body_and_method(httpx_mock: object) -> Non
     assert sent[1].read() == b"x=1"
 
 
-# --- spec 007: static cookies on in-scope requests only (RF-01, RF-02, ADR-1) ---
+# ---------------------------------------------------------------------------
+# Static cookies on in-scope requests only (spec 007 RF-01, RF-02, ADR-1)
+# ---------------------------------------------------------------------------
 
 
 async def test_configured_cookie_is_sent_on_a_target_host_request(httpx_mock: object) -> None:
+    """Configured cookies are joined and sent on a target-host request."""
     httpx_mock.add_response(status_code=200)  # type: ignore[attr-defined]
     async with _http(cookies=["session=abc123", "csrf=xyz"]) as http:
         await http.get("https://example.com/dashboard")
@@ -147,6 +177,7 @@ async def test_configured_cookie_is_sent_on_a_target_host_request(httpx_mock: ob
 
 
 async def test_cookie_is_absent_on_an_out_of_scope_request(httpx_mock: object) -> None:
+    """The session cookie is never attached to an out-of-scope request."""
     httpx_mock.add_response(status_code=200)  # type: ignore[attr-defined]
     async with _http(cookies=["session=abc123"]) as http:
         await http.get("https://cdn.other.test/lib.js", allow_out_of_scope=True)
@@ -155,6 +186,7 @@ async def test_cookie_is_absent_on_an_out_of_scope_request(httpx_mock: object) -
 
 
 async def test_no_cookie_configured_means_no_cookie_header(httpx_mock: object) -> None:
+    """With nothing configured there is no ``Cookie`` header at all."""
     httpx_mock.add_response(status_code=200)  # type: ignore[attr-defined]
     async with _http() as http:
         await http.get("https://example.com/")
@@ -165,6 +197,7 @@ async def test_no_cookie_configured_means_no_cookie_header(httpx_mock: object) -
 async def test_caller_cookie_header_is_kept_and_the_configured_value_appended(
     httpx_mock: object,
 ) -> None:
+    """A caller-supplied ``Cookie`` header is kept and the configured cookie appended."""
     httpx_mock.add_response(status_code=200)  # type: ignore[attr-defined]
     async with _http(cookies=["session=abc123"]) as http:
         await http.request("GET", "https://example.com/", headers={"cookie": "theme=dark"})

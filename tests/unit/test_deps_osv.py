@@ -1,7 +1,11 @@
 """
 OsvProvider: normalisation, severity mapping, name mapping, and the batched I/O — spec 010.
 
-Every test uses ``httpx.MockTransport``; nothing here touches the real network (RF-16).
+Every test uses ``httpx.MockTransport``; nothing here touches the real network
+(RF-16). ``_GHSA_RECORD`` / ``_CVE_RECORD`` are trimmed but real-shaped OSV
+records — one with a GHSA severity label, one CVE-only that forces the CVSS
+path. ``_Transport`` records the call paths and the ``querybatch`` body so the
+"one hit, one follow-up query" assertions are real.
 """
 
 from __future__ import annotations
@@ -27,7 +31,9 @@ from webvigil.core.context import Detection
 from webvigil.core.findings import Severity
 from webvigil.core.technology import DetectionMethod
 
-# --- fixtures / helpers ---------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Fixtures and helpers
+# ---------------------------------------------------------------------------
 
 _GHSA_RECORD: dict[str, Any] = {
     "id": "GHSA-gxr4-xjj5-5px2",
@@ -63,6 +69,14 @@ _CVE_RECORD: dict[str, Any] = {
 
 
 def _det(name: str, version: str | None) -> Detection:
+    """
+    Args:
+        name (str): The detected library name.
+        version (str | None): The detected version, or ``None`` when undetermined.
+
+    Returns:
+        Detection: A FILENAME detection of ``name`` at ``version``.
+    """
     return Detection(
         name=name,
         version=version,
@@ -107,13 +121,23 @@ class _Transport:
 
 
 def _provider(transport: httpx.MockTransport) -> OsvProvider:
+    """
+    Args:
+        transport (httpx.MockTransport): The mock transport to route calls through.
+
+    Returns:
+        OsvProvider: A provider pointed at ``http://osv.test`` over ``transport``.
+    """
     return OsvProvider("http://osv.test", 5.0, user_agent="WebVigil/test", transport=transport)
 
 
-# --- name mapping (RF-05) ------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Name mapping (RF-05)
+# ---------------------------------------------------------------------------
 
 
 def test_npm_name_maps_known_aliases_and_passes_through_the_rest() -> None:
+    """Known aliases map to their npm name; unknown names pass through untouched."""
     assert _npm_name("angularjs") == "angular"
     assert _npm_name("jquery.ui") == "jquery-ui"
     assert _npm_name("jquery") == "jquery"
@@ -121,11 +145,14 @@ def test_npm_name_maps_known_aliases_and_passes_through_the_rest() -> None:
 
 
 def test_every_vendored_component_resolves_to_a_non_empty_npm_name() -> None:
+    """Every component in the vendored DB maps to a non-empty npm name."""
     for name in _data.load_raw_db().get("components", {}):
         assert _npm_name(name).strip(), name
 
 
-# --- CVSS base score (RF-07, ADR-5) -------------------------------------------------
+# ---------------------------------------------------------------------------
+# CVSS base score (RF-07, ADR-5)
+# ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -138,16 +165,19 @@ def test_every_vendored_component_resolves_to_a_non_empty_npm_name() -> None:
     ],
 )
 def test_cvss3_base_matches_published_scores(vector: str, score: float) -> None:
+    """The CVSS v3 base-score computation matches the published scores for known vectors."""
     assert _cvss3_base(vector) == score
 
 
 def test_cvss3_base_rejects_non_v3_vectors() -> None:
+    """A v2 vector, a bad version, or a bad metric value yields ``None``, not a wrong score."""
     assert _cvss3_base("AV:N/AC:L/Au:N/C:P/I:P/A:P") is None
     assert _cvss3_base("CVSS:2.0/AV:N/AC:L") is None
     assert _cvss3_base("CVSS:3.1/AV:X/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H") is None  # bad metric
 
 
 def test_band_edges() -> None:
+    """The score-to-severity band boundaries land on the expected side."""
     assert _band(0.0) is None
     assert _band(3.9) is Severity.LOW
     assert _band(4.0) is Severity.MEDIUM
@@ -155,7 +185,9 @@ def test_band_edges() -> None:
     assert _band(9.0) is Severity.CRITICAL
 
 
-# --- severity selection (RF-07) ----------------------------------------------------
+# ---------------------------------------------------------------------------
+# Severity selection (RF-07)
+# ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -169,12 +201,14 @@ def test_band_edges() -> None:
     ],
 )
 def test_ghsa_severity_label_wins(label: str, expected: Severity) -> None:
+    """A GHSA text severity label is honoured and marked as coming from upstream."""
     severity, from_upstream = _severity({"database_specific": {"severity": label}})
     assert severity is expected
     assert from_upstream is True
 
 
 def test_cvss_vector_used_when_no_ghsa_label() -> None:
+    """With no label, the CVSS vector is scored and banded — still an upstream severity."""
     record = {
         "severity": [{"type": "CVSS_V3", "score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"}]
     }
@@ -184,18 +218,23 @@ def test_cvss_vector_used_when_no_ghsa_label() -> None:
 
 
 def test_missing_severity_falls_back_to_medium() -> None:
+    """No severity at all falls back to MEDIUM, flagged as not from upstream."""
     assert _severity({}) == (Severity.MEDIUM, False)
 
 
 def test_cvss_v2_vector_is_not_parsed() -> None:
+    """A CVSS v2 vector is ignored rather than mis-scored — MEDIUM fallback."""
     record = {"severity": [{"type": "CVSS_V2", "score": "AV:N/AC:L/Au:N/C:P/I:P/A:P"}]}
     assert _severity(record) == (Severity.MEDIUM, False)
 
 
-# --- first safe version (RF-06) ---------------------------------------------------
+# ---------------------------------------------------------------------------
+# First safe version (RF-06)
+# ---------------------------------------------------------------------------
 
 
 def test_first_safe_picks_the_lowest_fixed_above_the_detected_version() -> None:
+    """``_first_safe`` returns the lowest ``fixed`` version above the detected one."""
     record = {
         "affected": [
             {
@@ -212,6 +251,7 @@ def test_first_safe_picks_the_lowest_fixed_above_the_detected_version() -> None:
 
 
 def test_first_safe_is_none_with_only_last_affected() -> None:
+    """A range that gives only ``last_affected`` and no ``fixed`` yields ``None``."""
     record = {
         "affected": [
             {
@@ -224,6 +264,7 @@ def test_first_safe_is_none_with_only_last_affected() -> None:
 
 
 def test_first_safe_ignores_a_non_matching_package() -> None:
+    """A range for a different ecosystem/name is not used for the fix version."""
     record = {
         "affected": [
             {
@@ -235,10 +276,13 @@ def test_first_safe_ignores_a_non_matching_package() -> None:
     assert _first_safe(record, "jquery", "3.0.0") is None
 
 
-# --- record -> Advisory (RF-06) --------------------------------------------------
+# ---------------------------------------------------------------------------
+# record -> Advisory (RF-06)
+# ---------------------------------------------------------------------------
 
 
 def test_to_advisory_from_a_ghsa_record() -> None:
+    """A GHSA record becomes an Advisory with merged ids, MODERATE→MEDIUM, fix, CWE, urls."""
     advisory = _to_advisory(_GHSA_RECORD, npm_name="jquery", detected_version="3.4.1")
     assert advisory is not None
     assert advisory.identifiers == ("GHSA-gxr4-xjj5-5px2", "CVE-2020-11022")
@@ -252,6 +296,8 @@ def test_to_advisory_from_a_ghsa_record() -> None:
 
 
 def test_to_advisory_from_a_cve_only_record_uses_details_and_cvss() -> None:
+    """A CVE-only record takes its summary from the first ``details`` sentence and its
+    severity from the CVSS vector."""
     advisory = _to_advisory(_CVE_RECORD, npm_name="jquery", detected_version="3.3.0")
     assert advisory is not None
     assert advisory.identifiers == ("CVE-2019-11358",)
@@ -263,13 +309,17 @@ def test_to_advisory_from_a_cve_only_record_uses_details_and_cvss() -> None:
 
 
 def test_to_advisory_returns_none_for_a_record_without_an_id() -> None:
+    """A record with no id cannot be cited, so it produces no Advisory."""
     assert _to_advisory({"summary": "x"}, npm_name="jquery", detected_version="1.0.0") is None
 
 
-# --- OsvProvider.lookup (RF-04, RF-09, RF-11) -----------------------------------
+# ---------------------------------------------------------------------------
+# OsvProvider.lookup (RF-04, RF-09, RF-11)
+# ---------------------------------------------------------------------------
 
 
 async def test_all_clean_querybatch_makes_no_follow_up_query() -> None:
+    """When the querybatch reports nothing vulnerable, no per-package query is sent."""
     mock = _Transport(batch={"results": [{}, {}]})
     result = await _provider(mock.transport).lookup(
         [_det("jquery", "3.6.0"), _det("lodash", "4.17.21")]
@@ -279,6 +329,7 @@ async def test_all_clean_querybatch_makes_no_follow_up_query() -> None:
 
 
 async def test_one_hit_triggers_exactly_one_query() -> None:
+    """One vulnerable package in the batch triggers exactly one follow-up ``/v1/query``."""
     mock = _Transport(
         batch={"results": [{"vulns": [{"id": "GHSA-gxr4-xjj5-5px2"}]}, {}]},
         queries={"jquery": {"vulns": [_GHSA_RECORD]}},
@@ -292,6 +343,7 @@ async def test_one_hit_triggers_exactly_one_query() -> None:
 
 
 async def test_repeated_detection_is_sent_and_queried_once() -> None:
+    """The same (name, version) detected twice is sent to the batch and queried once."""
     mock = _Transport(
         batch={"results": [{"vulns": [{"id": "GHSA-gxr4-xjj5-5px2"}]}]},
         queries={"jquery": {"vulns": [_GHSA_RECORD]}},
@@ -302,6 +354,7 @@ async def test_repeated_detection_is_sent_and_queried_once() -> None:
 
 
 async def test_version_undetermined_detections_are_skipped() -> None:
+    """A detection with no version is not queryable, so no request is made at all."""
     mock = _Transport(batch={"results": []})
     result = await _provider(mock.transport).lookup([_det("jquery", None)])
     assert result.advisories == {}
@@ -309,12 +362,15 @@ async def test_version_undetermined_detections_are_skipped() -> None:
 
 
 async def test_querybatch_error_status_raises() -> None:
+    """A non-200 from the querybatch endpoint raises :class:`OsvLookupError`."""
     mock = _Transport(batch={}, batch_status=500)
     with pytest.raises(OsvLookupError):
         await _provider(mock.transport).lookup([_det("jquery", "3.4.1")])
 
 
 async def test_non_json_body_raises() -> None:
+    """A 200 whose body is not JSON raises :class:`OsvLookupError`."""
+
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, text="<html>not json</html>")
 
@@ -323,6 +379,8 @@ async def test_non_json_body_raises() -> None:
 
 
 async def test_transport_error_raises() -> None:
+    """A transport-level connection error raises :class:`OsvLookupError`."""
+
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("connection refused")
 
@@ -331,6 +389,8 @@ async def test_transport_error_raises() -> None:
 
 
 async def test_partial_query_failure_keeps_the_rest_and_warns() -> None:
+    """One failing per-package query is a warning; the packages that resolved still count."""
+
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/v1/querybatch":
             return httpx.Response(

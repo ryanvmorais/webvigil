@@ -1,5 +1,9 @@
 """
 RateLimiter: concurrency cap and per-host delay spacing — RF-03.
+
+Real ``asyncio`` timing: the tests run many workers through the limiter and
+measure the event-loop clock, so the assertions carry slack for OS timer slop
+rather than demanding exact spacing.
 """
 
 from __future__ import annotations
@@ -10,6 +14,7 @@ from webvigil.http.policy import RateLimiter
 
 
 async def test_concurrency_is_capped() -> None:
+    """No more than ``concurrency`` workers hold a slot at once."""
     limiter = RateLimiter(concurrency=3, delay_ms=0)
     active = 0
     peak = 0
@@ -27,6 +32,7 @@ async def test_concurrency_is_capped() -> None:
 
 
 async def test_delay_spaces_requests_to_the_same_host() -> None:
+    """N requests to one host are spaced by at least (N-1) delays."""
     delay_s = 0.05
     requests = 5
     limiter = RateLimiter(concurrency=10, delay_ms=int(delay_s * 1000))
@@ -44,6 +50,7 @@ async def test_delay_spaces_requests_to_the_same_host() -> None:
 
 
 async def test_delay_is_per_host() -> None:
+    """The delay is tracked per host, so two different hosts do not wait on each other."""
     limiter = RateLimiter(concurrency=10, delay_ms=1000)
     start = asyncio.get_running_loop().time()
     await asyncio.gather(
@@ -54,5 +61,11 @@ async def test_delay_is_per_host() -> None:
 
 
 async def _acquire(limiter: RateLimiter, host: str) -> None:
+    """Take and immediately release one slot for ``host``.
+
+    Args:
+        limiter (RateLimiter): The limiter under test.
+        host (str): The host to acquire a slot for.
+    """
     async with limiter.slot(host):
         pass

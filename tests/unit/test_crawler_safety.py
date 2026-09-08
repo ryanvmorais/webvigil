@@ -1,5 +1,9 @@
 """
 Link / form safety heuristics — spec 007 RF-03, ADR-5.
+
+Pure string / form predicates: each test is a table of URLs (or built forms)
+that must or must not trip a heuristic, with the word-boundary edge cases called
+out inline.
 """
 
 from __future__ import annotations
@@ -11,6 +15,15 @@ from webvigil.crawler.safety import is_auth_form, is_destructive, is_logout, loo
 
 
 def _form(action: str, *names: str, method: str = "POST") -> Form:
+    """
+    Args:
+        action (str): The form action URL.
+        *names (str): The field names, all rendered as text inputs.
+        method (str): The form method. Defaults to ``POST``.
+
+    Returns:
+        Form: The assembled form.
+    """
     return Form(
         method=method,
         action=action,
@@ -31,6 +44,7 @@ def _form(action: str, *names: str, method: str = "POST") -> Form:
     ],
 )
 def test_is_logout_matches_logout_endpoints(url: str) -> None:
+    """The logout/sign-out/disconnect URL vocabulary is matched."""
     assert is_logout(url) is True
 
 
@@ -39,6 +53,7 @@ def test_is_logout_matches_logout_endpoints(url: str) -> None:
     ["https://example.com/login", "https://example.com/blog/post", "https://example.com/about"],
 )
 def test_is_logout_leaves_ordinary_urls_alone(url: str) -> None:
+    """A login page or an ordinary content URL is not a logout."""
     assert is_logout(url) is False
 
 
@@ -53,6 +68,7 @@ def test_is_logout_leaves_ordinary_urls_alone(url: str) -> None:
     ],
 )
 def test_is_destructive_matches_state_changing_urls(url: str) -> None:
+    """delete / remove / deactivate / revoke / unsubscribe URLs are flagged destructive."""
     assert is_destructive(url) is True
 
 
@@ -66,10 +82,12 @@ def test_is_destructive_matches_state_changing_urls(url: str) -> None:
     ],
 )
 def test_is_destructive_respects_word_boundaries(url: str) -> None:
+    """ "deleted-items" / "undeletable" / "reset-password" must not trip the destructive check."""
     assert is_destructive(url) is False
 
 
 def test_is_auth_form_matches_login_and_registration() -> None:
+    """A login or registration form is recognised by its action and its field names."""
     assert is_auth_form(_form("/login", "username", "password")) is True
     assert is_auth_form(_form("/users", "email", "password", "password_confirm")) is True
     assert is_auth_form(_form("/register", "email")) is True
@@ -77,6 +95,7 @@ def test_is_auth_form_matches_login_and_registration() -> None:
 
 
 def test_looks_like_search_matches_search_forms() -> None:
+    """A GET form named ``q`` / ``query`` on a search-ish action looks like search."""
     assert looks_like_search(_form("/search", "q", method="GET")) is True
     assert looks_like_search(_form("/products", "query", method="GET")) is True
     assert looks_like_search(_form("/catalog", "q", method="GET")) is True

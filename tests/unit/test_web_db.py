@@ -1,5 +1,10 @@
 """
 Database layer: migrations, pragmas, and model/migration parity — RF-23, RF-24.
+
+Each test builds a real SQLite database in ``tmp_path``, runs the Alembic
+upgrade, and inspects the result — the table set, a downgrade back to base, the
+WAL / foreign-key pragmas, and (the drift guard) that ``compare_metadata`` sees
+no difference between the SQLModel models and the initial migration.
 """
 
 from __future__ import annotations
@@ -21,10 +26,18 @@ _MIGRATIONS = "src/webvigil/api/migrations"
 
 
 def _config(tmp_path: Path) -> WebConfig:
+    """
+    Args:
+        tmp_path (Path): The per-test temporary directory.
+
+    Returns:
+        WebConfig: A config whose database lives at ``tmp_path/webvigil.db``.
+    """
     return WebConfig(database_path=tmp_path / "webvigil.db")
 
 
 def test_upgrade_creates_every_table(tmp_path: Path) -> None:
+    """The Alembic upgrade creates the user / scan / finding / setting tables."""
     config = _config(tmp_path)
     run_alembic_upgrade(config)
     with make_engine(config).connect() as conn:
@@ -34,6 +47,7 @@ def test_upgrade_creates_every_table(tmp_path: Path) -> None:
 
 
 def test_downgrade_to_base_drops_the_schema(tmp_path: Path) -> None:
+    """A downgrade to base leaves only Alembic's own version table."""
     config = _config(tmp_path)
     run_alembic_upgrade(config)
     alembic_cfg = AlembicConfig()
@@ -48,6 +62,7 @@ def test_downgrade_to_base_drops_the_schema(tmp_path: Path) -> None:
 
 
 def test_wal_and_foreign_keys_are_on(tmp_path: Path) -> None:
+    """A connection from ``make_engine`` has WAL journalling and foreign keys enabled."""
     config = _config(tmp_path)
     run_alembic_upgrade(config)
     with make_engine(config).connect() as conn:
@@ -56,6 +71,7 @@ def test_wal_and_foreign_keys_are_on(tmp_path: Path) -> None:
 
 
 def test_models_match_the_initial_migration(tmp_path: Path) -> None:
+    """The SQLModel metadata has not drifted from the initial migration."""
     config = _config(tmp_path)
     run_alembic_upgrade(config)
     with make_engine(config).connect() as conn:

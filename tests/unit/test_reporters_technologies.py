@@ -1,5 +1,10 @@
 """
 Reporters render the technology inventory — RF-13, RF-14.
+
+``_result`` carries a two-entry inventory — one vulnerable jQuery with a CVE,
+one clean React — and each test checks that a reporter surfaces the inventory:
+JSON round-trips it, HTML and Markdown get a "Detected technologies" section
+only when there is something to show, SARIF still carries the vuln rule.
 """
 
 from __future__ import annotations
@@ -29,6 +34,10 @@ _TECHS = (
 
 
 def _result():
+    """
+    Returns:
+        ScanResult: A result whose inventory is ``_TECHS`` (vulnerable jquery + clean react).
+    """
     return make_result(
         make_finding(check_id="deps.js.vulnerable-library", severity=Severity.MEDIUM),
         technologies=_TECHS,
@@ -36,12 +45,14 @@ def _result():
 
 
 def test_json_round_trips_the_inventory(tmp_path) -> None:
+    """The technology inventory survives a JSON render / load round-trip unchanged."""
     path = tmp_path / "r.json"
     path.write_text(get_reporter("json").render(_result()), "utf-8")
     assert load_result(path).technologies == _TECHS
 
 
 def test_html_has_a_detected_technologies_section() -> None:
+    """The HTML report lists each library, its version, and the vulnerable ones' CVEs."""
     html = get_reporter("html").render(_result())
     assert "Detected technologies" in html
     assert "jquery" in html and "1.12.4" in html
@@ -50,6 +61,7 @@ def test_html_has_a_detected_technologies_section() -> None:
 
 
 def test_markdown_has_a_detected_technologies_section() -> None:
+    """The Markdown report has a technologies table that marks the vulnerable rows."""
     md = get_reporter("md").render(_result())
     assert "## Detected technologies" in md
     assert "| jquery | 1.12.4 |" in md
@@ -57,12 +69,14 @@ def test_markdown_has_a_detected_technologies_section() -> None:
 
 
 def test_no_section_when_inventory_is_empty() -> None:
+    """With an empty inventory, neither HTML nor Markdown grows a technologies section."""
     plain = make_result(make_finding())
     assert "Detected technologies" not in get_reporter("html").render(plain)
     assert "Detected technologies" not in get_reporter("md").render(plain)
 
 
 def test_sarif_has_the_vulnerable_library_rule() -> None:
+    """SARIF still emits the ``deps.js.vulnerable-library`` rule for a vulnerable inventory."""
     document = SarifReporter().to_dict(_result())
     rule_ids = {rule["id"] for rule in document["runs"][0]["tool"]["driver"]["rules"]}
     assert "deps.js.vulnerable-library" in rule_ids

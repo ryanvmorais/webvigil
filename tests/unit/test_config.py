@@ -1,5 +1,10 @@
 """
 Config model, TOML loading, and CLI-override precedence — RF-26.
+
+Each section follows the same shape: assert the defaults, write a ``webvigil.toml``
+under ``tmp_path`` and check it round-trips through :meth:`ScanConfig.load`, and
+check that a ``with_overrides`` value beats the file. Unknown keys and misspelled
+sections must raise :class:`ConfigError` rather than being silently dropped.
 """
 
 from __future__ import annotations
@@ -11,8 +16,13 @@ import pytest
 from webvigil.core import ConfigError, ScanConfig
 from webvigil.core.findings import ScanMode
 
+# ---------------------------------------------------------------------------
+# Defaults, loading, and override precedence
+# ---------------------------------------------------------------------------
+
 
 def test_defaults_match_the_example_file_shape() -> None:
+    """A bare :class:`ScanConfig` has the documented defaults (Passive, 50 pages, ...)."""
     config = ScanConfig()
     assert config.scan.mode is ScanMode.PASSIVE
     assert config.scan.max_pages == 50
@@ -22,6 +32,7 @@ def test_defaults_match_the_example_file_shape() -> None:
 
 
 def test_load_reads_toml(tmp_path: Path) -> None:
+    """``load`` reads a TOML file into the typed model, including the ``[active]`` block."""
     path = tmp_path / "webvigil.toml"
     path.write_text(
         "[scan]\nmode = 'active'\nmax_pages = 5\n\n[active]\nauthorized_by = 'Jane / #1'\n",
@@ -34,6 +45,7 @@ def test_load_reads_toml(tmp_path: Path) -> None:
 
 
 def test_unknown_key_is_rejected(tmp_path: Path) -> None:
+    """An unknown key inside a known section is a :class:`ConfigError`."""
     path = tmp_path / "webvigil.toml"
     path.write_text("[scan]\nnope = true\n", "utf-8")
     with pytest.raises(ConfigError):
@@ -41,6 +53,7 @@ def test_unknown_key_is_rejected(tmp_path: Path) -> None:
 
 
 def test_web_section_is_tolerated_as_passthrough(tmp_path: Path) -> None:
+    """The ``[web]`` table is kept verbatim for the API to read, not validated here."""
     path = tmp_path / "webvigil.toml"
     path.write_text(
         "[scan]\nmax_pages = 7\n\n[web]\nport = 9000\ndatabase_path = 'x.db'\n", "utf-8"
@@ -51,6 +64,7 @@ def test_web_section_is_tolerated_as_passthrough(tmp_path: Path) -> None:
 
 
 def test_a_misspelled_section_is_still_rejected(tmp_path: Path) -> None:
+    """A misspelled section name (``[scna]``) is rejected, not ignored."""
     path = tmp_path / "webvigil.toml"
     path.write_text("[scna]\nmax_pages = 7\n", "utf-8")
     with pytest.raises(ConfigError):
@@ -58,11 +72,13 @@ def test_a_misspelled_section_is_still_rejected(tmp_path: Path) -> None:
 
 
 def test_missing_file_raises(tmp_path: Path) -> None:
+    """Pointing ``load`` at a file that does not exist is a :class:`ConfigError`."""
     with pytest.raises(ConfigError):
         ScanConfig.load(tmp_path / "absent.toml")
 
 
 def test_cli_overrides_win_over_file_values() -> None:
+    """A CLI override replaces its key; sections the override does not touch are untouched."""
     base = ScanConfig.model_validate({"scan": {"max_pages": 5}, "http": {"delay_ms": 100}})
     merged = base.with_overrides(scan={"max_pages": 99}, http={})
     assert merged.scan.max_pages == 99
@@ -70,11 +86,18 @@ def test_cli_overrides_win_over_file_values() -> None:
 
 
 def test_overrides_ignore_empty_sections() -> None:
+    """An empty override dict is a no-op, not a reset to defaults."""
     base = ScanConfig()
     assert base.with_overrides(scan={}) == base
 
 
+# ---------------------------------------------------------------------------
+# The [disclosure] section (spec 005)
+# ---------------------------------------------------------------------------
+
+
 def test_disclosure_probe_defaults_off_and_round_trips(tmp_path: Path) -> None:
+    """``[disclosure] probe`` defaults off and round-trips through a TOML file."""
     assert ScanConfig().disclosure.probe is False
     path = tmp_path / "webvigil.toml"
     path.write_text("[disclosure]\nprobe = true\n", "utf-8")
@@ -82,6 +105,7 @@ def test_disclosure_probe_defaults_off_and_round_trips(tmp_path: Path) -> None:
 
 
 def test_unknown_disclosure_key_is_rejected(tmp_path: Path) -> None:
+    """An unknown key under ``[disclosure]`` is a :class:`ConfigError`."""
     path = tmp_path / "webvigil.toml"
     path.write_text("[disclosure]\nprobe = true\nnope = 1\n", "utf-8")
     with pytest.raises(ConfigError):
@@ -89,11 +113,18 @@ def test_unknown_disclosure_key_is_rejected(tmp_path: Path) -> None:
 
 
 def test_disclosure_override_wins_over_file() -> None:
+    """A ``disclosure`` override beats the file value."""
     base = ScanConfig.model_validate({"disclosure": {"probe": False}})
     assert base.with_overrides(disclosure={"probe": True}).disclosure.probe is True
 
 
+# ---------------------------------------------------------------------------
+# The [injection] section (specs 006 / 008)
+# ---------------------------------------------------------------------------
+
+
 def test_injection_section_defaults_and_round_trips(tmp_path: Path) -> None:
+    """``[injection]`` has the documented budget/point/time-based defaults and round-trips."""
     defaults = ScanConfig().injection
     assert defaults.request_budget == 500
     assert defaults.max_injection_points == 200
@@ -111,6 +142,7 @@ def test_injection_section_defaults_and_round_trips(tmp_path: Path) -> None:
 
 
 def test_unknown_injection_key_is_rejected(tmp_path: Path) -> None:
+    """An unknown key under ``[injection]`` is a :class:`ConfigError`."""
     path = tmp_path / "webvigil.toml"
     path.write_text("[injection]\nrequest_budget = 40\nnope = 1\n", "utf-8")
     with pytest.raises(ConfigError):
@@ -118,17 +150,25 @@ def test_unknown_injection_key_is_rejected(tmp_path: Path) -> None:
 
 
 def test_injection_override_wins_over_file() -> None:
+    """An ``injection`` override beats the file value."""
     base = ScanConfig.model_validate({"injection": {"time_based_sqli": True}})
     merged = base.with_overrides(injection={"time_based_sqli": False})
     assert merged.injection.time_based_sqli is False
 
 
 def test_stored_xss_override_wins_over_file() -> None:
+    """The ``stored_xss`` opt-in can be turned on by an override over an off file value."""
     base = ScanConfig.model_validate({"injection": {"stored_xss": False}})
     assert base.with_overrides(injection={"stored_xss": True}).injection.stored_xss is True
 
 
+# ---------------------------------------------------------------------------
+# The [deps] section (spec 010)
+# ---------------------------------------------------------------------------
+
+
 def test_deps_section_defaults_and_round_trips(tmp_path: Path) -> None:
+    """``[deps]`` OSV settings default off / 10s / api.osv.dev and round-trip through TOML."""
     defaults = ScanConfig().deps
     assert defaults.osv_online is False
     assert defaults.osv_timeout_s == 10.0
@@ -146,6 +186,7 @@ def test_deps_section_defaults_and_round_trips(tmp_path: Path) -> None:
 
 
 def test_unknown_deps_key_is_rejected(tmp_path: Path) -> None:
+    """An unknown key under ``[deps]`` is a :class:`ConfigError`."""
     path = tmp_path / "webvigil.toml"
     path.write_text("[deps]\nosv_online = true\nnope = 1\n", "utf-8")
     with pytest.raises(ConfigError):
@@ -153,11 +194,18 @@ def test_unknown_deps_key_is_rejected(tmp_path: Path) -> None:
 
 
 def test_osv_online_override_wins_over_file() -> None:
+    """The ``osv_online`` opt-in can be enabled by an override over an off file value."""
     base = ScanConfig.model_validate({"deps": {"osv_online": False}})
     assert base.with_overrides(deps={"osv_online": True}).deps.osv_online is True
 
 
+# ---------------------------------------------------------------------------
+# The [auth] section (spec 007)
+# ---------------------------------------------------------------------------
+
+
 def test_auth_cookies_default_empty_and_round_trip(tmp_path: Path) -> None:
+    """``[auth] cookies`` defaults empty and its ``as_header`` join round-trips from TOML."""
     assert ScanConfig().auth.cookies == []
     assert ScanConfig().auth.as_header == ""
     path = tmp_path / "webvigil.toml"
@@ -169,6 +217,7 @@ def test_auth_cookies_default_empty_and_round_trip(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("bad", ["sessionabc", "=value", "   =v"])
 def test_auth_cookie_without_a_valid_pair_is_rejected(tmp_path: Path, bad: str) -> None:
+    """A cookie string that is not a ``name=value`` pair is rejected at load time."""
     path = tmp_path / "webvigil.toml"
     path.write_text(f"[auth]\ncookies = ['{bad}']\n", "utf-8")
     with pytest.raises(ConfigError):
@@ -176,6 +225,7 @@ def test_auth_cookie_without_a_valid_pair_is_rejected(tmp_path: Path, bad: str) 
 
 
 def test_unknown_auth_key_is_rejected(tmp_path: Path) -> None:
+    """A key under ``[auth]`` that is not ``cookies`` (e.g. ``headers``) is rejected."""
     path = tmp_path / "webvigil.toml"
     path.write_text("[auth]\ncookies = []\nheaders = ['X: 1']\n", "utf-8")
     with pytest.raises(ConfigError):
@@ -183,12 +233,19 @@ def test_unknown_auth_key_is_rejected(tmp_path: Path) -> None:
 
 
 def test_auth_cookies_override_replaces_the_file_list() -> None:
+    """A ``cookies`` override replaces the whole file list rather than merging."""
     base = ScanConfig.model_validate({"auth": {"cookies": ["a=1", "b=2"]}})
     merged = base.with_overrides(auth={"cookies": ["c=3"]})
     assert merged.auth.cookies == ["c=3"]
 
 
+# ---------------------------------------------------------------------------
+# Misc [scan] toggles
+# ---------------------------------------------------------------------------
+
+
 def test_submit_forms_defaults_on_and_round_trips(tmp_path: Path) -> None:
+    """``[scan] submit_forms`` defaults on and can be turned off from a TOML file."""
     assert ScanConfig().scan.submit_forms is True
     path = tmp_path / "webvigil.toml"
     path.write_text("[scan]\nsubmit_forms = false\n", "utf-8")

@@ -1,5 +1,10 @@
 """
 WebConfig: defaults, TOML [web] table, env overrides — RF-31.
+
+Same shape as the engine's config tests: assert the defaults, load a
+``webvigil.toml`` from ``tmp_path`` and check the ``[web]`` table maps in,
+confirm ``WEBVIGIL_*`` environment variables win over the file, and that an
+unknown key or a missing file raises :class:`ConfigError`.
 """
 
 from __future__ import annotations
@@ -13,6 +18,7 @@ from webvigil.core.errors import ConfigError
 
 
 def test_defaults() -> None:
+    """A bare :class:`WebConfig` has the documented host/port/secret/migrate defaults."""
     config = WebConfig()
     assert config.database_path == Path("webvigil.db")
     assert config.host == "127.0.0.1"
@@ -23,6 +29,7 @@ def test_defaults() -> None:
 
 
 def test_reads_the_web_table(tmp_path: Path) -> None:
+    """The ``[web]`` table's keys map onto the typed config, including the CORS list."""
     path = tmp_path / "webvigil.toml"
     path.write_text(
         "[scan]\nmax_pages = 5\n\n[web]\nport = 9001\ncookie_secure = true\n"
@@ -36,12 +43,14 @@ def test_reads_the_web_table(tmp_path: Path) -> None:
 
 
 def test_no_web_table_gives_defaults(tmp_path: Path) -> None:
+    """A config file with no ``[web]`` table loads to the plain defaults."""
     path = tmp_path / "webvigil.toml"
     path.write_text("[scan]\nmax_pages = 5\n", "utf-8")
     assert WebConfig.load(path) == WebConfig()
 
 
 def test_unknown_web_key_is_rejected(tmp_path: Path) -> None:
+    """An unknown key under ``[web]`` is a :class:`ConfigError`."""
     path = tmp_path / "webvigil.toml"
     path.write_text("[web]\nnope = 1\n", "utf-8")
     with pytest.raises(ConfigError):
@@ -49,6 +58,7 @@ def test_unknown_web_key_is_rejected(tmp_path: Path) -> None:
 
 
 def test_env_overrides_win(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """``WEBVIGIL_*`` environment variables override the file, CORS list included."""
     path = tmp_path / "webvigil.toml"
     path.write_text("[web]\nport = 8000\n", "utf-8")
     monkeypatch.setenv("WEBVIGIL_WEB_PORT", "7777")
@@ -61,5 +71,6 @@ def test_env_overrides_win(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
 
 
 def test_missing_file_raises(tmp_path: Path) -> None:
+    """Loading a file that does not exist is a :class:`ConfigError`."""
     with pytest.raises(ConfigError):
         WebConfig.load(tmp_path / "absent.toml")
