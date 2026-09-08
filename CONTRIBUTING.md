@@ -2,28 +2,20 @@
 
 Thanks for your interest in improving WebVigil.
 
-## Development setup
+## Development
 
-```bash
-uv sync            # installs the project plus the `dev` dependency group
-uv run pytest
-```
+WebVigil is managed with [uv](https://docs.astral.sh/uv/). `uv sync` installs the project
+plus the `dev` dependency group, which pins the tooling (`ruff`, `black`, `mypy`,
+`import-linter`) and the test-only libraries (`pytest*`, `starlette`, `jsonschema`,
+`trustme`) — each line in `pyproject.toml` says why it is there.
 
-The `dev` group pins the tooling (`ruff`, `black`, `mypy`, `import-linter`) and the
-test-only libraries (`pytest*`, `starlette`, `jsonschema`, `trustme`); each line in
-`pyproject.toml` says why it is there.
+The full command list, for the engine and the web UI, is in the README's
+[Development](README.md#development) section.
 
 ## Before opening a pull request
 
-Run the full quality gate — CI runs the same checks:
-
-```bash
-uv run ruff check .
-uv run black --check .
-uv run mypy src
-uv run lint-imports    # engine must not import Typer/Rich/FastAPI/SQLModel/Uvicorn
-uv run pytest
-```
+Run the full quality gate and make sure it is green — CI runs the same checks. The
+commands are in [README → Development](README.md#development).
 
 ## Conventions
 
