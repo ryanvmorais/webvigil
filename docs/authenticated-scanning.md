@@ -35,6 +35,32 @@ prints the cookie **count** and nothing more.
 target sets via `Set-Cookie` during the scan, so a run is reproducible and authentication
 stays entirely config-driven.
 
+### Header and bearer authentication
+
+Spec [`013-auth-and-api-surface`](../specs/013-auth-and-api-surface/). Many APIs
+authenticate with a bearer token or an API-key header rather than a cookie. Pass any
+request header — repeatable — with `--header`:
+
+```bash
+webvigil scan https://api.example.com --header "Authorization: Bearer $TOKEN"
+webvigil scan https://api.example.com --header "X-API-Key: k1" --header "X-Tenant: acme"
+```
+
+Or in the config file (a `--header` flag replaces this list entirely):
+
+```toml
+[auth]
+headers = ["Authorization: Bearer abc123", "X-Tenant: acme"]
+```
+
+Each entry is `Name: Value` (the value may contain `:`). `Host` and `Content-Length` are
+rejected — the transport computes them. Headers follow the **exact same rules as cookies**:
+attached only to target-host requests, never to an out-of-scope asset or a cross-host
+redirect; and a header a check deliberately sets for a request is not overwritten. A
+configured header's name and value are never written to a report, a log line, a warning, or
+the scan metadata — `metadata.authenticated` is `true` when *either* cookies or headers are
+supplied, and the CLI summary prints counts only.
+
 ### Session-safe crawling
 
 An authenticated crawl can *actually* log you out or *actually* delete something, where an

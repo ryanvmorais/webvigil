@@ -137,6 +137,22 @@ Camadas, de cima para baixo:
    estático: `--cookie "name=value"` / `[auth] cookies`, anexado só a requests do host alvo,
    nunca em relatório/log/metadata; `webvigil.crawler.safety` guarda o crawl de links
    logout/destrutivos. Detalhes em [`docs/authenticated-scanning.md`](docs/authenticated-scanning.md).
+   `webvigil.checks.content` (spec 013, `Category.CONTENT` nova): dois checks passivos —
+   `content.sri.missing` (subresource cross-origin sem `integrity`, MEDIUM) e `content.mixed`
+   (página `https` puxando subrecurso `http://`, MEDIUM/LOW). `webvigil.checks.disclosure`
+   ganhou `disclosure.session-id-in-url` (token de sessão / API key numa URL que o alvo
+   produziu — link, form action, `Location`; MEDIUM) e `disclosure.private-ip` (IP RFC-1918 /
+   loopback / link-local num corpo; LOW). Auth por header/bearer (spec 013): `--header
+   "Name: Value"` / `[auth] headers`, mesma disciplina do cookie da 007 (só host alvo, nunca
+   em relatório/log/metadata, não sobrescreve header que o caller setou). Import de OpenAPI
+   (spec 013): `--openapi <path|url>` / `[scan] openapi` — `webvigil.crawler.openapi` parseia
+   um doc JSON OpenAPI 3.x / Swagger 2.0 (só `$ref` locais, cycle guard), o orquestrador
+   carrega antes do crawl (falha = fatal), URLs de operações GET viram seeds do `Crawler`
+   (`extra_seeds=`), e query/path params + campos de body form-urlencoded viram
+   `InjectionPoint`s (`source="openapi"` / `"openapi-path"`) via `enumerate_points`. JSON só,
+   sem fuzz de folha de body JSON, GET/POST só. Detalhes em
+   [`docs/api-scanning.md`](docs/api-scanning.md) e
+   [`docs/content-checks.md`](docs/content-checks.md).
 4. **Reporting** (`webvigil.reporting`) — JSON (canônico), SARIF 2.1.0, HTML (Jinja2), Markdown.
 5. **Persistência** (só Web, `webvigil.api.db`) — SQLite via SQLModel + Alembic; scans
    executados por um `ScanRunner` in-process (1 por vez, fila).
@@ -159,6 +175,6 @@ no CI. `webvigil.cli` e `webvigil.api` não se importam. A Web UI só fala com a
 ## Fluxo de trabalho
 
 - **Spec-driven development** via `/spec`. Specs em `specs/NNN-nome/` (requirements → design → tasks → implementação), com portão de aprovação humana em cada fase. Convenções e roadmap em [`specs/README.md`](specs/README.md).
-- Estado: `001-foundation` (CLI `v0.1`), `002-web-api` (API `v0.2`), `003-web-ui` (dashboard `v0.3`), `004-deps-fingerprint` (`v0.4`), `005-info-disclosure` (`v0.5`), `006-active-injection` (`v0.6`), `007-auth-flows` (`v0.7`), `008-stored-xss` (`v0.8`), `009-ssrf` (SSRF in-band, `v0.9`), `010-osv-online` (`v0.10`), `011-rce-injection` (command injection + SSTI in-band, `v0.11`) e `012-protocol-injection` (CRLF, host header, XXE opt-in, métodos HTTP, `v0.12`) **concluídas**. O roadmap de dívida técnica está zerado. `013`-`014` estão `planned` (ver [`specs/README.md`](specs/README.md)): auth+API surface (auth por header, import OpenAPI, checks passivos ausentes), file upload. **SSRF cega, command injection cega, XXE cega e HTTP request smuggling** ficam fora do roadmap — exigem coletor OAST ou raw socket, cruzam "o engine só fala com o alvo" e a distribuição repo-only. Pendências ainda abertas, da 007: login automático, testes de sessão (cada uma exige fluxo de login stateful ou Active Mode). Nenhuma spec em andamento.
+- Estado: `001-foundation` (CLI `v0.1`), `002-web-api` (API `v0.2`), `003-web-ui` (dashboard `v0.3`), `004-deps-fingerprint` (`v0.4`), `005-info-disclosure` (`v0.5`), `006-active-injection` (`v0.6`), `007-auth-flows` (`v0.7`), `008-stored-xss` (`v0.8`), `009-ssrf` (SSRF in-band, `v0.9`), `010-osv-online` (`v0.10`), `011-rce-injection` (command injection + SSTI in-band, `v0.11`), `012-protocol-injection` (CRLF, host header, XXE opt-in, métodos HTTP, `v0.12`) e `013-auth-and-api-surface` (auth por header/bearer, import OpenAPI, SRI / mixed content / session-id-in-URL / private-IP passivos, `v0.13`) **concluídas**. O roadmap de dívida técnica está zerado. `014` (file upload) está `planned` e é opcional — a `v1.0` pode sair sem ela (ver [`specs/README.md`](specs/README.md)). **SSRF cega, command injection cega, XXE cega e HTTP request smuggling** ficam fora do roadmap — exigem coletor OAST ou raw socket, cruzam "o engine só fala com o alvo" e a distribuição repo-only. YAML no `--openapi` e fuzz de folha de body JSON são limites da `013`, não permanentes. Pendências ainda abertas, da 007: login automático, testes de sessão (cada uma exige fluxo de login stateful ou Active Mode). Nenhuma spec em andamento.
 - Ao fim de cada sessão: `/preparar-commits` (Conventional Commits) e `/atualizar-docs`.
 - Commits em inglês, padrão Conventional Commits.

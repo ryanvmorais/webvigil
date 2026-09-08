@@ -45,17 +45,20 @@ be illegal. See [SECURITY.md](SECURITY.md).
 | `v0.10` | Opt-in OSV.dev online advisory lookup for dependency fingerprinting, augmenting the vendored Retire.js database ([docs](docs/dependency-fingerprinting.md#osvdev-online-provider---osv-online)) | shipped |
 | `v0.11` | Active Mode: in-band OS command injection (arithmetic echo + time-based) and server-side template injection ([docs](docs/active-injection.md#command-injection--ssti)) | shipped |
 | `v0.12` | Active Mode: request-envelope injection — CRLF / response splitting, host-header injection, opt-in in-band XXE, and an HTTP-methods (TRACE / verb) check ([docs](docs/active-injection.md#request-envelope-injection)) | shipped |
+| `v0.13` | Header / bearer authentication (`--header`), OpenAPI / Swagger import to seed the crawl and the injection pass (`--openapi`), and four passive checks: missing Subresource Integrity, mixed content, session identifier in a URL, private IP in a body ([docs](docs/api-scanning.md)) | shipped |
 
 > Stored XSS shipped in `v0.8` (opt-in `--stored-xss`); in-band SSRF in `v0.9`; the OSV.dev
 > online advisory provider in `v0.10` (opt-in `--osv-online`); command injection + SSTI in
-> `v0.11`; request-envelope injection in `v0.12` (XXE opt-in `--xxe`). **Blind SSRF, truly
-> blind command injection, blind XXE, and HTTP request smuggling are not on the roadmap** —
-> each needs an out-of-band collaborator (a server the scanner hosts and the target calls
-> back to) or raw-socket control, which the "engine talks only to the target" rule and the
-> repository-only distribution rule out. Pair WebVigil with your own collaborator (Burp
-> Collaborator, interactsh) for the blind cases. Automated login-form flows and
-> session-security tests were on the original `v0.7` line and are not yet scheduled — each
-> needs the stateful login flow or Active Mode.
+> `v0.11`; request-envelope injection in `v0.12` (XXE opt-in `--xxe`); header/bearer auth +
+> OpenAPI import in `v0.13`. **Blind SSRF, truly blind command injection, blind XXE, and
+> HTTP request smuggling are not on the roadmap** — each needs an out-of-band collaborator
+> (a server the scanner hosts and the target calls back to) or raw-socket control, which the
+> "engine talks only to the target" rule and the repository-only distribution rule out. Pair
+> WebVigil with your own collaborator (Burp Collaborator, interactsh) for the blind cases.
+> YAML OpenAPI documents (convert to JSON first) and leaf-level JSON-body fuzzing are `v0.13`
+> limitations, not permanent. Automated login-form flows and session-security tests were on
+> the original `v0.7` line and are not yet scheduled — each needs the stateful login flow or
+> Active Mode.
 
 ---
 

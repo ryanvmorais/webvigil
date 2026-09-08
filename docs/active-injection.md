@@ -48,8 +48,11 @@ When the scan is Active and at least one `injection.*` check is selected, the or
 runs one bounded `InjectionScanner` pass:
 
 1. **Enumerate injection points** — every query-string parameter on a crawled in-scope URL,
-   and every fuzzable field of a crawled in-scope `<form>` (GET and POST). Forms are parsed
-   from page bodies the crawler already fetched; no extra crawl requests.
+   every fuzzable field of a crawled in-scope `<form>` (GET and POST), and — when
+   `--openapi` is set (spec 013) — the query / path parameters and form-urlencoded body
+   fields of every declared `GET` / `POST` operation. Forms are parsed from page bodies the
+   crawler already fetched; no extra crawl requests. See
+   [`api-scanning.md`](api-scanning.md).
 2. **Baseline** — one request per point with its original value, shared by every detector.
 3. **Fan the detectors** — each enabled detector sends its payloads for that point, drawing
    on one shared **request budget**. Boolean and time-based run confirmation rounds.

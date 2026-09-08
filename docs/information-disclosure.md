@@ -16,6 +16,17 @@ Runs against the responses the crawler already fetched — **no extra requests**
   PHP notice is `LOW`.
 - **`disclosure.listing.directory-index`** — server-generated directory listings (Apache
   `mod_autoindex`, nginx `autoindex`, Python `http.server`).
+- **`disclosure.session-id-in-url`** (`MEDIUM`, CWE-598 — spec 013) — a session identifier
+  or credential (`jsessionid`, `phpsessid`, `sid`, `sessionid`, `access_token`, `apikey`,
+  …) carried as a query or `;name=value` path parameter in a URL the **target produced** —
+  a hyperlink, a form action, or a redirect `Location`. The page's own request URL is not
+  inspected (it may be a scanner-crafted `--openapi` seed), and a bare one-time `?token=`
+  link (reset / verification) is deliberately excluded. The value is redacted in the
+  evidence.
+- **`disclosure.private-ip`** (`LOW`, CWE-200 — spec 013) — an RFC-1918, loopback,
+  link-local, or IPv6 unique-local address literal in a response body (an HTML comment, a
+  JSON value, an error page). The target's own host is never flagged; at most ten distinct
+  addresses are reported per page.
 
 ### Probe (opt-in — `--probe` / `[disclosure] probe = true`)
 
