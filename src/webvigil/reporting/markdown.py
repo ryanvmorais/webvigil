@@ -1,4 +1,6 @@
-"""Markdown reporter: a summary table plus a section per finding (RF-23)."""
+"""
+Markdown reporter: a summary table plus a section per finding (RF-23).
+"""
 
 from __future__ import annotations
 
@@ -8,9 +10,18 @@ from webvigil.reporting._ordering import sort_findings
 
 
 class MarkdownReporter:
+    """Renders a scan result as Markdown: metadata, a severity table, per-finding sections."""
+
     fmt = "md"
 
     def render(self, result: ScanResult) -> str:
+        """
+        Args:
+            result (ScanResult): The scan result.
+
+        Returns:
+            str: The Markdown report, ending in a single trailing newline.
+        """
         meta = result.metadata
         lines: list[str] = [
             f"# WebVigil scan report — {meta.target}",

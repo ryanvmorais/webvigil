@@ -1,14 +1,16 @@
-"""``csrf.form.no-token`` — a state-changing form with no anti-CSRF token (spec 007, RF-08).
+"""
+``csrf.form.no-token`` — a state-changing form with no anti-CSRF token (spec 007, RF-08).
 
-Passive. Reads ``ctx.forms`` (the ``<form>``\\s the crawler parsed) and the ``Set-Cookie``
-headers of the crawled responses. Confidence is weighted by the session cookie's
-``SameSite``: a token-less ``POST`` form behind a ``SameSite=Lax``/``Strict`` session cookie
-is barely exploitable (``LOW``), one behind a cookie with no ``SameSite`` is not (``HIGH``).
+Passive. Reads ``ctx.forms`` (the ``<form>``\\s the crawler parsed) and the
+``Set-Cookie`` headers of the crawled responses. Confidence is weighted by the
+session cookie's ``SameSite``: a token-less ``POST`` form behind a
+``SameSite=Lax`` / ``Strict`` session cookie is barely exploitable (``LOW``),
+one behind a cookie with no ``SameSite`` is not (``HIGH``).
 
-Known blind spots (documented in ``docs/authenticated-scanning.md``): a token injected by
-client-side JavaScript, a token carried in a request header via a ``<meta>`` tag + framework
-JS (Rails/Angular), and the double-submit-cookie pattern with no form field — all read here
-as "no token".
+Known blind spots (documented in ``docs/authenticated-scanning.md``): a token
+injected by client-side JavaScript, a token carried in a request header via a
+``<meta>`` tag + framework JS (Rails/Angular), and the double-submit-cookie
+pattern with no form field — all read here as "no token".
 """
 
 from __future__ import annotations
@@ -63,10 +65,26 @@ _SAMESITE_NOTE = {
 
 
 def _is_token_field(field: FormField) -> bool:
+    """
+    Args:
+        field (FormField): A form control.
+
+    Returns:
+        bool: ``True`` when the field name matches a known anti-CSRF token name.
+    """
     return bool(_TOKEN_NAME_RE.search(field.name))
 
 
 def _weaker(current: str | None, candidate: str) -> str:
+    """
+    Args:
+        current (str | None): The weakest ``SameSite`` seen so far, or ``None``.
+        candidate (str): A newly observed ``SameSite`` value; anything
+            unrecognised counts as ``"none"``.
+
+    Returns:
+        str: Whichever of the two offers less CSRF protection.
+    """
     cand = candidate if candidate in _PROTECTION else "none"
     if current is None or _PROTECTION[cand] < _PROTECTION[current]:
         return cand
@@ -74,9 +92,14 @@ def _weaker(current: str | None, candidate: str) -> str:
 
 
 def _session_samesite(pages: tuple[Page, ...]) -> str | None:
-    """The weakest ``SameSite`` seen on a session-looking ``Set-Cookie`` across the crawl.
+    """
+    Args:
+        pages (tuple[Page, ...]): The crawled pages, for their ``Set-Cookie``
+            headers.
 
-    ``None`` when no session cookie was observed at all.
+    Returns:
+        str | None: The weakest ``SameSite`` seen on a session-looking cookie
+            across the crawl, or ``None`` when no session cookie was observed.
     """
     seen: str | None = None
     for page in pages:
@@ -96,6 +119,14 @@ def _session_samesite(pages: tuple[Page, ...]) -> str | None:
 
 @register
 class NoCsrfTokenCheck(Check):
+    """
+    Flags every state-changing ``POST`` form that carries no anti-CSRF token field.
+
+    Auth and search forms are excluded. Confidence tracks the session cookie's
+    ``SameSite``: HIGH with no ``SameSite``, LOW with ``Lax`` / ``Strict``,
+    MEDIUM when no session cookie was seen.
+    """
+
     id = "csrf.form.no-token"
     name = "Form without an anti-CSRF token"
     category = Category.CSRF
@@ -104,6 +135,14 @@ class NoCsrfTokenCheck(Check):
     references = (OWASP_CSRF, _WSTG)
 
     async def run(self, ctx: ScanContext) -> list[Finding]:
+        """
+        Args:
+            ctx (ScanContext): The scan context; reads ``ctx.forms`` and the
+                pages' ``Set-Cookie`` headers.
+
+        Returns:
+            list[Finding]: One finding per token-less state-changing form.
+        """
         samesite = _session_samesite(ctx.pages)
         confidence = _CONFIDENCE[samesite]
         findings: list[Finding] = []
@@ -133,4 +172,12 @@ class NoCsrfTokenCheck(Check):
 
 
 def _is_candidate(form: Form) -> bool:
+    """
+    Args:
+        form (Form): A parsed form.
+
+    Returns:
+        bool: ``True`` when the form is a ``POST`` that is neither an auth form
+            nor a search form — i.e. a meaningful CSRF target.
+    """
     return form.method == "POST" and not is_auth_form(form) and not looks_like_search(form)
