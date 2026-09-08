@@ -1,13 +1,23 @@
-node_modules
-.next
+# --- 1. VCS AND DOCKER META ---
+# The build needs only the source; git history and the Docker files themselves add nothing.
 .git
 .gitignore
+Dockerfile
+.dockerignore
+
+# --- 2. DEPENDENCIES AND BUILD OUTPUT ---
+# `pnpm install` and `next build` run inside the image.
+node_modules
+.next
+
+# --- 3. TEST AND COVERAGE OUTPUT ---
 coverage
 playwright-report
 test-results
 .playwright-tmp
-Dockerfile
-.dockerignore
-README.md
+
+# --- 4. TESTS AND DOCS ---
+# Not shipped in the runtime image.
 **/*.test.ts
 **/*.test.tsx
+README.md

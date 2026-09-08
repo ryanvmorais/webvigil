@@ -1,7 +1,13 @@
-# The Dockerfile copies only pyproject.toml, uv.lock, README.md and src/ explicitly;
-# this keeps the build context small and reproducible regardless.
+# The Dockerfile copies only pyproject.toml, uv.lock, README.md and src/ explicitly,
+# so the build context stays small regardless. These rules are the second line of
+# defence — and matter for the ad-hoc `docker build .` case.
+
+# --- 1. VCS AND CI ---
 .git
 .github
+
+# --- 2. PYTHON: ENVS, CACHES, BYTECODE ---
+# Recreated inside the image by `uv sync`; never copied in.
 .venv
 venv
 .mypy_cache
@@ -9,20 +15,28 @@ venv
 .pytest_cache
 __pycache__
 *.pyc
+
+# --- 3. BUILD AND COVERAGE OUTPUT ---
 dist
 build
 htmlcov
 .coverage
 
+# --- 4. TESTS ---
+# Kept out of the image — except the fixture app, which docker/target.Dockerfile
+# packages as a manual scan target. The `!` lines must stay after `tests`.
 tests
-# …except the fixture app, packaged by docker/target.Dockerfile as a manual scan target.
 !tests/__init__.py
 !tests/fixtures
+
+# --- 5. DOCS, SPECS, AND THE WEB UI ---
+# Not needed to run the engine or the API.
 specs
 docs
 web
 node_modules
 
+# --- 6. SCAN ARTIFACTS, DATABASES, SECRETS ---
 *.sarif
 scan-*.json
 scan-*.html
@@ -32,6 +46,7 @@ webvigil.local.toml
 *.sqlite3
 *.db
 
+# --- 7. EDITOR AND OS ---
 .idea
 .vscode
 .DS_Store
