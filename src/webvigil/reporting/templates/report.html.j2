@@ -1,9 +1,22 @@
+{#
+  Standalone HTML scan report, rendered by webvigil.reporting.html.HtmlReporter.
+
+  Self-contained by contract (RF-23): the <style> below is the only styling and
+  the page pulls in no external CSS, script, font, or image — it must render
+  from a file:// path with no network. Every comment here is a Jinja comment
+  rather than an HTML one, so the delivered report carries no markup noise; the
+  Environment runs with trim_blocks + lstrip_blocks, so a comment alone on its
+  line leaves nothing in the output.
+
+  Context in: meta, severities, warnings, technologies, findings, errors.
+#}
 <!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>WebVigil scan report — {{ meta.target }}</title>
+{# Palette + layout + one badge colour per severity, with a prefers-color-scheme dark set. #}
 <style>
   :root { color-scheme: light dark; }
   * { box-sizing: border-box; }
@@ -37,6 +50,7 @@
 </head>
 <body>
 <main>
+  {# Header — target, scan mode/scope, page count, timestamp, and the Active-Mode authoriser when set. #}
   <h1>WebVigil scan report</h1>
   <p class="meta">
     {{ meta.target }} &middot; mode <code>{{ meta.mode.value }}</code> &middot;
@@ -45,6 +59,7 @@
     {% if meta.authorized_by %}<br>Authorized by: {{ meta.authorized_by }}{% endif %}
   </p>
 
+  {# Severity summary — every level listed, including the zero rows, so the table shape is stable. #}
   <table class="summary">
     <tr><th>Severity</th><th>Count</th></tr>
     {% for sev in severities %}
@@ -52,10 +67,12 @@
     {% endfor %}
   </table>
 
+  {# Non-fatal warnings (e.g. an OSV lookup that failed) — the scan still completed. #}
   {% if warnings %}
   <p class="meta">Warnings: {% for w in warnings %}{{ w }}{% if not loop.last %}; {% endif %}{% endfor %}</p>
   {% endif %}
 
+  {# Dependency inventory — shown only when fingerprinting ran; "—" in Status means no known advisory. #}
   {% if technologies %}
   <h2>Detected technologies</h2>
   <table class="summary">
@@ -75,6 +92,12 @@
   <p>No findings.</p>
   {% endif %}
 
+  {#
+    One <section> per finding, already sorted by HtmlReporter (severity desc).
+    Each carries the severity badge, the check id + confidence + CWEs, the
+    location (URL, plus the injection point key when present), description,
+    remediation, collapsible evidence blocks, and reference links.
+  #}
   {% for f in findings %}
   <section class="finding">
     <h2><span class="badge sev-{{ f.severity.name }}">{{ f.severity.name }}</span>{{ f.title }}</h2>
@@ -93,6 +116,7 @@
   </section>
   {% endfor %}
 
+  {# Checks that raised — listed so a partial scan is never mistaken for a clean one. #}
   {% if errors %}
   <section class="finding">
     <h2>Check errors</h2>
