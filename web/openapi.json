@@ -2,6 +2,7 @@
   "components": {
     "schemas": {
       "CheckOut": {
+        "description": "One registered check, for the check-catalogue endpoint.",
         "properties": {
           "category": {
             "title": "Category",
@@ -51,6 +52,7 @@
         "type": "object"
       },
       "EvidenceOut": {
+        "description": "One labelled evidence snippet.",
         "properties": {
           "content": {
             "title": "Content",
@@ -68,7 +70,19 @@
         "title": "EvidenceOut",
         "type": "object"
       },
+      "FailOn": {
+        "enum": [
+          "none",
+          "info",
+          "low",
+          "medium",
+          "high",
+          "critical"
+        ],
+        "type": "string"
+      },
       "FindingOut": {
+        "description": "One finding in a scan-detail response; severity and confidence as names, not ints.",
         "properties": {
           "check_id": {
             "title": "Check Id",
@@ -153,6 +167,7 @@
         "type": "object"
       },
       "HealthOut": {
+        "description": "The health endpoint's payload: liveness and the tool version.",
         "properties": {
           "status": {
             "title": "Status",
@@ -171,6 +186,7 @@
         "type": "object"
       },
       "LocationOut": {
+        "description": "A finding's location in a response.",
         "properties": {
           "cookie": {
             "anyOf": [
@@ -222,6 +238,7 @@
         "type": "object"
       },
       "LoginIn": {
+        "description": "Login body.",
         "properties": {
           "password": {
             "title": "Password",
@@ -267,6 +284,7 @@
         "type": "object"
       },
       "PasswordChangeIn": {
+        "description": "Password-change body: the current password plus the new one.",
         "properties": {
           "current_password": {
             "title": "Current Password",
@@ -287,6 +305,7 @@
         "type": "object"
       },
       "ScanCreate": {
+        "description": "New-scan request body.\n\nAttributes:\n    target (str): The URL to scan; validated with\n        :meth:`~webvigil.core.target.Target.parse`.\n    mode (ScanMode): Passive (default) or Active.\n    scope (Scope): Crawl breadth. Defaults to\n        :attr:`~webvigil.core.target.Scope.HOST`.\n    max_pages (int | None): Crawler page cap; must be > 0 when given.\n    delay_ms (int | None): Delay between requests; must be >= 0 when given.\n    follow_robots (bool | None): Honour ``robots.txt``.\n    authorized_by (str | None): Required for an Active scan.\n    fail_on (FailOn | None): Recorded on the scan for later report exit\n        codes.\n    disabled_checks (list[str]): Check ids to skip. Defaults to empty.",
         "properties": {
           "authorized_by": {
             "anyOf": [
@@ -322,21 +341,12 @@
           "fail_on": {
             "anyOf": [
               {
-                "enum": [
-                  "none",
-                  "info",
-                  "low",
-                  "medium",
-                  "high",
-                  "critical"
-                ],
-                "type": "string"
+                "$ref": "#/components/schemas/FailOn"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Fail On"
+            ]
           },
           "follow_robots": {
             "anyOf": [
@@ -381,6 +391,7 @@
         "type": "object"
       },
       "ScanDefaults": {
+        "description": "The default scan options, so the UI's new-scan form can pre-fill them.",
         "properties": {
           "delay_ms": {
             "title": "Delay Ms",
@@ -419,7 +430,7 @@
         "type": "object"
       },
       "ScanMode": {
-        "description": "Safe Mode (default) versus opt-in Active Mode.",
+        "description": "Safe Mode (default) versus opt-in Active Mode.\n\nAttributes:\n    PASSIVE (str): Observation only \u2014 safe to point at production.\n    ACTIVE (str): Sends crafted requests; requires an authorization.",
         "enum": [
           "passive",
           "active"
@@ -428,6 +439,7 @@
         "type": "string"
       },
       "ScanOut": {
+        "description": "The full scan-detail response: everything in :class:`ScanSummary` plus the extras.\n\nAttributes:\n    authorized_by (str | None): Active-Mode attestation.\n    tool_version (str | None): WebVigil version that ran the scan.\n    error (str | None): Failure message, when applicable.\n    pages_scanned (int): Pages the crawler fetched.\n    options (dict[str, Any]): The request's extra options.\n    technologies (list[TechnologyOut]): The detected-technology inventory.",
         "properties": {
           "authorized_by": {
             "anyOf": [
@@ -556,6 +568,7 @@
         "type": "object"
       },
       "ScanStatus": {
+        "description": "Lifecycle state of a stored scan.\n\nAttributes:\n    QUEUED (str): Waiting for the runner's execution slot.\n    RUNNING (str): Currently executing.\n    COMPLETED (str): Finished; findings are stored.\n    FAILED (str): Ended with a controlled engine error or a crash.\n    CANCELLED (str): Cancelled by the user.\n    INTERRUPTED (str): Left ``RUNNING`` by a process that died; recovered on\n        the next startup.",
         "enum": [
           "queued",
           "running",
@@ -568,6 +581,7 @@
         "type": "string"
       },
       "ScanSummary": {
+        "description": "A scan as it appears in the list endpoint \u2014 identity, status, severity counts.",
         "properties": {
           "counts": {
             "additionalProperties": {
@@ -641,7 +655,7 @@
         "type": "object"
       },
       "Scope": {
-        "description": "How wide the scan is allowed to reach.",
+        "description": "How wide the scan is allowed to reach.\n\nAttributes:\n    HOST (str): Only the exact target host.\n    SUBDOMAINS (str): The target's registrable domain and any subdomain.",
         "enum": [
           "host",
           "subdomains"
@@ -650,6 +664,7 @@
         "type": "string"
       },
       "SetupIn": {
+        "description": "First-run setup body: the credentials for the single account.",
         "properties": {
           "password": {
             "maxLength": 256,
@@ -672,7 +687,7 @@
         "type": "object"
       },
       "TechnologyOut": {
-        "description": "One detected client-side library (spec 004, RF-17). Detail payload only.",
+        "description": "One detected client-side library (spec 004, RF-17). Detail payload only.\n\nAttributes:\n    name (str): Library name.\n    version (str | None): Detected version, or ``None``.\n    detection (str): How it was found (the ``DetectionMethod`` value).\n    source_url (str): URL the detection came from.\n    vulnerable (bool): Whether an advisory matched.\n    advisories (list[str]): Matching advisory identifiers.",
         "properties": {
           "advisories": {
             "items": {
@@ -721,6 +736,7 @@
         "type": "object"
       },
       "UserOut": {
+        "description": "The current user, as returned by the auth endpoints.",
         "properties": {
           "created_at": {
             "format": "date-time",
@@ -794,6 +810,7 @@
   "paths": {
     "/api/auth/login": {
       "post": {
+        "description": "Verify the credentials and set the session cookie. 401 on any mismatch.",
         "operationId": "login_api_auth_login_post",
         "requestBody": {
           "content": {
@@ -828,6 +845,7 @@
     },
     "/api/auth/logout": {
       "post": {
+        "description": "Clear the session cookie. Always succeeds, authenticated or not.",
         "operationId": "logout_api_auth_logout_post",
         "responses": {
           "204": {
@@ -842,6 +860,7 @@
     },
     "/api/auth/me": {
       "get": {
+        "description": "The current user, for the UI to render the session state.",
         "operationId": "me_api_auth_me_get",
         "responses": {
           "200": {
@@ -863,6 +882,7 @@
     },
     "/api/auth/password": {
       "post": {
+        "description": "Change the password after re-checking the current one. 403 if it is wrong.",
         "operationId": "change_password_api_auth_password_post",
         "requestBody": {
           "content": {
@@ -897,6 +917,7 @@
     },
     "/api/checks": {
       "get": {
+        "description": "The full check catalogue \u2014 the same list as ``webvigil list-checks``, with metadata.",
         "operationId": "list_checks_api_checks_get",
         "responses": {
           "200": {
@@ -922,6 +943,7 @@
     },
     "/api/config/defaults": {
       "get": {
+        "description": "The default scan options, so the UI's new-scan form can pre-fill sensible values.",
         "operationId": "config_defaults_api_config_defaults_get",
         "responses": {
           "200": {
@@ -943,6 +965,7 @@
     },
     "/api/health": {
       "get": {
+        "description": "Liveness probe and tool version. The only unauthenticated endpoint besides setup.",
         "operationId": "health_api_health_get",
         "responses": {
           "200": {
@@ -964,6 +987,7 @@
     },
     "/api/scans": {
       "get": {
+        "description": "Newest scans first, optionally filtered by ``status``, cursor-paginated by ``limit``.",
         "operationId": "list_scans_api_scans_get",
         "parameters": [
           {
@@ -1039,6 +1063,7 @@
         ]
       },
       "post": {
+        "description": "Queue a scan and wake the runner. Returns the new scan row (status ``queued``).",
         "operationId": "create_scan_api_scans_post",
         "requestBody": {
           "content": {
@@ -1080,6 +1105,7 @@
     },
     "/api/scans/{scan_id}": {
       "delete": {
+        "description": "Delete a finished scan and its findings (cascade). 409 if it is still active.",
         "operationId": "delete_scan_api_scans__scan_id__delete",
         "parameters": [
           {
@@ -1113,6 +1139,7 @@
         ]
       },
       "get": {
+        "description": "One scan's full detail \u2014 metadata, options, and the detected-technology inventory.",
         "operationId": "get_scan_api_scans__scan_id__get",
         "parameters": [
           {
@@ -1155,6 +1182,7 @@
     },
     "/api/scans/{scan_id}/cancel": {
       "post": {
+        "description": "Cancel a running or queued scan. 409 if it is already finished or not cancellable.",
         "operationId": "cancel_scan_api_scans__scan_id__cancel_post",
         "parameters": [
           {
@@ -1190,6 +1218,7 @@
     },
     "/api/scans/{scan_id}/findings": {
       "get": {
+        "description": "A scan's findings, optionally filtered by ``check_id`` or a minimum ``severity``,\nsorted severity-descending then check id / URL / sub-location.",
         "operationId": "list_findings_api_scans__scan_id__findings_get",
         "parameters": [
           {
@@ -1268,6 +1297,7 @@
     },
     "/api/scans/{scan_id}/report": {
       "get": {
+        "description": "Render a finished scan into ``json`` / ``sarif`` / ``html`` / ``md`` from the stored\nrows. ``download=false`` serves it inline. 409 when the scan has no results.",
         "operationId": "download_report_api_scans__scan_id__report_get",
         "parameters": [
           {
@@ -1328,6 +1358,7 @@
     },
     "/api/setup": {
       "get": {
+        "description": "Whether first-run setup is still needed. Unauthenticated \u2014 the UI checks it on load.",
         "operationId": "setup_status_api_setup_get",
         "responses": {
           "200": {
@@ -1351,6 +1382,7 @@
         ]
       },
       "post": {
+        "description": "Create the single account. Unauthenticated, but 409s once an account exists.",
         "operationId": "create_first_user_api_setup_post",
         "requestBody": {
           "content": {

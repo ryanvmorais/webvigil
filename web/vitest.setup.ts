@@ -42,10 +42,11 @@ if (!Element.prototype.hasPointerCapture) {
   Element.prototype.setPointerCapture = () => {};
   Element.prototype.releasePointerCapture = () => {};
 }
-if (!URL.createObjectURL) {
-  URL.createObjectURL = () => "blob:mock";
-  URL.revokeObjectURL = () => {};
-}
+// jsdom 26 (pulled in with vitest 4) ships a real `URL.createObjectURL` that
+// returns a random `blob:` URL. Override it unconditionally so the report
+// preview test can assert an exact `src`.
+URL.createObjectURL = () => "blob:mock";
+URL.revokeObjectURL = () => {};
 
 beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
 

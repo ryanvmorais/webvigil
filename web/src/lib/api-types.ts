@@ -13,7 +13,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Login */
+        /**
+         * Login
+         * @description Verify the credentials and set the session cookie. 401 on any mismatch.
+         */
         post: operations["login_api_auth_login_post"];
         delete?: never;
         options?: never;
@@ -30,7 +33,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Logout */
+        /**
+         * Logout
+         * @description Clear the session cookie. Always succeeds, authenticated or not.
+         */
         post: operations["logout_api_auth_logout_post"];
         delete?: never;
         options?: never;
@@ -45,7 +51,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Me */
+        /**
+         * Me
+         * @description The current user, for the UI to render the session state.
+         */
         get: operations["me_api_auth_me_get"];
         put?: never;
         post?: never;
@@ -64,7 +73,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Change Password */
+        /**
+         * Change Password
+         * @description Change the password after re-checking the current one. 403 if it is wrong.
+         */
         post: operations["change_password_api_auth_password_post"];
         delete?: never;
         options?: never;
@@ -79,7 +91,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Checks */
+        /**
+         * List Checks
+         * @description The full check catalogue — the same list as ``webvigil list-checks``, with metadata.
+         */
         get: operations["list_checks_api_checks_get"];
         put?: never;
         post?: never;
@@ -96,7 +111,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Config Defaults */
+        /**
+         * Config Defaults
+         * @description The default scan options, so the UI's new-scan form can pre-fill sensible values.
+         */
         get: operations["config_defaults_api_config_defaults_get"];
         put?: never;
         post?: never;
@@ -113,7 +131,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Health */
+        /**
+         * Health
+         * @description Liveness probe and tool version. The only unauthenticated endpoint besides setup.
+         */
         get: operations["health_api_health_get"];
         put?: never;
         post?: never;
@@ -130,10 +151,16 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Scans */
+        /**
+         * List Scans
+         * @description Newest scans first, optionally filtered by ``status``, cursor-paginated by ``limit``.
+         */
         get: operations["list_scans_api_scans_get"];
         put?: never;
-        /** Create Scan */
+        /**
+         * Create Scan
+         * @description Queue a scan and wake the runner. Returns the new scan row (status ``queued``).
+         */
         post: operations["create_scan_api_scans_post"];
         delete?: never;
         options?: never;
@@ -148,11 +175,17 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Scan */
+        /**
+         * Get Scan
+         * @description One scan's full detail — metadata, options, and the detected-technology inventory.
+         */
         get: operations["get_scan_api_scans__scan_id__get"];
         put?: never;
         post?: never;
-        /** Delete Scan */
+        /**
+         * Delete Scan
+         * @description Delete a finished scan and its findings (cascade). 409 if it is still active.
+         */
         delete: operations["delete_scan_api_scans__scan_id__delete"];
         options?: never;
         head?: never;
@@ -168,7 +201,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Cancel Scan */
+        /**
+         * Cancel Scan
+         * @description Cancel a running or queued scan. 409 if it is already finished or not cancellable.
+         */
         post: operations["cancel_scan_api_scans__scan_id__cancel_post"];
         delete?: never;
         options?: never;
@@ -183,7 +219,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Findings */
+        /**
+         * List Findings
+         * @description A scan's findings, optionally filtered by ``check_id`` or a minimum ``severity``,
+         *     sorted severity-descending then check id / URL / sub-location.
+         */
         get: operations["list_findings_api_scans__scan_id__findings_get"];
         put?: never;
         post?: never;
@@ -200,7 +240,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Download Report */
+        /**
+         * Download Report
+         * @description Render a finished scan into ``json`` / ``sarif`` / ``html`` / ``md`` from the stored
+         *     rows. ``download=false`` serves it inline. 409 when the scan has no results.
+         */
         get: operations["download_report_api_scans__scan_id__report_get"];
         put?: never;
         post?: never;
@@ -217,10 +261,16 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Setup Status */
+        /**
+         * Setup Status
+         * @description Whether first-run setup is still needed. Unauthenticated — the UI checks it on load.
+         */
         get: operations["setup_status_api_setup_get"];
         put?: never;
-        /** Create First User */
+        /**
+         * Create First User
+         * @description Create the single account. Unauthenticated, but 409s once an account exists.
+         */
         post: operations["create_first_user_api_setup_post"];
         delete?: never;
         options?: never;
@@ -232,7 +282,10 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        /** CheckOut */
+        /**
+         * CheckOut
+         * @description One registered check, for the check-catalogue endpoint.
+         */
         CheckOut: {
             /** Category */
             category: string;
@@ -249,14 +302,22 @@ export interface components {
             /** References */
             references: string[];
         };
-        /** EvidenceOut */
+        /**
+         * EvidenceOut
+         * @description One labelled evidence snippet.
+         */
         EvidenceOut: {
             /** Content */
             content: string;
             /** Label */
             label: string;
         };
-        /** FindingOut */
+        /** @enum {string} */
+        FailOn: "none" | "info" | "low" | "medium" | "high" | "critical";
+        /**
+         * FindingOut
+         * @description One finding in a scan-detail response; severity and confidence as names, not ints.
+         */
         FindingOut: {
             /** Check Id */
             check_id: string;
@@ -285,14 +346,20 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
-        /** HealthOut */
+        /**
+         * HealthOut
+         * @description The health endpoint's payload: liveness and the tool version.
+         */
         HealthOut: {
             /** Status */
             status: string;
             /** Version */
             version: string;
         };
-        /** LocationOut */
+        /**
+         * LocationOut
+         * @description A finding's location in a response.
+         */
         LocationOut: {
             /** Cookie */
             cookie?: string | null;
@@ -308,7 +375,10 @@ export interface components {
             /** Url */
             url: string;
         };
-        /** LoginIn */
+        /**
+         * LoginIn
+         * @description Login body.
+         */
         LoginIn: {
             /** Password */
             password: string;
@@ -322,14 +392,34 @@ export interface components {
             /** Next Cursor */
             next_cursor?: string | null;
         };
-        /** PasswordChangeIn */
+        /**
+         * PasswordChangeIn
+         * @description Password-change body: the current password plus the new one.
+         */
         PasswordChangeIn: {
             /** Current Password */
             current_password: string;
             /** New Password */
             new_password: string;
         };
-        /** ScanCreate */
+        /**
+         * ScanCreate
+         * @description New-scan request body.
+         *
+         *     Attributes:
+         *         target (str): The URL to scan; validated with
+         *             :meth:`~webvigil.core.target.Target.parse`.
+         *         mode (ScanMode): Passive (default) or Active.
+         *         scope (Scope): Crawl breadth. Defaults to
+         *             :attr:`~webvigil.core.target.Scope.HOST`.
+         *         max_pages (int | None): Crawler page cap; must be > 0 when given.
+         *         delay_ms (int | None): Delay between requests; must be >= 0 when given.
+         *         follow_robots (bool | None): Honour ``robots.txt``.
+         *         authorized_by (str | None): Required for an Active scan.
+         *         fail_on (FailOn | None): Recorded on the scan for later report exit
+         *             codes.
+         *         disabled_checks (list[str]): Check ids to skip. Defaults to empty.
+         */
         ScanCreate: {
             /** Authorized By */
             authorized_by?: string | null;
@@ -340,8 +430,7 @@ export interface components {
              * @default []
              */
             disabled_checks: string[];
-            /** Fail On */
-            fail_on?: ("none" | "info" | "low" | "medium" | "high" | "critical") | null;
+            fail_on?: components["schemas"]["FailOn"] | null;
             /** Follow Robots */
             follow_robots?: boolean | null;
             /** Max Pages */
@@ -353,7 +442,10 @@ export interface components {
             /** Target */
             target: string;
         };
-        /** ScanDefaults */
+        /**
+         * ScanDefaults
+         * @description The default scan options, so the UI's new-scan form can pre-fill them.
+         */
         ScanDefaults: {
             /** Delay Ms */
             delay_ms: number;
@@ -371,10 +463,25 @@ export interface components {
         /**
          * ScanMode
          * @description Safe Mode (default) versus opt-in Active Mode.
+         *
+         *     Attributes:
+         *         PASSIVE (str): Observation only — safe to point at production.
+         *         ACTIVE (str): Sends crafted requests; requires an authorization.
          * @enum {string}
          */
         ScanMode: "passive" | "active";
-        /** ScanOut */
+        /**
+         * ScanOut
+         * @description The full scan-detail response: everything in :class:`ScanSummary` plus the extras.
+         *
+         *     Attributes:
+         *         authorized_by (str | None): Active-Mode attestation.
+         *         tool_version (str | None): WebVigil version that ran the scan.
+         *         error (str | None): Failure message, when applicable.
+         *         pages_scanned (int): Pages the crawler fetched.
+         *         options (dict[str, Any]): The request's extra options.
+         *         technologies (list[TechnologyOut]): The detected-technology inventory.
+         */
         ScanOut: {
             /** Authorized By */
             authorized_by: string | null;
@@ -416,10 +523,23 @@ export interface components {
         };
         /**
          * ScanStatus
+         * @description Lifecycle state of a stored scan.
+         *
+         *     Attributes:
+         *         QUEUED (str): Waiting for the runner's execution slot.
+         *         RUNNING (str): Currently executing.
+         *         COMPLETED (str): Finished; findings are stored.
+         *         FAILED (str): Ended with a controlled engine error or a crash.
+         *         CANCELLED (str): Cancelled by the user.
+         *         INTERRUPTED (str): Left ``RUNNING`` by a process that died; recovered on
+         *             the next startup.
          * @enum {string}
          */
         ScanStatus: "queued" | "running" | "completed" | "failed" | "cancelled" | "interrupted";
-        /** ScanSummary */
+        /**
+         * ScanSummary
+         * @description A scan as it appears in the list endpoint — identity, status, severity counts.
+         */
         ScanSummary: {
             /** Counts */
             counts: {
@@ -448,10 +568,17 @@ export interface components {
         /**
          * Scope
          * @description How wide the scan is allowed to reach.
+         *
+         *     Attributes:
+         *         HOST (str): Only the exact target host.
+         *         SUBDOMAINS (str): The target's registrable domain and any subdomain.
          * @enum {string}
          */
         Scope: "host" | "subdomains";
-        /** SetupIn */
+        /**
+         * SetupIn
+         * @description First-run setup body: the credentials for the single account.
+         */
         SetupIn: {
             /** Password */
             password: string;
@@ -461,6 +588,14 @@ export interface components {
         /**
          * TechnologyOut
          * @description One detected client-side library (spec 004, RF-17). Detail payload only.
+         *
+         *     Attributes:
+         *         name (str): Library name.
+         *         version (str | None): Detected version, or ``None``.
+         *         detection (str): How it was found (the ``DetectionMethod`` value).
+         *         source_url (str): URL the detection came from.
+         *         vulnerable (bool): Whether an advisory matched.
+         *         advisories (list[str]): Matching advisory identifiers.
          */
         TechnologyOut: {
             /** Advisories */
@@ -476,7 +611,10 @@ export interface components {
             /** Vulnerable */
             vulnerable: boolean;
         };
-        /** UserOut */
+        /**
+         * UserOut
+         * @description The current user, as returned by the auth endpoints.
+         */
         UserOut: {
             /**
              * Created At
