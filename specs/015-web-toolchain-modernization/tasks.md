@@ -27,15 +27,22 @@ this spec; CI runs it on the PR.
 
 ## Stage 1 — Node 24
 
-- [ ] `.github/workflows/ci.yml`: in the `web` job, `node-version: 20` → `24`; remove
-      the `version: 9` input from `pnpm/action-setup@v6` (it reads `packageManager`). — RF-01
-- [ ] `web/Dockerfile`: `node:20-alpine` → `node:24-alpine` in the `deps`, `build`
-      and `runner` stages; leave `corepack enable`, the non-root user and the
-      standalone `CMD` untouched. — RF-01, RNF-05
-- [ ] `web/package.json`: add `"engines": { "node": ">=24" }`; set `@types/node` to
-      `^24`. `pnpm install` to refresh `web/pnpm-lock.yaml`. — RF-01, RF-02
-- [ ] Quality gate (Stage 1). — RF-11
-      <!-- result: -->
+- [x] `.github/workflows/ci.yml`: in the `web` job, `node-version: 20` → `24`. The
+      PR #6 review's worry about the `version: 9` input was unfounded (there is no
+      root `package.json` for it to conflict with) — instead pointed
+      `pnpm/action-setup@v6` at `web/package.json` via `package_json_file` so the
+      pnpm version has one source (`packageManager`). — RF-01
+- [x] `web/Dockerfile`: `node:20-alpine` → `node:24-alpine` in the `deps`, `build`
+      and `runner` stages; `corepack enable`, the non-root user and the standalone
+      `CMD` left untouched. — RF-01, RNF-05
+- [x] `web/package.json`: added `"engines": { "node": ">=24" }`; `@types/node` →
+      `^24` (resolves to `24.13.3`). `pnpm install` refreshed the lockfile. — RF-01, RF-02
+- [x] Quality gate (Stage 1). — RF-11
+      <!-- result: lint / format:check / typecheck (@types/node 24, clean) / test
+      (86 passed) / build (bundle identical to baseline) / test:e2e (1 passed) all
+      green locally. `docker build ./web` runs in CI only — no local Docker. -->
+      <!-- Node local: v24.15.0 -->
+
 
 ## Stage 2 — Tailwind CSS v4
 
