@@ -1,4 +1,5 @@
-import { resolve } from "node:path";
+import { mkdirSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 
 import { defineConfig, devices } from "@playwright/test";
 
@@ -10,6 +11,12 @@ const REPO_ROOT = resolve(__dirname, "..");
 // Relative to REPO_ROOT (the API server's cwd); forward slashes keep the SQLite URL sane.
 const E2E_DB_RELATIVE = "web/.playwright-tmp/e2e.db";
 export const E2E_DB_PATH = resolve(REPO_ROOT, E2E_DB_RELATIVE);
+
+// Create the throwaway-DB directory at config load, before Playwright starts the
+// `webServer` processes: the API server runs Alembic on startup and SQLite cannot
+// create the file if the parent is missing. globalSetup also does this, but it
+// runs after the web servers on a fresh checkout, so CI never had the directory.
+mkdirSync(dirname(E2E_DB_PATH), { recursive: true });
 
 /**
  * One real-browser flow against the real API + engine, fully offline (RNF-04, ADR-9):
