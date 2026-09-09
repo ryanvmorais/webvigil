@@ -100,7 +100,12 @@ jobs:
 
       - name: End-to-end
         run: |
-          # `--with-deps` runs apt-get; retry it, the runner's mirrors flake.
+          # The runner preconfigures the Google Chrome apt repo, which
+          # periodically serves a bad index (Hash Sum mismatch) and breaks the
+          # `apt-get update` that `--with-deps` runs. Playwright ships its own
+          # Chromium, so drop that source first. Then retry — the Ubuntu mirrors
+          # themselves also flake.
+          sudo rm -f /etc/apt/sources.list.d/*google*.list /etc/apt/sources.list.d/*google*.sources
           ok=
           for i in 1 2 3; do
             if pnpm --dir web exec playwright install --with-deps chromium; then ok=1; break; fi
