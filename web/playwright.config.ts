@@ -1,5 +1,5 @@
-import { mkdirSync, rmSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { mkdirSync } from "node:fs";
+import { resolve } from "node:path";
 
 import { defineConfig, devices } from "@playwright/test";
 
@@ -8,26 +8,20 @@ const API_PORT = 8100;
 const FIXTURE_PORT = 9100;
 
 const REPO_ROOT = resolve(__dirname, "..");
-// Relative to REPO_ROOT (the API server's cwd); forward slashes keep the SQLite URL sane.
-const E2E_DB_RELATIVE = "web/.playwright-tmp/e2e.db";
-export const E2E_DB_PATH = resolve(REPO_ROOT, E2E_DB_RELATIVE);
+const TMP_DIR = resolve(REPO_ROOT, "web/.playwright-tmp");
 
-// Prepare the throwaway database here, at config load — this runs before Playwright
-// starts the `webServer` processes, whereas globalSetup runs *after* them. The API
-// server migrates on startup, so the reset has to happen first: otherwise it either
-// races the server (deleting the schema it just created) or, on a fresh checkout,
-// leaves the parent directory missing so SQLite cannot open the file at all. Every
-// run then starts from an empty database, exercising setup + login for real.
-mkdirSync(dirname(E2E_DB_PATH), { recursive: true });
-for (const suffix of ["", "-wal", "-shm"]) {
-  try {
-    rmSync(`${E2E_DB_PATH}${suffix}`, { force: true });
-  } catch {
-    // Windows only: a stray `webvigil-web serve` from an interrupted run still
-    // holds the file open (EPERM). CI is Linux and always a fresh checkout, so
-    // this never fires there; locally, kill leftover node/python processes.
-  }
-}
+// Every run gets its own SQLite file. A unique name is what makes the suite
+// correct: the old code deleted one shared `e2e.db` to "start empty", but
+// Playwright starts the `webServer` processes before globalSetup *and* re-loads
+// this config in every worker, so that delete kept racing the API server — which
+// migrates on startup and holds the file open — and wiped the schema out from
+// under it on Linux ("no such table: user"). It only ever passed on Windows,
+// where the open handle makes the delete fail. A fresh path per run needs no
+// delete at all; the API migrates it from scratch, so setup + login are still
+// exercised for real. `global-teardown.ts` sweeps the files afterwards.
+const E2E_DB_RELATIVE = `web/.playwright-tmp/e2e-${Date.now()}-${process.pid}.db`;
+
+mkdirSync(TMP_DIR, { recursive: true });
 
 /**
  * One real-browser flow against the real API + engine, fully offline (RNF-04, ADR-9):
@@ -41,6 +35,7 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   timeout: 90_000,
   reporter: process.env.CI ? [["github"], ["list"]] : "list",
+  globalTeardown: "./e2e/global-teardown.ts",
   use: {
     baseURL: `http://127.0.0.1:${UI_PORT}`,
     trace: "retain-on-failure",
@@ -55,9 +50,15 @@ export default defineConfig({
       timeout: 60_000,
     },
     {
-      command: `uv run webvigil-web serve --host 127.0.0.1 --port ${API_PORT}`,
+      // `migrate` explicitly first — `serve` also auto-migrates on startup, but running
+      // it as its own step makes the schema creation visible in the log and independent
+      // of lifespan timing.
+      command:
+        `uv run webvigil-web migrate && ` +
+        `uv run webvigil-web serve --host 127.0.0.1 --port ${API_PORT}`,
       cwd: REPO_ROOT,
       env: {
+        // Relative to REPO_ROOT (the API server's cwd); forward slashes keep the SQLite URL sane.
         WEBVIGIL_DATABASE_PATH: E2E_DB_RELATIVE,
         WEBVIGIL_SESSION_SECRET: "e2e-only-secret-not-for-real-deployments-0123456789",
       },
