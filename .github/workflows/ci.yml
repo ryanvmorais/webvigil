@@ -100,7 +100,13 @@ jobs:
 
       - name: End-to-end
         run: |
-          pnpm --dir web exec playwright install --with-deps chromium
+          # `--with-deps` runs apt-get; retry it, the runner's mirrors flake.
+          ok=
+          for i in 1 2 3; do
+            if pnpm --dir web exec playwright install --with-deps chromium; then ok=1; break; fi
+            sleep 15
+          done
+          [ -n "$ok" ] || { echo "playwright install failed after 3 tries"; exit 1; }
           pnpm --dir web test:e2e
 
       - name: Web image builds
