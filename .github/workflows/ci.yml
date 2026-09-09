@@ -61,7 +61,7 @@ jobs:
       - name: Install Python deps (OpenAPI dump, fixture app, webvigil-web)
         run: uv sync --all-extras
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 9
 
