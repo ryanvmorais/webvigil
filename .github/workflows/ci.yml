@@ -100,7 +100,18 @@ jobs:
 
       - name: End-to-end
         run: |
-          pnpm --dir web exec playwright install --with-deps chromium
+          # The runner preconfigures the Google Chrome apt repo, which
+          # periodically serves a bad index (Hash Sum mismatch) and breaks the
+          # `apt-get update` that `--with-deps` runs. Playwright ships its own
+          # Chromium, so drop that source first. Then retry — the Ubuntu mirrors
+          # themselves also flake.
+          sudo rm -f /etc/apt/sources.list.d/*google*.list /etc/apt/sources.list.d/*google*.sources
+          ok=
+          for i in 1 2 3; do
+            if pnpm --dir web exec playwright install --with-deps chromium; then ok=1; break; fi
+            sleep 15
+          done
+          [ -n "$ok" ] || { echo "playwright install failed after 3 tries"; exit 1; }
           pnpm --dir web test:e2e
 
       - name: Web image builds
