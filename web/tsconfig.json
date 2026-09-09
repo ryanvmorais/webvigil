@@ -1,9 +1,14 @@
 {
-  // TypeScript config for the dashboard. Next reads and augments this file;
-  // `pnpm typecheck` runs `tsc --noEmit` against it. Scaffolded by create-next-app.
+  // TypeScript config for the dashboard. Next 16 owns this file — it rewrites
+  // `jsx`, `include` and `plugins` and re-indents on every build/dev, so it is
+  // in .prettierignore. `pnpm typecheck` runs `tsc --noEmit` against it.
   "compilerOptions": {
     "target": "ES2017",
-    "lib": ["dom", "dom.iterable", "esnext"],
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
     "allowJs": true,
     "skipLibCheck": true,
     "strict": true,
@@ -13,7 +18,7 @@
     "moduleResolution": "bundler", // resolve imports the way the bundler does
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "jsx": "preserve", // Next transforms JSX itself, not tsc
+    "jsx": "react-jsx", // set by Next 16 (was "preserve" through Next 15)
     "incremental": true,
     "plugins": [
       {
@@ -22,9 +27,19 @@
     ],
     // `@/…` resolves to `src/…` everywhere (imports, and the shadcn aliases in components.json).
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": [
+        "./src/*"
+      ]
     }
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules"]
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
 }

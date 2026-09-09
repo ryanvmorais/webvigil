@@ -63,11 +63,13 @@ jobs:
 
       - uses: pnpm/action-setup@v6
         with:
-          version: 9
+          # Take the pnpm version from web/package.json's `packageManager` field
+          # (there is no root package.json), so it stays a single source of truth.
+          package_json_file: web/package.json
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 24
           cache: pnpm
           cache-dependency-path: web/pnpm-lock.yaml
 

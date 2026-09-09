@@ -52,7 +52,7 @@ export function TechnologiesTable({ items }: { items: TechnologyOut[] }) {
                       onClick={() => setParams({ check_id: VULNERABLE_CHECK_ID })}
                       className="rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
                     >
-                      <Badge variant="outline" className="gap-1 text-severity-critical">
+                      <Badge variant="outline" className="text-severity-critical gap-1">
                         <ShieldAlert className="size-3" aria-hidden />
                         Vulnerable
                         {tech.advisories.length > 0 ? ` (${tech.advisories.join(", ")})` : null}

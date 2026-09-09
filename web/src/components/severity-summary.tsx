@@ -12,7 +12,7 @@ export function SeveritySummary({
   const chips = SEVERITY_DESC.filter((name) => (counts[name] ?? 0) > 0);
 
   if (chips.length === 0) {
-    return <span className={cn("text-xs text-muted-foreground", className)}>No findings</span>;
+    return <span className={cn("text-muted-foreground text-xs", className)}>No findings</span>;
   }
 
   return (

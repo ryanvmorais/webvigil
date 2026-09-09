@@ -16,7 +16,7 @@ settings screen (change password, API version, log out).
 
 ## Requirements
 
-- Node 20 LTS or newer, `pnpm` (pinned by `packageManager` in `web/package.json`).
+- Node 24 (see `engines` in `web/package.json`), `pnpm` (pinned by `packageManager`).
 - The Web API reachable somewhere (`webvigil-web serve`, default `http://127.0.0.1:8000`).
 
 ## Development

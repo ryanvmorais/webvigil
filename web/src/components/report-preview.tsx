@@ -23,8 +23,6 @@ export function ReportPreview({ scanId, disabled }: { scanId: number; disabled: 
 
   useEffect(() => {
     if (!open) return;
-    setError(null);
-    setBlobUrl(null);
     let created: string | null = null;
     api
       .reportBlob(scanId)
@@ -38,8 +36,17 @@ export function ReportPreview({ scanId, disabled }: { scanId: number; disabled: 
     };
   }, [open, scanId]);
 
+  // Reset on close (not in the effect) so re-opening starts from a clean slate.
+  function handleOpenChange(next: boolean) {
+    setOpen(next);
+    if (!next) {
+      setBlobUrl(null);
+      setError(null);
+    }
+  }
+
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
         <Button variant="outline" size="sm" disabled={disabled}>
           Preview report
@@ -49,7 +56,7 @@ export function ReportPreview({ scanId, disabled }: { scanId: number; disabled: 
         <DialogHeader>
           <DialogTitle>HTML report</DialogTitle>
         </DialogHeader>
-        {error ? <p className="text-sm text-destructive">{error}</p> : null}
+        {error ? <p className="text-destructive text-sm">{error}</p> : null}
         {blobUrl ? (
           <iframe
             title="HTML report preview"
@@ -58,7 +65,7 @@ export function ReportPreview({ scanId, disabled }: { scanId: number; disabled: 
             className="h-[70vh] w-full rounded border"
           />
         ) : error ? null : (
-          <p className="text-sm text-muted-foreground">Loading…</p>
+          <p className="text-muted-foreground text-sm">Loading…</p>
         )}
       </DialogContent>
     </Dialog>

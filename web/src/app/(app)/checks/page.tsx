@@ -30,7 +30,7 @@ export default function ChecksPage() {
   return (
     <div className="space-y-4">
       <h1 className="text-xl font-semibold">Check catalogue</h1>
-      <p className="text-sm text-muted-foreground">
+      <p className="text-muted-foreground text-sm">
         {checks.length} checks. These are the same checks the scan form can disable per scan.
       </p>
 

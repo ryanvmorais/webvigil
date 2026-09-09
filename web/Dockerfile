@@ -1,13 +1,13 @@
 # WebVigil dashboard (spec 003). Multi-stage; ships the Next standalone output as non-root.
 # `docker compose up --build` builds this alongside the API service.
 
-FROM node:20-alpine AS deps
+FROM node:24-alpine AS deps
 WORKDIR /app
 RUN corepack enable
 COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 
-FROM node:20-alpine AS build
+FROM node:24-alpine AS build
 WORKDIR /app
 RUN corepack enable
 COPY --from=deps /app/node_modules ./node_modules
@@ -19,7 +19,7 @@ ENV NEXT_OUTPUT_STANDALONE=1
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN pnpm build
 
-FROM node:20-alpine AS runner
+FROM node:24-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1

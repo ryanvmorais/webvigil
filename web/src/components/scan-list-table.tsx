@@ -39,7 +39,7 @@ export function ScanListTable({ scans }: { scans: ScanSummary[] }) {
             <TableCell>
               <ModeBadge mode={scan.mode} />
             </TableCell>
-            <TableCell className="capitalize text-muted-foreground">{scan.scope}</TableCell>
+            <TableCell className="text-muted-foreground capitalize">{scan.scope}</TableCell>
             <TableCell>
               <StatusBadge status={scan.status} />
             </TableCell>

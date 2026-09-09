@@ -34,12 +34,12 @@ function LoginForm() {
       <h1 className="text-xl font-semibold">Sign in</h1>
 
       {search.get("setup") === "done" ? (
-        <p className="rounded-md border border-border bg-muted p-3 text-sm" role="status">
+        <p className="border-border bg-muted rounded-md border p-3 text-sm" role="status">
           Account created. Sign in to continue.
         </p>
       ) : null}
       {search.get("reason") === "expired" ? (
-        <p className="rounded-md border border-border bg-muted p-3 text-sm" role="status">
+        <p className="border-border bg-muted rounded-md border p-3 text-sm" role="status">
           Your session expired. Sign in again.
         </p>
       ) : null}
@@ -66,12 +66,12 @@ function LoginForm() {
         </div>
 
         {invalidCredentials ? (
-          <p className="text-sm text-destructive" role="alert">
+          <p className="text-destructive text-sm" role="alert">
             Invalid username or password.
           </p>
         ) : null}
         {otherError ? (
-          <p className="text-sm text-destructive" role="alert">
+          <p className="text-destructive text-sm" role="alert">
             Could not sign in. Try again.
           </p>
         ) : null}

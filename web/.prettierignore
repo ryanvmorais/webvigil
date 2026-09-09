@@ -13,6 +13,9 @@ test-results
 # --- 3. GENERATED CODE ---
 # api-types.ts comes from `pnpm gen:api`; openapi.json from scripts/dump-openapi.py;
 # next-env.d.ts from Next. Reformatting them only adds noise to the next regen.
+# tsconfig.json: Next 16 rewrites `jsx` / `include` / `plugins` and re-indents it
+# on every `next build` / `next dev`, so Prettier must not fight it.
 src/lib/api-types.ts
 openapi.json
 next-env.d.ts
+tsconfig.json

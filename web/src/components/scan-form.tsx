@@ -87,6 +87,9 @@ export function ScanForm() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [defaults.data]);
 
+  // react-hook-form's watch() is opaque to the React Compiler lint; it is the
+  // library's supported subscription API and there is no compiler-friendly form.
+  // eslint-disable-next-line react-hooks/incompatible-library
   const mode = form.watch("mode");
 
   function onSubmit(values: FormValues) {
@@ -181,9 +184,9 @@ export function ScanForm() {
           <>
             <div
               role="alert"
-              className="flex gap-2 rounded-md border border-severity-high/50 bg-severity-high/5 p-3 text-sm"
+              className="border-severity-high/50 bg-severity-high/5 flex gap-2 rounded-md border p-3 text-sm"
             >
-              <AlertTriangle className="mt-0.5 size-4 shrink-0 text-severity-high" aria-hidden />
+              <AlertTriangle className="text-severity-high mt-0.5 size-4 shrink-0" aria-hidden />
               <div>
                 Active scans send potentially intrusive traffic. Only run them against systems you
                 are authorized to test.{" "}
@@ -273,13 +276,13 @@ export function ScanForm() {
           )}
         />
 
-        <p className="text-sm text-muted-foreground">
+        <p className="text-muted-foreground text-sm">
           fail-on: <span className="font-medium">{defaults.data?.fail_on ?? "medium"}</span>{" "}
           (informational — the API has no exit code).
         </p>
 
         {genericError ? (
-          <p className="text-sm text-destructive" role="alert">
+          <p className="text-destructive text-sm" role="alert">
             Could not start the scan. Check the fields and try again.
           </p>
         ) : null}
