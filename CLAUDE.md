@@ -27,6 +27,8 @@ Conversa com o Ryan e o arquivo de plano seguem em português.
 - **Web UI:** `web/` — Next.js 16 (App Router) + React 19 + TypeScript + Tailwind CSS v4 + shadcn/ui + TanStack Query, gerido por `pnpm` (Node 24; `engines` em `web/package.json`).
 - **Qualidade:** `ruff` → `black` → `mypy` (strict) → `import-linter` → `pytest` (`asyncio_mode=auto`).
 
+O que cada peça faz, por que foi escolhida contra a alternativa, e o que estudar: [`docs/stack.md`](docs/stack.md).
+
 ## Comandos
 
 ```bash
