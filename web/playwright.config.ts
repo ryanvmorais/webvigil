@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { mkdirSync, rmSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
 import { defineConfig, devices } from "@playwright/test";
@@ -12,11 +12,22 @@ const REPO_ROOT = resolve(__dirname, "..");
 const E2E_DB_RELATIVE = "web/.playwright-tmp/e2e.db";
 export const E2E_DB_PATH = resolve(REPO_ROOT, E2E_DB_RELATIVE);
 
-// Create the throwaway-DB directory at config load, before Playwright starts the
-// `webServer` processes: the API server runs Alembic on startup and SQLite cannot
-// create the file if the parent is missing. globalSetup also does this, but it
-// runs after the web servers on a fresh checkout, so CI never had the directory.
+// Prepare the throwaway database here, at config load — this runs before Playwright
+// starts the `webServer` processes, whereas globalSetup runs *after* them. The API
+// server migrates on startup, so the reset has to happen first: otherwise it either
+// races the server (deleting the schema it just created) or, on a fresh checkout,
+// leaves the parent directory missing so SQLite cannot open the file at all. Every
+// run then starts from an empty database, exercising setup + login for real.
 mkdirSync(dirname(E2E_DB_PATH), { recursive: true });
+for (const suffix of ["", "-wal", "-shm"]) {
+  try {
+    rmSync(`${E2E_DB_PATH}${suffix}`, { force: true });
+  } catch {
+    // Windows only: a stray `webvigil-web serve` from an interrupted run still
+    // holds the file open (EPERM). CI is Linux and always a fresh checkout, so
+    // this never fires there; locally, kill leftover node/python processes.
+  }
+}
 
 /**
  * One real-browser flow against the real API + engine, fully offline (RNF-04, ADR-9):
@@ -30,7 +41,6 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   timeout: 90_000,
   reporter: process.env.CI ? [["github"], ["list"]] : "list",
-  globalSetup: "./e2e/global-setup.ts",
   use: {
     baseURL: `http://127.0.0.1:${UI_PORT}`,
     trace: "retain-on-failure",
