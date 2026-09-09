@@ -74,8 +74,9 @@ Persistence       webvigil.api.db  (SQLite via SQLModel + Alembic, web only)
 7. A reporter renders the result (JSON is canonical; SARIF / HTML / Markdown are pure
    functions of it, so `webvigil report` re-renders any format offline).
 
-See [writing-checks.md](writing-checks.md) for the check plugin contract and
-[web-api.md](web-api.md) for running the Web API.
+See [writing-checks.md](writing-checks.md) for the check plugin contract,
+[web-api.md](web-api.md) for running the Web API, and [stack.md](stack.md) for
+every technology in the project — what it does and why it was chosen.
 
 The authoritative designs live under [`specs/`](../specs/) — `001-foundation` (engine + CLI),
 `002-web-api` (persistence + API), `003-web-ui` (the Next.js dashboard),
