@@ -204,7 +204,7 @@ pnpm install && pnpm lint && pnpm typecheck && pnpm test && pnpm build
 pnpm test:e2e         # Playwright: setup → scan → report → logout, fully offline
 ```
 
-See [docs/](docs/) for architecture and a guide to writing your own checks.
+See [docs/](docs/) for architecture, [the stack and why each piece was chosen](docs/stack.md), and a guide to writing your own checks.
 
 ---
 
