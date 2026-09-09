@@ -29,7 +29,7 @@ import { keys } from "@/lib/query-keys";
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-0.5">
-      <dt className="text-xs uppercase tracking-wide text-muted-foreground">{label}</dt>
+      <dt className="text-muted-foreground text-xs tracking-wide uppercase">{label}</dt>
       <dd className="text-sm">{value}</dd>
     </div>
   );

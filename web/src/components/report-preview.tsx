@@ -49,7 +49,7 @@ export function ReportPreview({ scanId, disabled }: { scanId: number; disabled: 
         <DialogHeader>
           <DialogTitle>HTML report</DialogTitle>
         </DialogHeader>
-        {error ? <p className="text-sm text-destructive">{error}</p> : null}
+        {error ? <p className="text-destructive text-sm">{error}</p> : null}
         {blobUrl ? (
           <iframe
             title="HTML report preview"
@@ -58,7 +58,7 @@ export function ReportPreview({ scanId, disabled }: { scanId: number; disabled: 
             className="h-[70vh] w-full rounded border"
           />
         ) : error ? null : (
-          <p className="text-sm text-muted-foreground">Loading…</p>
+          <p className="text-muted-foreground text-sm">Loading…</p>
         )}
       </DialogContent>
     </Dialog>

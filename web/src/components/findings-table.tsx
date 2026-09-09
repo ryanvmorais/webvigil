@@ -85,7 +85,7 @@ export function FindingsTable({ findings }: { findings: FindingOut[] }) {
                 </TableCell>
                 <TableCell className="font-medium">{finding.title}</TableCell>
                 <TableCell className="font-mono text-xs">{finding.check_id}</TableCell>
-                <TableCell className="max-w-xs truncate text-muted-foreground">
+                <TableCell className="text-muted-foreground max-w-xs truncate">
                   {locationText(finding.location)}
                 </TableCell>
                 <TableCell>
@@ -103,10 +103,10 @@ export function FindingsTable({ findings }: { findings: FindingOut[] }) {
                       </div>
                       {finding.evidence.map((item, index) => (
                         <div key={index}>
-                          <div className="text-xs font-semibold text-muted-foreground">
+                          <div className="text-muted-foreground text-xs font-semibold">
                             {item.label}
                           </div>
-                          <pre className="overflow-x-auto rounded bg-background p-2 text-xs">
+                          <pre className="bg-background overflow-x-auto rounded p-2 text-xs">
                             {item.content}
                           </pre>
                         </div>

@@ -38,13 +38,13 @@ export default function SetupPage() {
     <div className="space-y-6">
       <div className="space-y-1">
         <h1 className="text-xl font-semibold">Create your account</h1>
-        <p className="text-sm text-muted-foreground">
+        <p className="text-muted-foreground text-sm">
           WebVigil is single-user. This is the only account.
         </p>
       </div>
 
       {alreadyDone ? (
-        <p className="rounded-md border border-border bg-muted p-3 text-sm" role="alert">
+        <p className="border-border bg-muted rounded-md border p-3 text-sm" role="alert">
           Setup is already complete.{" "}
           <Link href="/login" className="font-medium underline">
             Go to sign in
@@ -82,7 +82,7 @@ export default function SetupPage() {
         </Field>
 
         {setup.isError && !alreadyDone && Object.keys(serverFields).length === 0 ? (
-          <p className="text-sm text-destructive" role="alert">
+          <p className="text-destructive text-sm" role="alert">
             Could not create the account. Try again.
           </p>
         ) : null}
@@ -111,7 +111,7 @@ function Field({
       <Label htmlFor={id}>{label}</Label>
       {children}
       {error ? (
-        <p id={`${id}-error`} className="text-sm text-destructive">
+        <p id={`${id}-error`} className="text-destructive text-sm">
           {error}
         </p>
       ) : null}

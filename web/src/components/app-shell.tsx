@@ -31,9 +31,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen">
       <header className="border-b">
-        <div className="container flex h-14 items-center gap-4">
+        <div className="mx-auto flex h-14 w-full max-w-[1200px] items-center gap-4 px-6">
           <Link href="/scans" className="flex items-center gap-2 font-semibold">
-            <ShieldCheck className="size-5 text-primary" aria-hidden />
+            <ShieldCheck className="text-primary size-5" aria-hidden />
             WebVigil
           </Link>
 
@@ -77,12 +77,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </DropdownMenu>
           </div>
         </div>
-        <div className="container pb-2 sm:hidden">
+        <div className="mx-auto w-full max-w-[1200px] px-6 pb-2 sm:hidden">
           <LogoutButton className="px-0" />
         </div>
       </header>
 
-      <main className="container overflow-x-auto py-6">{children}</main>
+      <main className="mx-auto w-full max-w-[1200px] overflow-x-auto px-6 py-6">{children}</main>
     </div>
   );
 }

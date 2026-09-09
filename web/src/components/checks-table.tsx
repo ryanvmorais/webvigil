@@ -80,7 +80,7 @@ export function ChecksTable({
             <TableCell className="font-mono text-xs">{check.id}</TableCell>
             <TableCell className="font-medium">{check.name}</TableCell>
             <TableCell className="text-muted-foreground">{check.category}</TableCell>
-            <TableCell className="capitalize text-muted-foreground">{check.mode}</TableCell>
+            <TableCell className="text-muted-foreground capitalize">{check.mode}</TableCell>
             <TableCell>
               <SeverityBadge severity={check.default_severity} />
             </TableCell>

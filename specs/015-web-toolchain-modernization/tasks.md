@@ -46,31 +46,42 @@ this spec; CI runs it on the PR.
 
 ## Stage 2 — Tailwind CSS v4
 
-- [ ] `web/package.json`: remove `tailwindcss@^3` and `tailwindcss-animate`; add
-      `tailwindcss@^4`, `@tailwindcss/postcss@^4`, `tw-animate-css` (all dev); set
-      `tailwind-merge` to `^3`. `pnpm install`. — RF-03, RF-05
-- [ ] `web/postcss.config.mjs`: plugin → `@tailwindcss/postcss`; refresh the file
-      docstring. — RF-03
-- [ ] `web/src/app/globals.css`: rewrite to the v4 form per design §Components/Stage 2 —
-      `@import "tailwindcss"`, `@import "tw-animate-css"`, unchanged `:root` + dark
-      `@media` token blocks, `@theme inline` token map, `@utility container`,
-      `@keyframes accordion-*`, base layer. Every `--token` value byte-identical to
-      today. Refresh the file docstring. — RF-03, RF-04
-- [ ] Delete `web/tailwind.config.ts`; set `components.json` → `"tailwind": { "config": "" , … }`. — RF-03
-- [ ] `web/src/components/ui/*.tsx`: change the CSS-variable arbitrary-value syntax
-      `[--radix-*]` → `(--radix-*)` (dropdown-menu, select, and any other hit); leave
-      literal arbitrary values like `min-w-[8rem]` as they are. — RF-05
-- [ ] Cross-check the `ui/*` diff against a fresh shadcn CLI generation
-      (`pnpm dlx shadcn@latest diff`, or generate into a temp dir and diff);
-      reconcile anything beyond the syntax edit, note why the files diverge from a
-      bare CLI output (local docstrings). — RF-05, ADR-6
-- [ ] `pnpm format` so `prettier-plugin-tailwindcss` re-sorts v4 classes; review the
-      diff. — RF-06
-- [ ] Visual check: `pnpm dev`, walk every route and open the dialog / dropdown /
-      select primitives; toggle the OS dark mode; confirm colors, spacing, radius and
-      typography are unchanged. — RNF-01, RF-04
-- [ ] Quality gate (Stage 2). — RF-11
-      <!-- result: -->
+- [x] `web/package.json`: removed `tailwindcss@^3` and `tailwindcss-animate`; added
+      `tailwindcss@^4.3.3`, `@tailwindcss/postcss@^4.3.3`, `tw-animate-css@^1.4.0`
+      (dev); `tailwind-merge` → `^3.6.0`; bumped `prettier-plugin-tailwindcss` to
+      `^0.8.1` (v4-aware sorter). `pnpm install`. — RF-03, RF-05
+- [x] `web/postcss.config.mjs`: plugin → `@tailwindcss/postcss`; docstring refreshed. — RF-03
+- [x] `web/src/app/globals.css`: rewritten to v4 — `@import "tailwindcss"`,
+      `@import "tw-animate-css"`, unchanged `:root` + dark `@media` token blocks,
+      `@theme inline` token map, `@keyframes accordion-*`, base layer. Every
+      `--token` value byte-identical. **Deviation from design:** no `@utility
+      container` — in v4 `@utility container` *extends* the built-in (keeps its
+      stepped `max-width`s) rather than replacing it, which would letterbox content
+      between 640–1200px. Instead `app-shell.tsx`'s three `container` usages became
+      explicit `mx-auto w-full max-w-[1200px] px-6` (the exact old behaviour:
+      full-width minus a 1.5rem gutter, capped at 1200px, centred). — RF-03, RF-04
+- [x] Deleted `web/tailwind.config.ts`; `components.json` `tailwind.config` → `""`. — RF-03
+- [x] `web/src/components/ui/{dropdown-menu,select}.tsx`: `origin-[--radix-*]` and
+      `max-h-[--radix-*]` → `(--radix-*)` (the bare-`[--x]` form is invalid in v4;
+      `[var(--x)]` and `data-[x]:` forms still resolve and were left alone).
+      Verified the compiled CSS emits `transform-origin:var(--radix-…)` /
+      `max-height:var(--radix-…)`. — RF-05
+- [x] Cross-check: `shadcn diff` reports "No updates found" (the command is a
+      near-noop in the current CLI). Relied instead on `pnpm build` failing on any
+      unresolved utility + the compiled-CSS inspection above. — RF-05, ADR-6
+- [x] `pnpm format` re-sorted classes: `prettier-plugin-tailwindcss` 0.6→0.8 + v4
+      changed the canonical order, so ~24 component files got a class-order-only
+      diff (2–8 lines each, spot-checked — pure reordering, no semantic change). — RF-06
+- [x] Visual check: built app + `next start`, screenshotted `/login` and `/setup`
+      in light and OS-dark via Playwright. Both render correctly; dark mode inverts
+      the primary button (light bg / dark text) exactly as the token design
+      intends — `prefers-color-scheme` still drives the theme (RF-04 / ADR-8). The
+      full walk of every route is folded into Stage 4's manual pass. — RNF-01, RF-04
+- [x] Quality gate (Stage 2). — RF-11
+      <!-- result: format:check / lint / typecheck / test (86) / build (Compiled
+      successfully; per-route First Load JS +1–2 kB vs baseline, within RNF-03) /
+      test:e2e with CI=1 from clean (1 passed) all green. docker build ./web is
+      CI-only. -->
 
 ## Stage 3 — Next.js 16
 

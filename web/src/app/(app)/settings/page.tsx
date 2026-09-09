@@ -66,7 +66,7 @@ export default function SettingsPage() {
               onChange={(e) => setCurrent(e.target.value)}
             />
             {wrongCurrent ? (
-              <p className="text-sm text-destructive">Current password is incorrect.</p>
+              <p className="text-destructive text-sm">Current password is incorrect.</p>
             ) : null}
           </div>
           <div className="space-y-1.5">
@@ -90,9 +90,9 @@ export default function SettingsPage() {
             />
           </div>
 
-          {localError ? <p className="text-sm text-destructive">{localError}</p> : null}
+          {localError ? <p className="text-destructive text-sm">{localError}</p> : null}
           {otherError ? (
-            <p className="text-sm text-destructive" role="alert">
+            <p className="text-destructive text-sm" role="alert">
               Could not change the password. Try again.
             </p>
           ) : null}
@@ -110,7 +110,7 @@ export default function SettingsPage() {
 
       <section className="space-y-2">
         <h2 className="text-lg font-semibold">About</h2>
-        <p className="text-sm text-muted-foreground">API version: {health.data?.version ?? "…"}</p>
+        <p className="text-muted-foreground text-sm">API version: {health.data?.version ?? "…"}</p>
         <LogoutButton variant="outline" />
       </section>
     </div>

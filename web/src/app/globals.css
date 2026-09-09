@@ -1,97 +1,164 @@
 /*
  * globals.css — the web UI's only global stylesheet.
  *
- * Three concerns, in order:
- *   1. Tailwind entry (base / components / utilities layers).
- *   2. Design tokens: the shadcn/ui "slate" palette plus a severity scale.
- *   3. A thin base-layer reset.
+ * Four concerns, in order:
+ *   1. Tailwind v4 entry + the animation utility library.
+ *   2. Design tokens: the shadcn/ui "slate" palette plus a severity scale,
+ *      as bare HSL channel triples on :root (light) with a dark override.
+ *   3. Theme mapping (@theme inline) + the accordion keyframes that the deleted
+ *      tailwind.config.ts used to carry.
+ *   4. A thin base-layer reset.
  * Everything else is utilities in the markup; add a rule here only for what
  * utilities cannot express.
  */
 
-/* 1. Tailwind entry — the three layers, emitted in cascade order. */
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* 1. Tailwind entry + tw-animate-css (the `animate-in` / `fade-*` / `zoom-*` /
+      `slide-*` utilities the dialog, dropdown and select primitives use). */
+@import "tailwindcss";
+@import "tw-animate-css";
 
 /*
  * 2. Design tokens.
  *
- * Every value is a bare HSL channel triple ("H S% L%"), wrapped as
- * `hsl(var(--token))` in tailwind.config.ts so utilities like `bg-background`
- * and `text-severity-high` resolve to it. Light values sit on bare :root; the
- * dark set lives only inside a prefers-color-scheme block — RF-02, ADR-8: the
- * theme follows the OS, there is no `.dark` class and no toggle.
+ * Every value is a bare HSL channel triple ("H S% L%"), consumed as
+ * `hsl(var(--token))` through the @theme block below so utilities like
+ * `bg-background` and `text-severity-high` resolve to it. Light values sit on
+ * bare :root; the dark set lives only inside a prefers-color-scheme block —
+ * RF-02, ADR-8: the theme follows the OS, there is no `.dark` class and no
+ * toggle.
  */
-@layer base {
+:root {
+  --background: 0 0% 100%;
+  --foreground: 222.2 84% 4.9%;
+  --card: 0 0% 100%;
+  --card-foreground: 222.2 84% 4.9%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222.2 84% 4.9%;
+  --primary: 222.2 47.4% 11.2%;
+  --primary-foreground: 210 40% 98%;
+  --secondary: 210 40% 96.1%;
+  --secondary-foreground: 222.2 47.4% 11.2%;
+  --muted: 210 40% 96.1%;
+  --muted-foreground: 215.4 16.3% 46.9%;
+  --accent: 210 40% 96.1%;
+  --accent-foreground: 222.2 47.4% 11.2%;
+  --destructive: 0 72.2% 50.6%;
+  --destructive-foreground: 210 40% 98%;
+  --border: 214.3 31.8% 91.4%;
+  --input: 214.3 31.8% 91.4%;
+  --ring: 222.2 84% 4.9%;
+  --radius: 0.5rem;
+
+  /* Severity scale — one hue per level, consumed via `text-severity-*` /
+     `border-severity-*` (see SEVERITY_CLASS in src/lib/severity.ts). Names and
+     order mirror the engine's Severity enum. */
+  --severity-info: 215.4 16.3% 46.9%;
+  --severity-low: 199 89% 48%;
+  --severity-medium: 38 92% 50%;
+  --severity-high: 24 95% 53%;
+  --severity-critical: 0 72.2% 50.6%;
+}
+
+/* Dark set — same token names, overridden only when the OS asks for dark. */
+@media (prefers-color-scheme: dark) {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 72.2% 50.6%;
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 210 40% 98%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
-    --radius: 0.5rem;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 212.7 26.8% 83.9%;
 
-    /* Severity scale — one hue per level, consumed via `text-severity-*` /
-       `border-severity-*` (see SEVERITY_CLASS in src/lib/severity.ts). Names and
-       order mirror the engine's Severity enum. */
-    --severity-info: 215.4 16.3% 46.9%;
-    --severity-low: 199 89% 48%;
-    --severity-medium: 38 92% 50%;
-    --severity-high: 24 95% 53%;
-    --severity-critical: 0 72.2% 50.6%;
-  }
-
-  /* Dark set — same token names, overridden only when the OS asks for dark. */
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --background: 222.2 84% 4.9%;
-      --foreground: 210 40% 98%;
-      --card: 222.2 84% 4.9%;
-      --card-foreground: 210 40% 98%;
-      --popover: 222.2 84% 4.9%;
-      --popover-foreground: 210 40% 98%;
-      --primary: 210 40% 98%;
-      --primary-foreground: 222.2 47.4% 11.2%;
-      --secondary: 217.2 32.6% 17.5%;
-      --secondary-foreground: 210 40% 98%;
-      --muted: 217.2 32.6% 17.5%;
-      --muted-foreground: 215 20.2% 65.1%;
-      --accent: 217.2 32.6% 17.5%;
-      --accent-foreground: 210 40% 98%;
-      --destructive: 0 62.8% 30.6%;
-      --destructive-foreground: 210 40% 98%;
-      --border: 217.2 32.6% 17.5%;
-      --input: 217.2 32.6% 17.5%;
-      --ring: 212.7 26.8% 83.9%;
-
-      --severity-info: 215 20.2% 65.1%;
-      --severity-low: 199 89% 60%;
-      --severity-medium: 38 92% 60%;
-      --severity-high: 24 95% 63%;
-      --severity-critical: 0 72% 60%;
-    }
+    --severity-info: 215 20.2% 65.1%;
+    --severity-low: 199 89% 60%;
+    --severity-medium: 38 92% 60%;
+    --severity-high: 24 95% 63%;
+    --severity-critical: 0 72% 60%;
   }
 }
 
-/* 3. Base reset. */
+/*
+ * 3. Theme mapping.
+ *
+ * `inline` emits `hsl(var(--token))` at the utility's use site, so the
+ * prefers-color-scheme block above still overrides every colour. The radius
+ * steps and the accordion animation names came from the old tailwind.config.ts.
+ */
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+
+  --color-severity-info: hsl(var(--severity-info));
+  --color-severity-low: hsl(var(--severity-low));
+  --color-severity-medium: hsl(var(--severity-medium));
+  --color-severity-high: hsl(var(--severity-high));
+  --color-severity-critical: hsl(var(--severity-critical));
+
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+
+  --animate-accordion-down: accordion-down 0.2s ease-out;
+  --animate-accordion-up: accordion-up 0.2s ease-out;
+}
+
+/* The old tailwind.config.ts centred the `container` utility and capped it at
+   1200px with no intermediate breakpoints. v4's `container` is not configurable
+   that way (it keeps its stepped max-widths), so app-shell.tsx uses an explicit
+   `mx-auto w-full max-w-[1200px] px-6` instead. */
+
+@keyframes accordion-down {
+  from {
+    height: 0;
+  }
+  to {
+    height: var(--radix-accordion-content-height);
+  }
+}
+
+@keyframes accordion-up {
+  from {
+    height: var(--radix-accordion-content-height);
+  }
+  to {
+    height: 0;
+  }
+}
+
+/* 4. Base reset. */
 @layer base {
-  /* shadcn convention: default every element's border color to the themed
-     token, so components can write `border` without restating the color. */
+  /* shadcn convention: default every element's border colour to the themed
+     token, so components can write `border` without restating the colour. */
   * {
     @apply border-border;
   }

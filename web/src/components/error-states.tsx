@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 export function FullPageSpinner({ label = "Loading…" }: { label?: string }) {
   return (
     <div
-      className="flex min-h-[50vh] items-center justify-center text-muted-foreground"
+      className="text-muted-foreground flex min-h-[50vh] items-center justify-center"
       role="status"
       aria-live="polite"
     >
@@ -55,7 +55,7 @@ export function NotFound({
 }) {
   return (
     <Panel icon={<SearchX className="size-8" />} title={title}>
-      <p className="text-sm text-muted-foreground">{message}</p>
+      <p className="text-muted-foreground text-sm">{message}</p>
       <Button asChild variant="outline">
         <Link href={backHref}>{backLabel}</Link>
       </Button>
@@ -72,7 +72,7 @@ export function LoadFailed({
 }) {
   return (
     <Panel icon={<AlertTriangle className="size-8" />} title="Something went wrong">
-      <p className="text-sm text-muted-foreground">{message}</p>
+      <p className="text-muted-foreground text-sm">{message}</p>
       {onRetry ? <Button onClick={onRetry}>Retry</Button> : null}
     </Panel>
   );
@@ -89,7 +89,7 @@ export function Empty({
 }) {
   return (
     <Panel icon={<SearchX className="size-8" />} title={title}>
-      {message ? <p className="text-sm text-muted-foreground">{message}</p> : null}
+      {message ? <p className="text-muted-foreground text-sm">{message}</p> : null}
       {action}
     </Panel>
   );

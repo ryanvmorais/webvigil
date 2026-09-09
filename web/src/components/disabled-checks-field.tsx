@@ -50,15 +50,15 @@ export function DisabledChecksField({
       {open ? (
         <div id="disabled-checks-panel" className="max-h-64 space-y-1 overflow-y-auto border-t p-2">
           {checks.isLoading ? (
-            <p className="p-2 text-sm text-muted-foreground">Loading checks…</p>
+            <p className="text-muted-foreground p-2 text-sm">Loading checks…</p>
           ) : null}
           {checks.isError ? (
-            <p className="p-2 text-sm text-destructive">Could not load the check catalogue.</p>
+            <p className="text-destructive p-2 text-sm">Could not load the check catalogue.</p>
           ) : null}
           {checks.data?.map((check) => (
             <label
               key={check.id}
-              className="flex items-center gap-3 rounded px-2 py-1.5 text-sm hover:bg-accent"
+              className="hover:bg-accent flex items-center gap-3 rounded px-2 py-1.5 text-sm"
             >
               <input
                 type="checkbox"
@@ -68,7 +68,7 @@ export function DisabledChecksField({
               />
               <span className="font-mono text-xs">{check.id}</span>
               <span className="flex-1 truncate">{check.name}</span>
-              <span className="text-xs text-muted-foreground">{check.category}</span>
+              <span className="text-muted-foreground text-xs">{check.category}</span>
               <SeverityBadge severity={check.default_severity} />
             </label>
           ))}
