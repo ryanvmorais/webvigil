@@ -1,0 +1,43 @@
+# Dependabot version updates — consumed by GitHub, no CI of its own.
+# Opens routine dependency PRs on a schedule. This is separate from Dependabot
+# security updates (driven by Dependabot alerts, enabled at the repo level and
+# needing no config file); those keep running regardless of this file.
+version: 2
+updates:
+  # Engine + CLI + Web API — direct deps from pyproject.toml, graph pinned in uv.lock.
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+    labels:
+      - "dependencies"
+
+  # Web UI — pnpm workspace under web/, lockfile is web/pnpm-lock.yaml.
+  - package-ecosystem: "npm"
+    directory: "/web"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+    labels:
+      - "dependencies"
+
+  # GitHub Actions pinned in .github/workflows/ci.yml.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(ci)"
+    labels:
+      - "dependencies"
