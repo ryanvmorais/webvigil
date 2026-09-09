@@ -1,6 +1,6 @@
 ---
 feature: Web toolchain modernization — Node 24, Tailwind CSS v4, Next.js 16
-status: in progress
+status: done
 date: 2026-09-09
 related:
   - 003-web-ui/design.md
