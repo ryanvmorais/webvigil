@@ -17,9 +17,6 @@ const apiProxyTarget = process.env.API_PROXY_TARGET ?? "http://127.0.0.1:8000";
  */
 const nextConfig: NextConfig = {
   output: process.env.NEXT_OUTPUT_STANDALONE ? "standalone" : undefined,
-  // The quality gate runs `pnpm lint` and `pnpm typecheck` explicitly; don't re-lint the
-  // whole tree (tests included) during `next build`.
-  eslint: { ignoreDuringBuilds: true },
   async rewrites() {
     return [{ source: "/api/:path*", destination: `${apiProxyTarget}/api/:path*` }];
   },

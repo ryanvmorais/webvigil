@@ -23,8 +23,6 @@ export function ReportPreview({ scanId, disabled }: { scanId: number; disabled: 
 
   useEffect(() => {
     if (!open) return;
-    setError(null);
-    setBlobUrl(null);
     let created: string | null = null;
     api
       .reportBlob(scanId)
@@ -38,8 +36,17 @@ export function ReportPreview({ scanId, disabled }: { scanId: number; disabled: 
     };
   }, [open, scanId]);
 
+  // Reset on close (not in the effect) so re-opening starts from a clean slate.
+  function handleOpenChange(next: boolean) {
+    setOpen(next);
+    if (!next) {
+      setBlobUrl(null);
+      setError(null);
+    }
+  }
+
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
         <Button variant="outline" size="sm" disabled={disabled}>
           Preview report

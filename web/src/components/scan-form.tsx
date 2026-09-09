@@ -87,6 +87,9 @@ export function ScanForm() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [defaults.data]);
 
+  // react-hook-form's watch() is opaque to the React Compiler lint; it is the
+  // library's supported subscription API and there is no compiler-friendly form.
+  // eslint-disable-next-line react-hooks/incompatible-library
   const mode = form.watch("mode");
 
   function onSubmit(values: FormValues) {

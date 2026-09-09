@@ -85,23 +85,46 @@ this spec; CI runs it on the PR.
 
 ## Stage 3 — Next.js 16
 
-- [ ] `pnpm dlx @next/codemod@canary upgrade latest`; review the diff hunk by hunk —
-      expect `package.json` bumps (`next` 16, `eslint-config-next` 16, `react` /
-      `react-dom` / `@types/react*` within `^19`) and no `src/` route changes. — RF-07, ADR-5
-- [ ] `web/package.json`: `lint` script `next lint` → `eslint`. — RF-08
-- [ ] `web/eslint.config.mjs`: reconcile for `eslint-config-next` 16 — keep the
-      `ignores` block, keep the rule order with `"prettier"` last; drop `FlatCompat` /
-      `@eslint/eslintrc` only if v16 exports a flat config directly, otherwise keep
-      the compat shim. Refresh the file docstring. — RF-08
-- [ ] `pnpm lint`: resolve every new violation (fix, or disable with a reason);
-      end at zero warnings. — RF-08
-- [ ] `pnpm build`: confirm the Turbopack build succeeds, all nine routes emit, and
-      `output: "standalone"` produces `server.js`. If standalone or the baked
-      `rewrites()` break, set the build script to `next build --webpack` and record
-      it here. — RF-07, RF-09, ADR-4
-      <!-- build engine used: -->
-- [ ] `pnpm test:e2e`: the offline Playwright flow passes end to end. — RF-09, RNF-02
-- [ ] Quality gate (Stage 3). — RF-11
+- [x] `pnpm dlx @next/codemod@latest upgrade latest`. Bumped `next` 15.5.24 → 16.3.4,
+      `react`/`react-dom` → 19.2.8 (pinned, like `next`), `@types/react*` pinned +
+      a `pnpm.overrides` to dedupe them. It also added `export const instant = false`
+      to 11 files for Cache Components — reverted, that feature is opt-in
+      (`cacheComponents`) and unused here, and the app is all-client anyway (ADR-5).
+      `next.config.ts`: removed the `eslint` key (Next 16 dropped it with
+      `next lint`). `tsconfig.json`: Next 16 now owns it (rewrites `jsx` →
+      `react-jsx`, `include`, re-indents on every build) — added to
+      `.prettierignore`. — RF-07, ADR-5
+- [x] `web/package.json`: `lint` script `next lint` → `eslint`. — RF-08
+- [x] `web/eslint.config.mjs`: `eslint-config-next` 16 ships native flat config, so
+      `FlatCompat` + `@eslint/eslintrc` are gone; `core-web-vitals` already bundles
+      the TS rules; `prettier` (`eslint-config-prettier/flat`) stays last; `ignores`
+      kept. `eslint` pinned to `^9.39.5` (a transitive bump had pulled ESLint 10,
+      which `eslint-config-next` 16 does not support). Docstring refreshed. — RF-08
+- [x] `pnpm lint` — the new `eslint-plugin-react-hooks` v6 (React Compiler rules)
+      flagged three pre-existing patterns:
+      - `report-preview.tsx` `set-state-in-effect`: moved the reset out of the
+        effect into `onOpenChange` (fix).
+      - `providers.tsx` `refs`: `useState(() => new QueryClient(…))` for the lazy
+        init, handler rebind moved into a `useEffect`; the cache `onError` closures
+        still read `handlerRef.current` (only ever on an async error, never during
+        render) so `react-hooks/refs` is disabled for that block with a reason.
+      - `scan-form.tsx` `incompatible-library`: `form.watch()` is RHF's supported
+        API and has no compiler-friendly form — line-disabled with a reason.
+      Also removed seven now-unused `eslint-disable` directives from test files.
+      Ends at zero warnings and zero errors. — RF-08
+- [x] `pnpm build`: **Turbopack** (Next 16 default), compiled successfully, all nine
+      routes emit. `NEXT_OUTPUT_STANDALONE=1` build produces `.next/standalone/server.js`
+      which boots and serves `/login` (200); the Dockerfile layout is unchanged.
+      No fallback to `--webpack` needed. — RF-07, RF-09, ADR-4
+      <!-- build engine used: Turbopack -->
+- [x] `pnpm test:e2e` with `CI=1` from clean — 1 passed (Next 16 standalone rebuild
+      + `next start` + real scan + report + logout, offline). — RF-09, RNF-02
+- [x] Quality gate (Stage 3). — RF-11
+      <!-- result: format:check / lint (eslint, 0/0) / typecheck / test (86) /
+      build (Turbopack) / test:e2e (CI=1, clean, 1 passed) all green. Note: Next 16
+      dropped the per-route First Load JS table from `next build` output, so RNF-03's
+      exact size comparison is not reproducible; total `.next/static` JS is ~1.0 MB
+      uncompressed, no new heavy deps were added, and the build is faster. -->
       <!-- result: -->
 
 ## Stage 4 — Rollout, docs, backlog
