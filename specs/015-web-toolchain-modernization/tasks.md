@@ -125,22 +125,19 @@ this spec; CI runs it on the PR.
       dropped the per-route First Load JS table from `next build` output, so RNF-03's
       exact size comparison is not reproducible; total `.next/static` JS is ~1.0 MB
       uncompressed, no new heavy deps were added, and the build is faster. -->
-      <!-- result: -->
 
 ## Stage 4 — Rollout, docs, backlog
 
-- [ ] Compare the `pnpm build` route/size table with the Stage 0 baseline; confirm
-      within ~10% or explain the delta in a note here. — RNF-03
-      <!-- delta: -->
-- [ ] `docs/web-ui.md`: Node 20 → 24; drop or adjust the `tailwind.config.ts`
-      reference. — RF-13
-- [ ] `CLAUDE.md`: stack line (name Tailwind v4 / Next 16 only if a version is
-      given); the spec-status paragraph — add 015, update "Nenhuma spec em
-      andamento". — RF-13
-- [ ] `specs/README.md`: add the `015-web-toolchain-modernization` roadmap row with
-      its scope and status. — RF-13
-- [ ] `README.md`: check the stack blurb; change only if it names a toolchain
-      version. — RF-13
+- [x] RNF-03: Next 16 removed the per-route First Load JS table from `next build`
+      (both Turbopack and `--webpack`), so the Stage 0 comparison cannot be
+      reproduced. Proxy check: total `.next/static` JS ~1.0 MB uncompressed;
+      no new runtime deps; Tailwind v4's engine is lighter than v3's JIT and the
+      build is faster. If a hard number is needed later, add `@next/bundle-analyzer`. — RNF-03
+- [x] `docs/web-ui.md`: Node 20 → 24. (No `tailwind.config.ts` reference existed.) — RF-13
+- [x] `CLAUDE.md`: stack line now names Next.js 16 / React 19 / Tailwind CSS v4 /
+      Node 24; spec-status paragraph gained a 015 sentence. — RF-13
+- [x] `specs/README.md`: added the `015-web-toolchain-modernization` roadmap row. — RF-13
+- [x] `README.md`: the dashboard blurb names no toolchain version — no change. — RF-13
 - [ ] Confirm `web/pnpm-lock.yaml` holds the final versions; close Dependabot PRs
       #7, #8, #10, #11 with a comment pointing to this spec and the merge. — RF-12
 - [ ] Full `web/` quality gate on the integrated branch; record the result. — RF-11
