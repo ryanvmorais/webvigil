@@ -19,6 +19,11 @@ export default defineConfig({
     setupFiles: ["./vitest.setup.ts"],
     include: ["src/**/*.{test,spec}.{ts,tsx}"],
     css: false,
+    // clearMocks wipes call history before each test; restoreMocks puts spied
+    // originals back. Both are needed since vitest 4: restoreMocks alone no
+    // longer clears the call history of a standalone `vi.fn()` (the hoisted
+    // router / handler mocks the auth and form tests share).
+    clearMocks: true,
     restoreMocks: true,
     testTimeout: 15_000,
   },
