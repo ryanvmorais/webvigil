@@ -1,3 +1,13 @@
+---
+feature: Web toolchain modernization — Node 24, Tailwind CSS v4, Next.js 16
+status: done
+date: 2026-09-09
+related:
+  - 015-web-toolchain-modernization/requirements.md
+  - 015-web-toolchain-modernization/design.md
+origin: conception
+---
+
 # 015 — Web toolchain modernization — Tasks
 
 One branch (`spec/015-web-toolchain-modernization`), one PR. Stages 1–3 are
@@ -138,12 +148,15 @@ this spec; CI runs it on the PR.
       Node 24; spec-status paragraph gained a 015 sentence. — RF-13
 - [x] `specs/README.md`: added the `015-web-toolchain-modernization` roadmap row. — RF-13
 - [x] `README.md`: the dashboard blurb names no toolchain version — no change. — RF-13
-- [ ] Confirm `web/pnpm-lock.yaml` holds the final versions; close Dependabot PRs
-      #7, #8, #10, #11 with a comment pointing to this spec and the merge. — RF-12
-- [ ] Full `web/` quality gate on the integrated branch; record the result. — RF-11
-      <!-- result: -->
-- [ ] Set this spec's three docs to `status: done`; run `/preparar-commits` and
-      `/atualizar-docs`. — —
+- [x] `web/pnpm-lock.yaml` holds the final versions. Dependabot PRs #7, #8, #10,
+      #11 closed as superseded, each with a comment pointing to the merge (`86af1c4`). — RF-12
+- [x] Full `web/` quality gate on the integrated branch. — RF-11
+      <!-- result: on PR #13 (merged as 86af1c4) — web CI job green: lint, format,
+      typecheck, test (86), build (Turbopack), test:e2e (offline), docker build
+      ./web. quality (3.12) green; quality (3.13) flaked once on
+      test_openapi_scan_is_deterministic (a pre-existing two-active-scan engine
+      flake, unrelated to this spec) and passed on re-run. -->
+- [x] Set this spec's three docs to `status: done`; run `/preparar-commits`. — —
 
 ## Baseline (Stage 0)
 
