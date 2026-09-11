@@ -1,8 +1,12 @@
 # WebVigil
 
+![Python](https://img.shields.io/badge/Python-3.12+-3776AB?logo=python&logoColor=white)
+![deps](https://img.shields.io/badge/deps-uv-DE5FE9)
 [![CI](https://github.com/ryanvmorais/webvigil/actions/workflows/ci.yml/badge.svg)](https://github.com/ryanvmorais/webvigil/actions/workflows/ci.yml)
-[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
-[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](pyproject.toml)
+![Lint](https://img.shields.io/badge/lint-ruff-261230)
+![Format](https://img.shields.io/badge/style-black-000000)
+![Types](https://img.shields.io/badge/types-mypy%20strict-2A6DB2)
+![License](https://img.shields.io/badge/license-Apache%202.0-blue)
 
 A web application vulnerability scanner for developers. It helps teams find and fix
 security misconfigurations in web apps, both **in development** (terminal, CI, pre-deploy)
