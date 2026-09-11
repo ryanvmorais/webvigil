@@ -1,5 +1,9 @@
 # WebVigil
 
+[![CI](https://github.com/ryanvmorais/webvigil/actions/workflows/ci.yml/badge.svg)](https://github.com/ryanvmorais/webvigil/actions/workflows/ci.yml)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](pyproject.toml)
+
 A web application vulnerability scanner for developers. It helps teams find and fix
 security misconfigurations in web apps, both **in development** (terminal, CI, pre-deploy)
 and **in production** (non-intrusive checks that are safe to run against live systems).
@@ -11,6 +15,20 @@ built on top of the same engine.
 > and report formats have been stable across the last several milestones; there is no
 > `1.0` package tag yet. See [Scope and limitations](#scope-and-limitations) for what
 > WebVigil deliberately does not do.
+
+## WebVigil vs. other scanners
+
+| | WebVigil | OWASP ZAP | Nuclei |
+|---|---|---|---|
+| Distribution | Library + CLI + optional dashboard | GUI + daemon (Docker/desktop) | CLI + YAML templates |
+| Safe by default | Passive-only unless `--mode active` is explicit | Active scan is a common default workflow | Mostly read-only, template-dependent |
+| Confirmed findings | Every active finding is proven against a per-request baseline | Signature + active-scan rules | Signature/template match |
+| Best for | CI-native, in-band checks on your own app | Deep manual pentesting with a GUI/proxy | Fast sweeps against thousands of known CVE/misconfig templates |
+| License | Apache-2.0 | Apache-2.0 | MIT |
+
+WebVigil isn't a replacement for either — pair it with [Nuclei](https://github.com/projectdiscovery/nuclei)
+for known-CVE template matching, or ZAP for manual, proxy-driven testing. See
+[Scope and limitations](#scope-and-limitations) for the full boundary.
 
 ---
 
