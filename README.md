@@ -196,6 +196,8 @@ A Next.js dashboard for the Web API: first-run setup, login, scan history, a new
 scan detail with filterable findings, report preview and download, the check catalogue, and
 a settings screen. It is a thin client of the API — it never talks to the engine.
 
+![WebVigil dashboard — scan detail page showing findings grouped by severity](assets/dashboard-scan-detail.png)
+
 ```bash
 # API on :8000 in one shell (see above), then:
 cd web
