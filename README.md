@@ -160,8 +160,12 @@ uv run webvigil list-checks
 uv run webvigil report report.json --format md      # re-render a saved scan, offline
 ```
 
-By default the scan prints a summary to your terminal (stderr). With `--format` it writes
-the report to stdout (or `--output PATH`), so you can pipe it.
+By default the scan prints a summary to your terminal (stderr), a severity-count table
+followed by one line per finding:
+
+![webvigil scan https://example.com — terminal summary with a severity-count table and one line per finding](assets/cli-scan-summary.svg)
+
+With `--format` it writes the report to stdout (or `--output PATH`), so you can pipe it.
 
 Use in CI — fail the build on high-severity findings:
 
