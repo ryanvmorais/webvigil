@@ -1,3 +1,5 @@
+![WebVigil dashboard (optional web UI) — scan detail page showing findings grouped by severity](assets/dashboard-scan-detail.png)
+
 # WebVigil
 
 ![Python](https://img.shields.io/badge/Python-3.12+-3776AB?logo=python&logoColor=white)
@@ -158,8 +160,12 @@ uv run webvigil list-checks
 uv run webvigil report report.json --format md      # re-render a saved scan, offline
 ```
 
-By default the scan prints a summary to your terminal (stderr). With `--format` it writes
-the report to stdout (or `--output PATH`), so you can pipe it.
+By default the scan prints a summary to your terminal (stderr), a severity-count table
+followed by one line per finding:
+
+![webvigil scan https://example.com — terminal summary with a severity-count table and one line per finding](assets/cli-scan-summary.svg)
+
+With `--format` it writes the report to stdout (or `--output PATH`), so you can pipe it.
 
 Use in CI — fail the build on high-severity findings:
 
@@ -195,8 +201,6 @@ See [docs/web-api.md](docs/web-api.md) for configuration, auth, and backup.
 A Next.js dashboard for the Web API: first-run setup, login, scan history, a new-scan form,
 scan detail with filterable findings, report preview and download, the check catalogue, and
 a settings screen. It is a thin client of the API — it never talks to the engine.
-
-![WebVigil dashboard — scan detail page showing findings grouped by severity](assets/dashboard-scan-detail.png)
 
 ```bash
 # API on :8000 in one shell (see above), then:
