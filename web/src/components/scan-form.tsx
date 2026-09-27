@@ -226,7 +226,7 @@ export function ScanForm() {
               <FormItem>
                 <FormLabel>Max pages</FormLabel>
                 <FormControl>
-                  <Input type="number" min={1} {...field} />
+                  <Input type="number" min={1} {...field} value={field.value as number | string} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -239,7 +239,7 @@ export function ScanForm() {
               <FormItem>
                 <FormLabel>Delay between requests (ms)</FormLabel>
                 <FormControl>
-                  <Input type="number" min={0} {...field} />
+                  <Input type="number" min={0} {...field} value={field.value as number | string} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
