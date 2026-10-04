@@ -15,6 +15,7 @@ the source of truth; this page maps them.
 |---|---|
 | Design tokens, theme mapping, base reset | `web/src/app/globals.css` |
 | Severity names, labels, colour classes | `web/src/lib/severity.ts` |
+| App icon (the header's shield, light and dark; Next serves it as the favicon) | `web/src/app/icon.svg` |
 | Vendored shadcn/ui primitives | `web/src/components/ui/` |
 | Domain components (badges, tables, forms) | `web/src/components/` |
 | Class merging helper (`cn`) | `web/src/lib/utils.ts` |
@@ -37,6 +38,7 @@ The semantic set is the shadcn "slate" palette:
 | `--secondary`, `--muted`, `--accent` | `210 40% 96.1%` | `217.2 32.6% 17.5%` | Subtle surfaces |
 | `--muted-foreground` | `215.4 16.3% 46.9%` | `215 20.2% 65.1%` | Secondary text |
 | `--destructive` | `0 72.2% 50.6%` | `0 62.8% 30.6%` | Destructive actions |
+| `--success` | `163 100% 24%` | `160 84% 45%` | Positive state text ("Completed", "Password changed") |
 | `--border`, `--input` | `214.3 31.8% 91.4%` | `217.2 32.6% 17.5%` | Borders and field outlines |
 | `--ring` | `222.2 84% 4.9%` | `212.7 26.8% 83.9%` | Focus ring |
 
@@ -66,10 +68,17 @@ Lightness rises in the dark set so the colours keep their contrast on a dark bac
 | Level | Token | Light | Dark | Hue |
 |---|---|---|---|---|
 | `INFO` | `--severity-info` | `215.4 16.3% 46.9%` | `215 20.2% 65.1%` | slate grey |
-| `LOW` | `--severity-low` | `199 89% 48%` | `199 89% 60%` | sky blue |
-| `MEDIUM` | `--severity-medium` | `38 92% 50%` | `38 92% 60%` | amber |
-| `HIGH` | `--severity-high` | `24 95% 53%` | `24 95% 63%` | orange |
+| `LOW` | `--severity-low` | `199 89% 35%` | `199 89% 60%` | sky blue |
+| `MEDIUM` | `--severity-medium` | `38 92% 31%` | `38 92% 60%` | amber |
+| `HIGH` | `--severity-high` | `24 95% 37%` | `24 95% 63%` | orange |
 | `CRITICAL` | `--severity-critical` | `0 72.2% 50.6%` | `0 72% 60%` | red |
+
+These colours are badge *text*, so every level has to reach the WCAG AA ratio of 4.5:1, on
+the page background and on the muted surface a table row takes on hover. In the light set
+`LOW`, `MEDIUM` and `HIGH` sit at the lowest lightness that does, keeping the hue (the mid-tone
+values they had before measured 2.1 to 2.9:1). `globals.test.ts` computes the ratios from
+`globals.css` for every text token in both themes, so a token change that breaks the floor
+fails the unit suite.
 
 `SEVERITY_CLASS` in `severity.ts` maps each level to its utility classes:
 `border-severity-<level>/40 text-severity-<level>` (the border opacity is `/50` for
@@ -99,10 +108,6 @@ The rule is checked in two places: unit tests assert the label and the icon for 
 `web/src/test/axe.ts`) fail on serious or critical violations. The page-structure axe rules
 are off there because a component render has no `<html>` or `<main>`; the layouts and the
 Playwright run cover them.
-
-> **Known gap.** `StatusBadge` colours `completed` with `text-emerald-600`, a raw Tailwind
-> colour outside the token scale and with no dark-mode counterpart. Every other state uses
-> a token (`text-muted-foreground`, `text-severity-*`).
 
 ## Primitives
 
