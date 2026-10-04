@@ -23,6 +23,9 @@ commands are in [README → Development](README.md#development).
   English. See [CLAUDE.md](CLAUDE.md).
 - **Commits:** [Conventional Commits](https://www.conventionalcommits.org/)
   (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`).
+- **Issues and PRs:** a bug or a feature starts as an issue (forms in
+  `.github/ISSUE_TEMPLATE/`); the PR that resolves it says `Closes #N`, so the issue
+  closes on merge. A trivial fix can go straight to a PR.
 - **Design changes:** non-trivial features are designed as specs under `specs/` before
   implementation (requirements → design → tasks).
 

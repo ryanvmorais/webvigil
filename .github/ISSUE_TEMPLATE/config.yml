@@ -1,0 +1,7 @@
+# Issue form configuration — consumed by GitHub.
+# No blank issues: the two forms cover bugs and features. Vulnerabilities go private.
+blank_issues_enabled: false
+contact_links:
+  - name: "Report a vulnerability in WebVigil"
+    url: "https://github.com/ryanvmorais/webvigil/security/advisories/new"
+    about: "Private reporting through GitHub Security Advisories. See SECURITY.md."

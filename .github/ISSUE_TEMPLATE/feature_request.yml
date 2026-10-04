@@ -1,0 +1,36 @@
+# Feature request form — consumed by GitHub when opening a new issue.
+# A non-trivial feature becomes a spec under specs/ before it becomes code.
+name: "Feature request"
+description: "A new check, option or improvement"
+labels:
+  - "enhancement"
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: "Problem or motivation"
+      description: "What is missing today, or what this would unlock. The why comes before the how."
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: "Proposal"
+      description: "How you imagine it working (a rough sketch is fine)."
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: "Alternatives considered"
+      description: "Optional. What you ruled out, and why."
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: "Scope"
+      options:
+        - label: "Touches more than one module or needs a design decision, so it needs a spec under specs/ before code"
+          required: false
