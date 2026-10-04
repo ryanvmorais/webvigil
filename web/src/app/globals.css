@@ -3,7 +3,7 @@
  *
  * Four concerns, in order:
  *   1. Tailwind v4 entry + the animation utility library.
- *   2. Design tokens: the shadcn/ui "slate" palette plus a severity scale,
+ *   2. Design tokens: the shadcn/ui "slate" palette plus a severity scale and a success colour,
  *      as bare HSL channel triples on :root (light) with a dark override.
  *   3. Theme mapping (@theme inline) + the accordion keyframes that the deleted
  *      tailwind.config.ts used to carry.
@@ -51,12 +51,18 @@
 
   /* Severity scale — one hue per level, consumed via `text-severity-*` /
      `border-severity-*` (see SEVERITY_CLASS in src/lib/severity.ts). Names and
-     order mirror the engine's Severity enum. */
+     order mirror the engine's Severity enum. Every level is also badge *text*,
+     so each must reach 4.5:1 (WCAG AA) on the page and on the muted hover
+     surface; low/medium/high sit at the lowest lightness that does, keeping
+     the hue (web/src/app/globals.test.ts guards the ratios). */
   --severity-info: 215.4 16.3% 46.9%;
-  --severity-low: 199 89% 48%;
-  --severity-medium: 38 92% 50%;
-  --severity-high: 24 95% 53%;
+  --severity-low: 199 89% 35%;
+  --severity-medium: 38 92% 31%;
+  --severity-high: 24 95% 37%;
   --severity-critical: 0 72.2% 50.6%;
+
+  /* Positive state ("completed", "saved"): text, so same 4.5:1 floor. */
+  --success: 163 100% 24%;
 }
 
 /* Dark set — same token names, overridden only when the OS asks for dark. */
@@ -87,6 +93,8 @@
     --severity-medium: 38 92% 60%;
     --severity-high: 24 95% 63%;
     --severity-critical: 0 72% 60%;
+
+    --success: 160 84% 45%;
   }
 }
 
@@ -123,6 +131,8 @@
   --color-severity-medium: hsl(var(--severity-medium));
   --color-severity-high: hsl(var(--severity-high));
   --color-severity-critical: hsl(var(--severity-critical));
+
+  --color-success: hsl(var(--success));
 
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);

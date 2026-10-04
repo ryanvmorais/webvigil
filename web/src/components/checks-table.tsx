@@ -92,7 +92,7 @@ export function ChecksTable({
                   href={cweUrl(id)}
                   target="_blank"
                   rel="noreferrer noopener"
-                  className="text-sm underline"
+                  className="inline-block min-h-6 text-sm underline"
                 >
                   CWE-{id}
                 </a>
