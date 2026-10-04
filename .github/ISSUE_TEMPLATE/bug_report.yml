@@ -1,0 +1,72 @@
+# Bug report form — consumed by GitHub when opening a new issue.
+# The PR that fixes it closes the issue with "Closes #N".
+name: "Bug report"
+description: "Something in WebVigil does not work as it should"
+labels:
+  - "bug"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. A vulnerability in WebVigil itself is **not** a public
+        issue: report it privately (see SECURITY.md). A false positive or false negative
+        from a check is a normal bug, so include the check id.
+
+  - type: textarea
+    id: what-happens
+    attributes:
+      label: "What happens"
+      description: "The wrong behaviour you observed."
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: "What should happen"
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: "How to reproduce"
+      description: "The exact command or request, and a target that anyone can scan (or a minimal fixture)."
+      placeholder: |
+        1. Run `webvigil scan ...`
+        2. ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: "Component"
+      options:
+        - "CLI / engine"
+        - "A check (give the id below)"
+        - "Web API"
+        - "Web UI"
+        - "Reporting"
+        - "Docs"
+    validations:
+      required: true
+
+  - type: input
+    id: check-id
+    attributes:
+      label: "Check id"
+      description: "Optional. Only if the bug is a false positive or false negative of a check."
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: "Environment"
+      description: "Optional. WebVigil version, Python version, OS."
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: "Output or logs"
+      description: "Optional. Remove tokens, cookies and target details you do not want public."
+      render: shell
