@@ -357,6 +357,13 @@ bridging the two.
 re-renders) and handles the tedious parts. Zod schemas also produce TypeScript
 types for free (`z.infer`).
 
+**Loaded on demand.** Zod is ~100 KiB gzipped, so the new-scan schema lives in
+`web/src/lib/scan-resolver.ts` and `scan-form.tsx` reaches it through a dynamic
+`import()` (warmed on the first focus inside the form). Validation only runs on
+submit, so a static import would put zod in the first load of `/scans/new` and,
+via `next/link` prefetching, in `/scans` too. A unit test fails if anything else
+imports it.
+
 **Learn:** `z.object({...})` / `.refine` / `z.infer`, `useForm({ resolver:
 zodResolver(schema) })`, `form.register` / `form.control` / `form.handleSubmit`,
 `<FormField>` (the shadcn wrapper), and `form.setError` (used to show
