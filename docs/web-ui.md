@@ -3,7 +3,8 @@
 `web/` is a Next.js (App Router) dashboard for the Web API (spec 002). TypeScript strict,
 Tailwind + shadcn/ui, TanStack Query, managed by `pnpm`. It is a **thin client of the
 API** — it never talks to the engine, holds no scan state of its own, and adds no scanning
-capability.
+capability. The visual language (design tokens, severity scale, badge rules) is in
+[web-ui-design.md](web-ui-design.md).
 
 ## What it covers
 
