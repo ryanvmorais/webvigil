@@ -1,0 +1,148 @@
+# Lighthouse CI: audits the dashboard on every web change (mobile and desktop) and fails
+# when accessibility, contrast, touch targets, console errors, CLS or page weight regress.
+# The limits live in .github/lighthouse/{mobile,desktop}{,-login}.json.
+#
+# Why a workflow apart from ci.yml: Lighthouse takes minutes and varies on a shared
+# runner, while ci.yml (quality) has to stay fast. It is NOT a required check on main, on
+# purpose: a flaky blocking check teaches people to ignore it. It can become required
+# after a few stable weeks.
+#
+# The dashboard sits behind a login and needs three processes, so the job boots what the
+# e2e suite boots (the fixture app as scan target, `webvigil-web` on a throwaway SQLite
+# file, and the production build of the UI with the /api proxy baked in), then seeds it
+# with scripts/lighthouse-seed.py: account, sign-in and one finished scan, so /scans/1 has
+# findings. The session cookie goes to Lighthouse as an extra header. /login is audited in
+# its own run, without the cookie (a signed-in visitor is redirected away from it).
+# /setup is not audited: it only exists before the first account.
+#
+# CI numbers are a relative comparison between PRs (simulated throttling on a shared
+# machine). Real numbers only exist in production.
+name: Lighthouse
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "web/**"
+      - "src/webvigil/api/**"
+      - "scripts/lighthouse-seed.py"
+      - "scripts/serve-fixture-app.py"
+      - ".github/lighthouse/**"
+      - ".github/workflows/lighthouse.yml"
+
+# Cancel obsolete runs of the same ref: a new push to the PR kills the previous run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lighthouse:
+    # Mobile and desktop in parallel: a failure in one profile does not hide the other.
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: [mobile, desktop]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # Pinned on purpose: each @lhci/cli version embeds a Lighthouse version, and the
+      # version changes the scores. Dependabot cannot see an npx: bump it here by hand
+      # and recalibrate the limits in .github/lighthouse/. 0.15.1 = Lighthouse 12.6.1.
+      LHCI_VERSION: "0.15.1"
+      # Throwaway value: the database (see the first step) lives in the runner's temp directory.
+      WEBVIGIL_SESSION_SECRET: lighthouse-ci-only-secret-not-for-real-deployments-0123456789
+      # next.config bakes the /api rewrite at build time (RNF-06): build and start with it.
+      API_PROXY_TARGET: http://127.0.0.1:8100
+    steps:
+      - uses: actions/checkout@v7
+
+      # The `runner` context is not available in the job-level `env:`, only in steps.
+      - name: Point the API at a throwaway database
+        run: echo "WEBVIGIL_DATABASE_PATH=$RUNNER_TEMP/lighthouse.db" >> "$GITHUB_ENV"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Install Python deps (fixture app, webvigil-web)
+        run: uv sync --all-extras --frozen
+
+      - uses: pnpm/action-setup@v6
+        with:
+          # Take the pnpm version from web/package.json's `packageManager` field.
+          package_json_file: web/package.json
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Install web dependencies
+        run: pnpm --dir web install --frozen-lockfile
+
+      - name: Build the dashboard
+        run: pnpm --dir web build
+
+      - name: Start the fixture app, the API and the dashboard
+        run: |
+          nohup uv run python scripts/serve-fixture-app.py --port 9100 > fixture.log 2>&1 &
+          uv run webvigil-web migrate
+          nohup uv run webvigil-web serve --host 127.0.0.1 --port 8100 > api.log 2>&1 &
+          nohup pnpm --dir web exec next start --port 3100 > ui.log 2>&1 &
+          for url in http://127.0.0.1:9100/ http://127.0.0.1:8100/api/health http://127.0.0.1:3100/login; do
+            for i in $(seq 1 60); do
+              curl -fs "$url" > /dev/null && continue 2
+              sleep 1
+            done
+            echo "$url did not answer in 60 s:"
+            tail -n 40 fixture.log api.log ui.log
+            exit 1
+          done
+
+      - name: Seed the account and one scan
+        run: >
+          uv run python scripts/lighthouse-seed.py
+          --api http://127.0.0.1:8100
+          --target http://127.0.0.1:9100/
+          --headers-out "$RUNNER_TEMP/headers.json"
+
+      # Both audits run even if the first fails, so one report never hides the other.
+      - name: Lighthouse (${{ matrix.profile }})
+        run: |
+          status=0
+          npx --yes @lhci/cli@${LHCI_VERSION} autorun \
+            --config=.github/lighthouse/${{ matrix.profile }}-login.json || status=1
+          npx --yes @lhci/cli@${LHCI_VERSION} autorun \
+            --config=.github/lighthouse/${{ matrix.profile }}.json \
+            --collect.settings.extraHeaders="$(cat "$RUNNER_TEMP/headers.json")" || status=1
+          exit $status
+
+      # tee leaves the table in the job log too (the job summary only shows in the GitHub
+      # UI; the log is reachable through `gh run view --log`).
+      - name: Summary
+        if: ${{ !cancelled() }}
+        run: python3 .github/lighthouse/summary.py ${{ matrix.profile }} | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Server logs
+        if: ${{ failure() }}
+        run: tail -n 60 fixture.log api.log ui.log || true
+
+      # The full HTML reports are kept as an artifact (nothing goes to the public Lighthouse
+      # storage). .lighthouseci starts with a dot: without include-hidden-files upload-artifact
+      # skips it, and with the default if-no-files-found=warn the step passed with a warning.
+      - name: Keep the reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: lighthouse-${{ matrix.profile }}
+          path: .lighthouseci
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14

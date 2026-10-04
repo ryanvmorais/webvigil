@@ -39,6 +39,8 @@ web/node_modules/
 web/.next/
 web/out/
 web/.env*.local
+# Lighthouse CI reports (.github/workflows/lighthouse.yml).
+.lighthouseci/
 
 # --- 7. SECRETS AND LOCAL CONFIG ---
 # Real secrets and machine-specific overrides. There is no committed .env;

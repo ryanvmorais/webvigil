@@ -58,6 +58,8 @@ pnpm gen:api                          # api-types.ts a partir de openapi.json
 pnpm test:e2e                         # Playwright: setup → scan → report → logout, offline
 ```
 
+**Lighthouse CI** (`.github/workflows/lighthouse.yml`, issue #63): audita o dashboard (mobile e desktop, 3 rodadas, mediana) a cada mudança em `web/`, na API ou na própria configuração. Sobe o que o e2e sobe (fixture na 9100, `webvigil-web` na 8100 com SQLite descartável, `next build` + `next start` na 3100) e faz o seed com `scripts/lighthouse-seed.py` (conta, login, um scan concluído: o id é sempre 1, e `/scans/1` está nos JSONs). `/login` é auditado à parte, sem cookie (logado, ele redireciona); o cookie da sessão vai nas páginas logadas como `--collect.settings.extraHeaders`. `/setup` não entra: só existe antes da primeira conta. Limites em `.github/lighthouse/{mobile,desktop}{,-login}.json`: **erro** para acessibilidade e boas práticas < 95, `color-contrast`, `target-size`, erro de console (só nas páginas logadas: o `/login` loga o 401 esperado de `/api/auth/me`), CLS > 0,1 e peso > 500 KB; **aviso** para a nota de Performance. **Não é check obrigatório** da `main` (o Lighthouse varia em runner compartilhado); `@lhci/cli` fixado em 0.15.1 (Lighthouse 12.6.1) em `LHCI_VERSION`, e o Dependabot não vê um `npx`. Os números são comparação relativa; os reais só existem em produção. Ao criar uma página nova, inclua a rota nos JSONs (`tests/unit/test_lighthouse_config.py` guarda que toda URL é uma página real e que mobile e desktop auditam o mesmo).
+
 ## Arquitetura (resumo)
 
 Camadas, de cima para baixo:
