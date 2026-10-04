@@ -53,13 +53,16 @@ jobs:
       # version changes the scores. Dependabot cannot see an npx: bump it here by hand
       # and recalibrate the limits in .github/lighthouse/. 0.15.1 = Lighthouse 12.6.1.
       LHCI_VERSION: "0.15.1"
-      # Throwaway values: the database lives in the runner's temp directory.
-      WEBVIGIL_DATABASE_PATH: ${{ runner.temp }}/lighthouse.db
+      # Throwaway value: the database (see the first step) lives in the runner's temp directory.
       WEBVIGIL_SESSION_SECRET: lighthouse-ci-only-secret-not-for-real-deployments-0123456789
       # next.config bakes the /api rewrite at build time (RNF-06): build and start with it.
       API_PROXY_TARGET: http://127.0.0.1:8100
     steps:
       - uses: actions/checkout@v7
+
+      # The `runner` context is not available in the job-level `env:`, only in steps.
+      - name: Point the API at a throwaway database
+        run: echo "WEBVIGIL_DATABASE_PATH=$RUNNER_TEMP/lighthouse.db" >> "$GITHUB_ENV"
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
