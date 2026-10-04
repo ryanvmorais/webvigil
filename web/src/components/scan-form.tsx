@@ -5,11 +5,9 @@
  */
 "use client";
 
-import { zodResolver } from "@hookform/resolvers/zod";
 import { AlertTriangle } from "lucide-react";
 import { useEffect } from "react";
-import { useForm } from "react-hook-form";
-import { z } from "zod";
+import { useForm, type Resolver } from "react-hook-form";
 
 import { DisabledChecksField } from "@/components/disabled-checks-field";
 import { FieldSelect } from "@/components/field-select";
@@ -28,30 +26,14 @@ import { useCreateScan } from "@/hooks/use-scans";
 import { useScanDefaults } from "@/hooks/use-defaults";
 import { ApiError, fieldErrors, type ScanCreate } from "@/lib/api";
 import { SECURITY_DOC_URL } from "@/lib/links";
+import type { ScanFormInput as FormValues, ScanFormOutput } from "@/lib/scan-resolver";
 
-const TARGET_RE = /^\S+\.\S+$|^https?:\/\/\S+$|^https?:\/\/localhost(:\d+)?(\/\S*)?$/i;
+// The schema (and zod with it) loads on demand: validation only runs on submit, so the
+// initial bundle of /scans/new — and the route prefetch from /scans — stay free of it.
+const loadResolver = () => import("@/lib/scan-resolver");
 
-const schema = z
-  .object({
-    target: z
-      .string()
-      .trim()
-      .min(1, "Target is required.")
-      .regex(TARGET_RE, "Enter a URL like https://example.com."),
-    mode: z.enum(["passive", "active"]),
-    scope: z.enum(["host", "subdomains"]),
-    max_pages: z.coerce.number().int().positive("Must be greater than 0."),
-    delay_ms: z.coerce.number().int().min(0, "Cannot be negative."),
-    follow_robots: z.boolean(),
-    authorized_by: z.string().trim().max(200).optional().default(""),
-    disabled_checks: z.array(z.string()),
-  })
-  .refine((values) => values.mode !== "active" || values.authorized_by.trim().length > 0, {
-    path: ["authorized_by"],
-    message: "Active scans require an authorization attestation.",
-  });
-
-type FormValues = z.input<typeof schema>;
+const resolver: Resolver<FormValues, unknown, ScanFormOutput> = async (values, context, options) =>
+  (await loadResolver()).scanResolver(values, context, options);
 
 const FALLBACK: FormValues = {
   target: "",
@@ -68,8 +50,8 @@ export function ScanForm() {
   const defaults = useScanDefaults();
   const createScan = useCreateScan();
 
-  const form = useForm<FormValues>({
-    resolver: zodResolver(schema),
+  const form = useForm<FormValues, unknown, ScanFormOutput>({
+    resolver,
     defaultValues: FALLBACK,
   });
 
@@ -92,8 +74,8 @@ export function ScanForm() {
   // eslint-disable-next-line react-hooks/incompatible-library
   const mode = form.watch("mode");
 
-  function onSubmit(values: FormValues) {
-    const parsed = schema.parse(values);
+  // `values` is the resolver's output: already validated, coerced and defaulted.
+  function onSubmit(parsed: ScanFormOutput) {
     const body: ScanCreate = {
       target: parsed.target,
       mode: parsed.mode,
@@ -122,7 +104,12 @@ export function ScanForm() {
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} noValidate className="max-w-2xl space-y-6">
+      <form
+        onSubmit={form.handleSubmit(onSubmit)}
+        onFocusCapture={() => void loadResolver()}
+        noValidate
+        className="max-w-2xl space-y-6"
+      >
         <FormField
           control={form.control}
           name="target"

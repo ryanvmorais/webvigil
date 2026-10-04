@@ -52,7 +52,9 @@ export function FindingsTable({ findings }: { findings: FindingOut[] }) {
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead className="w-8" />
+          <TableHead className="w-8">
+            <span className="sr-only">Expand</span>
+          </TableHead>
           <TableHead>Severity</TableHead>
           <TableHead>Title</TableHead>
           <TableHead>Check</TableHead>

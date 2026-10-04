@@ -97,7 +97,7 @@ export default function SettingsPage() {
             </p>
           ) : null}
           {done ? (
-            <p className="text-sm text-emerald-600" role="status">
+            <p className="text-success text-sm" role="status">
               Password changed.
             </p>
           ) : null}

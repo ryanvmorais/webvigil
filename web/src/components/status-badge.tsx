@@ -20,7 +20,7 @@ type Meta = { label: string; icon: LucideIcon; className: string; spin?: boolean
 const STATUS: Record<string, Meta> = {
   queued: { label: "Queued", icon: CircleDashed, className: "text-muted-foreground" },
   running: { label: "Running", icon: Loader2, className: "text-severity-low", spin: true },
-  completed: { label: "Completed", icon: CheckCircle2, className: "text-emerald-600" },
+  completed: { label: "Completed", icon: CheckCircle2, className: "text-success" },
   failed: { label: "Failed", icon: XCircle, className: "text-severity-critical" },
   cancelled: { label: "Cancelled", icon: Ban, className: "text-muted-foreground" },
   interrupted: { label: "Interrupted", icon: PlugZap, className: "text-severity-medium" },
