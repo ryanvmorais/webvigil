@@ -72,6 +72,11 @@ class ScanRunner:
         self._event = asyncio.Event()
         self._loop_task: asyncio.Task[None] | None = None
         self._current: tuple[int, asyncio.Task[None]] | None = None
+        # Held while the loop claims a scan and registers it as ``_current``. The claim
+        # commits RUNNING on a worker thread and ``_current`` is set only after the event
+        # loop resumes; without this, ``cancel`` and ``stop`` could run in between and
+        # miss a scan that is already RUNNING in the DB (issue #89).
+        self._dispatch = asyncio.Lock()
         self._stopped = False
 
     async def start(self) -> None:
@@ -83,8 +88,9 @@ class ScanRunner:
         """Signal the loop to stop, cancel any running scan, and await the loop task."""
         self._stopped = True
         self._event.set()
-        if self._current is not None:
-            self._current[1].cancel()
+        async with self._dispatch:  # a claim in flight registers its scan first
+            if self._current is not None:
+                self._current[1].cancel()
         if self._loop_task is not None:
             await self._loop_task
 
@@ -121,11 +127,14 @@ class ScanRunner:
                 or a queued row was moved to ``CANCELLED``; ``"not_cancellable"``
                 when the scan is neither.
         """
-        if self._current is not None and self._current[0] == scan_id:
-            self._current[1].cancel()
-            return "cancelled"
-        if await asyncio.to_thread(self._cancel_queued, scan_id):
-            return "cancelled"
+        # Under the dispatch lock, so a scan the loop is claiming right now is either still
+        # QUEUED (cancelled below) or already registered as the current one, never in between.
+        async with self._dispatch:
+            if self._current is not None and self._current[0] == scan_id:
+                self._current[1].cancel()
+                return "cancelled"
+            if await asyncio.to_thread(self._cancel_queued, scan_id):
+                return "cancelled"
         return "not_cancellable"
 
     # -- background loop -------------------------------------------------------
@@ -138,21 +147,41 @@ class ScanRunner:
         :meth:`stop` sets the flag and wakes it.
         """
         while not self._should_stop():
-            scan_id = await asyncio.to_thread(self._claim_next_queued)
-            if scan_id is None:
+            started = await self._start_next()
+            if started is None:
                 self._event.clear()
                 if self._should_stop():
                     return
                 await self._event.wait()
                 continue
-            task = asyncio.create_task(self._run_scan(scan_id))
-            self._current = (scan_id, task)
+            scan_id, task = started
             try:
                 await task
             except asyncio.CancelledError:
                 await asyncio.to_thread(self._mark_cancelled, scan_id)
             finally:
                 self._current = None
+
+    async def _start_next(self) -> tuple[int, asyncio.Task[None]] | None:
+        """
+        Claim the oldest queued scan and register it as the current one, as a single step.
+
+        Holds the dispatch lock from the DB claim until ``_current`` is set, so
+        :meth:`cancel` and :meth:`stop` never see a scan that is RUNNING in the DB but not
+        yet registered. Does not claim anything once :meth:`stop` has been called.
+
+        Returns:
+            tuple[int, asyncio.Task[None]] | None: The scan id and its task, or ``None``
+                when the queue is empty or the runner is stopping.
+        """
+        async with self._dispatch:
+            if self._should_stop():
+                return None
+            scan_id = await asyncio.to_thread(self._claim_next_queued)
+            if scan_id is None:
+                return None
+            self._current = (scan_id, asyncio.create_task(self._run_scan(scan_id)))
+            return self._current
 
     async def _run_scan(self, scan_id: int) -> None:
         """
