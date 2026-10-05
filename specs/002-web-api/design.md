@@ -206,7 +206,7 @@ def clear_session_cookie(resp: Response) -> None
 class ScanRunner:
     def __init__(self, engine, *, orchestrator_factory=_default_orchestrator): ...
     async def start(self) -> None            # create_task(self._loop())
-    async def stop(self) -> None             # cancel current, wake loop, await it
+    async def stop(self) -> None             # cancel current (after any claim in flight), wake loop, await it
     def wake(self) -> None                   # self._event.set() — called after create/cancel
     async def cancel(self, scan_id: int) -> Literal["cancelled", "not_cancellable"]
     @property
@@ -217,11 +217,14 @@ Loop:
 
 ```
 while not stopped:
-    scan_id = await to_thread(claim_next_queued)      # SELECT oldest QUEUED → UPDATE RUNNING, started_at
+    async with self._dispatch:                        # claim + register = one step for cancel()/stop()
+        if stopped: break
+        scan_id = await to_thread(claim_next_queued)  # SELECT oldest QUEUED → UPDATE RUNNING, started_at
+        if scan_id is not None:
+            task = create_task(self._run_scan(scan_id))
+            self._current = (scan_id, task)
     if scan_id is None:
         event.clear(); await event.wait(); continue
-    task = create_task(self._run_scan(scan_id))
-    self._current = (scan_id, task)
     try:
         await task
     except CancelledError:
@@ -249,7 +252,12 @@ await to_thread(store_result, scan_id, result)         # findings + counts + COM
 
 - **Cancellation (ADR-7):** `cancel(scan_id)` — if it is the running scan, `task.cancel()`
   and return `"cancelled"`; if it is `QUEUED` in the DB, `UPDATE → CANCELLED`; otherwise
-  `"not_cancellable"` (the route maps that to 409/404). `Orchestrator.run` wraps its work
+  `"not_cancellable"` (the route maps that to 409/404). `cancel` and `stop` take the same
+  `_dispatch` lock the loop holds from the DB claim until `_current` is set: the claim commits
+  `RUNNING` on a worker thread and `_current` is set only when the event loop resumes, so
+  without the lock they could run in that gap, miss a scan that is already `RUNNING` and
+  answer `"not_cancellable"` (or skip cancelling it on shutdown; issue #89).
+  `Orchestrator.run` wraps its work
   in `async with HttpClient(...)`, so `CancelledError` unwinds it and closes the client;
   findings are only produced at the very end, so a cancelled scan persists none.
 - **Restart recovery (RF-16):** the lifespan, before `runner.start()`, runs

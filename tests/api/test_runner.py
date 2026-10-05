@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import time
 from collections.abc import AsyncIterator, Callable
 
 import httpx
@@ -185,6 +186,70 @@ async def test_cancel_a_running_scan(web_engine: Engine, runner_factory: Callabl
     await _wait_for(web_engine, scan_id, ScanStatus.CANCELLED)
     with Session(web_engine) as session:
         assert session.exec(select(FindingRow).where(FindingRow.scan_id == scan_id)).all() == []
+
+
+def _widen_claim_gap(monkeypatch: pytest.MonkeyPatch, delay: float = 0.3) -> None:
+    """Hold every claim open for ``delay`` seconds after its DB commit.
+
+    The runner marks a scan RUNNING on a worker thread and only then, back on the event
+    loop, registers it as the current scan. The sleep stretches that gap from a few
+    milliseconds to ``delay``, so the tests below land in it every time instead of now
+    and then (issue #89).
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): Patches ``ScanRunner._claim_next_queued``.
+        delay (float): Seconds the worker thread sleeps after the commit.
+    """
+    original = ScanRunner._claim_next_queued
+
+    def slow(self: ScanRunner) -> int | None:
+        scan_id = original(self)
+        if scan_id is not None:
+            time.sleep(delay)
+        return scan_id
+
+    monkeypatch.setattr(ScanRunner, "_claim_next_queued", slow)
+
+
+async def test_cancel_right_after_the_claim_is_not_missed(
+    web_engine: Engine, runner_factory: Callable, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A scan that is RUNNING in the DB is cancellable even before the runner registers it."""
+    _widen_claim_gap(monkeypatch)
+    gate = asyncio.Event()  # only a cancel should end this scan
+    runner = await runner_factory(orchestrator_factory=_factory(_FakeOrchestrator(gate=gate)))
+    scan_id = _new_scan(web_engine)
+    runner.wake()
+    await _wait_for(web_engine, scan_id, ScanStatus.RUNNING)
+
+    try:
+        assert await runner.cancel(scan_id) == "cancelled"
+        await _wait_for(web_engine, scan_id, ScanStatus.CANCELLED)
+    finally:
+        gate.set()  # lets a scan that was not cancelled end, so a failure does not hang
+
+
+async def test_stop_right_after_the_claim_cancels_the_scan(
+    web_engine: Engine, runner_factory: Callable, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``stop()`` in the claim gap still cancels the new scan instead of waiting it out."""
+    _widen_claim_gap(monkeypatch)
+    gate = asyncio.Event()  # never set: only a cancel can end this scan
+    runner = await runner_factory(orchestrator_factory=_factory(_FakeOrchestrator(gate=gate)))
+    scan_id = _new_scan(web_engine)
+    runner.wake()
+    await _wait_for(web_engine, scan_id, ScanStatus.RUNNING)
+
+    # Not ``wait_for(runner.stop())``: its timeout cancels ``stop()``, which cancels the loop
+    # task and would mark the scan CANCELLED by accident, hiding a ``stop()`` that hangs.
+    stopping = asyncio.create_task(runner.stop())
+    try:
+        done, _pending = await asyncio.wait({stopping}, timeout=3.0)
+        assert stopping in done, "stop() waited for the whole scan instead of cancelling it"
+        assert _status(web_engine, scan_id) == ScanStatus.CANCELLED
+    finally:
+        gate.set()  # lets a scan that was not cancelled end, so a failure does not hang
+        await stopping
 
 
 async def test_cancel_a_queued_scan(web_engine: Engine, runner_factory: Callable) -> None:
