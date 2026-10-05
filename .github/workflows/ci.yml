@@ -1,6 +1,7 @@
 # CI pipeline (GitHub Actions). Four independent jobs, each mirroring a slice of
 # the local quality gate so that a green check means the same as a clean checkout:
-#   quality  engine/CLI on 3.12 and 3.13 — ruff, black, mypy, import-linter, pytest
+#   quality  engine/CLI on 3.12 (the floor), 3.13 and 3.14 (the newest stable) — ruff, black, mypy,
+#            import-linter, pytest
 #   web      dashboard — generated types current, lint, format, typecheck, test, build, e2e
 #   docker   both images build; the CLI image smoke-tests a report render offline
 #   compose  `docker compose up --build`: the API and the dashboard start and talk to each other
@@ -17,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.12", "3.13"]
+        python-version: ["3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v7
 
