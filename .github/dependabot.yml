@@ -2,6 +2,9 @@
 # Opens routine dependency PRs on a schedule. This is separate from Dependabot
 # security updates (driven by Dependabot alerts, enabled at the repo level and
 # needing no config file); those keep running regardless of this file.
+# Schedule: Sunday, 09:00 (America/Sao_Paulo). Each ecosystem opens a single PR
+# grouping its minor and patch bumps; a major stays in its own PR. Security
+# updates follow the alerts and ignore this schedule.
 version: 2
 updates:
   # Engine + CLI + Web API — direct deps from pyproject.toml, graph pinned in uv.lock.
@@ -9,35 +12,56 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-      day: "monday"
+      day: "sunday"
+      time: "09:00"
+      timezone: "America/Sao_Paulo"
     open-pull-requests-limit: 5
     commit-message:
       prefix: "chore(deps)"
       prefix-development: "chore(deps-dev)"
     labels:
       - "dependencies"
+    groups:
+      uv-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
 
   # Web UI — pnpm workspace under web/, lockfile is web/pnpm-lock.yaml.
   - package-ecosystem: "npm"
     directory: "/web"
     schedule:
       interval: "weekly"
-      day: "monday"
+      day: "sunday"
+      time: "09:00"
+      timezone: "America/Sao_Paulo"
     open-pull-requests-limit: 5
     commit-message:
       prefix: "chore(deps)"
       prefix-development: "chore(deps-dev)"
     labels:
       - "dependencies"
+    groups:
+      npm-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
 
   # GitHub Actions pinned in .github/workflows/ci.yml.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
-      day: "monday"
+      day: "sunday"
+      time: "09:00"
+      timezone: "America/Sao_Paulo"
     open-pull-requests-limit: 5
     commit-message:
       prefix: "chore(ci)"
     labels:
       - "dependencies"
+    groups:
+      github-actions-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
