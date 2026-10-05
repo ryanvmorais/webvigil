@@ -254,8 +254,10 @@ the code they cover (RNF-03). All new app code lives in `web/**`; the only files
   --exit-code`; `lint` / `format:check` / `typecheck` / `test` / `build`; `playwright
   install --with-deps chromium` + `test:e2e`; `docker build ./web`. `quality` and `docker`
   jobs untouched. — RF-03, RNF-02, RNF-04, RNF-08
-- [ ] `docker compose up --build` smoke — **deferred to the Stage 12 manual checklist**
-  (no Docker on this machine); the CI `web` job builds the image. — RNF-09
+- [x] `docker compose up --build` smoke — first deferred to the Stage 12 manual checklist (no
+  Docker on the dev machine), now the CI `compose` job (issue #51): it starts the stack, waits
+  for the API and the dashboard, then goes through port 3000 only (health, first-run setup,
+  login, `/api/auth/me`), so the baked-in proxy and the session cookie are exercised. — RNF-09
 - [x] Web quality gate + `test:e2e` green.
 
 ## Stage 12 — Docs and spec closeout
@@ -271,9 +273,8 @@ the code they cover (RNF-03). All new app code lives in `web/**`; the only files
 - [~] Manual verification: the Playwright flow covers setup → login → passive scan of the
   fixture → `completed` → findings → JSON report download → change password → logout; the
   HTML preview + all four report formats are covered by unit tests (`report-preview`,
-  `report-menu`). `docker compose up --build` is **not run here** (no Docker on this
-  machine) — the CI `web` job builds the image; a full compose smoke stays for the next
-  environment that has Docker.
+  `report-menu`). `docker compose up --build` is not run on the dev machine (no Docker
+  there); the CI `compose` job runs it on every push and pull request (issue #51).
 - [x] Final web quality gate + `pnpm test:e2e` green; Python gate green (`ruff` / `black` /
   `lint-imports` / `pytest` 178 passed — only `scripts/` added). Frontmatter set to
   `status: done`.

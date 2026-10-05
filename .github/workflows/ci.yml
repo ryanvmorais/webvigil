@@ -1,8 +1,9 @@
-# CI pipeline (GitHub Actions). Three independent jobs, each mirroring a slice of
+# CI pipeline (GitHub Actions). Four independent jobs, each mirroring a slice of
 # the local quality gate so that a green check means the same as a clean checkout:
 #   quality  engine/CLI on 3.12 and 3.13 — ruff, black, mypy, import-linter, pytest
 #   web      dashboard — generated types current, lint, format, typecheck, test, build, e2e
 #   docker   both images build; the CLI image smoke-tests a report render offline
+#   compose  `docker compose up --build`: the API and the dashboard start and talk to each other
 name: CI
 
 on:
@@ -132,3 +133,48 @@ jobs:
           # report re-renders a saved scan offline, exercising the packaged HTML template
           echo '{"metadata":{"target":"https://example.com/","mode":"passive","scope":"host","tool_version":"0","started_at":"2026-01-01T00:00:00Z","finished_at":"2026-01-01T00:00:01Z","pages_scanned":1,"counts":{"INFO":0,"LOW":0,"MEDIUM":0,"HIGH":0,"CRITICAL":0}},"findings":[],"errors":[],"warnings":[]}' > scan.json
           docker run --rm -v "$PWD:/work" webvigil:ci report /work/scan.json --format html > /dev/null
+
+  compose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      # The stack a user gets from `docker compose up --build` (spec 003, RNF-09). The
+      # `target` service stays off: it sits behind the `targets` profile.
+      - name: Start the stack
+        run: docker compose up --build --detach
+
+      - name: Wait for the API and the dashboard
+        run: |
+          for url in http://127.0.0.1:8000/api/health http://127.0.0.1:3000/login; do
+            for i in $(seq 1 60); do
+              curl -fs "$url" > /dev/null && continue 2
+              sleep 2
+            done
+            echo "$url did not answer in 120 s"
+            exit 1
+          done
+
+      # Everything below goes through port 3000 only. The dashboard proxies /api/* to the
+      # API service (the target baked into the image at build time, RNF-06), so each call
+      # proves the two containers talk to each other, cookie included.
+      - name: First-run setup and login through the dashboard
+        run: |
+          base=http://127.0.0.1:3000
+          json='content-type: application/json'
+          creds='{"username":"smoke","password":"smoke-test-password"}'
+          curl -fs "$base/api/health" | grep -q '"status":"ok"'
+          curl -fs "$base/api/setup" | grep -q '"needs_setup":true'
+          curl -fs -X POST "$base/api/setup" -H "$json" -d "$creds" > /dev/null
+          curl -fs -c jar.txt -X POST "$base/api/auth/login" -H "$json" -d "$creds" > /dev/null
+          curl -fs -b jar.txt "$base/api/auth/me" | grep -q '"username":"smoke"'
+          curl -fs -b jar.txt "$base/api/setup" | grep -q '"authenticated":true'
+
+      - name: Show the logs when it failed
+        if: failure()
+        run: docker compose logs --no-color
+
+      - name: Tear down
+        if: always()
+        run: docker compose down --volumes
