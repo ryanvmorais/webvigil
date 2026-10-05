@@ -24,14 +24,52 @@ from webvigil.checks.registry import all_checks, load_plugins
 
 def test_setup_flow(client: TestClient) -> None:
     """First-run setup creates the admin once; ``needs_setup`` flips and a second setup is 409."""
-    assert client.get("/api/setup").json() == {"needs_setup": True}
+    assert client.get("/api/setup").json() == {"needs_setup": True, "authenticated": False}
     assert client.post("/api/setup", json=ADMIN).status_code == 201
-    assert client.get("/api/setup").json() == {"needs_setup": False}
+    assert client.get("/api/setup").json() == {"needs_setup": False, "authenticated": False}
     # a second setup is rejected
     assert (
         client.post("/api/setup", json={"username": "b", "password": "password123"}).status_code
         == 409
     )
+
+
+def test_setup_status_reports_the_session_without_a_401(client: TestClient) -> None:
+    """
+    ``authenticated`` is the answer to "am I signed in?" for the login page: it follows
+    the session cookie and is a 200 either way, because a 401 would show up as a console
+    error in the browser (Lighthouse ``errors-in-console``).
+    """
+    client.post("/api/setup", json=ADMIN)
+
+    anonymous = client.get("/api/setup")
+    assert anonymous.status_code == 200
+    assert anonymous.json()["authenticated"] is False
+
+    client.post("/api/auth/login", json=ADMIN)
+    assert client.get("/api/setup").json()["authenticated"] is True
+
+    client.post("/api/auth/logout")
+    client.cookies.clear()
+    assert client.get("/api/setup").json()["authenticated"] is False
+
+
+def test_setup_status_treats_a_bad_cookie_as_anonymous(
+    client: TestClient, web_config: object
+) -> None:
+    """A garbage, expired, or unknown-user cookie is ``authenticated: false``, not an error."""
+    client.post("/api/setup", json=ADMIN)
+    secret = web_config.session_secret  # type: ignore[attr-defined]
+    bad_cookies = {
+        "garbage": "not-a-token",
+        "expired": jwt.encode({"sub": "1", "exp": int(time.time()) - 10}, secret, "HS256"),
+        "unknown user": jwt.encode({"sub": "999", "exp": int(time.time()) + 600}, secret, "HS256"),
+    }
+    for name, cookie in bad_cookies.items():
+        client.cookies.set("webvigil_session", cookie)
+        response = client.get("/api/setup")
+        assert response.status_code == 200, name
+        assert response.json()["authenticated"] is False, name
 
 
 def test_setup_rejects_a_short_password(client: TestClient) -> None:

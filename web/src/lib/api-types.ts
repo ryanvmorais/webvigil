@@ -263,7 +263,10 @@ export interface paths {
         };
         /**
          * Setup Status
-         * @description Whether first-run setup is still needed. Unauthenticated — the UI checks it on load.
+         * @description Whether first-run setup is still needed and whether the caller is signed in.
+         *
+         *     Unauthenticated: the UI checks it on load, and a missing session is
+         *     ``authenticated: false``, never a 401.
          */
         get: operations["setup_status_api_setup_get"];
         put?: never;
@@ -584,6 +587,21 @@ export interface components {
             password: string;
             /** Username */
             username: string;
+        };
+        /**
+         * SetupStatusOut
+         * @description What the UI needs on load to route a visitor: is first-run setup pending, and
+         *     is this request already signed in.
+         *
+         *     ``authenticated`` is here, and not behind ``GET /api/auth/me``, so the login
+         *     page can learn it without a 401 (which the browser logs as a console error).
+         *     It only says whether the caller's own cookie is valid.
+         */
+        SetupStatusOut: {
+            /** Authenticated */
+            authenticated: boolean;
+            /** Needs Setup */
+            needs_setup: boolean;
         };
         /**
          * TechnologyOut
@@ -1046,9 +1064,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: boolean;
-                    };
+                    "application/json": components["schemas"]["SetupStatusOut"];
                 };
             };
         };

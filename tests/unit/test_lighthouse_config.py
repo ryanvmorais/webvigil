@@ -93,8 +93,13 @@ def test_login_is_audited_without_the_session_and_the_rest_with_it() -> None:
     assert "/login" not in _paths(_load("mobile"))
 
 
-def test_signed_in_pages_must_have_no_console_errors() -> None:
-    """The missing favicon was a console error on every page; keep that class of bug out."""
-    assert "errors-in-console" in _load("mobile")["assert"]["assertions"]
-    # /login logs the expected 401 of GET /api/auth/me, so it cannot assert this.
-    assert "errors-in-console" not in _load("mobile-login")["assert"]["assertions"]
+@pytest.mark.parametrize("stem", _STEMS)
+def test_no_audited_page_may_log_a_console_error(stem: str) -> None:
+    """
+    The missing favicon was a console error on every page; keep that class of bug out.
+
+    ``/login`` is included: it used to log the 401 of ``GET /api/auth/me`` for every
+    signed-out visitor, so it could not assert this. It now learns "am I signed in?" from
+    ``GET /api/setup`` (``authenticated``), which answers 200 either way.
+    """
+    assert "errors-in-console" in _load(stem)["assert"]["assertions"]

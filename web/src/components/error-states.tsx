@@ -8,11 +8,25 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
-export function FullPageSpinner({ label = "Loading…" }: { label?: string }) {
+/**
+ * Centered spinner. `className` overrides the default `min-h-[50vh]`, for a caller that
+ * lays it over content that already has its own height (the `(auth)` layout).
+ */
+export function FullPageSpinner({
+  label = "Loading…",
+  className,
+}: {
+  label?: string;
+  className?: string;
+}) {
   return (
     <div
-      className="text-muted-foreground flex min-h-[50vh] items-center justify-center"
+      className={cn(
+        "text-muted-foreground flex min-h-[50vh] items-center justify-center",
+        className,
+      )}
       role="status"
       aria-live="polite"
     >

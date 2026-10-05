@@ -25,16 +25,36 @@ vi.mock("next/navigation", () => ({
 }));
 
 describe("LoginPage", () => {
+  it("renders the form on the first render, with no Suspense fallback to swap out", () => {
+    // a fallback replaced by the form after hydration shifts the card (CLS, issue #67)
+    renderWithClient(<LoginPage />);
+    expect(screen.getByLabelText("Username")).toBeInTheDocument();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
   it("returns the user to ?next after a successful login", async () => {
+    // `useLogin` reads ?next= from the URL when the login succeeds, not from useSearchParams
+    window.history.pushState({}, "", "/login?next=/scans/9");
     const user = userEvent.setup();
-    searchParams.set("next", "/scans/9");
     server.use(http.post("*/api/auth/login", () => new HttpResponse(null, { status: 204 })));
     renderWithClient(<LoginPage />);
     await user.type(await screen.findByLabelText("Username"), "ana");
     await user.type(screen.getByLabelText("Password"), "supersecret");
     await user.click(screen.getByRole("button", { name: "Sign in" }));
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/scans/9"));
-    searchParams.delete("next");
+    window.history.pushState({}, "", "/");
+  });
+
+  it("goes to /scans after login when ?next is missing or not a path", async () => {
+    window.history.pushState({}, "", "/login?next=https://evil.example");
+    const user = userEvent.setup();
+    server.use(http.post("*/api/auth/login", () => new HttpResponse(null, { status: 204 })));
+    renderWithClient(<LoginPage />);
+    await user.type(await screen.findByLabelText("Username"), "ana");
+    await user.type(screen.getByLabelText("Password"), "supersecret");
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/scans"));
+    window.history.pushState({}, "", "/");
   });
 
   it("shows one generic error, clears the password, keeps the username on 401", async () => {
