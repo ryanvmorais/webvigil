@@ -430,6 +430,28 @@ violations.
 `render()` + `screen.getByRole(...)`, `userEvent.click(...)`, MSW handlers
 (`http.get(...)`), and `expect(container).toHaveNoViolations()`.
 
+### Lighthouse CI — Web UI performance and accessibility
+
+`.github/workflows/lighthouse.yml` runs Lighthouse (Chrome's auditor for performance,
+accessibility, best practices and SEO) against the built dashboard, mobile and desktop,
+through `@lhci/cli`. It starts the same three processes the Playwright e2e does, seeds an
+account and one finished scan with `scripts/lighthouse-seed.py`, and takes the median of
+3 runs per page. The limits live in `.github/lighthouse/*.json`.
+
+**Why this:** the unit tests (jest-axe) catch what a rendered tree gets wrong in
+isolation, but nothing measures the page in a real browser: a contrast regression, a
+layout shift or a heavy bundle would slip through. **Why a separate, non-required
+workflow:** it takes minutes and varies on a shared runner; a flaky check that blocks
+merges teaches people to ignore it. **Why the version is pinned** (`LHCI_VERSION`): the
+Lighthouse version changes the scores, and Dependabot cannot see an `npx` call.
+
+**Learn:** the difference between lab metrics (Lighthouse) and field metrics (CrUX,
+PageSpeed Insights in production); what LCP, CLS and TBT measure; why `median-run`
+steadies the result; and `assert` levels (`error` fails the job, `warn` only reports).
+
+**Docs:** [Lighthouse CI](https://github.com/GoogleChrome/lighthouse-ci) ·
+[web.dev — Core Web Vitals](https://web.dev/articles/vitals)
+
 ---
 
 ## Smaller pieces

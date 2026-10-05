@@ -182,7 +182,8 @@ Camadas, de cima para baixo:
    com o engine, não guarda estado além do cache do TanStack Query. Tipos gerados de
    `openapi.json` (`scripts/dump-openapi.py` → `pnpm gen:api`). O servidor Next faz proxy de
    `/api/*` para a API (mesma origem, sem CORS); `API_PROXY_TARGET` é lido só no
-   `next.config` (assado no build). Detalhes em [`docs/web-ui.md`](docs/web-ui.md).
+   `next.config` (assado no build). Detalhes em [`docs/web-ui.md`](docs/web-ui.md); os tokens
+   de design e a escala de severidade, em [`docs/web-ui-design.md`](docs/web-ui-design.md).
 
 > **Cuidado:** o Next 16 é dono do `web/tsconfig.json` — reescreve `jsx` /
 > `include` / `plugins` e re-indenta a cada `next build` / `next dev`. Está no
