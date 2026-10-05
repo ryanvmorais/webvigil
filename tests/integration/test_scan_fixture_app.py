@@ -21,9 +21,11 @@ import httpx
 import pytest
 
 from tests.fixtures.app import make_app
+from tests.support import make_finding, make_result
 from webvigil.checks.deps.osv import OsvProvider
 from webvigil.core import orchestrator as orch_mod
 from webvigil.core.config import ScanConfig
+from webvigil.core.findings import Finding, Severity
 from webvigil.core.orchestrator import Orchestrator
 from webvigil.core.result import ScanResult
 from webvigil.http.client import HttpClient
@@ -82,17 +84,51 @@ def _osv_down(request: httpx.Request) -> httpx.Response:
     return httpx.Response(503, json={})
 
 
+def _assert_same_findings(first: ScanResult, second: ScanResult) -> None:
+    """Assert two scans reported the same findings, and name the ones that differ if not.
+
+    Comparing bare fingerprints leaves a failure unreadable: the one run that flaked
+    (issue #58) only showed that scan A had an extra hash. This lists the check, the
+    location and the title of whatever is in only one of the two scans, so a flaky run
+    explains itself.
+
+    Args:
+        first (ScanResult): The first scan.
+        second (ScanResult): The second scan.
+    """
+    a = {f.fingerprint: f for f in first.findings}
+    b = {f.fingerprint: f for f in second.findings}
+
+    def describe(findings: dict[str, Finding], fingerprints: set[str]) -> list[str]:
+        return [
+            f"{f.check_id}  {f.location.method} {f.location.url}"
+            f"  param={f.location.param}  {f.title}"
+            for f in (findings[key] for key in sorted(fingerprints))
+        ]
+
+    only_first = describe(a, a.keys() - b.keys())
+    only_second = describe(b, b.keys() - a.keys())
+    assert not only_first and not only_second, (
+        "the two scans differ\n  only in the first:  "
+        + ("\n                      ".join(only_first) or "-")
+        + "\n  only in the second: "
+        + ("\n                      ".join(only_second) or "-")
+    )
+
+
 @pytest.fixture
 def scan(monkeypatch: pytest.MonkeyPatch):
     """Yield an ``async`` runner that scans the fixture app for a given profile.
 
     The returned callable takes the profile name plus optional ``probe`` /
     ``active`` / ``cookies`` / ``stored_xss`` / ``xxe`` / ``file_upload`` /
-    ``openapi`` / ``osv_online`` / ``osv_up`` switches, assembles the
+    ``openapi`` / ``osv_online`` / ``osv_up`` / ``time_based`` switches, assembles the
     :class:`ScanConfig`, points the engine's HTTP client
     (and, for OSV, its provider) at in-process transports, runs the scan, and
     returns the :class:`ScanResult`. The built app is stashed on ``scan.holder``
-    so a test can read ``app.state.requests``.
+    so a test can read ``app.state.requests``. ``time_based=False`` turns off the
+    time-delay SQLi and command-injection detectors of an active scan: they decide on
+    wall-clock response times, which a loaded runner can distort.
     """
     holder: dict[str, object] = {}
 
@@ -109,6 +145,7 @@ def scan(monkeypatch: pytest.MonkeyPatch):
         openapi: str | None = None,
         osv_online: bool = False,
         osv_up: bool = True,
+        time_based: bool = True,
     ) -> ScanResult:
         app = make_app(profile)
         holder["app"] = app
@@ -131,6 +168,8 @@ def scan(monkeypatch: pytest.MonkeyPatch):
             raw["scan"] = {"mode": "active", "max_pages": 90}
             raw["active"] = {"authorized_by": "integration test"}
             raw["injection"] = {
+                "time_based_sqli": time_based,
+                "time_based_cmdi": time_based,
                 "time_based_delay_s": 2,
                 "request_budget": 1200,
                 "stored_xss": stored_xss,
@@ -490,12 +529,17 @@ async def test_a_bearer_token_never_appears_in_the_report(scan) -> None:
 
 
 async def test_openapi_scan_is_deterministic(scan) -> None:
-    """Two active scans with the same import produce the same finding fingerprints."""
-    a = await scan("insecure", active=True, openapi=_OPENAPI_URL)
-    b = await scan("insecure", active=True, openapi=_OPENAPI_URL)
-    fa = sorted(f.fingerprint for f in a.findings)
-    fb = sorted(f.fingerprint for f in b.findings)
-    assert fa == fb and fa
+    """Two active scans with the same import produce the same finding fingerprints.
+
+    The time-delay detectors are off here (issue #58): they decide on wall-clock response
+    times, so a stalled request on a loaded runner made one of the two scans miss a finding.
+    This test is about fingerprint stability; the time-based detectors have their own
+    coverage (`test_insecure_profile_active_finds_every_injection` and the unit tests).
+    """
+    a = await scan("insecure", active=True, openapi=_OPENAPI_URL, time_based=False)
+    b = await scan("insecure", active=True, openapi=_OPENAPI_URL, time_based=False)
+    assert a.findings
+    _assert_same_findings(a, b)
 
 
 async def test_the_login_form_is_never_fuzzed(scan) -> None:
@@ -509,10 +553,40 @@ async def test_the_login_form_is_never_fuzzed(scan) -> None:
 
 
 async def test_active_injection_scan_is_deterministic(scan) -> None:
-    """Two active scans of the insecure profile produce the same finding set."""
-    first = {(f.check_id, f.fingerprint) for f in (await scan("insecure", active=True)).findings}
-    second = {(f.check_id, f.fingerprint) for f in (await scan("insecure", active=True)).findings}
-    assert first == second
+    """Two active scans of the insecure profile produce the same finding set.
+
+    Time-delay detectors off, for the reason in `test_openapi_scan_is_deterministic`.
+    """
+    first = await scan("insecure", active=True, time_based=False)
+    second = await scan("insecure", active=True, time_based=False)
+    _assert_same_findings(first, second)
+
+
+def test_same_findings_helper_accepts_two_equal_scans() -> None:
+    """The same findings in a different order are not a difference."""
+    xss = make_finding(check_id="injection.xss.reflected", param="q", dedup_key="a")
+    sqli = make_finding(check_id="injection.sqli.error", param="id", dedup_key="b")
+    _assert_same_findings(make_result(xss, sqli), make_result(sqli, xss))
+
+
+def test_same_findings_helper_names_what_only_one_scan_has() -> None:
+    """A mismatch lists the check, location and param, not just a bare fingerprint (issue #58)."""
+    kept = make_finding(check_id="injection.xss.reflected", param="q", dedup_key="a")
+    extra = make_finding(
+        check_id="injection.sqli.time-based",
+        severity=Severity.HIGH,
+        url="http://demo.test/item",
+        param="id",
+        dedup_key="b",
+    )
+    with pytest.raises(AssertionError) as caught:
+        _assert_same_findings(make_result(kept, extra), make_result(kept))
+    message = str(caught.value)
+    assert "only in the first" in message
+    assert "injection.sqli.time-based" in message
+    assert "http://demo.test/item" in message
+    assert "param=id" in message
+    assert "injection.xss.reflected" not in message  # the shared finding is not blamed
 
 
 # ---------------------------------------------------------------------------
