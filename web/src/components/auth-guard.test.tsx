@@ -26,7 +26,9 @@ vi.mock("next/navigation", () => ({
 const user = { id: 1, username: "ana", created_at: "2026-01-01T00:00:00Z" };
 
 function mockSetup(needsSetup: boolean) {
-  return http.get("*/api/setup", () => HttpResponse.json({ needs_setup: needsSetup }));
+  return http.get("*/api/setup", () =>
+    HttpResponse.json({ needs_setup: needsSetup, authenticated: false }),
+  );
 }
 
 describe("AuthGuard", () => {

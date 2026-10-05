@@ -686,6 +686,25 @@
         "title": "SetupIn",
         "type": "object"
       },
+      "SetupStatusOut": {
+        "description": "What the UI needs on load to route a visitor: is first-run setup pending, and\nis this request already signed in.\n\n``authenticated`` is here, and not behind ``GET /api/auth/me``, so the login\npage can learn it without a 401 (which the browser logs as a console error).\nIt only says whether the caller's own cookie is valid.",
+        "properties": {
+          "authenticated": {
+            "title": "Authenticated",
+            "type": "boolean"
+          },
+          "needs_setup": {
+            "title": "Needs Setup",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "needs_setup",
+          "authenticated"
+        ],
+        "title": "SetupStatusOut",
+        "type": "object"
+      },
       "TechnologyOut": {
         "description": "One detected client-side library (spec 004, RF-17). Detail payload only.\n\nAttributes:\n    name (str): Library name.\n    version (str | None): Detected version, or ``None``.\n    detection (str): How it was found (the ``DetectionMethod`` value).\n    source_url (str): URL the detection came from.\n    vulnerable (bool): Whether an advisory matched.\n    advisories (list[str]): Matching advisory identifiers.",
         "properties": {
@@ -1358,18 +1377,14 @@
     },
     "/api/setup": {
       "get": {
-        "description": "Whether first-run setup is still needed. Unauthenticated \u2014 the UI checks it on load.",
+        "description": "Whether first-run setup is still needed and whether the caller is signed in.\n\nUnauthenticated: the UI checks it on load, and a missing session is\n``authenticated: false``, never a 401.",
         "operationId": "setup_status_api_setup_get",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": {
-                    "type": "boolean"
-                  },
-                  "title": "Response Setup Status Api Setup Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/SetupStatusOut"
                 }
               }
             },

@@ -69,7 +69,7 @@ web/
     │   ├── globals.css          # Tailwind + shadcn CSS variables (light + dark)
     │   ├── page.tsx             # redirect() → /scans
     │   ├── (auth)/
-    │   │   ├── layout.tsx       # centered card; if authed → /scans; if needs_setup → /setup
+    │   │   ├── layout.tsx       # centered card; if authenticated → /scans; if needs_setup → /setup
     │   │   ├── login/page.tsx   # RF-07, RF-10
     │   │   └── setup/page.tsx   # RF-05, RF-06
     │   └── (app)/
@@ -219,10 +219,10 @@ instead of a bare login form.
 ```
 
 The `(auth)/layout.tsx` is the mirror: if `needs_setup` and not on `/setup` → `/setup`; if
-`me` succeeds → `/scans`. `/login` and `/setup` never call `useMe` themselves, so a
-logged-out visitor there produces no 401 loop (Risks). After login the page reads
-`useSearchParams().get("next")` and returns the user to the originally requested path
-(RF-08).
+`authenticated` (also from `GET /api/setup`) → `/scans`. It never calls `useMe`, so a
+logged-out visitor on `/login` produces no 401 at all, in the console or as a loop (Risks,
+ADR-12). After login the hook reads `?next=` from `window.location` and returns the user to
+the originally requested path (RF-08).
 
 Next middleware is **not** used for auth — the session cookie is `HttpOnly` and validated
 only by the API, so the middleware could at best check for the cookie's presence, not its
@@ -535,6 +535,27 @@ plain controlled inputs.
 react-hook-form; zod lets the client mirror the API's rules (RF-16) in one schema, and
 `fieldErrors()` reconciles server 422s onto the same fields.
 **Trade-off:** two small dependencies (`react-hook-form`, `zod`) beyond the shadcn set.
+
+### ADR-12 — The `(auth)` layout asks `GET /api/setup`, not `/api/auth/me`; the page is hidden, never swapped
+**Decision:** `GET /api/setup` also returns `authenticated` (spec 002, RF-01), and the
+`(auth)` layout decides everything from that one answer. The layout always renders its
+children and hides them (`invisible`) while the answer is pending or a redirect is on its
+way, with the spinner laid over them. The login form reads no search params at render time
+(`?next=` is read from `window.location` when the login succeeds; the `?setup=done` and
+`?reason=expired` notices are in their own `<Suspense fallback={null}>`).
+**Alternatives:** (a) let `/api/auth/me` answer 200 with an anonymous value (`useMe` and the
+`(app)` guard rely on `isSuccess` meaning signed in, so both need care); (b) keep the 401
+and accept Best Practices 96 on `/login`; (c) only reserve a fixed height for the spinner
+(couples the skeleton to the form's height).
+**Why:** a 401 on `/login` is a console error for every signed-out visitor (Lighthouse
+`errors-in-console`), which kept `/login` below the other pages and kept the CI from
+asserting it. The old layout also swapped a spinner for the form after the first paint, and
+the centred card shifted (CLS 0.049 on mobile). A `<Suspense>` boundary around the form
+would bring the swap back, because the boundary's fallback is what gets prerendered.
+**Trade-off:** `GET /api/setup` is no longer a pure "is the instance set up" probe, and the
+layout waits for a fetch that finished after it mounted (`isFetchedAfterMount`), so a stale
+cached `authenticated: false` never shows the form to someone already signed in. A notice
+that appears after hydration (`?setup=done`, `?reason=expired`) still shifts the card.
 
 ## Impact
 

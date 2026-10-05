@@ -60,6 +60,13 @@
             "minScore": 1,
             "aggregationMethod": "median-run"
           }
+        ],
+        "errors-in-console": [
+          "error",
+          {
+            "minScore": 1,
+            "aggregationMethod": "median-run"
+          }
         ]
       }
     },

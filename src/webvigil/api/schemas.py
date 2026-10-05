@@ -30,6 +30,20 @@ class UserOut(BaseModel):
     created_at: datetime
 
 
+class SetupStatusOut(BaseModel):
+    """
+    What the UI needs on load to route a visitor: is first-run setup pending, and
+    is this request already signed in.
+
+    ``authenticated`` is here, and not behind ``GET /api/auth/me``, so the login
+    page can learn it without a 401 (which the browser logs as a console error).
+    It only says whether the caller's own cookie is valid.
+    """
+
+    needs_setup: bool
+    authenticated: bool
+
+
 class SetupIn(BaseModel):
     """First-run setup body: the credentials for the single account."""
 

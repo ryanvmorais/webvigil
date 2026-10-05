@@ -49,7 +49,7 @@ export const REPORTABLE_STATUSES: ReadonlySet<ScanStatus> = new Set<ScanStatus>(
 export const REPORT_FORMATS = ["json", "sarif", "html", "md"] as const;
 export type ReportFormat = (typeof REPORT_FORMATS)[number];
 
-export type SetupStatus = { needs_setup: boolean };
+export type SetupStatus = Schemas["SetupStatusOut"];
 
 /** Thrown for any non-2xx response. `detail` is the FastAPI `{ detail }` payload. */
 export class ApiError extends Error {

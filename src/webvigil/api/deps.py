@@ -44,9 +44,12 @@ def get_session(request: Request) -> Iterator[Session]:
 SessionDep = Annotated[Session, Depends(get_session)]
 
 
-def current_user(request: Request, session: SessionDep) -> User:
+def optional_user(request: Request, session: SessionDep) -> User | None:
     """
-    Resolve the authenticated user from the session cookie.
+    Resolve the user from the session cookie, or ``None`` when there is none.
+
+    For the one endpoint that has to answer "am I signed in?" without turning
+    the answer into a 401 (a 401 shows up as a console error in the browser).
 
     Args:
         request (Request): The current request; the session cookie is read
@@ -54,19 +57,35 @@ def current_user(request: Request, session: SessionDep) -> User:
         session (SessionDep): The request-scoped session.
 
     Returns:
-        User: The authenticated user.
-
-    Raises:
-        HTTPException: 401 when the cookie is absent, invalid, expired, or names
-            a user that no longer exists.
+        User | None: The authenticated user, or ``None`` when the cookie is
+            absent, invalid, expired, or names a user that no longer exists.
     """
     token = request.cookies.get(SESSION_COOKIE)
     if not token:
-        raise _UNAUTHENTICATED
+        return None
     user_id = decode_token(token, request.app.state.session_secret)
     if user_id is None:
-        raise _UNAUTHENTICATED
-    user = session.get(User, user_id)
+        return None
+    return session.get(User, user_id)
+
+
+OptionalUser = Annotated[User | None, Depends(optional_user)]
+
+
+def current_user(user: OptionalUser) -> User:
+    """
+    Require an authenticated user.
+
+    Args:
+        user (OptionalUser): The user resolved from the session cookie, if any.
+
+    Returns:
+        User: The authenticated user.
+
+    Raises:
+        HTTPException: 401 when there is no valid session (see
+            :func:`optional_user` for what counts as one).
+    """
     if user is None:
         raise _UNAUTHENTICATED
     return user

@@ -7,8 +7,8 @@ from sqlalchemy import func
 from sqlmodel import select
 
 from webvigil.api.db import User
-from webvigil.api.deps import SessionDep
-from webvigil.api.schemas import SetupIn, UserOut
+from webvigil.api.deps import OptionalUser, SessionDep
+from webvigil.api.schemas import SetupIn, SetupStatusOut, UserOut
 from webvigil.api.security import hash_password
 
 router = APIRouter(tags=["setup"])
@@ -27,9 +27,14 @@ def _user_count(session: SessionDep) -> int:
 
 
 @router.get("/setup")
-def setup_status(session: SessionDep) -> dict[str, bool]:
-    """Whether first-run setup is still needed. Unauthenticated — the UI checks it on load."""
-    return {"needs_setup": _user_count(session) == 0}
+def setup_status(session: SessionDep, user: OptionalUser) -> SetupStatusOut:
+    """
+    Whether first-run setup is still needed and whether the caller is signed in.
+
+    Unauthenticated: the UI checks it on load, and a missing session is
+    ``authenticated: false``, never a 401.
+    """
+    return SetupStatusOut(needs_setup=_user_count(session) == 0, authenticated=user is not None)
 
 
 @router.post("/setup", status_code=status.HTTP_201_CREATED)
