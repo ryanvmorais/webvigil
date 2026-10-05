@@ -14,7 +14,7 @@ on:
 
 jobs:
   quality:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     strategy:
       fail-fast: false
       matrix:
@@ -50,7 +50,7 @@ jobs:
         run: uv run pytest
 
   web:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7
 
@@ -120,7 +120,7 @@ jobs:
         run: docker build --build-arg API_PROXY_TARGET=http://api:8000 -t webvigil-web:ci ./web
 
   docker:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7
 
@@ -136,7 +136,7 @@ jobs:
           docker run --rm -v "$PWD:/work" webvigil:ci report /work/scan.json --format html > /dev/null
 
   compose:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
