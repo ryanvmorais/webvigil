@@ -45,17 +45,20 @@ describe("LoginPage", () => {
     window.history.pushState({}, "", "/");
   });
 
-  it("goes to /scans after login when ?next is missing or not a path", async () => {
-    window.history.pushState({}, "", "/login?next=https://evil.example");
-    const user = userEvent.setup();
-    server.use(http.post("*/api/auth/login", () => new HttpResponse(null, { status: 204 })));
-    renderWithClient(<LoginPage />);
-    await user.type(await screen.findByLabelText("Username"), "ana");
-    await user.type(screen.getByLabelText("Password"), "supersecret");
-    await user.click(screen.getByRole("button", { name: "Sign in" }));
-    await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/scans"));
-    window.history.pushState({}, "", "/");
-  });
+  it.each(["https://evil.example", "//evil.example", "/\\evil.example"])(
+    "goes to /scans after login when ?next is %s, not an in-app path",
+    async (next) => {
+      window.history.pushState({}, "", `/login?next=${encodeURIComponent(next)}`);
+      const user = userEvent.setup();
+      server.use(http.post("*/api/auth/login", () => new HttpResponse(null, { status: 204 })));
+      renderWithClient(<LoginPage />);
+      await user.type(await screen.findByLabelText("Username"), "ana");
+      await user.type(screen.getByLabelText("Password"), "supersecret");
+      await user.click(screen.getByRole("button", { name: "Sign in" }));
+      await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/scans"));
+      window.history.pushState({}, "", "/");
+    },
+  );
 
   it("shows one generic error, clears the password, keeps the username on 401", async () => {
     const user = userEvent.setup();
