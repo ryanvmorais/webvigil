@@ -222,7 +222,9 @@ The `(auth)/layout.tsx` is the mirror: if `needs_setup` and not on `/setup` → 
 `authenticated` (also from `GET /api/setup`) → `/scans`. It never calls `useMe`, so a
 logged-out visitor on `/login` produces no 401 at all, in the console or as a loop (Risks,
 ADR-12). After login the hook reads `?next=` from `window.location` and returns the user to
-the originally requested path (RF-08).
+the originally requested path (RF-08), but only a same-origin path: `safeNext` rejects `//host`,
+`/\host`, control characters and anything that does not parse back to the same origin, and falls
+back to `/scans` (issue #82).
 
 Next middleware is **not** used for auth — the session cookie is `HttpOnly` and validated
 only by the API, so the middleware could at best check for the cookie's presence, not its

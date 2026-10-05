@@ -10,6 +10,7 @@ import { useRouter } from "next/navigation";
 
 import { api } from "@/lib/api";
 import { keys } from "@/lib/query-keys";
+import { safeNext } from "@/lib/safe-next";
 
 /**
  * `GET /api/setup` — drives the setup gate (RF-05) and tells the `(auth)` layout whether
@@ -55,7 +56,8 @@ export function useSetup() {
 }
 
 /**
- * `POST /api/auth/login` → the originally requested path, else `/scans` (RF-07, RF-08).
+ * `POST /api/auth/login` → the originally requested path, else `/scans` (RF-07, RF-08). Only
+ * a same-origin path is honoured (`safeNext`): `?next=//host` must not leave the dashboard.
  *
  * `?next=` is read from `window.location` when the login succeeds, not through
  * `useSearchParams`: that hook forces a `<Suspense>` boundary around the login form, and
@@ -69,8 +71,7 @@ export function useLogin() {
     mutationFn: api.login,
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: keys.auth.me() });
-      const next = new URLSearchParams(window.location.search).get("next");
-      router.replace(next && next.startsWith("/") ? next : "/scans");
+      router.replace(safeNext(new URLSearchParams(window.location.search).get("next")));
     },
   });
 }
