@@ -92,4 +92,7 @@ from the API alone.
 
 The `web` job in `.github/workflows/ci.yml` runs the drift check, lint, format, typecheck,
 unit tests, `pnpm build`, the Playwright flow, and a `docker build` of the web image. The
-Python `quality` and `docker` jobs are unchanged.
+`compose` job runs `docker compose up --build` and walks the first-run flow through the
+dashboard's own port (3000, so the `/api` proxy is exercised): health, setup, login with a
+cookie jar, `me`, and the `authenticated` flag. The Python `quality` and `docker` jobs are
+unchanged.
