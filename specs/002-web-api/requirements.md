@@ -79,7 +79,12 @@ webvigil.cli          webvigil.api  (FastAPI, `web` extra) ── spec 003 UI ta
 
 **RF-01 — First-run setup**
 - **Given** the database has no user, **when** `GET /api/setup` is called, **then** it
-  returns `{ "needs_setup": true }` (unauthenticated).
+  returns `{ "needs_setup": true, "authenticated": false }` (unauthenticated).
+- **Given** a user exists, **when** `GET /api/setup` is called, **then** `authenticated` is
+  `true` if the request carries a valid session cookie and `false` otherwise (absent,
+  malformed, expired, or naming a user that no longer exists), and the status is 200 in
+  every case. The login page needs "am I signed in?" without a 401, which the browser logs
+  as a console error (spec 003, ADR-12).
 - **Given** no user exists, **when** `POST /api/setup` is called with a username and a
   password meeting the policy (min length, not empty), **then** the single user is created
   with an argon2id password hash and the response is 201.

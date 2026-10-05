@@ -334,7 +334,7 @@ required (RF-05).
 | Method | Path | Auth | Body → Response | Codes |
 |---|---|---|---|---|
 | GET | `/health` | none | → `{status, version}` | 200 |
-| GET | `/setup` | none | → `{needs_setup: bool}` | 200 |
+| GET | `/setup` | none (reads the cookie if present) | → `{needs_setup: bool, authenticated: bool}` | 200 |
 | POST | `/setup` | none | `{username, password}` → `UserOut` | 201, 409, 422 |
 | POST | `/auth/login` | none | `{username, password}` → *204 + Set-Cookie* | 204, 401, 422 |
 | POST | `/auth/logout` | session | → *204 + clear cookie* | 204 |
