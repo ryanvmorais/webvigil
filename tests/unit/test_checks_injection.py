@@ -12,6 +12,7 @@ from __future__ import annotations
 from tests.support import make_context, make_page
 from webvigil.checks.injection.checks import (
     CrlfCheck,
+    ExpressionLanguageInjectionCheck,
     LdapInjectionCheck,
     OpenRedirectCheck,
     OsCommandInjectionCheck,
@@ -68,6 +69,7 @@ _ALL = [
     (SsrfInternalCheck, "ssrf-internal"),
     (OsCommandInjectionCheck, "cmdi"),
     (TemplateInjectionCheck, "ssti"),
+    (ExpressionLanguageInjectionCheck, "el"),
     (CrlfCheck, "crlf"),
     (XxeCheck, "xxe"),
     (LdapInjectionCheck, "ldap"),
@@ -202,6 +204,42 @@ async def test_cmdi_and_ssti_check_metadata_and_finding_shape() -> None:
     assert findings[0].severity is Severity.CRITICAL
     assert findings[0].location.param == "host"
     assert await TemplateInjectionCheck().run(ctx) == []  # ignores a cmdi-kind hit
+
+
+async def test_el_check_metadata_and_finding_shape() -> None:
+    """``injection.el`` is HIGH by default, CWE-917 / 94, and keeps the hit's own severity."""
+    check = ExpressionLanguageInjectionCheck
+    assert check.id == "injection.el"
+    assert check.category is Category.INJECTION
+    assert check.mode is ScanMode.ACTIVE
+    assert check.default_severity is Severity.HIGH
+    assert check.cwe == (917, 94)
+    assert any("Expression_Language_Injection" in ref for ref in check.references)
+    assert any("cwe.mitre.org/data/definitions/917" in ref for ref in check.references)
+
+    hit = InjectionHit(
+        kind="el",
+        check_id="injection.el",
+        method="GET",
+        url="https://example.com/report",
+        param="filter",
+        severity=Severity.CRITICAL,
+        confidence=Confidence.HIGH,
+        title="Expression-language injection (SpEL) via the 'filter' parameter",
+        payload="'wvabc'+(12*13)",
+        evidence=(
+            ("Injection point", "GET https://example.com/report — parameter 'filter'"),
+            ("Type access", "'wvabc'+(T(java.lang.Math).abs(-413))  ->  wvabc413"),
+        ),
+    )
+    ctx = make_context(make_page(), observations=Observations(injection_hits=(hit,)))
+    findings = await check().run(ctx)
+    assert len(findings) == 1
+    assert findings[0].severity is Severity.CRITICAL  # the hit's severity wins over the default
+    assert findings[0].location.param == "filter"
+    assert "expression" in findings[0].description.lower()
+    assert "SimpleEvaluationContext" in findings[0].remediation
+    assert await TemplateInjectionCheck().run(ctx) == []  # ignores an el-kind hit
 
 
 async def test_crlf_and_xxe_check_metadata() -> None:

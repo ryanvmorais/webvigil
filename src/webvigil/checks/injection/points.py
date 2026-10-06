@@ -179,6 +179,32 @@ _COMMANDLIKE_NAMES = frozenset(
     }
 )
 
+# Parameters the expression-language detector (spec 016) front-loads. Narrow on purpose, for
+# the reason the 014 lists below give: a front-loaded detector on a generic name (``q`` /
+# ``search`` / ``message`` / ``title``) crowds the per-point budget and starves the fast
+# detectors, so those points get the short canary set instead. ``expr`` / ``expression`` /
+# ``eval`` are already in ``_COMMANDLIKE_NAMES``. The value shape is a signal here: a value
+# that already carries an EL delimiter or a ``T(`` type reference is an evaluator's input.
+_EXPRLIKE_NAMES = frozenset(
+    {
+        "expr",
+        "expression",
+        "filter",
+        "sort",
+        "order",
+        "where",
+        "condition",
+        "cond",
+        "rule",
+        "formula",
+        "el",
+        "spel",
+        "ognl",
+        "eval",
+    }
+)
+_EXPRLIKE_VALUE = re.compile(r"[#$%]\{|\bT\(")
+
 # The narrower subset whose name specifically suggests an OS shell — only these trigger the
 # command-injection detector's full echo payload set and its (slower) time-based stage. A
 # ``name`` / ``template`` sink is front-loaded for SSTI but is not shell-shaped.
@@ -404,6 +430,19 @@ def is_commandlike(point: InjectionPoint) -> bool:
             front-load these and send their full payload set only for them.
     """
     return point.param.lower() in _COMMANDLIKE_NAMES
+
+
+def is_exprlike(point: InjectionPoint) -> bool:
+    """
+    Args:
+        point (InjectionPoint): The point to classify.
+
+    Returns:
+        bool: ``True`` when the name or current value looks like it feeds an
+            expression evaluator — the expression-language detector front-loads
+            these and sends its full payload set only for them (spec 016).
+    """
+    return point.param.lower() in _EXPRLIKE_NAMES or bool(_EXPRLIKE_VALUE.search(point.original))
 
 
 def is_shell_param(point: InjectionPoint) -> bool:

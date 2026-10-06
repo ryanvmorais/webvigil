@@ -19,6 +19,7 @@ from webvigil.checks.injection.engine import (
     _DETECTORS,
     KIND_BY_CHECK_ID,
     InjectionScanner,
+    _merge_el,
 )
 from webvigil.checks.injection.models import InjectionPoint
 from webvigil.core.config import InjectionSection
@@ -301,3 +302,47 @@ async def test_form_points_are_posted() -> None:
     )
     await scanner.run()
     assert seen and all(u == "https://example.com/comment" for u in seen)
+
+
+# ---------------------------------------------------------------------------
+# Expression-language detector registration, ordering and the ssti + el merge (spec 016)
+# ---------------------------------------------------------------------------
+
+
+def test_el_is_registered_and_mapped() -> None:
+    """The EL detector and the combined entry are in the table; the check id maps to ``el``."""
+    assert "el" in _DETECTORS and "ssti+el" in _DETECTORS
+    assert KIND_BY_CHECK_ID["injection.el"] == "el"
+    # right after ssti, so it never starves the fast 006 detectors nor sits behind the slow ones.
+    assert _BASE_ORDER.index("el") == _BASE_ORDER.index("ssti") + 1
+
+
+def test_merge_el_collapses_both_kinds_at_the_earlier_position() -> None:
+    """``ssti`` and ``el`` become one ``ssti+el`` entry; any other selection is untouched."""
+    assert _merge_el(["xss", "ssti", "el", "crlf"]) == ["xss", "ssti+el", "crlf"]
+    assert _merge_el(["el", "xss", "ssti"]) == ["ssti+el", "xss"]  # el was front-loaded
+    assert _merge_el(["ssti", "xss", "el"]) == ["ssti+el", "xss"]
+    assert _merge_el(["xss", "ssti"]) == ["xss", "ssti"]
+    assert _merge_el(["xss", "el"]) == ["xss", "el"]
+    assert _merge_el(["xss"]) == ["xss"]
+
+
+def test_ordered_kinds_runs_the_detector_entry_that_matches_the_selected_checks() -> None:
+    """Both checks give one ``ssti+el``; one check gives its own entry; neither gives neither."""
+    http = _FakeHttp(lambda url, p: _resp())
+    point = InjectionPoint("GET", "https://example.com/s", "q", "x", (("q", "x"),))
+    both = _scanner(http, kinds={"xss", "ssti", "el", "sqli-error"})._ordered_kinds(point)
+    assert both == ["xss", "sqli-error", "ssti+el"]
+    assert _scanner(http, kinds={"xss", "ssti"})._ordered_kinds(point) == ["xss", "ssti"]
+    assert _scanner(http, kinds={"xss", "el"})._ordered_kinds(point) == ["xss", "el"]
+    assert _scanner(http, kinds={"xss"})._ordered_kinds(point) == ["xss"]
+
+
+def test_el_is_front_loaded_for_an_expression_shaped_point() -> None:
+    """A ``filter`` point puts the combined entry first; a plain ``q`` point does not."""
+    http = _FakeHttp(lambda url, p: _resp())
+    scanner = _scanner(http, kinds={"xss", "ssti", "el", "sqli-error"})
+    filter_point = InjectionPoint("GET", "https://example.com/r", "filter", "1", (("filter", "1"),))
+    assert scanner._ordered_kinds(filter_point)[0] == "ssti+el"
+    plain_point = InjectionPoint("GET", "https://example.com/s", "q", "x", (("q", "x"),))
+    assert scanner._ordered_kinds(plain_point)[0] != "ssti+el"

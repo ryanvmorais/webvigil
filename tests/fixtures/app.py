@@ -9,9 +9,10 @@ crawler must not follow), spec 008 (a guestbook and a behind-login profile page
 that render stored input unescaped on a later request), spec 009 (two "fetch
 this URL" endpoints), spec 011 (a shell-backed ``/ping`` and a template-backed
 ``/greet``) and spec 012 (a CRLF ``/set-lang``, a host-header ``/reset``, an XML
-``/api/xml`` and a ``/resource`` that advertises TRACE / PUT). The app is plain
-HTTP by nature, so the integration test disables ``tls.https``; TLS cases live in
-the socket-based unit tests.
+``/api/xml`` and a ``/resource`` that advertises TRACE / PUT) and spec 016 (three
+simulated expression-language sinks: ``/report`` SpEL, ``/banner`` OGNL, ``/rule``
+sandboxed SpEL). The app is plain HTTP by nature, so the integration test disables
+``tls.https``; TLS cases live in the socket-based unit tests.
 
 The route handlers are one-liners with inline comments per spec; only
 :func:`make_app` and the middleware factory carry a docstring.
@@ -19,6 +20,7 @@ The route handlers are one-liners with inline comments per spec; only
 
 from __future__ import annotations
 
+import ast
 import html
 import re
 import sqlite3
@@ -61,7 +63,11 @@ _INJECTION_LINKS = (
     # spec 014: an LDAP-filter search, an XPath-over-XML lookup, an SSI-processing page.
     '<a href="/dir?user=jdoe">dir</a> '
     '<a href="/xdoc?node=Dune">xdoc</a> '
-    '<a href="/page?tpl=hi">page</a>'
+    '<a href="/page?tpl=hi">page</a> '
+    # spec 016: three simulated expression-language sinks (SpEL, OGNL, sandboxed SpEL).
+    '<a href="/report?filter=1">report</a> '
+    '<a href="/banner?caption=hello">banner</a> '
+    '<a href="/rule?cond=ok">rule</a>'
 )
 # spec 013: the insecure index also carries a cross-origin script with no SRI, a session
 # token handed to a third-party link, and an internal IP in a comment — inlined here rather
@@ -264,6 +270,155 @@ def _greet_insecure(request: Request) -> Response:
     except jinja2.exceptions.TemplateError as exc:
         return PlainTextResponse(f"jinja2.exceptions.{type(exc).__name__}: {exc}", status_code=500)
     return HTMLResponse(body)
+
+
+# --- spec 016: expression-language sinks (insecure) -----------------------------
+#
+# A JVM is not a dependency of a Python tool, so the three routes simulate the sink: a tiny
+# walker over ``ast`` evaluates integer / string arithmetic and nothing else. It never calls
+# ``eval`` / ``exec``. ``T(java.lang.Math).abs(x)`` (SpEL) and ``@java.lang.Math@abs(x)``
+# (OGNL) are rewritten to the one allow-listed ``abs(x)`` call, and only on routes that allow
+# static access; ``+`` with a string operand concatenates, as SpEL / OGNL / JEXL do.
+
+_EL_STATIC_RE = re.compile(r"(?:T\(java\.lang\.Math\)\.|@java\.lang\.Math@)abs\((-?\d+)\)")
+_EL_DELIM_RE = re.compile(r"([#$%])\{(.*?)\}")
+_SPEL_ERRORS = {
+    "parse": (
+        "org.springframework.expression.spel.SpelParseException: EL1041E: After parsing a "
+        "valid expression, there is still more data in the expression"
+    ),
+    "type": (
+        "org.springframework.expression.spel.SpelEvaluationException: EL1005E: "
+        "Type cannot be found 'java.lang.Math'"
+    ),
+    "unsupported": (
+        "org.springframework.expression.spel.SpelEvaluationException: EL1008E: "
+        "Property or field cannot be found"
+    ),
+}
+_OGNL_ERRORS = {
+    "parse": "ognl.ParseException: Encountered unexpected token",
+    "type": "ognl.MethodFailedException: Method 'abs' failed",
+    "unsupported": "ognl.OgnlException: source is null for getProperty",
+}
+
+
+class _ElError(Exception):
+    """An expression the simulated evaluator rejects; ``reason`` picks the error body."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
+def _el_node(node: ast.expr) -> int | str:
+    """Evaluate one ``ast`` node: constants, unary minus, ``+ - * //`` and ``abs(x)``."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, (int, str)):
+        return node.value
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
+        operand = _el_node(node.operand)
+        if isinstance(operand, int):
+            return -operand
+    if isinstance(node, ast.BinOp):
+        left, right = _el_node(node.left), _el_node(node.right)
+        if isinstance(node.op, ast.Add):
+            if isinstance(left, str) or isinstance(right, str):
+                return f"{left}{right}"  # string concatenation, as the real evaluators do
+            return left + right
+        if isinstance(left, int) and isinstance(right, int):
+            if isinstance(node.op, ast.Sub):
+                return left - right
+            if isinstance(node.op, ast.Mult):
+                return left * right
+            if isinstance(node.op, ast.FloorDiv) and right:
+                return left // right
+    if (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "abs"
+        and len(node.args) == 1
+        and not node.keywords
+    ):
+        arg = _el_node(node.args[0])
+        if isinstance(arg, int):
+            return abs(arg)
+    raise _ElError("unsupported")
+
+
+def _el_eval(expression: str, *, static: bool) -> int | str:
+    """
+    Args:
+        expression (str): The expression text.
+        static (bool): Whether the route allows the allow-listed static call.
+
+    Returns:
+        int | str: The value.
+
+    Raises:
+        _ElError: ``"parse"`` for a syntax error, ``"type"`` for a rejected type reference,
+            ``"unsupported"`` for anything else the simulation does not run.
+    """
+    text = expression.strip()
+    if static:
+        text = _EL_STATIC_RE.sub(lambda m: f"abs({m.group(1)})", text)
+    elif "T(" in text or "@java" in text:
+        raise _ElError("type")
+    try:
+        tree = ast.parse(text, mode="eval")
+    except (SyntaxError, ValueError, RecursionError) as exc:
+        raise _ElError("parse") from exc
+    return _el_node(tree.body)
+
+
+def _el_template(text: str, *, opener: str, static: bool) -> str:
+    """
+    Args:
+        text (str): The attribute text, with ``<opener>{...}`` regions to evaluate.
+        opener (str): The one delimiter character this route evaluates (``"#"`` / ``"%"``).
+        static (bool): Whether the route allows the allow-listed static call.
+
+    Returns:
+        str: ``text`` with every ``<opener>{expr}`` replaced by its value.
+
+    Raises:
+        _ElError: For an unterminated region or an expression the evaluator rejects.
+    """
+    if re.search(re.escape(opener) + r"\{[^}]*$", text):
+        raise _ElError("parse")
+
+    def evaluate(match: re.Match[str]) -> str:
+        if match.group(1) != opener:
+            return match.group(0)
+        return str(_el_eval(match.group(2), static=static))
+
+    return _EL_DELIM_RE.sub(evaluate, text)
+
+
+def _report_insecure(request: Request) -> Response:
+    expression = request.query_params.get("filter", "")  # spec 016: parseExpression(filter)
+    try:
+        value = _el_eval(expression, static=True)
+    except _ElError as exc:
+        return PlainTextResponse(_SPEL_ERRORS[exc.reason], status_code=500)
+    return HTMLResponse(f"<!doctype html><div>Result: {html.escape(str(value))}</div>")
+
+
+def _banner_insecure(request: Request) -> Response:
+    caption = request.query_params.get("caption", "")  # spec 016: a Struts tag attribute
+    try:
+        text = _el_template(caption, opener="%", static=True)
+    except _ElError as exc:
+        return PlainTextResponse(_OGNL_ERRORS[exc.reason], status_code=500)
+    return HTMLResponse(f"<!doctype html><h2>{html.escape(text)}</h2>")
+
+
+def _rule_insecure(request: Request) -> Response:
+    cond = request.query_params.get("cond", "")  # spec 016: SpEL under SimpleEvaluationContext
+    try:
+        text = _el_template(cond, opener="#", static=False)
+    except _ElError as exc:
+        return PlainTextResponse(_SPEL_ERRORS[exc.reason], status_code=500)
+    return HTMLResponse(f"<!doctype html><p>Rule: {html.escape(text)}</p>")
 
 
 # --- spec 012: request-envelope endpoints (insecure) -----------------------------
@@ -715,6 +870,24 @@ def _greet_hardened(request: Request) -> Response:
     return HTMLResponse(template.render(name=name))
 
 
+def _el_hardened(label: str, param: str) -> Callable[[Request], Response]:
+    """
+    Args:
+        label (str): The prefix shown in the page (``"Result"`` / ``"Rule"``).
+        param (str): The query parameter the route reads.
+
+    Returns:
+        Callable[[Request], Response]: A handler that treats the value as data (spec 016): it
+            is escaped on output and never evaluated.
+    """
+
+    def handler(request: Request) -> Response:
+        value = request.query_params.get(param, "")
+        return HTMLResponse(f"<!doctype html><div>{label}: {html.escape(value)}</div>")
+
+    return handler
+
+
 # --- spec 012: the safe equivalents (hardened) -----------------------------------
 
 
@@ -773,6 +946,9 @@ _INJECTION_ROUTES = {
         ("/dir", _dir_insecure, ["GET"]),
         ("/xdoc", _xdoc_insecure, ["GET"]),
         ("/page", _page_insecure, ["GET"]),
+        ("/report", _report_insecure, ["GET"]),
+        ("/banner", _banner_insecure, ["GET"]),
+        ("/rule", _rule_insecure, ["GET"]),
         ("/openapi.json", _openapi_doc, ["GET"]),
         ("/api/find", _api_find_insecure, ["GET"]),
         ("/api/items", _api_items, ["POST"]),
@@ -802,6 +978,9 @@ _INJECTION_ROUTES = {
         ("/dir", _dir_hardened, ["GET"]),
         ("/xdoc", _xdoc_hardened, ["GET"]),
         ("/page", _page_hardened, ["GET"]),
+        ("/report", _el_hardened("Result", "filter"), ["GET"]),
+        ("/banner", _el_hardened("Banner", "caption"), ["GET"]),
+        ("/rule", _el_hardened("Rule", "cond"), ["GET"]),
         ("/openapi.json", _openapi_doc, ["GET"]),
         ("/api/find", _api_find_hardened, ["GET"]),
         ("/api/items", _api_items, ["POST"]),

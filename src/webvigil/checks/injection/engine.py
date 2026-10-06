@@ -14,6 +14,7 @@ from collections.abc import Awaitable, Callable
 from webvigil.checks.injection.detect import DetectCtx, normalize_body
 from webvigil.checks.injection.detect import cmdi as cmdi_detect
 from webvigil.checks.injection.detect import crlf as crlf_detect
+from webvigil.checks.injection.detect import el as el_detect
 from webvigil.checks.injection.detect import ldap as ldap_detect
 from webvigil.checks.injection.detect import redirect as redirect_detect
 from webvigil.checks.injection.detect import sqli as sqli_detect
@@ -35,6 +36,7 @@ from webvigil.checks.injection.points import (
     build_request,
     enumerate_points,
     is_commandlike,
+    is_exprlike,
     is_headerlike,
     is_ldaplike,
     is_pathlike,
@@ -51,11 +53,14 @@ from webvigil.crawler.forms import Form
 from webvigil.crawler.openapi import ApiOperation
 from webvigil.http.client import HttpClient, Response
 
-# Raised from 30 (spec 006) to 35 in spec 011 (cmdi + ssti families) and to 38 in spec 014
-# (the ldap / xpath / ssi families each add a small error + boolean probe set) — measured
-# against the fixture: enough for the front-loaded 014 canary without letting the slow
+# Raised from 30 (spec 006) to 35 in spec 011 (cmdi + ssti families), to 38 in spec 014
+# (the ldap / xpath / ssi families each add a small error + boolean probe set) and to 42 in
+# spec 016 (the EL canary is three requests longer than the SSTI one, and a point that is not
+# expression-shaped reaches it only after xss / sqli / traversal / redirect have spent theirs) —
+# measured against the fixture: 38 starved the OGNL ``/banner?caption=`` canary, 39 was the
+# first cap that found it, 42 leaves a one-request margin without letting the slow
 # time-based detectors run on a point that would otherwise stop before them.
-_PER_POINT_REQUEST_CAP = 38
+_PER_POINT_REQUEST_CAP = 42
 _TIME_BASED_SLEEP_CAP = 8
 
 _Detector = Callable[[InjectionPoint, Baseline, DetectCtx], Awaitable[list[InjectionHit]]]
@@ -74,6 +79,10 @@ _DETECTORS: dict[str, _Detector] = {
     "traversal": traversal_detect.detect,
     "redirect": redirect_detect.detect,
     "ssti": ssti_detect.detect,
+    # spec 016: the EL stages alone, and the one-pass routine used when both checks are
+    # selected (ADR-1); ``_merge_el`` picks between "ssti", "el" and "ssti+el".
+    "el": el_detect.detect_el,
+    "ssti+el": el_detect.detect_combined,
     "crlf": crlf_detect.detect,
     "ssi": ssi_detect.detect,
     "cmdi": cmdi_detect.detect,
@@ -93,6 +102,7 @@ _BASE_ORDER = (
     "traversal",
     "redirect",
     "ssti",
+    "el",
     "crlf",
     "sqli-time",
     "cmdi",
@@ -114,6 +124,9 @@ KIND_BY_CHECK_ID: dict[str, str] = {
     # time stage is gated by DetectCtx.time_based_cmdi, not by dropping a kind.
     "injection.cmdi.os": "cmdi",
     "injection.ssti": "ssti",
+    # spec 016: one-to-one with the check; ``_merge_el`` folds it into the combined detector
+    # entry when ``injection.ssti`` is selected too.
+    "injection.el": "el",
     # spec 012: CRLF is a value injection; XXE re-sends the POST body as XML and runs only
     # when [injection] xxe is on (dropped from selected_kinds below, like sqli-time).
     "injection.crlf": "crlf",
@@ -127,6 +140,29 @@ KIND_BY_CHECK_ID: dict[str, str] = {
     "injection.xpath": "xpath",
     "injection.ssi": "ssi",
 }
+
+
+def _merge_el(kinds: list[str]) -> list[str]:
+    """
+    Collapse ``ssti`` and ``el`` into the one combined detector entry (spec 016, ADR-1).
+
+    Both checks overlap on the ambiguous delimiter forms and on the polyglot probe, and each
+    detector draws its own marker, so two independent detectors could not share a response.
+    One ``ssti+el`` routine runs instead, at the earlier of the two positions.
+
+    Args:
+        kinds (list[str]): The ordered detector kinds for one point.
+
+    Returns:
+        list[str]: ``kinds`` unchanged unless both ``"ssti"`` and ``"el"`` are present, in
+            which case both are replaced by a single ``"ssti+el"``.
+    """
+    if "ssti" not in kinds or "el" not in kinds:
+        return kinds
+    at = min(kinds.index("ssti"), kinds.index("el"))  # nothing before ``at`` is either kind
+    rest = [k for k in kinds if k not in ("ssti", "el")]
+    rest.insert(at, "ssti+el")
+    return rest
 
 
 class InjectionScanner:
@@ -227,7 +263,8 @@ class InjectionScanner:
 
         Starts from ``_BASE_ORDER`` (``ssrf`` last), then front-loads
         ``traversal`` / ``redirect`` / ``ssrf`` to position 0 when the point's
-        name or value matches that detector's heuristic.
+        name or value matches that detector's heuristic. ``ssti`` and ``el``,
+        when both are selected, end up as one combined ``ssti+el`` entry.
 
         Args:
             point (InjectionPoint): The point under test.
@@ -242,6 +279,7 @@ class InjectionScanner:
             (is_urllike, "ssrf"),
             (is_commandlike, "cmdi"),
             (is_commandlike, "ssti"),
+            (is_exprlike, "el"),
             (is_headerlike, "crlf"),
             (is_ldaplike, "ldap"),
             (is_xpathlike, "xpath"),
@@ -253,7 +291,7 @@ class InjectionScanner:
             if predicate(point) and kind in kinds:
                 kinds.remove(kind)
                 kinds.insert(0, kind)
-        return kinds
+        return _merge_el(kinds)
 
     async def _baseline(self, point: InjectionPoint) -> Baseline | None:
         """
