@@ -311,16 +311,17 @@ async def test_hardened_profile_reports_nothing(scan) -> None:
 
 
 async def test_crawler_reaches_the_linked_pages(scan) -> None:
-    """The crawler reaches all 20 linked pages of the fixture app (index, forms, endpoints)."""
+    """The crawler reaches all 23 linked pages of the fixture app (index, forms, endpoints)."""
     result = await scan("hardened")
     # /, /about, /contact + the injectable endpoints linked from the index: /search, /item,
     # /download, /go (spec 006), /fetch, /webhook (spec 009), /ping, /greet (spec 011),
     # /set-lang, /reset, /resource (spec 012) and /dir, /xdoc, /page (spec 014) + the GET
     # /search?q= the crawler submits from the search form + /account (→ /login for an
-    # anonymous scan) (spec 007 RF-05) + /guestbook (spec 008 RF-13). The spec-013
+    # anonymous scan) (spec 007 RF-05) + /guestbook (spec 008 RF-13) + /report, /banner, /rule
+    # (spec 016). The spec-013
     # /openapi.json + /api/* routes and the spec-014 /upload + /files routes are linked from
     # no page.
-    assert result.metadata.pages_scanned == 20
+    assert result.metadata.pages_scanned == 23
 
 
 # ---------------------------------------------------------------------------
@@ -407,6 +408,46 @@ async def test_rce_scan_is_deterministic(scan) -> None:
     ids = {"injection.cmdi.os", "injection.ssti"}
     fa = sorted(f.fingerprint for f in a.findings if f.check_id in ids)
     fb = sorted(f.fingerprint for f in b.findings if f.check_id in ids)
+    assert fa == fb and fa
+
+
+async def test_expression_language_found_on_the_three_insecure_routes(scan) -> None:
+    """SpEL (bare), OGNL (``%{}``) and sandboxed SpEL each get the dialect and severity earned."""
+    result = await scan("insecure", active=True)
+    el = {f.location.param: f for f in result.findings if f.check_id == "injection.el"}
+    assert {"filter", "caption", "cond"} <= set(el), sorted(el)
+    assert el["filter"].severity.name == "CRITICAL" and "SpEL" in el["filter"].title
+    assert el["caption"].severity.name == "CRITICAL" and "OGNL" in el["caption"].title
+    assert el["cond"].severity.name == "HIGH" and "SpEL" in el["cond"].title  # sandboxed
+    assert all(f.location.method == "GET" for f in el.values())
+
+
+async def test_an_el_proof_is_not_also_reported_as_ssti(scan) -> None:
+    """The combined detector gives one finding per proof; ``/greet`` stays a Jinja2 ``ssti``."""
+    result = await scan("insecure", active=True)
+    ssti = {f.location.param for f in result.findings if f.check_id == "injection.ssti"}
+    assert not ssti & {"filter", "caption", "cond"}
+    assert "name" in ssti
+
+
+async def test_hardened_profile_reports_no_expression_language(scan) -> None:
+    """The hardened twins escape and never evaluate, so an Active scan finds nothing."""
+    result = await scan("hardened", active=True)
+    assert not any(f.check_id == "injection.el" for f in result.findings)
+
+
+async def test_passive_scan_reports_no_expression_language(scan) -> None:
+    """A Passive scan never runs the injection pass."""
+    result = await scan("insecure")
+    assert not any(f.check_id == "injection.el" for f in result.findings)
+
+
+async def test_expression_language_scan_is_deterministic(scan) -> None:
+    """Two active scans give the same ``injection.el`` finding fingerprints."""
+    a = await scan("insecure", active=True)
+    b = await scan("insecure", active=True)
+    fa = sorted(f.fingerprint for f in a.findings if f.check_id == "injection.el")
+    fb = sorted(f.fingerprint for f in b.findings if f.check_id == "injection.el")
     assert fa == fb and fa
 
 

@@ -16,6 +16,7 @@ from webvigil.checks.injection.points import (
     build_request,
     enumerate_points,
     is_commandlike,
+    is_exprlike,
     is_headerlike,
     is_pathlike,
     is_redirect_name,
@@ -173,6 +174,23 @@ def test_is_commandlike_is_name_only() -> None:
         "GET", "https://example.com/s", "note", "a; rm -rf /", (("note", "a; rm -rf /"),)
     )
     assert not is_commandlike(shell_value)  # value shape is not a signal
+
+
+def test_is_exprlike_uses_the_name_and_the_value_shape() -> None:
+    """``is_exprlike`` fires on expression-shaped names and on a value that already holds EL."""
+    pages = (make_page(url="https://example.com/x?filter=1&rule=a&message=hi&q=x&id=3"),)
+    points = {p.param: p for p in enumerate_points(pages, (), max_points=100)[0]}
+    assert is_exprlike(points["filter"])
+    assert is_exprlike(points["rule"])
+    assert not is_exprlike(points["message"])  # too generic to front-load the EL detector
+    assert not is_exprlike(points["q"])
+    assert not is_exprlike(points["id"])
+
+    for value in ("#{user.name}", "${a}", "%{a}", "T(java.lang.Math).abs(1)"):
+        carrier = InjectionPoint("GET", "https://example.com/s", "note", value, (("note", value),))
+        assert is_exprlike(carrier), value
+    plain = InjectionPoint("GET", "https://example.com/s", "note", "hello", (("note", "hello"),))
+    assert not is_exprlike(plain)
 
 
 def test_is_headerlike_is_name_only() -> None:

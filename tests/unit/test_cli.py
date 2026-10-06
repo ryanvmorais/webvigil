@@ -205,6 +205,7 @@ def test_list_checks_lists_the_injection_checks() -> None:
     assert "injection.ssrf.internal" in result.stdout
     assert "injection.cmdi.os" in result.stdout
     assert "injection.ssti" in result.stdout
+    assert "injection.el" in result.stdout  # spec 016
     assert "injection.crlf" in result.stdout
     assert "injection.xxe" in result.stdout
     assert "injection.host-header" in result.stdout

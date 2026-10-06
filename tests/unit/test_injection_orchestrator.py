@@ -18,10 +18,12 @@ import pytest
 
 from webvigil.checks.headers.hsts import HstsCheck
 from webvigil.checks.injection.checks import (
+    ExpressionLanguageInjectionCheck,
     OsCommandInjectionCheck,
     ReflectedXssCheck,
     SsrfMetadataCheck,
     StoredXssCheck,
+    TemplateInjectionCheck,
 )
 from webvigil.checks.injection.models import InjectionHit, StoredXssReport
 from webvigil.core import orchestrator as orch_mod
@@ -180,6 +182,56 @@ async def test_active_scan_without_a_cmdi_or_ssti_check_sends_no_such_payload(
     httpx_mock.add_callback(router, is_reusable=True)  # type: ignore[attr-defined]
     await Orchestrator(_active(), check_types=[ReflectedXssCheck]).run(_TARGET)
     assert not any("$((" in v or "{{7*" in v or ";sleep" in v for v in seen)
+
+
+def _ognl_router(request: httpx.Request) -> httpx.Response:
+    """A target whose ``q`` is evaluated as OGNL: ``%{a*b}`` and ``%{@Math@abs(-n)}`` run."""
+    value = request.url.params.get("q", "")
+    arith = re.search(r"(wv[0-9a-f]+)%\{(\d+)\*(\d+)\}", value)
+    if arith:
+        body = f"{arith.group(1)}{int(arith.group(2)) * int(arith.group(3))}"
+        return httpx.Response(200, text=body, headers={"content-type": "text/plain"})
+    static = re.search(r"(wv[0-9a-f]+)%\{@java\.lang\.Math@abs\(-(\d+)\)\}", value)
+    if static:
+        body = f"{static.group(1)}{static.group(2)}"
+        return httpx.Response(200, text=body, headers={"content-type": "text/plain"})
+    return httpx.Response(200, text="<div>ok</div>", headers={"content-type": "text/html"})
+
+
+async def test_active_scan_expression_language_is_reported(httpx_mock: object) -> None:
+    """A target that evaluates ``%{...}`` yields a CRITICAL OGNL finding (static call proved)."""
+    httpx_mock.add_callback(_ognl_router, is_reusable=True)  # type: ignore[attr-defined]
+    orchestrator = Orchestrator(_active(), check_types=[ExpressionLanguageInjectionCheck])
+    result = await orchestrator.run(_TARGET)
+    el = [f for f in result.findings if f.check_id == "injection.el"]
+    assert el and el[0].severity is Severity.CRITICAL
+    assert "OGNL" in el[0].title
+    assert el[0].location.param == "q"
+
+
+async def test_with_both_checks_selected_one_proof_is_one_finding(httpx_mock: object) -> None:
+    """The combined detector reports the OGNL evaluation as ``injection.el``, never twice."""
+    httpx_mock.add_callback(_ognl_router, is_reusable=True)  # type: ignore[attr-defined]
+    orchestrator = Orchestrator(
+        _active(), check_types=[TemplateInjectionCheck, ExpressionLanguageInjectionCheck]
+    )
+    result = await orchestrator.run(_TARGET)
+    ids = [f.check_id for f in result.findings if f.check_id.startswith("injection.")]
+    assert ids == ["injection.el"]
+
+
+async def test_active_scan_without_an_el_check_sends_no_el_payload(httpx_mock: object) -> None:
+    """With only ``injection.ssti`` selected, no EL-only form or type probe is sent."""
+    seen: list[str] = []
+
+    def router(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.params.get("q", ""))
+        return httpx.Response(200, text="<div>ok</div>", headers={"content-type": "text/html"})
+
+    httpx_mock.add_callback(router, is_reusable=True)  # type: ignore[attr-defined]
+    await Orchestrator(_active(), check_types=[TemplateInjectionCheck]).run(_TARGET)
+    assert seen  # the SSTI payloads were sent
+    assert not any("%{" in v or "T(java" in v or "'+(" in v or "${(" in v for v in seen)
 
 
 async def test_a_raising_pass_becomes_a_warning_not_a_crash(

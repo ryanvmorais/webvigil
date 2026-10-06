@@ -23,7 +23,7 @@ from webvigil.core.findings import Confidence, Severity
 _CHECK_ID = "injection.ssti"
 
 # A non-command/template-shaped point only gets the first few arithmetic payloads (ADR-7).
-_CANARY_LIMIT = 4
+CANARY_LIMIT = 4
 
 
 async def detect(point: InjectionPoint, baseline: Baseline, ctx: DetectCtx) -> list[InjectionHit]:
@@ -43,28 +43,28 @@ async def detect(point: InjectionPoint, baseline: Baseline, ctx: DetectCtx) -> l
     probe = await ctx.send(point, point.original + payloads.SSTI_POLYGLOT)
     if probe is None:
         return []
-    engine = _engine_from_error(probe.text, baseline.raw_body)
+    engine = engine_from_error(probe.text, baseline.raw_body)
 
     marker = "wv" + secrets.token_hex(payloads.SSTI_MARKER_BYTES)
     a, b = random.randint(11, 99), random.randint(11, 99)
     needle = f"{marker}{a * b}"
     candidates = payloads.arith_payloads(marker, a, b)
     if engine is not None:
-        candidates = _engine_first(candidates, engine)
+        candidates = engine_first(candidates, engine)
     if not is_commandlike(point):
-        candidates = candidates[:_CANARY_LIMIT]
+        candidates = candidates[:CANARY_LIMIT]
 
     for _hint, expr in candidates:
         response = await ctx.send(point, point.original + expr)
         if response is None:
             break
         if needle in response.text and needle not in baseline.raw_body:
-            engine = engine or await _identify_engine(point, ctx, marker)
-            return [_hit(point, engine, point.original + expr, needle, a, b)]
+            engine = engine or await identify_engine(point, ctx, marker)
+            return [build_hit(point, engine, point.original + expr, needle, a, b)]
     return []
 
 
-def _engine_from_error(text: str, baseline_text: str) -> str | None:
+def engine_from_error(text: str, baseline_text: str) -> str | None:
     """
     Args:
         text (str): The polyglot response body.
@@ -81,7 +81,7 @@ def _engine_from_error(text: str, baseline_text: str) -> str | None:
     return None
 
 
-def _engine_first(
+def engine_first(
     candidates: tuple[tuple[str, str], ...], engine: str
 ) -> tuple[tuple[str, str], ...]:
     """
@@ -99,7 +99,7 @@ def _engine_first(
     return matched + rest
 
 
-async def _identify_engine(point: InjectionPoint, ctx: DetectCtx, marker: str) -> str | None:
+async def identify_engine(point: InjectionPoint, ctx: DetectCtx, marker: str) -> str | None:
     """
     Args:
         point (InjectionPoint): The point under test.
@@ -121,7 +121,7 @@ async def _identify_engine(point: InjectionPoint, ctx: DetectCtx, marker: str) -
     return None
 
 
-def _hit(
+def build_hit(
     point: InjectionPoint, engine: str | None, payload: str, needle: str, a: int, b: int
 ) -> InjectionHit:
     """

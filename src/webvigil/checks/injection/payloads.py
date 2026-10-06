@@ -335,6 +335,61 @@ def arith_payloads(marker: str, a: int, b: int) -> tuple[tuple[str, str], ...]:
     )
 
 
+# --- expression-language injection (spec 016, RF-02..RF-04) ---------------------------
+#
+# The EL detector reuses the SSTI proof (a per-request marker glued to the computed product,
+# absent from the baseline) through four EL delimiters and two bare-expression forms, then
+# classifies the evaluator from the evidence. ``{marker}`` / ``{inner}`` / ``{n}`` are
+# substituted by the detector; none of these templates contains a brace of its own.
+
+# (label, open, close). ``${`` / ``#{`` / ``*{`` are also template delimiters (Freemarker,
+# Slim/Pug, Thymeleaf), so a hit there needs corroboration; ``%{`` is OGNL's.
+EL_DELIMITERS: tuple[tuple[str, str, str], ...] = (
+    ("dollar", "${", "}"),
+    ("hash", "#{", "}"),
+    ("star", "*{", "}"),
+    ("percent", "%{", "}"),
+)
+
+# The ``arith_payloads`` hints whose delimiter is also an EL delimiter. The combined
+# detector sends those forms once, through ``EL_DELIMITERS``, instead of twice (RF-05).
+EL_AMBIGUOUS_HINTS = frozenset({"Freemarker/EL", "Slim/Pug", "Thymeleaf"})
+
+# For a parameter that is itself an expression (no delimiter to find): string concatenation
+# builds the marker, which a bare number could not carry. ``WHOLE`` replaces the value;
+# ``ESCAPE`` is appended to it and closes a string literal the target wraps around the value.
+EL_BARE_WHOLE = "'{marker}'+({inner})"
+EL_BARE_ESCAPE = "'+'{marker}'+({inner})+'"
+
+# Pure, side-effect-free static calls: they prove the evaluator reaches the type system
+# (SpEL ``T()``, OGNL ``@class@method``) without executing anything (spec 016, ADR-3). The
+# result is glued to the marker, so a reflected literal is never a hit.
+EL_SPEL_PROBE = "T(java.lang.Math).abs(-{n})"
+EL_OGNL_PROBE = "@java.lang.Math@abs(-{n})"
+
+# Appended to the value to draw a parse error from an evaluator that did not run the
+# arithmetic; read against ``EL_ERROR_SIGNATURES``.
+EL_UNTERMINATED = ("${(", "%{(")
+
+# (dialect, pattern) — an EL error in the response body, required absent from the baseline.
+# A pattern that goes stale fails closed (no finding), never open.
+EL_ERROR_SIGNATURES: tuple[tuple[str, re.Pattern[str]], ...] = (
+    (
+        "SpEL",
+        re.compile(
+            r"org\.springframework\.expression|Spel(?:Evaluation|Parse)Exception|\bEL\d{4}E\b"
+        ),
+    ),
+    ("OGNL", re.compile(r"ognl\.\w*Exception|MethodFailedException|ExpressionSyntaxException")),
+    ("JEXL", re.compile(r"org\.apache\.commons\.jexl\d?|JexlException")),
+    ("MVEL", re.compile(r"org\.mvel2")),
+    (
+        "Unified EL",
+        re.compile(r"(?:javax|jakarta)\.el\.\w*Exception|org\.apache\.el\.|\bELException\b"),
+    ),
+)
+
+
 # --- CRLF injection / HTTP response splitting (spec 012, RF-01) ----------------------
 #
 # The payload is appended to the point's value. A hit needs the injected *header* parsed

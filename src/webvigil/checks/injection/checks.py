@@ -78,6 +78,13 @@ _DESCRIPTION: dict[str, str] = {
         "engine evaluated it (an arithmetic expression returned its result). Most template "
         "engines expose enough of the host language to reach remote code execution."
     ),
+    "el": (
+        "A value supplied in this parameter is handed to a server-side expression-language "
+        "evaluator (Spring SpEL, Struts OGNL, JEXL, MVEL, or the Unified EL behind JSP / JSF) "
+        "and evaluated. WebVigil injected an expression and the server computed it. When the "
+        "evaluator exposes static method calls or class references this is remote code "
+        "execution; the finding is critical when a harmless static call proved that reach."
+    ),
     "crlf": (
         "A value supplied in this parameter is written into a response header without stripping "
         "carriage-return / line-feed. WebVigil injected its own header line (or, with a double "
@@ -152,6 +159,14 @@ _REMEDIATION: dict[str, str] = {
         "(context variables), not into the template string. Use a sandboxed, logic-less engine "
         "for user-authored templates, and keep the template directory out of user control."
     ),
+    "el": (
+        "Never evaluate request-derived text as an expression. Treat the value as data: bind "
+        "it as a variable, validate it against an allow-list, and keep it out of "
+        "parseExpression calls and OGNL tag attributes. If evaluation is unavoidable, use "
+        "Spring's SimpleEvaluationContext (no type references or constructors) instead of "
+        "StandardEvaluationContext, keep Struts' static method access disabled, and keep the "
+        "framework patched."
+    ),
     "crlf": (
         "Reject or strip CR / LF from any user value before it reaches a response header. "
         "Prefer a framework header API that rejects control characters; do not build headers "
@@ -225,6 +240,11 @@ _REFERENCES: dict[str, tuple[str, ...]] = {
     "ssti": (
         "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/07-Input_Validation_Testing/18-Testing_for_Server-side_Template_Injection",
         "https://portswigger.net/research/server-side-template-injection",
+    ),
+    "el": (
+        f"{_OWASP}/vulnerabilities/Expression_Language_Injection",
+        "https://cwe.mitre.org/data/definitions/917.html",
+        "https://docs.spring.io/spring-framework/reference/core/expressions/evaluation.html",
     ),
     "crlf": (
         f"{_OWASP}/attacks/HTTP_Response_Splitting",
@@ -393,6 +413,18 @@ class TemplateInjectionCheck(_InjectionCheck):
     default_severity = Severity.HIGH
     cwe = (1336, 94)
     references = _REFERENCES["ssti"]
+
+
+@register
+class ExpressionLanguageInjectionCheck(_InjectionCheck):
+    """Expression-language injection (SpEL / OGNL / JEXL / MVEL / Unified EL) — spec 016."""
+
+    id = "injection.el"
+    name = "Expression-language injection"
+    kind = "el"
+    default_severity = Severity.HIGH
+    cwe = (917, 94)
+    references = _REFERENCES["el"]
 
 
 @register

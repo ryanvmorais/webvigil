@@ -78,6 +78,7 @@ shipped and links to its docs; each was designed as a spec first, under
 | `v0.12` | Active Mode: request-envelope injection — CRLF / response splitting, host-header injection, opt-in in-band XXE, and an HTTP-methods (TRACE / verb) check ([docs](docs/active-injection.md#request-envelope-injection)) | shipped |
 | `v0.13` | Header / bearer authentication (`--header`), OpenAPI / Swagger import to seed the crawl and the injection pass (`--openapi`), and four passive checks: missing Subresource Integrity, mixed content, session identifier in a URL, private IP in a body ([docs](docs/api-scanning.md)) | shipped |
 | `v0.14` | Active Mode: LDAP / XPath / SSI injection (in-band, error signature + differential), and opt-in unrestricted file-upload testing (`--file-upload`) — a benign marker uploaded with a dangerous name / type, then fetched back to prove execution, inline rendering, or a path-traversal write ([docs](docs/active-injection.md#file-upload----file-upload-opt-in)) | shipped |
+| `v0.16` | Active Mode: in-band expression-language injection — Spring SpEL, Struts OGNL, JEXL, MVEL, Unified EL. The dialect is named from the evidence, and a pure static-call probe separates a sandboxed evaluator (HIGH) from a reachable type system (CRITICAL) ([docs](docs/active-injection.md#expression-language-injection)) | shipped |
 
 > The four opt-in switches, all off by default: `--probe` (sensitive-path probing),
 > `--stored-xss` and `--file-upload` (both write to the target), `--xxe` (re-types POST
@@ -107,7 +108,7 @@ to reach for instead.
   [interactsh](https://github.com/projectdiscovery/interactsh). Background:
   [why blind SSRF is the one thing WebVigil won't do](docs/notes/why-not-oast.md).
 
-- **Some active-scan classes.** Expression-language injection (SpEL / OGNL), `eval()` code
+- **Some active-scan classes.** `eval()` code
   injection, NoSQL injection, HTTP parameter pollution, remote file inclusion, DOM XSS,
   and verb-based auth bypass are out — each is either deferred, has no reliable in-band
   oracle, or needs a browser. The full table of what is covered and what is not, with the
