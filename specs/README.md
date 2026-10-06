@@ -39,6 +39,7 @@ WebVigil is built with spec-driven development. Each feature is designed as a sp
 | [`013-auth-and-api-surface`](013-auth-and-api-surface/) | largura de auth + superfície de API: auth por header/bearer (`--header "Name: Value"` / `[auth] headers`, mesma disciplina de segredo do cookie da `007`), import de OpenAPI 3.x / Swagger 2.0 JSON (`--openapi <path\|url>`) que semeia o crawl (URLs de operações GET → `Crawler.extra_seeds`) e a passada de injeção (query / path / campos de body form-urlencoded → `enumerate_points`, `source="openapi"`), e quatro checks passivos: `content.sri.missing`, `content.mixed` (`Category.CONTENT` nova), `disclosure.session-id-in-url`, `disclosure.private-ip`. Sem dependência nova; JSON só; sem fuzz de folha de body JSON; GET/POST só | `v0.13` | **done** |
 | [`014-file-upload`](014-file-upload/) | LDAP / XPath / SSI injection **in-band** (assinatura de erro do parser + diferencial, forma do `sqli`; `ssi` só prova avaliação) e detecção de upload sem restrição **opt-in** (`--file-upload`): `UploadScanner` sobe marcadores benignos por form de upload, busca de volta e prova execução server-side (CRITICAL), render inline (HIGH), traversal de nome (HIGH) ou aceite de tipo arbitrário (MEDIUM); um probe `PUT` de marcador. `Category.UPLOAD` nova; `HttpClient.request(files=)` novo. Varredura de fronteiras de cobertura ativa (EL/`eval`/NoSQLi/HPP/RFI/cega/smuggling → fora, documentado) | `v0.14` | **done** |
 | [`015-web-toolchain-modernization`](015-web-toolchain-modernization/) | moderniza o toolchain do `web/`, sem mudança visual nem no engine: Node 20 (EOL) → 24 (CI, `web/Dockerfile`, `engines`, `@types/node`); Tailwind CSS 3 → 4 (`@tailwindcss/postcss`, `globals.css` CSS-first com os tokens preservados, `tailwind.config.ts` deletado, `tailwind-merge` 3, `tw-animate-css`); Next.js 15 → 16 (`eslint-config-next` 16, `next lint` → `eslint` flat config, Turbopack default). Reparo de CI junto (lockfile do Dependabot quebrado, fallout do vitest 4, e2e que nunca rodou no Linux). Fecha os PRs de version-update #7/#8/#10/#11 | — | **done** |
+| [`016-el-injection`](016-el-injection/) | expression-language injection **in-band** (issue #56): `injection.el` (HIGH, CRITICAL quando o type system é alcançável; CWE-917) prova avaliação de SpEL / OGNL / JEXL / MVEL / Unified EL com marcador colado ao produto calculado, em `${}` / `#{}` / `*{}` / `%{}` (OGNL, novo) e na forma de expressão nua; assinaturas de erro de EL; identificação do dialeto por chamada estática pura (`Math.abs`). `injection.ssti` não muda. `eval()` fica fora (decisão da spec) | `v0.16` | **done** |
 
 > A 002 foi dividida: `002-web-api` (backend) e `003-web-ui` (Next.js). O roadmap
 > original tratava as duas como uma spec só; as demais foram renumeradas.
@@ -79,8 +80,9 @@ WebVigil is built with spec-driven development. Each feature is designed as a sp
 > - **OpenAPI em YAML** e **fuzz campo a campo de body JSON** — limites da `013` (JSON só,
 >   sem dependência nova; params de query / path / body form-urlencoded são fuzzados), não
 >   permanentes.
-> - **Expression-language injection (SpEL/OGNL), `eval()` code injection, NoSQLi, HTTP
->   parameter pollution, RFI** — fora da `014` (deferidas ou sem oráculo in-band confiável);
+> - **`eval()` code injection, NoSQLi, HTTP
+>   parameter pollution, RFI** — fora da `014` (expression-language injection saiu desta
+>   lista na `016`) (deferidas ou sem oráculo in-band confiável);
 >   accounting completo em [`docs/active-injection.md`](../docs/active-injection.md#coverage-boundaries).
 > - **Base de templates estilo Nuclei**, fuzzing exaustivo, enum de CMS, brute-force de login.
 >
