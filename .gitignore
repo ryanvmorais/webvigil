@@ -32,6 +32,8 @@ reports/
 # The Web API's SQLite file — created per machine, holds local scan history only.
 *.sqlite3
 *.db
+*.db-shm
+*.db-wal
 
 # --- 6. WEB UI (Next.js) ---
 # web/ has its own .gitignore; these catch its build output from the repo root too.

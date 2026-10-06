@@ -16,6 +16,9 @@ const apiProxyTarget = process.env.API_PROXY_TARGET ?? "http://127.0.0.1:8000";
  * suite and the quality gate use a plain build + `next start`.
  */
 const nextConfig: NextConfig = {
+  // Next 16 writes AGENTS.md / CLAUDE.md into `web/` on every `next dev`; the project's
+  // agent instructions live in the root CLAUDE.md, so keep the generator off.
+  agentRules: false,
   output: process.env.NEXT_OUTPUT_STANDALONE ? "standalone" : undefined,
   async rewrites() {
     return [{ source: "/api/:path*", destination: `${apiProxyTarget}/api/:path*` }];
