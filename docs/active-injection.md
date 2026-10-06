@@ -34,6 +34,7 @@ no out-of-band collaborator.
 | `injection.ssrf.internal` | HIGH | A URL payload reaches a loopback / internal resource (recognizable service banner), reads a local file via `file://`, or an SSRF-shaped connection error names the injected URL — each absent from the baseline. |
 | `injection.cmdi.os` | CRITICAL | A shell-metacharacter break plus `echo <marker>=$((a*b))` makes the shell return the *computed* product next to a per-request marker (absent from the baseline), **or** a `sleep`/`ping -n` payload delays the response past a zero-delay control and scales with a half-length probe. This is RCE. |
 | `injection.ssti` | HIGH | A polyglot draws a template-engine parse error, then an arithmetic payload (`{{a*b}}`, `${a*b}`, `<%= a*b %>`, …) returns the *evaluated* product glued to a per-request marker, absent from the baseline. The engine is named when identifiable (`{{7*'7'}}` → `7777777` Jinja2, `49` Twig). |
+| `injection.el` | HIGH / CRITICAL | A parameter the target evaluates as an expression (Spring SpEL, Struts OGNL, JEXL, MVEL, Unified EL): `${a*b}` / `#{a*b}` / `*{a*b}` / OGNL `%{a*b}`, or the bare form `'<marker>'+(a*b)`, returns the *computed* product glued to a per-request marker, absent from the baseline. A pure static call (`T(java.lang.Math).abs(-n)` / `@java.lang.Math@abs(-n)`) that also evaluates proves the type system is reachable (CRITICAL); otherwise HIGH. The dialect is named from the evidence. |
 | `injection.crlf` | HIGH | A `%0d%0a`-prefixed payload makes the app write an attacker header line (or, with a double CRLF, a whole body) that the HTTP client parsed back, absent from the baseline. |
 | `injection.host-header` | MEDIUM / HIGH | A request with a poisoned `Host` / `X-Forwarded-*` header comes back with the sentinel host in an absolute URL, `Location`, `<base>`, or a canonical tag — absent from the plain-`GET` baseline. HIGH in a reset / redirect context. |
 | `injection.xxe` | HIGH | *(opt-in `--xxe`)* A POST body re-sent as XML with an external-entity payload returns a `/etc/passwd` / `win.ini` signature or a named XML-parser error, absent from the baseline. |
@@ -179,6 +180,63 @@ timing effect (`; curl http://attacker/`) needs an out-of-band collaborator the 
 hosts — the same reason blind SSRF is off the roadmap
 ([`docs/notes/why-not-oast.md`](notes/why-not-oast.md)). The time-based detector is the
 in-band substitute; for the rest, pair with your own collaborator.
+
+## Expression-language injection
+
+`injection.el` (spec 016) detects a parameter that the target hands to a server-side
+expression-language evaluator — Spring **SpEL**, Struts **OGNL**, Apache **JEXL**, **MVEL**, or
+the servlet **Unified EL** behind JSP / JSF — and evaluates. In SpEL and OGNL an evaluator that
+exposes static calls or class references is remote code execution (CWE-917). It is proved
+**in-band**, with the same discipline as SSTI: a per-request marker glued to the *computed*
+product of two random operands, absent from the baseline. A reflected literal is never a hit.
+
+The detector climbs three rungs, cheapest first:
+
+1. **Arithmetic** across the EL delimiters `${a*b}`, `#{a*b}`, `*{a*b}` and OGNL's `%{a*b}`,
+   then the **bare-expression** forms for a parameter that *is* the expression
+   (`'<marker>'+(a*b)`, and a quote-closing variant for a value placed inside a string literal).
+2. **Classification** of what evaluated (below).
+3. **Signature only** — nothing evaluated, but the shared polyglot or an unterminated
+   expression (`${(`, `%{(`) drew an EL parse error (`SpelParseException`, `ognl.OgnlException`,
+   `JexlException`, `org.mvel2`, `javax.el.ELException`) absent from the baseline. HIGH
+   severity, MEDIUM confidence: the evaluator is there and rejected the input.
+
+A delimiter that evaluates is **not** enough to call it EL: `${a*b}` is also Freemarker. The
+evaluator is classified from the evidence, never from the delimiter alone:
+
+| What the evidence shows | Check | Severity |
+|---|---|---|
+| A pure static call evaluates (`T(java.lang.Math).abs(-n)` for SpEL, `@java.lang.Math@abs(-n)` for OGNL) | `injection.el` | **CRITICAL** — the type system is reachable |
+| `%{a*b}` evaluates; the static call does not (modern Struts keeps static access off) | `injection.el`, OGNL | HIGH |
+| An ambiguous delimiter evaluates and an EL error names the dialect (a sandboxed SpEL refusing `T()`, a `javax.el.ELException`) | `injection.el` | HIGH |
+| The bare string-concatenation form evaluates, nothing else says which dialect | `injection.el`, "dialect unknown" | HIGH |
+| `${a*b}` evaluates and nothing names an EL dialect | `injection.ssti` — as before | HIGH |
+
+The probe is `Math.abs`, a pure function: WebVigil never calls `Runtime`, `ProcessBuilder`,
+reads a file, or reflects into a class. The result is glued to the marker, so a reflected
+literal cannot forge it.
+
+**One proof, one finding.** When both `injection.ssti` and `injection.el` are selected the
+scanner runs one combined pass that emits whichever hit kind the evidence supports, so the same
+evaluation is never reported by two checks and no payload is sent twice. With only
+`injection.ssti` selected, the SSTI detector runs exactly as it did before 016.
+
+A parameter whose **name** suggests an expression (`expr`, `expression`, `filter`, `sort`,
+`order`, `where`, `condition`, `rule`, `formula`, `eval`, …) or whose value already holds an EL
+delimiter or `T(` gets the full payload set and is tested first. Generic names (`q`, `search`,
+`message`, `title`) get a short canary set instead (three extra requests over SSTI alone), for
+the reason the other front-loaded detectors stay narrow.
+
+**Not covered:**
+
+- **`eval()` code injection** (PHP, Node, Ruby, Python) — a separate surface whose payload
+  syntax depends on the host language. A JavaScript `eval` happens to satisfy the bare form; it
+  is reported as "expression language, dialect unknown" and is not a coverage claim.
+- **Blind expression injection** — a result that never reaches the response needs an
+  out-of-band collaborator ([`docs/notes/why-not-oast.md`](notes/why-not-oast.md)).
+- **Non-parameter vectors** — Struts S2-045 arrives through the `Content-Type` header; EL can
+  also reach through other headers and cookies. Only the injection points the pass already
+  enumerates are tested.
 
 ## Request-envelope injection
 
@@ -329,8 +387,9 @@ file_upload = false         # spec 014: upload benign markers through upload for
 upload_budget = 80          # spec 014: total requests the file-upload pass may spend
 ```
 
-Per point the pass sends at most 38 crafted requests (raised from 30 in v0.11 for the
-command-injection / SSTI families and 35 in v0.14 for LDAP / XPath / SSI); the time-based
+Per point the pass sends at most 42 crafted requests (raised from 30 in v0.11 for the
+command-injection / SSTI families, to 38 in v0.14 for LDAP / XPath / SSI, and to 42 in
+spec 016 for the expression-language canary); the time-based
 detectors share a cap of 8 sleep-inducing requests per scan; the stored-XSS re-crawl
 fetches at most 120 pages; the file-upload pass has its own `upload_budget`. Hitting any cap
 is a scan **warning**, not an error.
@@ -356,7 +415,7 @@ held since spec 006. What that leaves out, and why:
 |---|---|
 | DOM XSS, client-side prototype pollution | needs a JavaScript engine — out of scope since spec 001. |
 | Blind SSRF / XSS / command injection, out-of-band XXE | needs a hosted collaborator (Burp Collaborator, interactsh). Pair WebVigil with your own; see [`docs/notes/why-not-oast.md`](notes/why-not-oast.md). |
-| Expression-language injection (SpEL / OGNL / JEXL), `eval()` code injection | deferred (spec 011); the SSTI machinery could be extended but it is a spec-sized surface of its own. |
+| `eval()` code injection (PHP / Node / Ruby / Python) | deferred; the payload syntax depends on the host language and on whether the value lands in a string literal or a bare expression, so it is a spec of its own. Expression-language injection (SpEL / OGNL / JEXL / MVEL / Unified EL) is covered by `injection.el` (spec 016). |
 | NoSQL injection, HTTP parameter pollution | no reliable in-band oracle — high false-positive rate. |
 | Remote file inclusion | the blind form needs a collaborator; the in-band form overlaps SSRF / traversal. |
 | Session fixation, logout invalidation, weak session id, verb-based auth bypass | needs a stateful login flow WebVigil does not have. |
@@ -364,7 +423,7 @@ held since spec 006. What that leaves out, and why:
 | Archive extraction (zip-slip), image-library RCE, AV evasion | destructive, resource-heavy, or Nuclei-style version-specific payloads. |
 
 Everything **in scope** ships: reflected & stored XSS, SQLi (error / boolean / time), path
-traversal, open redirect, in-band SSRF, OS command injection, SSTI, CRLF, host-header
+traversal, open redirect, in-band SSRF, OS command injection, SSTI, expression-language injection, CRLF, host-header
 injection, in-band XXE (opt-in), HTTP methods, LDAP / XPath / SSI injection, and
 unrestricted file upload (opt-in).
 

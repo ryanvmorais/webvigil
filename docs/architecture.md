@@ -32,16 +32,21 @@ Persistence       webvigil.api.db  (SQLite via SQLModel + Alembic, web only)
   endpoints), content-validates each, and feeds six probe-fed `disclosure.*` checks.
   GET-only, in-scope, off by default; see
   [information-disclosure.md](information-disclosure.md).
-- `webvigil.checks.injection` adds the first Active-Mode checks (spec 006): reflected XSS,
-  SQL injection (error / boolean / time), path traversal, and open redirect. The
+- `webvigil.checks.injection` holds the Active-Mode checks (spec 006 onward). The
   orchestrator runs one bounded `InjectionScanner` pass — enumerate injection points (query
-  params + `<form>` fields parsed from crawled bodies), baseline each once, fan the
-  detectors under a shared request budget — and six thin `injection.*` checks turn its hits
-  into findings. Gated by `--mode active --authorized-by`; `GET`/`POST` only; in-band
-  detection (no headless browser, no out-of-band collaborator). Spec 008 adds
-  `injection.xss.stored`: a separate `StoredXssScanner` pass (after the reflected one, opt-in
-  via `--stored-xss`) submits `<wvstored…>` markers, then re-crawls (`Crawler.recrawl`,
-  depth 1) to find them rendered unescaped on another page. See
+  params, `<form>` fields parsed from crawled bodies, and the parameters of an imported
+  OpenAPI document), baseline each once, fan the detectors under a shared request budget —
+  and thin `injection.*` checks turn its hits into findings. The detectors cover reflected
+  XSS, SQL injection (error / boolean / time), path traversal and open redirect (006),
+  in-band SSRF (009), OS command injection and SSTI (011), CRLF and opt-in XXE (012), LDAP /
+  XPath / SSI injection (014), and expression-language injection (016). When both
+  `injection.ssti` and `injection.el` are selected one combined `ssti+el` routine runs, so a
+  single proof is never reported twice. Gated by `--mode active --authorized-by`;
+  `GET`/`POST` only; in-band detection (no headless browser, no out-of-band collaborator).
+  Three more passes sit beside it: `StoredXssScanner` (008, opt-in `--stored-xss`) submits
+  `<wvstored…>` markers, then re-crawls (`Crawler.recrawl`, depth 1) to find them rendered
+  unescaped on another page; `EnvelopeScanner` (012) covers host-header injection and the
+  HTTP-methods check; `UploadScanner` (014, opt-in `--file-upload`) tests file upload. See
   [active-injection.md](active-injection.md).
 - The `webvigil.http` client exposes `request(method, …)` for verbs beyond `GET`; a
   non-idempotent request is never retried on a `5xx` or read timeout. Configured `[auth]`
@@ -52,6 +57,12 @@ Persistence       webvigil.api.db  (SQLite via SQLModel + Alembic, web only)
   `SameSite`. It reads `ScanContext.forms` — the `<form>` inventory the crawler now parses
   during `discover()` and also uses to submit safe `GET` forms. See
   [authenticated-scanning.md](authenticated-scanning.md).
+- Authentication and API surface (spec 013): `[auth] headers` / `--header` attach a bearer
+  token or custom header to target-host requests under the same rules as cookies, and
+  `--openapi` (`webvigil.crawler.openapi`) parses an OpenAPI 3.x / Swagger 2.0 JSON document
+  to seed the crawl and the injection pass. `webvigil.checks.content` adds two passive
+  checks, `content.sri.missing` and `content.mixed`. See [api-scanning.md](api-scanning.md)
+  and [content-checks.md](content-checks.md).
 - The Web API adds persistence and a single-slot in-process `ScanRunner` (one scan runs at
   a time; the rest queue). It never reimplements crawling, checks, or reporting.
 - The Next.js web UI (`web/`) talks only to the Web API, never to the engine directly. In
@@ -67,8 +78,10 @@ Persistence       webvigil.api.db  (SQLite via SQLModel + Alembic, web only)
    cap + per-host delay) and scope guard.
 4. The crawler discovers in-scope pages — `<a href>` links plus optional `sitemap.xml`
    seeds — bounded by `max_pages` and gated by `robots.txt`.
-5. The orchestrator selects registered checks whose `mode` is allowed and that are not in
-   `checks.disabled`, then runs them concurrently against a shared `ScanContext`.
+5. The orchestrator runs the passes whose mode or flag is on (dependency fingerprint, path
+   probe, the injection, stored-XSS, envelope and upload passes), then selects registered
+   checks whose `mode` is allowed and that are not in `checks.disabled`, and runs them
+   concurrently against a shared `ScanContext` that carries what the passes observed.
 6. Findings are collected, deduplicated by fingerprint, ordered deterministically, and
    returned in a `ScanResult` alongside per-check errors and warnings.
 7. A reporter renders the result (JSON is canonical; SARIF / HTML / Markdown are pure
@@ -85,5 +98,9 @@ The authoritative designs live under [`specs/`](../specs/) — `001-foundation` 
 `006-active-injection` (reflected XSS, SQLi, path traversal, open redirect),
 `007-auth-flows` (authenticated scanning with static cookies, CSRF detection,
 form-driven crawling), `008-stored-xss` (two-phase inject-then-recrawl stored XSS),
-and `010-osv-online` (opt-in OSV.dev online advisory provider for the dependency
-fingerprint).
+`009-ssrf` (in-band SSRF), `010-osv-online` (opt-in OSV.dev online advisory provider for the
+dependency fingerprint), `011-rce-injection` (command injection, SSTI),
+`012-protocol-injection` (CRLF, host header, XXE, HTTP methods), `013-auth-and-api-surface`
+(header auth, OpenAPI import, SRI / mixed-content / session-id-in-URL / private-IP checks),
+`014-file-upload` (LDAP / XPath / SSI injection, file upload), `015-web-toolchain-modernization`
+(Node 24, Tailwind 4, Next 16) and `016-el-injection` (expression-language injection).
