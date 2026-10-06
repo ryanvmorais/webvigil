@@ -62,7 +62,7 @@ of a package on disk, hard-linked into each project), and its lockfile
 **Learn:** `pnpm install`, `pnpm <script>` (runs a `package.json` script),
 `pnpm dlx` (run a package without installing), the `dependencies` vs
 `devDependencies` split, and `pnpm.overrides` (force a transitive version — used
-here to patch `js-yaml`).
+here to patch `js-yaml`, `brace-expansion` and `source-map-js`).
 
 ### TypeScript
 
