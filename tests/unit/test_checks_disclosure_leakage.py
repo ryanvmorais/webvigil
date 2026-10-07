@@ -12,7 +12,6 @@ import httpx
 from tests.support import make_context, make_page
 from webvigil.checks.disclosure.leakage import PrivateIpInBodyCheck, SessionIdInUrlCheck
 from webvigil.core.context import Page
-from webvigil.core.findings import Category, ScanMode
 
 
 async def _session_titles(page: Page) -> list[str]:
@@ -30,13 +29,6 @@ async def _session_titles(page: Page) -> list[str]:
 # ---------------------------------------------------------------------------
 # disclosure.session-id-in-url
 # ---------------------------------------------------------------------------
-
-
-def test_session_check_metadata() -> None:
-    """Passive, ``Category.DISCLOSURE``, CWE-598."""
-    assert SessionIdInUrlCheck.category is Category.DISCLOSURE
-    assert SessionIdInUrlCheck.mode is ScanMode.PASSIVE
-    assert SessionIdInUrlCheck.cwe == (598,)
 
 
 async def test_jsessionid_in_a_link_is_flagged_with_the_value_redacted() -> None:

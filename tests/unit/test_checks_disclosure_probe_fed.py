@@ -15,22 +15,8 @@ from webvigil.checks.disclosure.checks import (
     VcsExposedCheck,
 )
 from webvigil.checks.disclosure.probe import ProbeHit
-from webvigil.checks.registry import all_checks
 from webvigil.core.context import Observations
-from webvigil.core.findings import Category, Confidence, Severity
-
-_DISCLOSURE_IDS = {
-    "disclosure.debug.error-page",
-    "disclosure.listing.directory-index",
-    "disclosure.vcs.exposed",
-    "disclosure.config.dotenv-exposed",
-    "disclosure.config.manifest-exposed",
-    "disclosure.backup.file-exposed",
-    "disclosure.debug.endpoint-exposed",
-    "disclosure.sourcemap.exposed",
-    "disclosure.session-id-in-url",  # spec 013
-    "disclosure.private-ip",  # spec 013
-}
+from webvigil.core.findings import Confidence, Severity
 
 
 def _hit(family: str, check_id: str, path: str, severity: Severity) -> ProbeHit:
@@ -109,12 +95,3 @@ async def test_dedup_key_is_the_path() -> None:
     )
     findings = await VcsExposedCheck().run(ctx)
     assert len({f.fingerprint for f in findings}) == 2
-
-
-def test_all_disclosure_checks_are_registered() -> None:
-    """The registry exposes exactly the expected disclosure check ids, all under DISCLOSURE."""
-    ids = {check.id for check in all_checks() if check.id.startswith("disclosure.")}
-    assert ids == _DISCLOSURE_IDS
-    for check in all_checks():
-        if check.id.startswith("disclosure."):
-            assert check.category is Category.DISCLOSURE

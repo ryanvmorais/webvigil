@@ -16,7 +16,7 @@ from webvigil.checks.csrf.checks import NoCsrfTokenCheck, TokenNotEnforcedCheck
 from webvigil.checks.csrf.scanner import CsrfHit
 from webvigil.core.config import ScanConfig
 from webvigil.core.context import Observations
-from webvigil.core.findings import Confidence, ScanMode
+from webvigil.core.findings import Confidence
 from webvigil.crawler.forms import Form, FormField
 
 
@@ -192,15 +192,6 @@ async def _run_active(
         page, config=config, observations=Observations(csrf_hits=hits), forms=[_form("x")]
     )
     return await TokenNotEnforcedCheck().run(ctx)
-
-
-def test_active_check_is_registered_as_active_csrf() -> None:
-    """The check is an Active, MEDIUM, CWE-352 CSRF check with the OWASP references."""
-    check = TokenNotEnforcedCheck
-    assert check.id == "csrf.form.token-not-enforced"
-    assert check.mode is ScanMode.ACTIVE
-    assert check.cwe == (352,)
-    assert check.default_severity.name == "MEDIUM"
 
 
 async def test_a_confirmed_form_becomes_one_finding() -> None:

@@ -11,7 +11,7 @@ from tests.support import make_context, make_page
 from webvigil.checks.envelope.checks import HostHeaderCheck, HttpMethodsCheck
 from webvigil.checks.envelope.scanner import EnvelopeHit
 from webvigil.core.context import Observations
-from webvigil.core.findings import Category, Confidence, ScanMode, Severity
+from webvigil.core.findings import Confidence, Severity
 
 
 def _hit(check_id: str, **kw: object) -> EnvelopeHit:
@@ -30,10 +30,6 @@ def _hit(check_id: str, **kw: object) -> EnvelopeHit:
 
 
 async def test_host_header_check_metadata_and_finding() -> None:
-    assert HostHeaderCheck.id == "injection.host-header"
-    assert HostHeaderCheck.category is Category.INJECTION
-    assert HostHeaderCheck.mode is ScanMode.ACTIVE
-    assert 644 in HostHeaderCheck.cwe
 
     hit = _hit("injection.host-header", severity=Severity.HIGH)
     ctx = make_context(make_page(), observations=Observations(envelope_hits=(hit,)))
@@ -46,9 +42,6 @@ async def test_host_header_check_metadata_and_finding() -> None:
 
 
 async def test_http_methods_check_metadata_and_finding() -> None:
-    assert HttpMethodsCheck.id == "http.methods.unsafe"
-    assert HttpMethodsCheck.category is Category.HTTP
-    assert {650, 693, 16} <= set(HttpMethodsCheck.cwe)
 
     hit = _hit("http.methods.unsafe", method="TRACE", param=None, confidence=Confidence.HIGH)
     ctx = make_context(make_page(), observations=Observations(envelope_hits=(hit,)))

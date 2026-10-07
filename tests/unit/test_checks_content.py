@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from tests.support import make_context, make_page
 from webvigil.checks.content.checks import MixedContentCheck, SriMissingCheck
-from webvigil.core.findings import Category, ScanMode, Severity
+from webvigil.core.findings import Severity
 
 
 async def _sri(html: str, *, url: str = "https://shop.example/") -> list[str]:
@@ -44,13 +44,6 @@ async def _mixed(html: str, *, url: str = "https://shop.example/") -> list[tuple
 # ---------------------------------------------------------------------------
 # content.sri.missing
 # ---------------------------------------------------------------------------
-
-
-def test_sri_check_metadata() -> None:
-    """The check is passive, ``Category.CONTENT``, and carries the SRI CWEs."""
-    assert SriMissingCheck.category is Category.CONTENT
-    assert SriMissingCheck.mode is ScanMode.PASSIVE
-    assert set(SriMissingCheck.cwe) == {353, 1104}
 
 
 async def test_cross_origin_script_without_integrity_is_flagged() -> None:

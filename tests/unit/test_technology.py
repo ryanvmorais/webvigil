@@ -1,15 +1,14 @@
 """
-The technology inventory: Observations dedup/order and ScanResult round-trip — RF-12, RF-14.
+The technology inventory: Observations dedup/order — RF-12, RF-14.
+
+The ``ScanResult`` JSON round-trip of the inventory (``vulnerable`` flag included) is asserted by
+``test_reporters_technologies.py::test_json_round_trips_the_inventory`` (issue #101: the model-level
+test here made the same assertion).
 """
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
-
 from webvigil.core.context import Detection, Observations
-from webvigil.core.findings import ScanMode, Severity
-from webvigil.core.result import ScanMetadata, ScanResult
-from webvigil.core.target import Scope
 from webvigil.core.technology import DetectionMethod, Technology
 
 
@@ -62,34 +61,3 @@ def test_detection_is_frozen_and_hashable() -> None:
         "jquery", "1.12.4", DetectionMethod.FILENAME, "https://x/jquery.js", "jquery-1.12.4.min.js"
     )
     assert {d, d} == {d}
-
-
-def test_scan_result_round_trips_technologies() -> None:
-    """The technology inventory survives the JSON round-trip, ``vulnerable`` flag included."""
-    meta = ScanMetadata(
-        target="https://example.com/",
-        mode=ScanMode.PASSIVE,
-        scope=Scope.HOST,
-        tool_version="9.9.9",
-        started_at=datetime(2026, 1, 1, tzinfo=UTC),
-        finished_at=datetime(2026, 1, 1, tzinfo=UTC),
-        pages_scanned=1,
-        counts={s.name: 0 for s in Severity},
-    )
-    result = ScanResult(
-        metadata=meta,
-        findings=(),
-        technologies=(
-            Technology(
-                name="jquery",
-                version="1.12.4",
-                detection=DetectionMethod.FILENAME,
-                source_url="https://example.com/jquery-1.12.4.min.js",
-                vulnerable=True,
-                advisories=("CVE-2020-11022",),
-            ),
-        ),
-    )
-    reloaded = ScanResult.model_validate_json(result.model_dump_json())
-    assert reloaded == result
-    assert reloaded.technologies[0].vulnerable is True

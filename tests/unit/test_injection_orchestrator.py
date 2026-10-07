@@ -140,21 +140,6 @@ async def test_active_scan_ssrf_metadata_is_reported(httpx_mock: object) -> None
     assert ssrf[0].location.param == "q"
 
 
-async def test_active_scan_without_an_ssrf_check_sends_no_ssrf_payload(
-    httpx_mock: object,
-) -> None:
-    """With only the XSS check selected, no SSRF metadata or ``file://`` payload is sent."""
-    seen: list[str] = []
-
-    def router(request: httpx.Request) -> httpx.Response:
-        seen.append(request.url.params.get("q", ""))
-        return httpx.Response(200, text="<div>ok</div>", headers={"content-type": "text/html"})
-
-    httpx_mock.add_callback(router, is_reusable=True)  # type: ignore[attr-defined]
-    await Orchestrator(_active(), check_types=[ReflectedXssCheck]).run(_TARGET)
-    assert not any("169.254.169.254" in v or v.lower().startswith("file:") for v in seen)
-
-
 async def test_active_scan_command_injection_is_reported(httpx_mock: object) -> None:
     """A target that evaluates the injected arithmetic yields a CRITICAL command-injection."""
 
@@ -172,21 +157,6 @@ async def test_active_scan_command_injection_is_reported(httpx_mock: object) -> 
     cmdi = [f for f in result.findings if f.check_id == "injection.cmdi.os"]
     assert cmdi and cmdi[0].severity is Severity.CRITICAL
     assert cmdi[0].location.param == "q"
-
-
-async def test_active_scan_without_a_cmdi_or_ssti_check_sends_no_such_payload(
-    httpx_mock: object,
-) -> None:
-    """With only the XSS check selected, no shell-break or template payload is sent."""
-    seen: list[str] = []
-
-    def router(request: httpx.Request) -> httpx.Response:
-        seen.append(request.url.params.get("q", ""))
-        return httpx.Response(200, text="<div>ok</div>", headers={"content-type": "text/html"})
-
-    httpx_mock.add_callback(router, is_reusable=True)  # type: ignore[attr-defined]
-    await Orchestrator(_active(), check_types=[ReflectedXssCheck]).run(_TARGET)
-    assert not any("$((" in v or "{{7*" in v or ";sleep" in v for v in seen)
 
 
 def _ognl_router(request: httpx.Request) -> httpx.Response:
@@ -225,8 +195,10 @@ async def test_with_both_checks_selected_one_proof_is_one_finding(httpx_mock: ob
     assert ids == ["injection.el"]
 
 
-async def test_active_scan_without_an_el_check_sends_no_el_payload(httpx_mock: object) -> None:
-    """With only ``injection.ssti`` selected, no EL-only form or type probe is sent."""
+async def test_active_scan_sends_only_the_payloads_of_the_selected_checks(
+    httpx_mock: object,
+) -> None:
+    """A check that is not selected sends none of its payloads (SSRF, shell, template, EL)."""
     seen: list[str] = []
 
     def router(request: httpx.Request) -> httpx.Response:
@@ -234,6 +206,13 @@ async def test_active_scan_without_an_el_check_sends_no_el_payload(httpx_mock: o
         return httpx.Response(200, text="<div>ok</div>", headers={"content-type": "text/html"})
 
     httpx_mock.add_callback(router, is_reusable=True)  # type: ignore[attr-defined]
+    # only XSS selected: no SSRF metadata or file:// payload, no shell-break or template payload
+    await Orchestrator(_active(), check_types=[ReflectedXssCheck]).run(_TARGET)
+    assert seen
+    assert not any("169.254.169.254" in v or v.lower().startswith("file:") for v in seen)
+    assert not any("$((" in v or "{{7*" in v or ";sleep" in v for v in seen)
+    # only ``injection.ssti`` selected: the SSTI payloads go out, no EL-only form or type probe
+    seen.clear()
     await Orchestrator(_active(), check_types=[TemplateInjectionCheck]).run(_TARGET)
     assert seen  # the SSTI payloads were sent
     assert not any("%{" in v or "T(java" in v or "'+(" in v or "${(" in v for v in seen)
