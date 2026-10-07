@@ -9,8 +9,9 @@ reloads one from disk.
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from webvigil.core.findings import Finding, ScanMode, Severity
 from webvigil.core.target import Scope
@@ -91,11 +92,20 @@ class CheckError(BaseModel):
     traceback: str
 
 
+# The version of the canonical JSON report. It is part of the compatibility promise
+# (docs/stability.md): adding a field keeps it, removing or renaming one raises it.
+SCHEMA_VERSION = 1
+
+
 class ScanResult(BaseModel):
     """
     The complete outcome of one scan.
 
     Attributes:
+        schema_version (int): The version of the report's JSON shape
+            (:data:`SCHEMA_VERSION`). A report written by a newer WebVigil than this one
+            is refused with a message that says to upgrade; one without the field is a
+            pre-1.0 report and reads as version 1. Defaults to the current version.
         metadata (ScanMetadata): Everything about the run except the findings.
         findings (tuple[Finding, ...]): The deduplicated findings.
         technologies (tuple[Technology, ...]): Detected client-side libraries.
@@ -107,11 +117,36 @@ class ScanResult(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
+    schema_version: int = SCHEMA_VERSION
     metadata: ScanMetadata
     findings: tuple[Finding, ...]
     technologies: tuple[Technology, ...] = ()
     errors: tuple[CheckError, ...] = ()
     warnings: tuple[str, ...] = ()
+
+    @model_validator(mode="before")
+    @classmethod
+    def _not_from_the_future(cls, data: Any) -> Any:
+        """
+        Refuse a report whose schema is newer than this WebVigil understands.
+
+        Args:
+            data (Any): The raw report.
+
+        Returns:
+            Any: ``data`` unchanged when its ``schema_version`` is readable.
+
+        Raises:
+            ValueError: If ``schema_version`` is above :data:`SCHEMA_VERSION`.
+        """
+        if isinstance(data, dict):
+            version = data.get("schema_version", SCHEMA_VERSION)
+            if isinstance(version, int) and version > SCHEMA_VERSION:
+                raise ValueError(
+                    f"this report uses schema {version}, but this WebVigil reads up to schema "
+                    f"{SCHEMA_VERSION}: upgrade WebVigil to read it"
+                )
+        return data
 
     @staticmethod
     def severity_counts(findings: tuple[Finding, ...]) -> dict[str, int]:
