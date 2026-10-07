@@ -146,6 +146,34 @@ async def test_queued_scan_runs_to_completed(web_engine: Engine, runner_factory:
     assert len(findings) == 1
 
 
+async def test_a_wake_up_during_an_empty_claim_is_not_lost(
+    web_engine: Engine, runner_factory: Callable, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A scan enqueued right after the claim saw an empty queue still runs.
+
+    The race: the dispatch loop looks at the queue and finds it empty; a scan is enqueued and
+    ``wake()`` is called; only then does the loop go to sleep. The loop used to clear the event
+    after the claim, which erased that wake-up and left the scan QUEUED until the next one was
+    created (the intermittent ``scan N is queued`` failure of ``test_scans.py`` in CI).
+    """
+    real_start_next = ScanRunner._start_next
+    raced: dict[str, int] = {}
+
+    async def start_next_then_race(self: ScanRunner):  # type: ignore[no-untyped-def]
+        started = await real_start_next(self)
+        if started is None and not raced:
+            raced["id"] = _new_scan(web_engine)  # enqueued right after the empty claim ...
+            self.wake()  # ... and the API nudges the runner
+        return started
+
+    monkeypatch.setattr(ScanRunner, "_start_next", start_next_then_race)
+    await runner_factory(orchestrator_factory=_factory(_FakeOrchestrator()))
+    while "id" not in raced:
+        await asyncio.sleep(0.01)
+
+    await _wait_for(web_engine, raced["id"], ScanStatus.COMPLETED)
+
+
 async def test_engine_error_marks_failed(web_engine: Engine, runner_factory: Callable) -> None:
     """An engine error marks the scan FAILED with the error message recorded."""
     orch = _FakeOrchestrator(error=InvalidTargetError("bad target"))
