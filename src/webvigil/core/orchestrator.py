@@ -150,6 +150,12 @@ class Orchestrator:
                     f"declined to follow {crawler.skipped_destructive} link(s) that look "
                     "state-changing (authenticated crawl)"
                 )
+            if crawler.skipped_by_robots:
+                warnings.append(
+                    f"robots.txt kept the crawler from {crawler.skipped_by_robots} URL(s) "
+                    f"({len(pages)} page(s) crawled): set follow_robots = false under [scan] "
+                    "to crawl them on a site you are authorized to scan"
+                )
             check_types = self._select_checks(warnings)
             detections = await self._fingerprint(check_types, http, target, pages, warnings)
             osv_advisories = await self._osv_lookup(check_types, detections, warnings)

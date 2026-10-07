@@ -97,7 +97,8 @@ class Crawler:
 
     Also accumulates the deduplicated ``<form>`` inventory (:attr:`forms`) and
     counts how many links it declined to follow as state-changing
-    (:attr:`skipped_destructive`).
+    (:attr:`skipped_destructive`) or because ``robots.txt`` disallows them
+    (:attr:`skipped_by_robots`).
     """
 
     def __init__(
@@ -133,6 +134,7 @@ class Crawler:
         self._extra_seeds = tuple(extra_seeds)
         self._forms: dict[_FormKey, Form] = {}
         self._skipped_destructive = 0
+        self._skipped_by_robots = 0
         # spec 018: the POST phase runs only when asked for AND the scan is Active.
         self._post_enabled = config.scan.submit_post_forms and config.scan.mode is ScanMode.ACTIVE
         self._post_cap = config.scan.max_post_submissions
@@ -158,6 +160,16 @@ class Crawler:
                 state-changing (RF-03).
         """
         return self._skipped_destructive
+
+    @property
+    def skipped_by_robots(self) -> int:
+        """
+        Returns:
+            int: How many queued URLs the crawler did not fetch because ``robots.txt``
+                disallows them (RF-07). A site that disallows ``/`` leaves the crawl with
+                the entry page alone, so the scan reports this instead of staying quiet.
+        """
+        return self._skipped_by_robots
 
     @property
     def post_summary(self) -> PostSummary | None:
@@ -222,6 +234,7 @@ class Crawler:
         while queue and len(pages) < max_pages:
             url = queue.popleft()
             if self._config.scan.follow_robots and not robots.can_fetch(self._user_agent, url):
+                self._skipped_by_robots += 1
                 continue
             page = await self._fetch(url)
             pages.append(page)

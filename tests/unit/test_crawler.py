@@ -187,6 +187,42 @@ async def test_extra_seeds_are_fetched_scope_guarded_and_de_duplicated(httpx_moc
     assert not any("evil.test" in u for u in router.seen)
 
 
+async def test_urls_kept_out_by_robots_are_counted(httpx_mock: object) -> None:
+    """The crawler tallies what ``robots.txt`` kept out, so the scan can say so (and not before)."""
+    router = _Router(
+        {
+            "https://example.com/robots.txt": (200, "User-agent: *\nDisallow: /\n", "text/plain"),
+            _SEED: _page(_html("/a", "/b")),
+            "https://example.com/a": _page(_html()),
+            "https://example.com/b": _page(_html()),
+        }
+    )
+    httpx_mock.add_callback(router, is_reusable=True)  # type: ignore[attr-defined]
+    async with HttpClient(Target.parse(_SEED), ScanConfig()) as http:
+        crawler = Crawler(http, Target.parse(_SEED), ScanConfig())
+        pages = await crawler.discover()
+    assert [p.url for p in pages] == [_SEED]  # the entry page is always fetched
+    assert crawler.skipped_by_robots == 2
+
+
+async def test_nothing_is_counted_when_robots_is_not_followed(httpx_mock: object) -> None:
+    """With ``follow_robots=False`` nothing is held back, so nothing is counted."""
+    router = _Router(
+        {
+            "https://example.com/robots.txt": (200, "User-agent: *\nDisallow: /\n", "text/plain"),
+            _SEED: _page(_html("/a")),
+            "https://example.com/a": _page(_html()),
+        }
+    )
+    config = ScanConfig.model_validate({"scan": {"follow_robots": False}})
+    httpx_mock.add_callback(router, is_reusable=True)  # type: ignore[attr-defined]
+    async with HttpClient(Target.parse(_SEED), config) as http:
+        crawler = Crawler(http, Target.parse(_SEED), config)
+        pages = await crawler.discover()
+    assert len(pages) == 2
+    assert crawler.skipped_by_robots == 0
+
+
 async def test_an_extra_seed_blocked_by_robots_is_skipped(httpx_mock: object) -> None:
     """A seed disallowed by ``robots.txt`` is not fetched when ``follow_robots`` is on."""
     router = _Router(
