@@ -140,6 +140,27 @@ def test_submission_url_builds_a_get_query_from_default_values() -> None:
     assert sorted(url.split("?", 1)[1].split("&")) == ["page=1", "q=shoes", "sale=yes", "sort=new"]
 
 
+def test_submission_url_sends_the_first_named_submit_button_like_a_browser() -> None:
+    """A named submit joins the query (DVWA checks ``isset($_GET["Submit"])``); the first only."""
+    (form,) = _forms(
+        '<form action="/vulnerabilities/sqli/" method="get">'
+        '<input type="text" name="id">'
+        '<input type="submit" name="Submit" value="Submit">'
+        '<input type="submit" name="Other" value="Second">'
+        "</form>"
+    )
+    assert submission_url(form) == "https://example.com/vulnerabilities/sqli/?id=&Submit=Submit"
+
+
+def test_an_unnamed_submit_or_a_plain_button_is_not_sent() -> None:
+    """Only a named ``type=submit`` joins the query; an unnamed one and ``type=button`` do not."""
+    (form,) = _forms(
+        '<form action="/s" method="get"><input name="q" value="x">'
+        '<input type="submit" value="Go"><input type="button" name="b" value="B"></form>'
+    )
+    assert submission_url(form) == "https://example.com/s?q=x"
+
+
 def test_submission_url_replaces_an_existing_query_on_the_action() -> None:
     """A query string already on the action is replaced, not merged."""
     (form,) = _forms('<form action="/s?old=1" method="get"><input name="q" value="x"></form>')
