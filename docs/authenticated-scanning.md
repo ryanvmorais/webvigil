@@ -34,7 +34,8 @@ prints the cookie **count** and nothing more.
 
 **Determinism.** WebVigil sends exactly the cookies you configure. It discards anything the
 target sets via `Set-Cookie` during the scan, so a run is reproducible and authentication
-stays entirely config-driven.
+stays entirely config-driven. (The one exception is a configured automated login, below:
+the session cookies it establishes are kept and rotated.)
 
 ### Header and bearer authentication
 
@@ -61,6 +62,89 @@ redirect; and a header a check deliberately sets for a request is not overwritte
 configured header's name and value are never written to a report, a log line, a warning, or
 the scan metadata — `metadata.authenticated` is `true` when *either* cookies or headers are
 supplied, and the CLI summary prints counts only.
+
+### Automated login — `--login-url` (opt-in)
+
+Spec [`019-automated-login`](../specs/019-automated-login/). A pasted cookie dies in minutes
+and cannot be refreshed. With a login configured, WebVigil logs in **itself**, keeps the
+session, and logs in again if it drops:
+
+```bash
+export WEBVIGIL_LOGIN_PASSWORD='...'          # never a flag: it would land in shell history
+webvigil scan https://app.example.com --mode active --authorized-by "Jane / #42" \
+  --login-url https://app.example.com/signin --username scanner@example.com
+```
+
+```toml
+[auth.login]
+url = "https://app.example.com/signin"       # in scope
+username = "scanner@example.com"
+password_env = "WEBVIGIL_LOGIN_PASSWORD"     # the NAME of the variable; a `password` key is an error
+# optional, when the guesses are wrong:
+username_field = "email"
+password_field = "pass"
+form_index = 0                                # among the POST forms with a password input
+extra_fields = ["tenant=acme"]
+logged_in_marker = "Sign out"                 # regex over the body
+logged_out_marker = "Please sign in"
+check_url = "https://app.example.com/account" # answers differently when logged out
+max_relogins = 3                              # 0..10, failed attempts included
+```
+
+**It makes a real login request, so it is Active Mode only** (`--mode active
+--authorized-by`). Outside Active Mode the scan warns that no login was attempted and goes on
+unauthenticated. The password comes from the environment variable (default
+`WEBVIGIL_LOGIN_PASSWORD`, or the one `--password-env` / `password_env` names) or, on a
+terminal, a no-echo prompt. With neither, the CLI exits with a usage error.
+
+**The handshake.** `GET` the login page; take the form with a password input (the one
+`form_index` names when there are several); build the body exactly as a browser would — hidden
+fields and CSRF tokens included — with the account in the username field (the nearest text or
+e-mail input above the password, unless `username_field` says otherwise); submit it **once**
+with the target's `Origin` / `Referer`; follow the in-scope redirect chain. Every `Set-Cookie`
+of every hop — the pre-login cookie, the session set on a middle hop, the last one — becomes
+the session. The session cookies go to the target host only.
+
+**Verified, not assumed.** A `302` after the `POST` is also what a failed login returns on
+many apps, so the result is checked in this order, the first rule that applies deciding: a
+`logged_out_marker` in the body fails the login and a `logged_in_marker` confirms it; then
+`check_url` fetched with the new session; then a heuristic (the login form is gone **and** a
+cookie is new or changed). A login form still on the page fails it. Nothing to go on is
+*inconclusive*: the scan continues with a warning and the summary says `not confirmed`. A
+**failed** login stops the scan before the crawl with a message that says what was seen (the
+URL and status, never a body, a cookie or the password) and exit code **4**, so a pipeline
+does not go green on a scan that never authenticated.
+
+**One attempt, ever.** No retry after a `5xx`, a timeout or a "wrong password" answer, and
+never another credential: an account lockout is a real harm, and varying the password is
+brute force. A login that redirects to another host (SSO, OAuth, SAML), whose form action
+leaves scope, or that downgrades an `https` target to `http` fails immediately and the
+password goes nowhere.
+
+**Re-login.** A response to a target request means the session dropped when it is a `401`, a
+redirect to the login page from a page that is not itself a login page, or a body that
+matches `logged_out_marker`. A `403` or a `5xx` is **not** a drop: an injection payload that
+draws a block page must not cost a login. A suspicion is confirmed first against `check_url`
+or, without one, the page the login landed on (an authenticated page by construction), so an
+API that answers `401` for other reasons is not mistaken for an expired session. The re-login is serialised (ten requests that notice the drop wait for one
+login) and each retries once, with the new session. A page that bounces to the login even with
+a fresh session is learned after one wasted attempt and never signals again. After
+`max_relogins` the session is reported lost, a warning says so, and the scan continues with
+what it has.
+
+**Privacy.** The password is read once, held in memory, and never written to the config (it is
+not a field), a report, a log line, a warning or the metadata. The JSON report gains
+`metadata.login: {relogins, session_lost, confirmed}` (`null` without a login) and no username.
+If a target reflects the password or a session value into a page, an error or a URL, the final
+result is scrubbed of it (`[redacted]`, in the raw, JSON-escaped, percent-encoded and
+form-encoded spellings) in findings, locations, warnings and check errors. A value shorter than
+four characters is not scrubbed: replacing it would shred the report.
+
+**What it will not do.** CAPTCHA, MFA / TOTP, SSO and delegated logins, forms built by
+JavaScript, multi-page logins (the username on one page and the password on the next), JSON /
+token logins (`POST /api/login` returning a bearer token), registration or password reset.
+For those, keep pasting a cookie or a `--header`. The crawl and the Active passes still skip
+login, logout and password forms; the Authenticator is the only thing that logs in.
 
 ### Session-safe crawling
 
@@ -235,12 +319,10 @@ confirmation:
 
 ## What is deferred
 
-- **Automated login** — detecting the login form, submitting credentials, capturing the
-  session, re-authenticating when it drops. A stateful multi-step mechanic (CAPTCHA, MFA,
-  CSRF-on-login, redirect chains); a follow-up spec. v0.7 takes a cookie you already have.
-- **Auth headers / bearer tokens** (`--header "Authorization: Bearer …"`). A companion to
-  the login-flow spec.
 - **Session-security checks** — session fixation, session not invalidated on logout,
-  weak/predictable session ids. Each needs the login flow or Active Mode.
+  weak/predictable session ids. They build on the automated login (spec 019) and are a spec
+  of their own (issue #53).
+- **JSON / token logins** (`POST /api/login` returning a bearer token), CAPTCHA, MFA and
+  delegated (SSO) logins — the automated login handles form logins only.
 - **Parameter mining**, JSON bodies that do not come from an OpenAPI document, and forms
   built by JavaScript — outside the in-band scanner (the `POST` crawl is opt-in, spec 018).

@@ -17,7 +17,7 @@ and **in production** (non-intrusive checks that are safe to run against live sy
 WebVigil ships as a reusable **scan engine**, a **CLI**, and an optional **web dashboard**
 built on top of the same engine.
 
-> **Status:** the planned coverage roadmap (`v0.1`–`v0.18`) is complete. The CLI, config,
+> **Status:** the planned coverage roadmap (`v0.1`–`v0.19`) is complete. The CLI, config,
 > and report formats have been stable across the last several milestones; there is no
 > `1.0` package tag yet. See [Scope and limitations](#scope-and-limitations) for what
 > WebVigil deliberately does not do.
@@ -81,11 +81,13 @@ shipped and links to its docs; each was designed as a spec first, under
 | `v0.16` | Active Mode: in-band expression-language injection — Spring SpEL, Struts OGNL, JEXL, MVEL, Unified EL. The dialect is named from the evidence, and a pure static-call probe separates a sandboxed evaluator (HIGH) from a reachable type system (CRITICAL) ([docs](docs/active-injection.md#expression-language-injection)) | shipped |
 | `v0.17` | Active Mode: opt-in CSRF confirmation (`--confirm-csrf`) — each state-changing form is submitted as a control and as cross-site-shaped replays (foreign `Origin`, token removed or altered), and reported only when the server accepts the replay ([docs](docs/authenticated-scanning.md#active-csrf-confirmation----confirm-csrf-opt-in)) | shipped |
 | `v0.18` | Active Mode: opt-in `POST` crawling (`--submit-post-forms`) — the crawler submits candidate forms (urlencoded, multipart without a file) and `--openapi` `POST` operations once with benign values, reads each answer as a page, and follows what it links to ([docs](docs/authenticated-scanning.md#post-forms----submit-post-forms-opt-in)) | shipped |
+| `v0.19` | Active Mode: automated login (`--login-url`, `--username`, `--password-env`) — WebVigil finds the login form, submits the account once, keeps the session and logs in again when it drops; the password only ever comes from the environment or a prompt ([docs](docs/authenticated-scanning.md#automated-login----login-url-opt-in)) | shipped |
 
-> The seven opt-in switches, all off by default: `--probe` (sensitive-path probing),
+> The eight opt-in switches, all off by default: `--probe` (sensitive-path probing),
 > `--stored-xss`, `--file-upload`, `--confirm-csrf` and `--submit-post-forms` (all write to
 > the target), `--xxe` (re-types POST bodies as XML), `--osv-online` (sends library names to
-> `api.osv.dev`). Everything else only reads.
+> `api.osv.dev`), and `--login-url` (a real login request with the account you give it;
+> Active Mode only). Everything else only reads.
 
 ---
 
@@ -118,10 +120,12 @@ to reach for instead.
   [`docs/active-injection.md`](docs/active-injection.md#coverage-boundaries).
 
 - **Authentication.** WebVigil authenticates with a **static** cookie (`--cookie`) or
-  header (`--header`) you supply. It does not drive a login form, an OAuth flow, or a
-  token refresh, and it does not test session security (fixation, logout invalidation,
-  weak session identifiers). *Instead:* log in with your browser and paste the session
-  cookie. See [authenticated scanning](docs/authenticated-scanning.md).
+  header (`--header`) you supply, or — in Active Mode — logs in to a **form** itself
+  (`--login-url`) and re-logs in when the session drops. It does not drive CAPTCHA, MFA,
+  an SSO / OAuth flow or a JSON token login, and it does not test session security
+  (fixation, logout invalidation, weak session identifiers). *Instead:* log in with your
+  browser and paste the session cookie. See
+  [authenticated scanning](docs/authenticated-scanning.md).
 
 - **Not a template scanner.** There is no Nuclei-style CVE-template database, no CMS or
   plugin enumeration, no exploit matching beyond the vendored Retire.js data and the
@@ -159,6 +163,8 @@ uv run webvigil scan https://example.com --mode active --authorized-by me --file
 uv run webvigil scan https://example.com --mode active --authorized-by me --submit-post-forms  # + the crawler submits POST forms (writes)
 uv run webvigil scan https://example.com --mode active --authorized-by me --cookie "session=<paste>" --confirm-csrf  # + CSRF confirmation (submits forms)
 uv run webvigil scan https://example.com --cookie "session=<paste from your browser>"      # authenticated scan
+WEBVIGIL_LOGIN_PASSWORD=... uv run webvigil scan https://example.com --mode active --authorized-by me \
+  --login-url https://example.com/signin --username scanner@example.com                    # log in by itself
 uv run webvigil scan https://example.com --openapi ./openapi.json                          # seed the scan from an API schema
 uv run webvigil scan https://example.com --osv-online                                      # also check libraries against OSV.dev
 uv run webvigil list-checks
