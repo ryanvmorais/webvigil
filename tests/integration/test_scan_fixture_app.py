@@ -14,9 +14,11 @@ inspects a result the same one (issue #101: the suite used to run ``("insecure",
 * ``scan("insecure")`` — the passive baseline;
 * ``scan("insecure", **_ACTIVE)`` — the default Active scan, with the time-delay detectors on;
 * ``scan(profile, **_full(profile))`` — **every** switch on at once (stored XSS, XXE, file upload,
-  CSRF confirmation, POST crawl, an OpenAPI import, a cookie and a bearer header), with the
-  time-delay detectors off (issue #58: they decide on wall-clock time). The hardened twin of that
-  scan is the "reports nothing" check for every spec at once.
+  CSRF confirmation, POST crawl, an OpenAPI import, an automated login and a bearer header),
+  with the time-delay detectors off (issue #58: they decide on wall-clock time). The hardened twin
+  of that scan is the "reports nothing" check for every spec at once;
+* ``scan("hardened", ..., login=True, session_ttl=2)`` — the one extra scan of spec 019: the
+  session expires under the crawl, so the login must be repeated.
 
 ``scan.fresh(...)`` bypasses the cache — a determinism test needs a second, independent run.
 ``scan.holder["app"]`` is the app of the scan the last call returned, so a test can read
@@ -34,14 +36,15 @@ import httpx
 import pytest
 from starlette.applications import Starlette
 
-from tests.fixtures.app import make_app
+from tests.fixtures.app import SIGNIN_PASSWORD, SIGNIN_USER, make_app
 from tests.support import make_finding, make_result
+from webvigil.auth.login import Credentials
 from webvigil.checks.deps.osv import OsvProvider
 from webvigil.core import orchestrator as orch_mod
 from webvigil.core.config import ScanConfig
 from webvigil.core.findings import Finding, Severity
 from webvigil.core.orchestrator import Orchestrator
-from webvigil.core.result import ScanResult
+from webvigil.core.result import LoginSummary, ScanResult
 from webvigil.http.client import HttpClient
 from webvigil.reporting import get_reporter
 
@@ -53,7 +56,6 @@ _DISABLED = ["tls.https"]
 # The default Active scan: the only one with the time-delay detectors on.
 _ACTIVE = {"active": True}
 _BEARER = "Authorization: Bearer wv-secret-123"
-_SESSION_SECRET = "s3cr3tfull"
 # Every opt-in switch, for the scans that need all of them on.
 _OPT_INS = {
     "stored_xss": True,
@@ -71,15 +73,14 @@ def _full(profile: str) -> dict[str, object]:
 
     Returns:
         dict[str, object]: The keyword arguments of the one scan that turns everything on: Active,
-            every opt-in, an OpenAPI import, a session cookie (named as the profile expects it)
-            and a bearer header, with the time-delay detectors off.
+            every opt-in, an OpenAPI import, an automated login (spec 019; it sets the session
+            cookie the profile expects) and a bearer header, with the time-delay detectors off.
     """
-    cookie = "session" if profile == "insecure" else "__Host-session"
     return {
         "active": True,
         "time_based": False,
         "openapi": _OPENAPI_URL,
-        "cookies": [f"{cookie}={_SESSION_SECRET}"],
+        "login": True,
         "headers": [_BEARER],
         **_OPT_INS,
     }
@@ -175,8 +176,9 @@ def scan(monkeypatch: pytest.MonkeyPatch):
     """Yield an ``async`` runner that scans the fixture app for a given profile.
 
     The returned callable takes the profile name plus optional ``probe`` / ``active`` /
-    ``cookies`` / ``headers`` / ``stored_xss`` / ``xxe`` / ``file_upload`` / ``confirm_csrf`` /
-    ``post_forms`` / ``openapi`` / ``osv_online`` / ``osv_up`` / ``time_based`` switches,
+    ``cookies`` / ``headers`` / ``login`` / ``session_ttl`` / ``stored_xss`` / ``xxe`` /
+    ``file_upload`` / ``confirm_csrf`` / ``post_forms`` / ``openapi`` / ``osv_online`` /
+    ``osv_up`` / ``time_based`` switches,
     assembles the :class:`ScanConfig`, points the engine's HTTP client (and, for OSV, its
     provider) at in-process transports, runs the scan **the first time that configuration is
     asked for in the session**, and returns the :class:`ScanResult`; a later call with the same
@@ -196,6 +198,8 @@ def scan(monkeypatch: pytest.MonkeyPatch):
         active: bool,
         cookies: list[str] | None,
         headers: list[str] | None,
+        login: bool,
+        session_ttl: int | None,
         stored_xss: bool,
         xxe: bool,
         file_upload: bool,
@@ -206,7 +210,7 @@ def scan(monkeypatch: pytest.MonkeyPatch):
         osv_up: bool,
         time_based: bool,
     ) -> tuple[ScanResult, Starlette]:
-        app = make_app(profile)
+        app = make_app(profile, session_ttl=session_ttl)
         transport = httpx.ASGITransport(app=app)
         monkeypatch.setattr(
             orch_mod, "HttpClient", functools.partial(HttpClient, transport=transport)
@@ -249,6 +253,16 @@ def scan(monkeypatch: pytest.MonkeyPatch):
             raw["scan"] = {**raw["scan"], "openapi": openapi}  # type: ignore[dict-item]
         if cookies is not None or headers is not None:
             raw["auth"] = {"cookies": cookies or [], "headers": headers or []}
+        if login:
+            # the password comes in as Credentials, never through the config (spec 019, ADR-8)
+            raw["auth"] = {
+                **raw.get("auth", {}),  # type: ignore[dict-item]
+                "login": {
+                    "url": f"{_TARGET}signin",
+                    "username": SIGNIN_USER,
+                    "max_relogins": 10,
+                },
+            }
         if osv_online:
             raw["deps"] = {"osv_online": True, "osv_base_url": "http://osv.test"}
             handler = _osv_up if osv_up else _osv_down
@@ -257,7 +271,10 @@ def scan(monkeypatch: pytest.MonkeyPatch):
                 "OsvProvider",
                 functools.partial(OsvProvider, transport=httpx.MockTransport(handler)),
             )
-        result = await Orchestrator(ScanConfig.model_validate(raw)).run(_TARGET)
+        credentials = Credentials(SIGNIN_USER, SIGNIN_PASSWORD) if login else None
+        result = await Orchestrator(ScanConfig.model_validate(raw), credentials=credentials).run(
+            _TARGET
+        )
         return result, app
 
     async def _run(
@@ -268,6 +285,8 @@ def scan(monkeypatch: pytest.MonkeyPatch):
         active: bool = False,
         cookies: list[str] | None = None,
         headers: list[str] | None = None,
+        login: bool = False,
+        session_ttl: int | None = None,
         stored_xss: bool = False,
         xxe: bool = False,
         file_upload: bool = False,
@@ -283,6 +302,8 @@ def scan(monkeypatch: pytest.MonkeyPatch):
             "active": active,
             "cookies": cookies,
             "headers": headers,
+            "login": login,
+            "session_ttl": session_ttl,
             "stored_xss": stored_xss,
             "xxe": xxe,
             "file_upload": file_upload,
@@ -849,17 +870,48 @@ async def test_openapi_import_reaches_an_unlinked_endpoint_and_fuzzes_it(scan) -
     assert any(entry.startswith("GET /api/find?") for entry in _log(scan))
 
 
-async def test_secrets_never_appear_in_any_report(scan) -> None:
-    """A session cookie and a ``--header`` bearer token reach the target but no report format."""
+async def test_the_full_scan_logs_in_once_and_reaches_the_account_area(scan) -> None:
+    """One ``POST /signin`` for the whole scan, and the logged-in pages are crawled."""
     result = await scan("insecure", **_full("insecure"))
+    app = scan.holder["app"]
+    assert app.state.login_log == ["ok"]
+    assert result.metadata.authenticated is True
+    assert result.metadata.login == LoginSummary(relogins=0, session_lost=False, confirmed=True)
+    assert any(entry.startswith("GET /account/settings") for entry in _log(scan))
+    assert not any("login requires" in w for w in result.warnings)
+
+
+async def test_a_session_that_expires_is_re_authenticated_and_the_scan_goes_on(scan) -> None:
+    """The session dies after a few requests: re-login(s), the crawl continues, no loss."""
+    result = await scan("hardened", active=True, time_based=False, login=True, session_ttl=2)
+    app = scan.holder["app"]
+    login = result.metadata.login
+    assert login is not None and login.relogins >= 1 and not login.session_lost
+    assert app.state.login_log == ["ok"] * (1 + login.relogins)  # one POST per login, no more
+    assert app.state.expired  # the sessions really did expire under the scan
+    assert not any("lost" in w for w in result.warnings)
+
+
+async def test_a_passive_scan_with_a_login_sends_no_login_request(scan) -> None:
+    """Passive never logs in: a warning, and the target never sees ``/signin``."""
+    result = await scan("insecure", login=True)
+    assert not any("/signin" in entry for entry in _log(scan))
+    assert scan.holder["app"].state.login_log == []
+    assert any("login requires --mode active" in w for w in result.warnings)
+    assert result.metadata.login is None and result.metadata.authenticated is False
+
+
+async def test_secrets_never_appear_in_any_report(scan) -> None:
+    """The login password, the session values and a bearer token reach no report format."""
+    result = await scan("insecure", **_full("insecure"))
+    issued = set(scan.holder["app"].state.sessions) | scan.holder["app"].state.expired
+    assert issued  # the scan really logged in, so there is a session value to look for
+    secrets = {SIGNIN_PASSWORD, "wv-secret-123", *issued}
     for fmt in ("json", "sarif", "html", "md"):
         rendered = get_reporter(fmt).render(result)
-        assert _SESSION_SECRET not in rendered, fmt
-        assert "wv-secret-123" not in rendered, fmt  # never leaves, even via the TRACE echo
-    assert all(
-        _SESSION_SECRET not in warning and "wv-secret-123" not in warning
-        for warning in result.warnings
-    )
+        for secret in secrets:
+            assert secret not in rendered, (fmt, secret)  # never leaves, even via the TRACE echo
+    assert all(secret not in warning for warning in result.warnings for secret in secrets)
 
 
 async def test_csrf_confirmation_flags_the_unenforced_forms_only(scan) -> None:

@@ -14,7 +14,10 @@ scan metadata.
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import contextvars
 import random
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from types import TracebackType
 from urllib.parse import urljoin, urlsplit
@@ -26,6 +29,7 @@ from webvigil.core.errors import RequestFailed
 from webvigil.core.target import Target
 from webvigil.http.policy import RateLimiter
 from webvigil.http.scope_guard import ScopeGuard
+from webvigil.http.session import Session
 
 _MAX_ATTEMPTS = 3
 _MAX_REDIRECT_HOPS = 10
@@ -34,6 +38,13 @@ _REDIRECT_STATUS = frozenset({301, 302, 303, 307, 308})
 _IDEMPOTENT = frozenset({"GET", "HEAD", "OPTIONS", "TRACE"})
 # A 307/308 replays the method and body; a 301/302/303 becomes a bodyless GET.
 _REDIRECT_KEEPS_METHOD = frozenset({307, 308})
+
+# spec 019. Set only inside the task that called ``HttpClient.handshake()`` / ``quiet()``, so a
+# re-login running in one task never switches another task's requests into handshake mode.
+_HANDSHAKE: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "webvigil_handshake", default=False
+)
+_QUIET: contextvars.ContextVar[bool] = contextvars.ContextVar("webvigil_quiet", default=False)
 
 _Params = dict[str, str] | list[tuple[str, str]]
 # Multipart parts: field name -> (filename, content, content type) (spec 014 upload), or a
@@ -172,6 +183,7 @@ class HttpClient:
         self.stats = HttpStats()
         self._transport = transport  # test seam: an httpx ASGITransport / MockTransport
         self._client: httpx.AsyncClient | None = None
+        self._session: Session | None = None  # spec 019: set by use_session()
 
     async def __aenter__(self) -> HttpClient:
         """
@@ -200,6 +212,56 @@ class HttpClient:
         if self._client is not None:
             await self._client.aclose()
             self._client = None
+
+    def use_session(self, session: Session) -> None:
+        """
+        Attach a login session (spec 019): from now on its cookies ride on target-host requests.
+
+        Args:
+            session (Session): The session built by the orchestrator.
+        """
+        self._session = session
+
+    @contextlib.asynccontextmanager
+    async def handshake(self) -> AsyncIterator[None]:
+        """
+        Run requests as a login handshake: every cookie goes to a pending jar, no drop check.
+
+        Scoped to the calling task (a ``ContextVar``), so concurrent scan requests are
+        unaffected while a re-login runs.
+
+        Yields:
+            None: Control, with the handshake mode on.
+
+        Raises:
+            RuntimeError: When no session is attached.
+        """
+        if self._session is None:
+            raise RuntimeError("handshake() needs use_session() first")
+        self._session.jar.begin()
+        handshake_token = _HANDSHAKE.set(True)
+        quiet_token = _QUIET.set(True)
+        try:
+            yield
+        finally:
+            _QUIET.reset(quiet_token)
+            _HANDSHAKE.reset(handshake_token)
+
+    @contextlib.asynccontextmanager
+    async def quiet(self) -> AsyncIterator[None]:
+        """
+        Run requests with the live session but without drop detection (no recursion).
+
+        Used by the ``check_url`` confirmation, which itself must not trigger a re-login.
+
+        Yields:
+            None: Control, with drop detection off for this task.
+        """
+        token = _QUIET.set(True)
+        try:
+            yield
+        finally:
+            _QUIET.reset(token)
 
     @property
     def _active_client(self) -> httpx.AsyncClient:
@@ -287,6 +349,78 @@ class HttpClient:
         Raises:
             OutOfScopeError: When ``url`` is out of scope and
                 ``allow_out_of_scope`` is ``False``.
+            RequestFailed: When the request fails after exhausting retries.
+        """
+        session = self._session
+        seen = session.generation if session is not None else 0
+        response = await self._send_with_redirects(
+            method,
+            url,
+            params=params,
+            data=data,
+            content=content,
+            files=files,
+            headers=headers,
+            allow_out_of_scope=allow_out_of_scope,
+            crafted=crafted,
+        )
+        # spec 019: a response that says the session dropped earns one serialised re-login and
+        # one retry of this request; the retry's answer is returned as it is.
+        if (
+            session is not None
+            and not _QUIET.get()
+            and _host_of(url) == self._target.host
+            and session.looks_dropped(response)
+            and await session.recover(seen, url)
+        ):
+            response = await self._send_with_redirects(
+                method,
+                url,
+                params=params,
+                data=data,
+                content=content,
+                files=files,
+                headers=headers,
+                allow_out_of_scope=allow_out_of_scope,
+                crafted=crafted,
+            )
+            if session.looks_dropped(response):
+                session.learn(url)
+        return response
+
+    async def _send_with_redirects(
+        self,
+        method: str,
+        url: str,
+        *,
+        params: _Params | None = None,
+        data: _Params | None = None,
+        content: str | bytes | None = None,
+        files: _Files | None = None,
+        headers: dict[str, str] | None = None,
+        allow_out_of_scope: bool = False,
+        crafted: bool = False,
+    ) -> Response:
+        """
+        Send one request and follow its in-scope redirects (the body of :meth:`request`).
+
+        Args:
+            method (str): HTTP method; case-insensitive.
+            url (str): The absolute URL to request.
+            params (dict[str, str] | list[tuple[str, str]] | None): Query parameters.
+            data (dict[str, str] | list[tuple[str, str]] | None): Form body.
+            content (str | bytes | None): Raw request body.
+            files (dict[str, tuple[str, bytes, str]] | None): Multipart parts.
+            headers (dict[str, str] | None): Extra request headers.
+            allow_out_of_scope (bool): Skip the scope guard for this request.
+            crafted (bool): Mark this as an injection request.
+
+        Returns:
+            Response: The final response after in-scope redirects.
+
+        Raises:
+            OutOfScopeError: When ``url`` is out of scope and ``allow_out_of_scope`` is
+                ``False``.
             RequestFailed: When the request fails after exhausting retries.
         """
         method = method.upper()
@@ -400,11 +534,24 @@ class HttpClient:
         # deterministic and authentication stays config-driven (spec 007).
         self._active_client.cookies.clear()
         req_headers = dict(headers or {})
-        if self._cookie_header and _host_of(url) == self._target.host:
+        on_target = _host_of(url) == self._target.host
+        session = self._session
+        handshake = _HANDSHAKE.get()
+        cookie_header = self._cookie_header
+        if session is not None and on_target:
+            session_pairs = session.jar.pairs_for(url, handshake=handshake)
+            if session_pairs:
+                held = {name for name, _value in session_pairs}
+                # a cookie the login set wins over a static one of the same name (spec 019)
+                static = [
+                    part.strip()
+                    for part in self._cookie_header.split(";")
+                    if part.strip() and part.strip().partition("=")[0] not in held
+                ]
+                cookie_header = "; ".join([*static, *(f"{n}={v}" for n, v in session_pairs)])
+        if cookie_header and on_target:
             existing = req_headers.get("cookie")
-            req_headers["cookie"] = (
-                f"{existing}; {self._cookie_header}" if existing else self._cookie_header
-            )
+            req_headers["cookie"] = f"{existing}; {cookie_header}" if existing else cookie_header
         # spec 013: configured [auth] headers, target-host only, without clobbering a header
         # the caller already set for this request (case-insensitive).
         if self._auth_headers and _host_of(url) == self._target.host:
@@ -442,6 +589,8 @@ class HttpClient:
                 if idempotent or isinstance(exc, httpx.ConnectError):
                     continue
                 raise RequestFailed(url, last_error) from exc
+            if session is not None and on_target:
+                session.jar.absorb(response, handshake=handshake)
             if idempotent and response.status_code in _RETRY_STATUS and attempt < _MAX_ATTEMPTS - 1:
                 last_error = f"HTTP {response.status_code}"
                 continue

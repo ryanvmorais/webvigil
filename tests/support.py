@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 
 import httpx
@@ -17,7 +17,7 @@ from webvigil.core.findings import (
     Severity,
     compute_fingerprint,
 )
-from webvigil.core.result import CheckError, ScanMetadata, ScanResult
+from webvigil.core.result import CheckError, LoginSummary, ScanMetadata, ScanResult
 from webvigil.core.target import Scope, Target
 from webvigil.core.technology import Technology
 from webvigil.crawler.forms import Form
@@ -175,6 +175,7 @@ def make_result(
     authenticated: bool = False,
     technologies: Sequence[Technology] = (),
     mode: ScanMode = ScanMode.PASSIVE,
+    login: LoginSummary | None = None,
 ) -> ScanResult:
     """
     Build a :class:`~webvigil.core.result.ScanResult` with fixed metadata.
@@ -188,6 +189,8 @@ def make_result(
         authenticated (bool): The ``authenticated`` metadata flag.
         technologies (Sequence[Technology]): The detected-technology inventory.
         mode (ScanMode): The scan mode on the metadata.
+        login (LoginSummary | None): The automated-login summary on the metadata
+            (spec 019).
 
     Returns:
         ScanResult: The assembled result.
@@ -204,6 +207,7 @@ def make_result(
         counts=ScanResult.severity_counts(findings),
         authorized_by=authorized_by,
         authenticated=authenticated,
+        login=login,
     )
     return ScanResult(
         metadata=metadata,
@@ -212,3 +216,34 @@ def make_result(
         errors=tuple(errors),
         warnings=tuple(warnings),
     )
+
+
+class HandlerTransport(httpx.AsyncBaseTransport):
+    """
+    An in-process transport that answers every request with ``handler(request)``.
+
+    The answer is rebuilt over a byte stream: ``httpx`` records ``Response.elapsed`` only when a
+    stream is closed, and ``HttpClient`` reads it, so a response built from ``text=`` would
+    raise. Use it wherever a test needs the real ``HttpClient`` against a hand-written app.
+    """
+
+    def __init__(self, handler: Callable[[httpx.Request], httpx.Response]) -> None:
+        """
+        Args:
+            handler (Callable[[httpx.Request], httpx.Response]): Plays the target.
+        """
+        self._handler = handler
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        """
+        Args:
+            request (httpx.Request): The request the client sent.
+
+        Returns:
+            httpx.Response: ``handler``'s answer, over a byte stream.
+        """
+        await request.aread()  # a multipart body is a stream until read
+        answer = self._handler(request)
+        return httpx.Response(
+            answer.status_code, headers=answer.headers, stream=httpx.ByteStream(answer.content)
+        )

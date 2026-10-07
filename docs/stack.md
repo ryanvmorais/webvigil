@@ -92,7 +92,9 @@ has a cleaner API, HTTP/2 support, and a sync mode for tests.
 
 **Learn:** `AsyncClient`, `Response` (`.text`, `.content`, `.headers`,
 `.history`), `httpx.Headers` (case-insensitive, multi-value for `Set-Cookie`),
-the transport/timeout/retry model, and `MockTransport` for tests.
+the transport/timeout/retry model, `MockTransport` for tests, and `httpx.Cookies` (the
+stdlib `http.cookiejar` underneath), which is the jar of the automated login's session: it
+brings the Domain, Path, `Secure` and expiry rules a hand-rolled parser would get subtly wrong.
 
 ### selectolax
 
@@ -400,7 +402,9 @@ The test runner. `asyncio_mode=auto` means `async def test_*` just works.
 `pytest-httpx` mocks HTTP at the transport layer. `trustme` mints throwaway TLS
 certificates for the TLS-check tests. `jsonschema` validates the SARIF reporter
 output against the bundled 2.1.0 schema. **Starlette** runs the insecure/hardened
-fixture app that the integration tests scan for real.
+fixture app that the integration tests scan for real. To test `HttpClient` offline against a
+hand-written site, `tests/support.py` has `HandlerTransport`: it rebuilds each answer over a
+byte stream, because httpx records `Response.elapsed` only on a closed stream.
 
 **Learn:** fixtures (`@pytest.fixture`, `conftest.py`), parametrization
 (`@pytest.mark.parametrize`), `assert` rewriting, `pytest -k <expr>` /

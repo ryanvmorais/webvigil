@@ -17,7 +17,7 @@ import pytest
 
 from tests.support import make_finding, make_result
 from webvigil.core.findings import Severity
-from webvigil.core.result import ScanResult
+from webvigil.core.result import LoginSummary, ScanResult
 from webvigil.reporting import get_reporter, load_result
 from webvigil.reporting.sarif import SarifReporter
 
@@ -72,6 +72,20 @@ def test_json_carries_the_authenticated_flag_and_round_trips() -> None:
     rendered = get_reporter("json").render(authed)
     assert json.loads(rendered)["metadata"]["authenticated"] is True
     assert load_result_from_string(rendered) == authed
+
+
+def test_json_carries_the_login_summary_and_round_trips() -> None:
+    """``metadata.login`` is ``null`` without a login and the two facts with one (spec 019)."""
+    assert json.loads(get_reporter("json").render(_result()))["metadata"]["login"] is None
+
+    logged = make_result(login=LoginSummary(relogins=2, session_lost=False))
+    rendered = get_reporter("json").render(logged)
+    assert json.loads(rendered)["metadata"]["login"] == {
+        "relogins": 2,
+        "session_lost": False,
+        "confirmed": True,
+    }
+    assert load_result_from_string(rendered) == logged
 
 
 def test_sarif_validates_against_the_2_1_0_schema() -> None:

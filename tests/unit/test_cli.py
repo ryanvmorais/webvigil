@@ -25,8 +25,9 @@ from tests.support import make_finding, make_result
 from webvigil.checks.registry import all_checks, load_plugins
 from webvigil.cli import app as app_mod
 from webvigil.cli._exit import ExitCode
+from webvigil.core.errors import LoginFailedError
 from webvigil.core.findings import ScanMode, Severity
-from webvigil.core.result import ScanResult
+from webvigil.core.result import LoginSummary, ScanResult
 from webvigil.core.technology import DetectionMethod, Technology
 
 runner = CliRunner()
@@ -40,10 +41,12 @@ class _StubOrchestrator:
 
     result: ScanResult = make_result(make_finding(check_id="http.headers.csp"))
     last_config: object = None
+    last_credentials: object = None
 
-    def __init__(self, config: object) -> None:
+    def __init__(self, config: object, *, credentials: object = None) -> None:
         self.config = config
         type(self).last_config = config
+        type(self).last_credentials = credentials
 
     async def run(self, url: str) -> ScanResult:
         return type(self).result
@@ -53,6 +56,8 @@ class _StubOrchestrator:
 def _stub_orchestrator(monkeypatch: pytest.MonkeyPatch) -> None:
     """Swap the CLI's ``Orchestrator`` for :class:`_StubOrchestrator` and reset its result."""
     _StubOrchestrator.result = make_result(make_finding(check_id="http.headers.csp"))
+    _StubOrchestrator.last_config = None
+    _StubOrchestrator.last_credentials = None
     monkeypatch.setattr(app_mod, "Orchestrator", _StubOrchestrator)
 
 
@@ -363,3 +368,116 @@ def test_report_re_renders_offline_in_every_format(tmp_path: Path) -> None:
         result = runner.invoke(app_mod.app, ["report", str(scan_json), "--format", fmt])
         assert result.exit_code == 0, fmt
         assert result.stdout.strip(), fmt
+
+
+# ---------------------------------------------------------------------------
+# --login-url / --username / --password-env (spec 019)
+# ---------------------------------------------------------------------------
+
+_LOGIN = ["--login-url", "https://example.com/signin", "--username", "scanner"]
+_PASSWORD_ENV = {"WEBVIGIL_LOGIN_PASSWORD": "pw-from-env"}
+
+
+def test_login_flags_merge_into_the_files_login_table(tmp_path: Path) -> None:
+    """A flag overrides the file's key and leaves the rest of ``[auth.login]`` alone."""
+    runner.invoke(app_mod.app, [*_SCAN, *_LOGIN, "--password-env", "MY_PW"])
+    login = _config().auth.login  # type: ignore[attr-defined]
+    assert (login.url, login.username, login.password_env) == (
+        "https://example.com/signin",
+        "scanner",
+        "MY_PW",
+    )
+
+    cfg = tmp_path / "webvigil.toml"
+    cfg.write_text(
+        "[auth.login]\nurl = 'https://example.com/in'\nusername = 'file-user'\n"
+        "max_relogins = 5\ncheck_url = 'https://example.com/me'\n",
+        "utf-8",
+    )
+    runner.invoke(app_mod.app, [*_SCAN, "--config", str(cfg), "--username", "cli-user"])
+    login = _config().auth.login  # type: ignore[attr-defined]
+    assert (login.username, login.url) == ("cli-user", "https://example.com/in")
+    assert (login.max_relogins, login.check_url) == (5, "https://example.com/me")
+
+
+def test_a_username_without_a_login_url_is_a_clean_error() -> None:
+    """``--username`` alone cannot build a login: a message, not a traceback."""
+    result = runner.invoke(app_mod.app, [*_SCAN, "--username", "scanner"])
+    assert result.exit_code == ExitCode.OPERATIONAL
+    assert "url" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
+def test_the_password_comes_from_the_environment_and_never_from_a_flag() -> None:
+    """An Active scan hands the orchestrator the account read from the environment."""
+    result = runner.invoke(app_mod.app, [*_ACTIVE, *_LOGIN], env=_PASSWORD_ENV)
+    assert result.exit_code == ExitCode.OK
+    credentials = _StubOrchestrator.last_credentials
+    assert (credentials.username, credentials.password) == ("scanner", "pw-from-env")  # type: ignore[attr-defined]
+    assert "pw-from-env" not in result.stderr + result.stdout
+    # there is deliberately no --password flag (shell history)
+    refused = runner.invoke(app_mod.app, [*_ACTIVE, *_LOGIN, "--password", "x"])
+    assert refused.exit_code == ExitCode.USAGE
+
+
+def test_without_a_password_the_cli_prompts_on_a_terminal_and_fails_without_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No variable: a no-echo prompt on a terminal, a usage error (exit 2) off one."""
+    off = runner.invoke(app_mod.app, [*_ACTIVE, *_LOGIN])
+    assert off.exit_code == ExitCode.USAGE
+    assert "WEBVIGIL_LOGIN_PASSWORD" in off.stderr
+    assert _StubOrchestrator.last_config is None  # the scan never started
+
+    monkeypatch.setattr(app_mod, "_interactive", lambda: True)
+    asked: list[bool] = []
+    monkeypatch.setattr(
+        app_mod.typer,
+        "prompt",
+        lambda *_a, hide_input=False, **_k: asked.append(hide_input) or "typed-pw",
+    )
+    on = runner.invoke(app_mod.app, [*_ACTIVE, *_LOGIN])
+    assert on.exit_code == ExitCode.OK
+    assert asked == [True]  # asked without echo
+    assert _StubOrchestrator.last_credentials.password == "typed-pw"  # type: ignore[attr-defined]
+
+
+def test_a_passive_scan_with_a_login_does_not_ask_for_a_password() -> None:
+    """Passive never logs in, so there is nothing to prompt for and no credentials are built."""
+    result = runner.invoke(app_mod.app, [*_SCAN, *_LOGIN])
+    assert result.exit_code == ExitCode.OK
+    assert _StubOrchestrator.last_credentials is None
+
+
+def test_a_failed_login_exits_with_the_operational_code(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``LoginFailedError`` is a ``WebVigilError``: a message and exit 4, no traceback."""
+
+    class _Failing(_StubOrchestrator):
+        async def run(self, url: str) -> ScanResult:
+            raise LoginFailedError("the login form is still there after the submission")
+
+    monkeypatch.setattr(app_mod, "Orchestrator", _Failing)
+    result = runner.invoke(app_mod.app, [*_ACTIVE, *_LOGIN], env=_PASSWORD_ENV)
+    assert result.exit_code == ExitCode.OPERATIONAL
+    assert "still there" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
+def test_the_login_summary_line_reports_facts_and_the_account_but_no_secret() -> None:
+    """``Login: logged in as <user> (N re-logins)`` / lost / not confirmed, from the metadata."""
+    cases = [
+        (LoginSummary(relogins=0, session_lost=False), "logged in as scanner (0 re-logins)"),
+        (LoginSummary(relogins=1, session_lost=False), "logged in as scanner (1 re-login)"),
+        (
+            LoginSummary(relogins=3, session_lost=True),
+            "session lost after 3 re-login(s) as scanner",
+        ),
+        (LoginSummary(relogins=0, session_lost=False, confirmed=False), "not confirmed"),
+    ]
+    for summary, line in cases:
+        _StubOrchestrator.result = make_result(login=summary, mode=ScanMode.ACTIVE)
+        result = runner.invoke(app_mod.app, [*_ACTIVE, *_LOGIN], env=_PASSWORD_ENV)
+        assert line in result.stderr, line
+        assert "pw-from-env" not in result.stderr
+    _StubOrchestrator.result = make_result()
+    assert "Login:" not in runner.invoke(app_mod.app, _SCAN).stderr

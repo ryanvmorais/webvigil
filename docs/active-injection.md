@@ -426,7 +426,7 @@ held since spec 006. What that leaves out, and why:
 | `eval()` code injection (PHP / Node / Ruby / Python) | deferred; the payload syntax depends on the host language and on whether the value lands in a string literal or a bare expression, so it is a spec of its own. Expression-language injection (SpEL / OGNL / JEXL / MVEL / Unified EL) is covered by `injection.el` (spec 016). |
 | NoSQL injection, HTTP parameter pollution | no reliable in-band oracle — high false-positive rate. |
 | Remote file inclusion | the blind form needs a collaborator; the in-band form overlaps SSRF / traversal. |
-| Session fixation, logout invalidation, weak session id, verb-based auth bypass | needs a stateful login flow WebVigil does not have. |
+| Session fixation, logout invalidation, weak session id, verb-based auth bypass | needs the session-security checks (issue #53); the automated login they build on exists since spec 019. |
 | HTTP request smuggling, web-cache-poisoning confirmation | needs raw-socket framing control / cache-behaviour analysis. |
 | Archive extraction (zip-slip), image-library RCE, AV evasion | destructive, resource-heavy, or Nuclei-style version-specific payloads. |
 

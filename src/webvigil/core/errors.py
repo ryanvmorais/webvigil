@@ -80,3 +80,15 @@ class OpenApiError(WebVigilError):
     document. A document that parses but yields no acted-on operations is a scan
     warning, not this error.
     """
+
+
+class LoginFailedError(WebVigilError):
+    """
+    The automated login (spec 019) could not establish a session.
+
+    Raised before the crawl for a missing password, a login page with no usable form, an
+    out-of-scope or delegated (SSO) login, a downgrade to clear text, or a verified failure.
+    The message says what was observed and never carries the password, a cookie value or a
+    response body. A failed login is final: WebVigil makes one attempt and never retries with
+    other credentials.
+    """

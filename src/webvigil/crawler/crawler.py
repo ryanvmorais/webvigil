@@ -128,7 +128,7 @@ class Crawler:
         self._target = target
         self._config = config
         self._user_agent = config.http.user_agent
-        self._authenticated = bool(config.auth.cookies or config.auth.headers)
+        self._authenticated = config.auth.configured
         self._submit_forms = config.scan.submit_forms
         self._extra_seeds = tuple(extra_seeds)
         self._forms: dict[_FormKey, Form] = {}

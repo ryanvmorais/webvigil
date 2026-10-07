@@ -17,6 +17,26 @@ from webvigil.core.target import Scope
 from webvigil.core.technology import Technology
 
 
+class LoginSummary(BaseModel):
+    """
+    What an automated login did during a scan (spec 019) — facts only.
+
+    Attributes:
+        relogins (int): Re-authentications attempted after the first login, failed
+            ones included.
+        session_lost (bool): ``True`` when the session dropped and could not be recovered
+            (the re-login budget ran out).
+        confirmed (bool): ``False`` when the first login could not be verified (no marker,
+            no ``check_url`` and an unclear page). Defaults to ``True``.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    relogins: int
+    session_lost: bool
+    confirmed: bool = True
+
+
 class ScanMetadata(BaseModel):
     """
     Everything about a scan except the findings themselves.
@@ -35,6 +55,8 @@ class ScanMetadata(BaseModel):
             ``None`` for a passive scan.
         authenticated (bool): Records only *that* cookies were supplied for an
             authenticated scan (spec 007) — never a cookie name or value.
+        login (LoginSummary | None): The outcome of an automated login (spec 019), or
+            ``None`` when none was configured. Never a username, a cookie or a password.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -49,6 +71,7 @@ class ScanMetadata(BaseModel):
     counts: dict[str, int]
     authorized_by: str | None = None
     authenticated: bool = False
+    login: LoginSummary | None = None
 
 
 class CheckError(BaseModel):

@@ -218,7 +218,7 @@ class TokenNotEnforcedCheck(Check):
         """
         samesite = _session_samesite(ctx.pages)
         confidence = _CONFIDENCE[samesite]
-        has_cookies = bool(ctx.config.auth.cookies)
+        has_cookies = ctx.config.auth.has_session
         if not has_cookies:
             confidence = min(confidence, Confidence.MEDIUM)
         credentials = "session cookies configured" if has_cookies else "none - an anonymous replay"

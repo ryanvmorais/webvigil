@@ -10,16 +10,21 @@ tiny local stand-ins that emit canned findings or raise.
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 import httpx
 import pytest
 
+from webvigil.auth.login import Credentials, LoginResult
 from webvigil.checks.base import Check
 from webvigil.core import orchestrator as orch_mod
 from webvigil.core.config import ScanConfig
 from webvigil.core.context import Page, ScanContext
-from webvigil.core.errors import ActiveModeNotAuthorized
+from webvigil.core.errors import ActiveModeNotAuthorized, LoginFailedError
 from webvigil.core.findings import Category, Confidence, Location, ScanMode, Severity
 from webvigil.core.orchestrator import Orchestrator
+from webvigil.core.result import LoginSummary
+from webvigil.http.session import Session, SessionJar
 
 _TARGET = "https://example.com/"
 
@@ -202,3 +207,141 @@ async def test_registry_selection_filters_by_mode_and_reports_unknown_disabled(
 
     assert result.warnings == ("unknown disabled check id: ghost",)
     assert len(result.findings) == 1
+
+
+# ---------------------------------------------------------------------------
+# Automated login (spec 019)
+# ---------------------------------------------------------------------------
+
+_PASSWORD = "hunter2-pw"
+_LOGIN_CFG = {
+    "url": "https://example.com/signin",
+    "username": "scanner",
+    "password_env": "WV_ORCH_PW",
+}
+
+
+class _StubAuth:
+    """An ``Authenticator`` stand-in: records what the orchestrator hands it and the order."""
+
+    instances: ClassVar[list[_StubAuth]] = []
+    confirmed: ClassVar[bool] = True
+    events: ClassVar[list[str]] = []
+
+    def __init__(self, http: object, target: object, login: object, credentials: object) -> None:
+        self.credentials = credentials
+        self.login_cfg = login
+        self.session = Session(
+            jar=SessionJar("example.com"),
+            is_login_url=lambda _url: False,
+            secrets=[credentials.password],  # type: ignore[attr-defined]
+        )
+        type(self).instances.append(self)
+
+    async def login(self) -> LoginResult:
+        type(self).events.append("login")
+        return LoginResult(confirmed=type(self).confirmed)
+
+
+@pytest.fixture
+def _stub_auth(monkeypatch: pytest.MonkeyPatch) -> type[_StubAuth]:
+    """Swap the orchestrator's ``Authenticator`` and record when the OpenAPI load runs."""
+    _StubAuth.instances = []
+    _StubAuth.events = []
+    _StubAuth.confirmed = True
+    monkeypatch.setattr(orch_mod, "Authenticator", _StubAuth)
+
+    async def load_openapi(self: object, *_a: object, **_k: object) -> list[object]:
+        _StubAuth.events.append("openapi")
+        return []
+
+    monkeypatch.setattr(Orchestrator, "_load_openapi", load_openapi)
+    return _StubAuth
+
+
+def _login_config(mode: str = "active") -> ScanConfig:
+    """
+    Args:
+        mode (str): ``"active"`` (gated) or ``"passive"``.
+
+    Returns:
+        ScanConfig: A scan with ``[auth.login]`` set.
+    """
+    raw: dict[str, object] = {"scan": {"mode": mode}, "auth": {"login": _LOGIN_CFG}}
+    if mode == "active":
+        raw["active"] = {"authorized_by": "Jane / #7"}
+    return ScanConfig.model_validate(raw)
+
+
+async def test_an_active_scan_logs_in_once_before_the_openapi_load(
+    _stub_auth: type[_StubAuth],
+) -> None:
+    """The login runs first (the OpenAPI document may sit behind it) and shows in the metadata."""
+    result = await Orchestrator(
+        _login_config(), check_types=[ActiveOne], credentials=Credentials("scanner", _PASSWORD)
+    ).run(_TARGET)
+
+    assert _stub_auth.events == ["login", "openapi"]
+    (auth,) = _stub_auth.instances
+    assert auth.credentials.password == _PASSWORD  # type: ignore[attr-defined]
+    assert result.metadata.authenticated is True
+    assert result.metadata.login == LoginSummary(relogins=0, session_lost=False, confirmed=True)
+
+
+async def test_without_explicit_credentials_the_password_comes_from_the_environment(
+    _stub_auth: type[_StubAuth], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The variable ``[auth.login] password_env`` names is read; unset is a failed login."""
+    monkeypatch.setenv("WV_ORCH_PW", _PASSWORD)
+    await Orchestrator(_login_config(), check_types=[ActiveOne]).run(_TARGET)
+    assert _stub_auth.instances[0].credentials.password == _PASSWORD  # type: ignore[attr-defined]
+
+    monkeypatch.delenv("WV_ORCH_PW")
+    with pytest.raises(LoginFailedError, match="WV_ORCH_PW"):
+        await Orchestrator(_login_config(), check_types=[ActiveOne]).run(_TARGET)
+
+
+async def test_a_passive_scan_with_a_login_sends_nothing_and_says_so(
+    _stub_auth: type[_StubAuth],
+) -> None:
+    """Passive never logs in: a warning, no authenticator, nothing authenticated."""
+    result = await Orchestrator(
+        _login_config("passive"), check_types=[PassiveOne], credentials=Credentials("s", _PASSWORD)
+    ).run(_TARGET)
+
+    assert _stub_auth.instances == []
+    assert any("requires --mode active" in w and "login" in w for w in result.warnings)
+    assert result.metadata.login is None
+    assert result.metadata.authenticated is False
+
+
+async def test_an_unconfirmed_login_continues_with_a_warning(_stub_auth: type[_StubAuth]) -> None:
+    """When nothing can tell whether the login worked, the scan goes on and says so."""
+    _stub_auth.confirmed = False
+    result = await Orchestrator(
+        _login_config(), check_types=[ActiveOne], credentials=Credentials("s", _PASSWORD)
+    ).run(_TARGET)
+
+    assert result.metadata.login.confirmed is False  # type: ignore[union-attr]
+    assert any("could not be confirmed" in w for w in result.warnings)
+
+
+class _Leaky(_Base):
+    id = "test.leaky"
+    mode = ScanMode.ACTIVE
+
+    async def run(self, ctx: ScanContext) -> list[object]:
+        finding = self._finding("leak")
+        return [finding.model_copy(update={"description": f"the page echoed {_PASSWORD}"})]
+
+
+async def test_the_password_a_target_reflected_is_scrubbed_from_the_result(
+    _stub_auth: type[_StubAuth],
+) -> None:
+    """A finding that quotes the password comes out with ``[redacted]`` in its place."""
+    result = await Orchestrator(
+        _login_config(), check_types=[_Leaky], credentials=Credentials("s", _PASSWORD)
+    ).run(_TARGET)
+
+    assert _PASSWORD not in result.model_dump_json()
+    assert result.findings[0].description == "the page echoed [redacted]"

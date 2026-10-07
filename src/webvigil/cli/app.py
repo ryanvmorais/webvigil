@@ -8,6 +8,7 @@ private helpers below carry the full Args/Returns sections.
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 from pathlib import Path
 from typing import Annotated
@@ -18,6 +19,7 @@ from rich.measure import Measurement
 from rich.table import Table
 
 from webvigil import __version__
+from webvigil.auth.login import Credentials
 from webvigil.checks.deps.rules import RetireJsRules
 from webvigil.checks.deps.staleness import staleness_warning
 from webvigil.checks.registry import all_checks, load_plugins
@@ -174,6 +176,33 @@ def scan(
             "Repeatable.",
         ),
     ] = None,
+    login_url: Annotated[
+        str | None,
+        typer.Option(
+            "--login-url",
+            help=(
+                "Log in at this in-scope page (a form with a password input) with the "
+                "--username account and keep the session, re-logging in if it drops. Makes a "
+                "real login request; Active Mode only. One attempt, never a retry."
+            ),
+        ),
+    ] = None,
+    username: Annotated[
+        str | None,
+        typer.Option("--username", help="The account to log in with (needs --login-url)."),
+    ] = None,
+    password_env: Annotated[
+        str | None,
+        typer.Option(
+            "--password-env",
+            help=(
+                "Name of the environment variable that holds the login password "
+                "(default WEBVIGIL_LOGIN_PASSWORD). Without it set, the password is asked "
+                "for on a terminal. There is no --password flag: it would land in your shell "
+                "history."
+            ),
+        ),
+    ] = None,
     openapi: Annotated[
         str | None,
         typer.Option(
@@ -221,6 +250,9 @@ def scan(
             submit_post_forms=submit_post_forms,
             cookie=cookie,
             header=header,
+            login_url=login_url,
+            username=username,
+            password_env=password_env,
             openapi=openapi,
             osv_online=osv_online,
         )
@@ -231,9 +263,10 @@ def scan(
     cfg = _resolve_active_mode(cfg)
     if cfg.scan.mode is ScanMode.ACTIVE and cfg.active is not None:
         _render.banner(cfg.active.authorized_by)
+    credentials = _resolve_credentials(cfg)
 
     try:
-        result = asyncio.run(Orchestrator(cfg).run(url))
+        result = asyncio.run(Orchestrator(cfg, credentials=credentials).run(url))
     except ActiveModeNotAuthorized as exc:
         _render.error(str(exc))
         raise typer.Exit(ExitCode.NOT_AUTHORIZED) from exc
@@ -247,6 +280,7 @@ def scan(
         output,
         cookie_count=len(cfg.auth.cookies),
         header_count=len(cfg.auth.headers),
+        login_user=cfg.auth.login.username if cfg.auth.login else None,
         osv_online=cfg.deps.osv_online,
         file_upload=cfg.injection.file_upload and cfg.scan.mode is ScanMode.ACTIVE,
         confirm_csrf=cfg.injection.csrf_confirm and cfg.scan.mode is ScanMode.ACTIVE,
@@ -318,6 +352,9 @@ def _build_config(
     submit_post_forms: bool | None,
     cookie: list[str] | None,
     header: list[str] | None,
+    login_url: str | None,
+    username: str | None,
+    password_env: str | None,
     openapi: str | None,
     osv_online: bool | None,
 ) -> ScanConfig:
@@ -332,8 +369,10 @@ def _build_config(
         config (Path | None): Path to a ``webvigil.toml``, or ``None``.
         mode, scope, max_pages, delay, fail_on, authorized_by, probe,
             time_based_sqli, time_based_cmdi, stored_xss, xxe, file_upload,
-            confirm_csrf, submit_post_forms, cookie, header, openapi, osv_online: The
-            optional CLI overrides;
+            confirm_csrf, submit_post_forms, cookie, header, login_url, username,
+            password_env, openapi, osv_online: The
+            optional CLI overrides; the three ``login`` flags merge *into* the file's
+            ``[auth.login]`` table (spec 019);
             ``None`` means "not passed".
         verify_tls (bool): The resolved TLS-verification flag.
 
@@ -392,6 +431,18 @@ def _build_config(
         auth_overrides["cookies"] = cookie
     if header is not None:
         auth_overrides["headers"] = header
+    login_overrides: dict[str, object] = {}
+    if login_url is not None:
+        login_overrides["url"] = login_url
+    if username is not None:
+        login_overrides["username"] = username
+    if password_env is not None:
+        login_overrides["password_env"] = password_env
+    if login_overrides:
+        # with_overrides merges one level deep, so merge the login table here: a flag
+        # overrides the file's key and leaves the rest of the file's [auth.login] alone.
+        file_login = base.auth.login.model_dump() if base.auth.login else {}
+        auth_overrides["login"] = {**file_login, **login_overrides}
 
     deps_overrides: dict[str, object] = {}
     if osv_online is not None:
@@ -407,6 +458,45 @@ def _build_config(
         injection=injection_overrides,
         deps=deps_overrides,
     )
+
+
+def _interactive() -> bool:
+    """
+    Returns:
+        bool: ``True`` when stdin is a terminal, so a prompt can be answered. A seam: tests
+            replace it, because ``CliRunner`` has no terminal.
+    """
+    return sys.stdin.isatty()
+
+
+def _resolve_credentials(cfg: ScanConfig) -> Credentials | None:
+    """
+    Get the login password: the environment variable, else a no-echo prompt on a terminal.
+
+    Only an Active scan with ``[auth.login]`` logs in, so only then is a password needed
+    (a Passive scan with a login configured warns and sends nothing).
+
+    Args:
+        cfg (ScanConfig): The resolved configuration.
+
+    Returns:
+        Credentials | None: The account, or ``None`` when no login will run.
+
+    Raises:
+        typer.Exit: With the usage code when there is no password and no terminal to ask.
+    """
+    login = cfg.auth.login
+    if login is None or cfg.scan.mode is not ScanMode.ACTIVE:
+        return None
+    password = os.environ.get(login.password_env, "")
+    if not password:
+        if not _interactive():
+            _render.error(
+                f"no password for the login: set the environment variable {login.password_env}"
+            )
+            raise typer.Exit(ExitCode.USAGE)
+        password = typer.prompt(f"Password for {login.username}", hide_input=True)
+    return Credentials(username=login.username, password=password)
 
 
 def _resolve_active_mode(cfg: ScanConfig) -> ScanConfig:
@@ -429,7 +519,7 @@ def _resolve_active_mode(cfg: ScanConfig) -> ScanConfig:
         return cfg
     if cfg.active is not None and cfg.active.authorized_by.strip():
         return cfg
-    if sys.stdin.isatty():
+    if _interactive():
         try:
             answer = typer.prompt("Authorization for Active Mode (name / engagement)").strip()
         except (typer.Abort, EOFError):
@@ -450,6 +540,7 @@ def _emit(
     *,
     cookie_count: int = 0,
     header_count: int = 0,
+    login_user: str | None = None,
     osv_online: bool = False,
     file_upload: bool = False,
     confirm_csrf: bool = False,
@@ -472,6 +563,8 @@ def _emit(
         cookie_count (int): Cookies supplied, for the summary. Defaults to 0.
         header_count (int): ``[auth]`` headers supplied, for the summary.
             Defaults to 0.
+        login_user (str | None): The ``[auth.login]`` account, for the summary line.
+            Defaults to ``None``.
         osv_online (bool): Whether OSV.dev ran, for the summary. Defaults to
             ``False``.
         file_upload (bool): Whether the file-upload pass ran, for the summary.
@@ -486,6 +579,7 @@ def _emit(
             result,
             cookie_count=cookie_count,
             header_count=header_count,
+            login_user=login_user,
             osv_online=osv_online,
             file_upload=file_upload,
             confirm_csrf=confirm_csrf,
@@ -502,6 +596,7 @@ def _emit(
         result,
         cookie_count=cookie_count,
         header_count=header_count,
+        login_user=login_user,
         osv_online=osv_online,
         file_upload=file_upload,
         confirm_csrf=confirm_csrf,

@@ -98,9 +98,24 @@ def parse_forms(page: Page, target: Target) -> list[Form]:
     """
     if not (page.ok and page.is_html and page.text):
         return []
+    return parse_forms_html(page.text, page.url, target)
+
+
+def parse_forms_html(text: str, url: str, target: Target) -> list[Form]:
+    """
+    Every in-scope ``<form>`` in an HTML document (spec 019: the login page is not a ``Page``).
+
+    Args:
+        text (str): The HTML source.
+        url (str): The URL the document was served from, which resolves relative actions.
+        target (Target): The target, used to drop out-of-scope form actions.
+
+    Returns:
+        list[Form]: The in-scope forms, in document order.
+    """
     forms: list[Form] = []
-    for node in HTMLParser(page.text).css("form"):
-        form = _form_from_node(node, page.url)
+    for node in HTMLParser(text).css("form"):
+        form = _form_from_node(node, url)
         if form is not None and target.in_scope(form.action):
             forms.append(form)
     return forms
