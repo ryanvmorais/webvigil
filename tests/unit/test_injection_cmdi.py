@@ -187,3 +187,18 @@ async def test_detector_stops_when_send_returns_none() -> None:
     hits = await cmdi.detect(_POINT, _baseline(), _ctx(render, time_based_cmdi=False))
     assert hits == []
     assert calls == 2
+
+
+async def test_time_stage_stops_when_the_sleep_budget_is_denied() -> None:
+    """The sleep requests have their own sub-budget: a denied delayed request ends the stage."""
+    seen: list[bool] = []
+
+    async def send(
+        point: InjectionPoint, value: str, *, time_based: bool = False
+    ) -> Response | None:
+        seen.append(time_based)
+        return None if time_based else _resp("PING host")
+
+    ctx = DetectCtx(send=send, delay_s=5, host="example.com", time_based_cmdi=True)
+    assert await cmdi.detect(_POINT, _baseline(), ctx) == []
+    assert seen.count(True) == 1  # the first delayed request was denied; none came after it
