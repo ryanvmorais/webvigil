@@ -34,6 +34,9 @@ from webvigil.core.findings import Confidence, Severity
 from webvigil.core.target import Target
 from webvigil.http.client import HttpClient, Response
 
+# A directory name no application is expected to have, requested once per parent directory as the
+# control for a 403 hit (see ``_answers_403_to_anything``). Fixed, so a scan is deterministic.
+_CONTROL_DIRECTORY = "wvcontrol/"
 _REQUEST_CAP = 150
 _CALIBRATION_PATHS = 3
 _MAX_DERIVED_DIRS = 10
@@ -158,6 +161,8 @@ class DisclosureProbe:
         self._target = target
         self._catalogue = catalogue
         self._pages = pages
+        # parent directory URL -> does a name that cannot exist there also answer 403?
+        self._forbids_everything: dict[str, bool] = {}
 
     async def run(self) -> ProbeReport:
         """
@@ -320,6 +325,8 @@ class DisclosureProbe:
             return None
 
         forbidden_dir = response.status_code == 403 and 403 in entry.ok_status
+        if forbidden_dir and await self._answers_403_to_anything(url):
+            return None  # the directory answers 403 to every name: no evidence for this one
         content_type = response.headers.get("content-type", "") or "(none)"
         if not forbidden_dir and not entry.validator.passes(
             body=response.text, raw=response.content, content_type=content_type
@@ -340,6 +347,29 @@ class DisclosureProbe:
             content_type=content_type,
             redacted_body=redaction.apply(entry.redaction, response.text),
         )
+
+    async def _answers_403_to_anything(self, url: str) -> bool:
+        """
+        Whether the directory holding ``url`` answers ``403`` to a name that cannot exist there.
+
+        A ``403`` on ``.git/`` is only evidence that the directory exists when the server does
+        not also forbid everything around it. OWASP Juice Shop answers ``403`` ("Only .md and .pdf
+        files are allowed!") to every path under ``/ftp/``, and a WAF or an ``Order deny`` rule
+        does the same site-wide. One control request per parent directory settles it.
+
+        Args:
+            url (str): A directory URL (ending in ``/``) that answered ``403``.
+
+        Returns:
+            bool: ``True`` when a control sibling also answers ``403``.
+        """
+        parent = url.rsplit("/", 2)[0] + "/"
+        known = self._forbids_everything.get(parent)
+        if known is None:
+            response = await self._get(parent + _CONTROL_DIRECTORY)
+            known = response is not None and response.status_code == 403
+            self._forbids_everything[parent] = known
+        return known
 
     async def _get(self, url: str) -> Response | None:
         """
