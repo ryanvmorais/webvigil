@@ -1,6 +1,7 @@
 # Contributing to WebVigil
 
-Thanks for your interest in improving WebVigil.
+Thanks for your interest in improving WebVigil. By taking part you agree to follow the
+[Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Development
 

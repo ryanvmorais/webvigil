@@ -13,6 +13,10 @@ submit_forms = true       # submit safe GET forms (search, filters) during the c
                           # (an OpenAPI 3.x / Swagger 2.0 document). Its operations seed the
                           # crawl and the injection pass. CLI: --openapi <path|url>
 # openapi_max_operations = 150  # cap on operations seeded from the import; excess is a warning
+submit_post_forms = false # spec 018: ACTIVE ONLY. The crawler submits candidate POST forms and
+                          # --openapi POST operations once, with benign values, and follows the
+                          # answers. Writes to the target. CLI: --submit-post-forms
+max_post_submissions = 25 # spec 018: cap on those submissions
 
 [http]
 concurrency = 8           # max simultaneous requests
@@ -39,9 +43,23 @@ fail_on = "none"          # "none" | "info" | "low" | "medium" | "high" | "criti
 cookies = []
 headers = []
 
+# spec 019: log in by itself (ACTIVE ONLY: it is a real login request, made once - never
+# retried, never another credential). The PASSWORD is never a key here: it is read from the
+# environment variable named by password_env (or a prompt). CLI: --login-url, --username,
+# --password-env, --logout-url
+# [auth.login]
+# url = "https://app.example.com/signin"         # in scope
+# username = "scanner@example.com"
+# password_env = "WEBVIGIL_LOGIN_PASSWORD"
+# check_url = "https://app.example.com/account"  # answers differently when logged out
+# logout_url = "https://app.example.com/logout"  # spec 020: for --test-logout
+# max_relogins = 3                                # re-logins allowed when the session drops
+# # username_field / password_field / form_index / extra_fields / logged_in_marker /
+# # logged_out_marker: overrides when the form is not detected correctly
+
 # Suppress specific checks by id.
 # [checks]
-# disabled = ["http.headers.permissions-policy-missing"]
+# disabled = ["http.headers.permissions-policy"]   # ids: `webvigil list-checks`
 
 [disclosure]
 probe = false            # opt-in: GET a curated list of well-known sensitive paths
@@ -60,6 +78,9 @@ time_based_cmdi = true    # spec 011: send time-delay OS-command-injection paylo
 time_based_delay_s = 5    # the D in SLEEP(D); keep it below [http] timeout_s
 stored_xss = false        # spec 008: two-phase stored-XSS pass. Submits marker payloads the
                           # target stores and does NOT remove. --stored-xss overrides
+csrf_confirm = false      # spec 017: confirm CSRF by replaying each state-changing form with a
+                          # foreign Origin and the token removed or altered. Writes to the
+                          # target (up to 3 submissions per form). --confirm-csrf overrides
 xxe = false               # spec 012: re-send POST bodies as XML with an external-entity
                           # payload. Off by default (rewrites the body; most endpoints 400).
                           # --xxe overrides
@@ -70,6 +91,15 @@ upload_budget = 80        # spec 014: total requests the file-upload pass may sp
 envelope_url_sample = 15  # spec 012: pages the request-envelope pass re-requests with a
                           # poisoned Host / an OPTIONS probe
 envelope_budget = 120     # spec 012: total requests the request-envelope pass may spend
+
+[session]
+# Session-security checks (spec 020): session.id.weak, session.fixation and
+# session.logout.not-invalidated. Findings name the cookie and never carry its value.
+sample_ids = false        # GET the entry URL sample_count times with NO cookie and judge the
+                          # session ids the target issues. GET-only, any mode. --sample-sessions
+sample_count = 10         # 3..20
+test_logout = false       # log out, then replay the old session: ends the session the scan used,
+                          # so ACTIVE ONLY, needs [auth.login], runs last. --test-logout
 
 [deps]
 # Dependency-fingerprint tuning (spec 004, spec 010).
