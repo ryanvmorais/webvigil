@@ -165,6 +165,36 @@ async def test_forbidden_git_directory_is_a_medium_confidence_hit(httpx_mock: ob
     assert git_dir and git_dir[0].confidence is Confidence.MEDIUM
 
 
+async def test_a_403_is_no_evidence_when_the_directory_forbids_every_name(
+    httpx_mock: object,
+) -> None:
+    """Juice Shop answers 403 to everything under ``/ftp/``: ``.git/`` there is not a hit."""
+    forbidden = (403, "<h1>Only .md and .pdf files are allowed!</h1>", "text/html")
+    router = _Router(
+        {
+            "https://example.com/ftp/.git/": forbidden,
+            "https://example.com/ftp/wvcontrol/": forbidden,  # a name that cannot exist: also 403
+        },
+        default=(404, "", "text/html"),
+    )
+    report = await _run(router, (_page(url="https://example.com/ftp/"),), httpx_mock)
+    assert not [h for h in report.hits if h.path == "/ftp/.git/"]
+    assert router.seen.count("https://example.com/ftp/wvcontrol/") == 1  # asked once per directory
+
+
+async def test_a_403_still_counts_when_only_the_git_directory_is_forbidden(
+    httpx_mock: object,
+) -> None:
+    """The control is a 404: the 403 on ``.git/`` stays a MEDIUM-confidence hit."""
+    router = _Router(
+        {"https://example.com/ftp/.git/": (403, "<h1>403 Forbidden</h1>", "text/html")},
+        default=(404, "", "text/html"),
+    )
+    report = await _run(router, (_page(url="https://example.com/ftp/"),), httpx_mock)
+    git_dir = [h for h in report.hits if h.path == "/ftp/.git/"]
+    assert git_dir and git_dir[0].confidence is Confidence.MEDIUM
+
+
 async def test_probe_is_deterministic(httpx_mock: object) -> None:
     """Two identical runs produce the same hits in the same order (RNF-04)."""
 
