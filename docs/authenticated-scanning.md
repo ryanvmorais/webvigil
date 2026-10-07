@@ -2,7 +2,8 @@
 
 Spec [`007-auth-flows`](../specs/007-auth-flows/). Three related capabilities: scanning the
 target **as a logged-in user** with a cookie you supply, submitting safe `GET` forms during
-the crawl to widen coverage, and a passive **CSRF** check over the discovered forms.
+the crawl to widen coverage, and a passive **CSRF** check over the discovered forms —
+plus an opt-in Active confirmation of it (spec 017, below).
 
 ## Authenticated scanning
 
@@ -121,6 +122,71 @@ positive — the finding text and confidence call this out:
   (Rails-UJS, Angular);
 - the double-submit-cookie pattern with no hidden field.
 
+## Active CSRF confirmation — `--confirm-csrf` (opt-in)
+
+Spec [`017-csrf-confirmation`](../specs/017-csrf-confirmation/). `csrf.form.no-token` reads
+the HTML and guesses from a field *name*: it cannot tell a form with no token from one whose
+token JavaScript adds, and it stays silent about a form that *has* a `csrf_token` field the
+server never checks. `csrf.form.token-not-enforced` (`Category.CSRF`, CWE-352, default
+`MEDIUM`) asks the server instead.
+
+```bash
+webvigil scan https://staging.example.com --mode active --authorized-by me \
+  --cookie "session=<paste from devtools>" --confirm-csrf
+```
+
+It is **opt-in** (`--confirm-csrf` / `[injection] csrf_confirm = true`) on top of
+`--mode active --authorized-by`, because it **writes to the target**: up to three
+submissions per form (the control and one or two replays), with the form's own default
+values and, for a field that has none, a benign `wvcsrf<token>` marker. WebVigil cannot
+delete what it submits — the same discipline as `--stored-xss` and `--file-upload`. Point it
+at a staging copy.
+
+For each candidate form — a `POST`, urlencoded, with no file input, that is not a login,
+registration, search or destructive-looking form — the `CsrfScanner` pass runs one
+experiment:
+
+1. **Fetch** the form's page again, so the token is fresh.
+2. **Control** — submit the form as a legitimate user would (default values, the fresh
+   token, the target's own `Origin` and `Referer`).
+3. **Replay** — submit it again the way a cross-site page would: a foreign `Origin` /
+   `Referer` (`webvigil.invalid`), with the token **removed**, then with it **altered** (same
+   length, different characters). A form with no token field gets one replay, as served.
+
+| Verdict | When | Result |
+|---|---|---|
+| **confirmed** | the control was accepted and a replay got an equivalent response (same status class, same final path, a body at least 95 % similar) | a finding; the passive finding for that form is replaced |
+| **refuted** | every replay was rejected (error status, redirect to a login page, a rejection phrase such as "CSRF token missing"), or answered differently | nothing; the passive finding, if any, stays |
+| **inconclusive** | the form could not be fetched, the control itself was rejected, or the bodies differ with the same status and path | nothing |
+
+The foreign `Origin` matters: a server that checks it rejects the replay, so a defence in
+depth is credited rather than reported. The pass stops at the first confirming replay, so a
+confirmed form is written to twice at most. Each scan with the pass on adds one warning with
+the tallies (`CSRF confirmation: 7 forms tested — 2 confirmed, 3 refuted, 2 inconclusive, 4
+skipped, 0 not tested (cap)`), so "no finding" can be told apart from "never ran". At most 20
+forms are tested per scan, with at most 5 requests each.
+
+Confidence follows the session cookie's `SameSite` exactly as for the passive check, and is
+capped at `MEDIUM` unless a session cookie is configured (`--cookie`): a replay with no ambient
+credential proves the form takes an anonymous post, not that a logged-in victim can be forced
+to make one. A `--header` bearer token does not lift the cap — a cross-site form never sends it.
+
+### What it cannot see
+
+Every item below resolves toward *inconclusive* or *no finding*, never toward a false
+confirmation:
+
+- a token bound to a session the scan does not hold (WebVigil sends only the cookies you
+  configured and discards what the target sets), so the control is rejected;
+- one-time tokens or a form whose control changes the state the replay depends on (a
+  "duplicate entry" error reads as a refutation);
+- multi-step forms, `multipart` and JSON bodies, and anything that is not a `POST` form;
+- a destructive verb only in a `<button>`'s text (the parser keeps named inputs, not button
+  text — a named `submit` input's value *is* read);
+- a form that answers the same page whether or not it saved: that reads as confirmed;
+- a server that validates `Origin` only when it is present, and everything a real browser adds
+  (`SameSite` cookie rules, `Sec-Fetch-*`).
+
 ## What is deferred
 
 - **Automated login** — detecting the login form, submitting credentials, capturing the
@@ -130,6 +196,4 @@ positive — the finding text and confidence call this out:
   the login-flow spec.
 - **Session-security checks** — session fixation, session not invalidated on logout,
   weak/predictable session ids. Each needs the login flow or Active Mode.
-- **Active CSRF confirmation** — replaying a form with the token stripped or tampered and
-  checking the server still accepts it. An Active-Mode check; a later session/CSRF spec.
 - **`POST` form submission by the crawler**, `multipart`/JSON bodies, parameter mining.
