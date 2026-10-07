@@ -20,6 +20,43 @@ WebVigil is built with spec-driven development. Each feature is designed as a sp
   cada tarefa e decisão de design cita o(s) requisito(s) que satisfaz.
 - **Idioma:** specs em inglês (regra do projeto). A conversa com o Ryan segue em português.
 
+## Testes de uma spec
+
+Regra nascida da auditoria da suíte (issue #101): 1062 testes e horas de integração viraram
+876 testes e ~10 min, sem perder uma linha nem um branch coberto. Toda spec nova segue isto no
+`design.md` (seção de testes) e no `tasks.md`:
+
+1. **A lógica se testa em unit.** Detector, veredito, tabela de payloads, predicado de
+   segurança e parser são testados chamando a função com entradas montadas, sem scan.
+2. **Integração anexa a um scan compartilhado.** `tests/integration/test_scan_fixture_app.py`
+   roda **uma vez por configuração** (a fixture `scan` guarda o resultado na sessão). Um cenário
+   novo lê o resultado de um scan existente; se precisa de uma opção nova, ela entra no scan com
+   tudo ligado (`_full(profile)`), não num scan novo. Scan novo só quando a configuração é
+   incompatível (ex.: `hardened`, ou um opt-in que muda o que os outros testes esperam).
+3. **Rota de fixture só para invariante de segurança.** Teste de `tests/fixtures/` que apenas
+   repete a resposta de uma rota é dispensável: o scan de integração já prova que a página é
+   alcançada. Ficam os que guardam uma garantia (o avaliador `ast` nunca chega a `eval`, a rota
+   endurecida recusa o replay).
+4. **Determinismo se testa uma vez.** `test_full_scan_is_deterministic` compara todos os
+   findings do scan completo; spec nova não ganha o seu próprio teste de determinismo
+   (`scan.fresh(...)` existe para esse teste e para mais nenhum).
+5. **Tabela em vez de cópia.** Mesma asserção sobre N flags/checks/formatos = um teste
+   parametrizado ou dirigido pelo registry. Todo check novo ganha **uma linha** em
+   `tests/unit/test_check_metadata.py` (id, categoria, modo, severidade, CWEs), não um teste
+   de constantes próprio.
+6. **Invariantes de segurança continuam testadas**, cada uma em pelo menos um teste: Passive não
+   envia request forjado nem `POST`; passadas de CSRF / crawl POST nunca mandam payload; opt-in
+   fora do Active Mode avisa e não faz nada; cookies e headers configurados nunca chegam a um
+   relatório; página de `POST` nunca é re-pedida com `GET`.
+7. **Orçamento: ~1,0 linha de teste por linha de `src/` adicionada.** Passou muito disso, o
+   design justifica ou enxuga.
+8. **A suíte inteira roda em ~10 min** (com cobertura). Uma spec que a faça passar de ~12 min
+   sem motivo explícito reabre a conversa antes do merge.
+
+**Regra de ouro ao enxugar testes:** `uv run pytest --cov` antes e depois, no **mesmo Python**,
+comparando por arquivo o conjunto de linhas e branches executados; nada coberto pode deixar de
+ser. Teste removido nomeia o que ainda guarda o comportamento.
+
 ## Roadmap
 
 | Spec | Escopo | Entrega | Status |
