@@ -70,6 +70,7 @@ def summary(
     *,
     cookie_count: int = 0,
     header_count: int = 0,
+    login_user: str | None = None,
     osv_online: bool = False,
     file_upload: bool = False,
     confirm_csrf: bool = False,
@@ -88,6 +89,8 @@ def summary(
             authenticated-scan line. Defaults to 0.
         header_count (int): Number of ``[auth]`` headers supplied (spec 013),
             for the authenticated-scan line. Defaults to 0.
+        login_user (str | None): The ``[auth.login]`` account, for the login line (spec 019);
+            the result itself never carries it. Defaults to ``None``.
         osv_online (bool): Whether the OSV.dev lookup ran, for the advisory-
             sources line. Defaults to ``False``.
         file_upload (bool): Whether the spec-014 file-upload pass ran, for a
@@ -158,6 +161,17 @@ def summary(
         if header_count:
             parts.append(f"{header_count} header{'' if header_count == 1 else 's'}")
         _console.print(f"[dim]Authenticated scan: {' + '.join(parts)} supplied[/]")
+
+    if meta.login is not None:
+        as_user = f" as {login_user}" if login_user else ""
+        relogins = meta.login.relogins
+        if not meta.login.confirmed:
+            _console.print(f"[yellow]Login: submitted{as_user}, not confirmed[/]")
+        elif meta.login.session_lost:
+            _console.print(f"[yellow]Login: session lost after {relogins} re-login(s){as_user}[/]")
+        else:
+            noun = "re-login" if relogins == 1 else "re-logins"
+            _console.print(f"[dim]Login: logged in{as_user} ({relogins} {noun})[/]")
     csrf_confirmed = sum(1 for f in result.findings if f.check_id == "csrf.form.token-not-enforced")
     if csrf_confirmed:
         _console.print(

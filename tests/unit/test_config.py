@@ -93,6 +93,7 @@ _UNKNOWN_KEYS = [
     "[deps]\nosv_online = true\nnope = 1\n",
     "[auth]\ncookies = []\ntokens = ['x']\n",
     "[scna]\nmax_pages = 7\n",  # a misspelled section name
+    "[auth.login]\nurl = 'http://x/login'\nusername = 'u'\nnope = 1\n",
 ]
 
 # (a table of values the model must refuse at load time)
@@ -105,6 +106,15 @@ _INVALID_VALUES = [
     "[auth]\nheaders = ['   : v']\n",
     "[auth]\nheaders = ['Host: evil.example']\n",  # a reserved header name
     "[scan]\nmax_post_submissions = 0\n",
+    # spec 019: the login table
+    "[auth.login]\nusername = 'u'\n",  # no url
+    "[auth.login]\nurl = 'http://x/login'\n",  # no username
+    "[auth.login]\nurl = 'http://x/login'\nusername = 'u'\npassword = 's3cret'\n",
+    "[auth.login]\nurl = 'http://x/login'\nusername = 'u'\nmax_relogins = 11\n",
+    "[auth.login]\nurl = 'http://x/login'\nusername = 'u'\nmax_relogins = -1\n",
+    "[auth.login]\nurl = 'http://x/login'\nusername = 'u'\nform_index = -1\n",
+    "[auth.login]\nurl = 'http://x/login'\nusername = 'u'\nextra_fields = ['novalue']\n",
+    "[auth.login]\nurl = 'http://x/login'\nusername = 'u'\nlogged_in_marker = '('\n",
 ]
 
 
@@ -231,3 +241,31 @@ def test_auth_list_overrides_replace_the_file_list() -> None:
     merged = base.with_overrides(auth={"cookies": ["c=3"], "headers": ["X-API-Key: new"]})
     assert merged.auth.cookies == ["c=3"]
     assert merged.auth.headers == ["X-API-Key: new"]
+
+
+def test_auth_login_defaults_helpers_and_round_trip(tmp_path: Path) -> None:
+    """``[auth.login]`` defaults, parsed extras and the ``configured`` / ``has_session`` flags."""
+    assert ScanConfig().auth.login is None
+    assert not ScanConfig().auth.configured
+    assert not ScanConfig().auth.has_session
+
+    toml = (
+        "[auth.login]\nurl = 'http://x/signin'\nusername = 'scanner'\n"
+        "extra_fields = ['tenant=acme', 'token=a=b']\ncheck_url = 'http://x/account'\n"
+    )
+    auth = ScanConfig.load(_write(tmp_path, toml)).auth
+    assert auth.login is not None
+    assert auth.login.password_env == "WEBVIGIL_LOGIN_PASSWORD"
+    assert auth.login.max_relogins == 3
+    assert auth.login.extra_pairs == (("tenant", "acme"), ("token", "a=b"))
+    # a login is a credential and a session; a header alone is a credential but no session
+    assert auth.configured and auth.has_session
+    headers_only = ScanConfig.model_validate({"auth": {"headers": ["X-Key: v"]}}).auth
+    assert headers_only.configured and not headers_only.has_session
+
+
+def test_the_login_password_never_enters_the_config_dump() -> None:
+    """The password has no field, so no dump or merge of the config can carry it (RF-02)."""
+    cfg = ScanConfig.model_validate({"auth": {"login": {"url": "http://x/s", "username": "u"}}})
+    assert "password" not in cfg.model_dump()["auth"]["login"]
+    assert "password_env" in cfg.model_dump()["auth"]["login"]

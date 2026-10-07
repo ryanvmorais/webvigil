@@ -17,6 +17,7 @@ from webvigil.core.errors import (
     ConfigError,
     DuplicateCheckId,
     InvalidTargetError,
+    LoginFailedError,
     OutOfScopeError,
     RequestFailed,
     WebVigilError,
@@ -31,7 +32,7 @@ from webvigil.core.findings import (
     Severity,
     compute_fingerprint,
 )
-from webvigil.core.result import CheckError, ScanMetadata, ScanResult
+from webvigil.core.result import CheckError, LoginSummary, ScanMetadata, ScanResult
 from webvigil.core.target import Scope, Target, normalize_url
 from webvigil.core.technology import DetectionMethod, Technology
 
@@ -50,6 +51,8 @@ __all__ = [
     "Finding",
     "InvalidTargetError",
     "Location",
+    "LoginFailedError",
+    "LoginSummary",
     "Orchestrator",
     "OutOfScopeError",
     "Page",

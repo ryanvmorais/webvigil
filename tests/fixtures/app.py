@@ -772,9 +772,37 @@ _ACCOUNT_HARDENED = (
 )
 
 
+def _session_ok(request: Request, cookie_name: str) -> bool:
+    """
+    Whether the request carries a live session for the account area.
+
+    A value the spec-019 login issued is tracked: it counts its authenticated requests and dies
+    after ``app.state.session_ttl`` of them. Any other non-empty value (a ``--cookie`` scan, spec
+    007) is "logged in", as it always was.
+
+    Args:
+        request (Request): The request to the gated page.
+        cookie_name (str): The profile's session cookie name.
+
+    Returns:
+        bool: ``True`` to serve the page, ``False`` to redirect to the login.
+    """
+    state = request.app.state
+    value = request.cookies.get(cookie_name)
+    if not value or value in state.expired:
+        return False
+    if value in state.sessions:
+        state.sessions[value] += 1
+        if state.session_ttl is not None and state.sessions[value] > state.session_ttl:
+            del state.sessions[value]
+            state.expired.add(value)
+            return False
+    return True
+
+
 def _account(cookie_name: str, body: str) -> Callable[[Request], Response]:
     def view(request: Request) -> Response:
-        if not request.cookies.get(cookie_name):  # any non-empty session value is "logged in"
+        if not _session_ok(request, cookie_name):
             return RedirectResponse("/login", status_code=302)
         return HTMLResponse(body)
 
@@ -783,7 +811,7 @@ def _account(cookie_name: str, body: str) -> Callable[[Request], Response]:
 
 def _account_settings(cookie_name: str, *, escape: bool) -> Callable[[Request], Response]:
     def view(request: Request) -> Response:
-        if not request.cookies.get(cookie_name):
+        if not _session_ok(request, cookie_name):
             return RedirectResponse("/login", status_code=302)
         # spec 008: the nickname set via POST /profile is rendered here on a later request —
         # a stored-XSS sink that only an authenticated re-crawl can reach.
@@ -792,6 +820,91 @@ def _account_settings(cookie_name: str, *, escape: bool) -> Callable[[Request], 
         return HTMLResponse(f"<!doctype html><html><body><p>settings: {shown}</p></body></html>")
 
     return view
+
+
+# --- spec 019: a stateful login (RF-12) --------------------------------------------------
+# ``/signin`` is the real login the automated-login tests drive; ``/login`` above stays the plain
+# page the crawler-safety and CSRF tests know. A GET issues a form token and a ``pre`` cookie with
+# the same value (a double-submit); a POST checks both, then the password, and answers with a
+# redirect chain (POST -> /signin/done -> /account) that sets the session cookie on the *first* hop.
+
+SIGNIN_USER = "scanner@example.com"
+SIGNIN_PASSWORD = "correct horse"
+SIGNIN_LOCKOUT = 3  # the hardened profile refuses logins after this many wrong passwords
+
+
+def _signin_page(token: str, error: str = "") -> HTMLResponse:
+    """
+    Args:
+        token (str): The form token (also the ``pre`` cookie's value).
+        error (str): A message to show above the form. Defaults to none.
+
+    Returns:
+        HTMLResponse: The login page, with its token set as the ``pre`` cookie.
+    """
+    notice = f"<p>{error}</p>" if error else ""
+    page = HTMLResponse(
+        "<!doctype html><html><body><h1>Sign in</h1>"
+        f"{notice}"
+        '<form method="post" action="/signin">'
+        f'<input type="hidden" name="csrf" value="{token}">'
+        '<input type="text" name="email"><input type="password" name="pass">'
+        '<input type="submit" name="go" value="Sign in"></form></body></html>'
+    )
+    page.set_cookie("pre", token, path="/")
+    return page
+
+
+def _signin(cookie_name: str, *, lockout: bool) -> Callable[[Request], Awaitable[Response]]:
+    """
+    Args:
+        cookie_name (str): The profile's session cookie name.
+        lockout (bool): Whether to refuse logins after ``SIGNIN_LOCKOUT`` wrong passwords.
+
+    Returns:
+        Callable[[Request], Awaitable[Response]]: The ``GET`` / ``POST`` ``/signin`` handler.
+    """
+
+    async def view(request: Request) -> Response:
+        state = request.app.state
+        if request.method == "GET":
+            token = f"csrf-{len(state.csrf_issued) + 1:03d}"
+            state.csrf_issued.add(token)
+            return _signin_page(token)
+        form = await request.form()
+        csrf = str(form.get("csrf", ""))
+        if not csrf or csrf != request.cookies.get("pre") or csrf not in state.csrf_issued:
+            state.login_log.append("bad-csrf")
+            return HTMLResponse("invalid form token", status_code=400)
+        if lockout and state.failed_logins >= SIGNIN_LOCKOUT:
+            state.login_log.append("locked")
+            return HTMLResponse("too many attempts", status_code=429)
+        if form.get("email") != SIGNIN_USER or form.get("pass") != SIGNIN_PASSWORD:
+            state.failed_logins += 1
+            state.login_log.append("bad-password")
+            return _signin_page(csrf, "Invalid credentials")
+        state.failed_logins = 0
+        state.login_log.append("ok")
+        token = f"fx-session-{len(state.sessions) + len(state.expired) + 1:03d}"
+        state.sessions[token] = 0
+        done = RedirectResponse("/signin/done", status_code=302)
+        done.set_cookie(cookie_name, token, path="/", httponly=True, samesite="lax")
+        return done
+
+    return view
+
+
+def _signin_done(request: Request) -> Response:
+    """
+    Args:
+        request (Request): The request.
+
+    Returns:
+        Response: The middle hop of the login chain: a cookie of its own, then ``/account``.
+    """
+    response = RedirectResponse("/account", status_code=302)
+    response.set_cookie("welcome", "1", path="/")
+    return response
 
 
 async def _profile(request: Request) -> Response:
@@ -1282,7 +1395,7 @@ def _recorder(sink: list[str]) -> Callable[[ASGIApp], ASGIApp]:
     return _Recorder
 
 
-def make_app(profile: str) -> Starlette:
+def make_app(profile: str, *, session_ttl: int | None = None) -> Starlette:
     """
     Build the target app in one of the two profiles.
 
@@ -1290,6 +1403,8 @@ def make_app(profile: str) -> Starlette:
         profile (str): ``"insecure"`` for the vulnerable app (weak headers,
             reflected/stored sinks, exposed paths), anything else for the
             hardened equivalent.
+        session_ttl (int | None): How many authenticated requests a session issued by
+            ``/signin`` survives (spec 019); ``None`` means it never expires.
 
     Returns:
         Starlette: The app; ``app.state.requests`` records every request and
@@ -1303,6 +1418,11 @@ def make_app(profile: str) -> Starlette:
     routes.append(Route("/home", _home))
     routes += [Route(path, view, methods=m) for path, view, m in _INJECTION_ROUTES[profile]]
     routes.append(Route("/login", _login, methods=["GET", "POST"]))
+    cookie_name = "session" if is_insecure else "__Host-session"
+    routes.append(
+        Route("/signin", _signin(cookie_name, lockout=not is_insecure), methods=["GET", "POST"])
+    )
+    routes.append(Route("/signin/done", _signin_done))
     if is_insecure:
         routes += [Route(path, view) for path, view in _INSECURE_EXTRA_ROUTES]
         # spec 014: a catch-all so a traversal-named upload is retrievable at the web root.
@@ -1316,4 +1436,10 @@ def make_app(profile: str) -> Starlette:
     app.state.root_uploads = {}
     app.state.csrf_log = []  # spec 017: reset per app
     app.state.post_log = []  # spec 018: reset per app
+    app.state.sessions = {}  # spec 019: token -> authenticated requests served
+    app.state.expired = set()  # spec 019: tokens that outlived ``session_ttl``
+    app.state.session_ttl = session_ttl
+    app.state.csrf_issued = set()
+    app.state.login_log = []  # spec 019: one entry per POST /signin: ok / bad-password / ...
+    app.state.failed_logins = 0
     return app

@@ -14,6 +14,8 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 
 from webvigil import __version__
+from webvigil.auth.login import Authenticator, Credentials
+from webvigil.auth.scrub import scrub_result
 from webvigil.checks.base import Check
 from webvigil.checks.csrf.scanner import CsrfHit, CsrfScanner
 from webvigil.checks.deps.advisories import Advisory
@@ -29,7 +31,7 @@ from webvigil.checks.injection.models import InjectionHit
 from webvigil.checks.injection.stored import StoredXssScanner
 from webvigil.checks.registry import iter_checks, load_plugins, unknown_check_ids
 from webvigil.checks.upload.scanner import UploadHit, UploadScanner
-from webvigil.core.config import ScanConfig
+from webvigil.core.config import LoginSection, ScanConfig
 from webvigil.core.context import Detection, Observations, Page, ScanContext
 from webvigil.core.errors import ActiveModeNotAuthorized
 from webvigil.core.findings import Category, Finding, ScanMode
@@ -40,6 +42,7 @@ from webvigil.crawler.crawler import Crawler
 from webvigil.crawler.forms import Form
 from webvigil.crawler.openapi import ApiOperation, load_openapi
 from webvigil.http.client import HttpClient
+from webvigil.http.session import Session
 
 _PROBE_FAMILIES = frozenset({"vcs", "config", "manifest", "backup", "debug", "sourcemap"})
 _STORED_CHECK_ID = "injection.xss.stored"
@@ -61,6 +64,7 @@ class Orchestrator:
         config: ScanConfig,
         *,
         check_types: Sequence[type[Check]] | None = None,
+        credentials: Credentials | None = None,
     ) -> None:
         """
         Args:
@@ -68,9 +72,13 @@ class Orchestrator:
             check_types (Sequence[type[Check]] | None): An explicit check set,
                 bypassing registry discovery. Used by tests; ``None`` in normal
                 operation.
+            credentials (Credentials | None): The account for ``[auth.login]``
+                (spec 019). ``None`` reads the password from the environment variable
+                the login names.
         """
         self._config = config
         self._check_types = check_types
+        self._credentials = credentials
 
     async def run(self, raw_target: str) -> ScanResult:
         """
@@ -114,7 +122,9 @@ class Orchestrator:
         if self._config.scan.submit_post_forms and self._config.scan.mode is not ScanMode.ACTIVE:
             warnings.append("POST crawling requires --mode active — the POST phase did not run")
         technologies: tuple[Technology, ...] = ()
+        session: Session | None = None
         async with HttpClient(target, self._config) as http:
+            session = await self._log_in(http, target, warnings)
             operations = await self._load_openapi(http, target, warnings)
             crawler = Crawler(
                 http,
@@ -168,6 +178,8 @@ class Orchestrator:
             findings, errors = await self._run_checks(check_types, context)
             warnings.extend(context.observations.warnings)
             technologies = context.observations.technologies
+            if session is not None:
+                warnings.extend(session.warnings())
 
         deduped = _dedupe(findings)
         metadata = ScanMetadata(
@@ -180,15 +192,53 @@ class Orchestrator:
             finished_at=datetime.now(UTC),
             pages_scanned=len(pages),
             counts=ScanResult.severity_counts(deduped),
-            authenticated=bool(self._config.auth.cookies or self._config.auth.headers),
+            authenticated=bool(
+                self._config.auth.cookies or self._config.auth.headers or session is not None
+            ),
+            login=session.summary() if session is not None else None,
         )
-        return ScanResult(
+        result = ScanResult(
             metadata=metadata,
             findings=deduped,
             technologies=technologies,
             errors=tuple(errors),
             warnings=tuple(warnings),
         )
+        # spec 019, RF-11: a target may have reflected the password or a session id into a page.
+        return scrub_result(result, session.secrets) if session is not None else result
+
+    async def _log_in(
+        self, http: HttpClient, target: Target, warnings: list[str]
+    ) -> Session | None:
+        """
+        Run the automated login (spec 019) when one is configured and the scan is Active.
+
+        Args:
+            http (HttpClient): The open client; the session is attached to it.
+            target (Target): The scan target.
+            warnings (list[str]): The scan warnings; a Passive scan with a login configured
+                says nothing was attempted, an unconfirmed login says so.
+
+        Returns:
+            Session | None: The session, or ``None`` when no login ran.
+
+        Raises:
+            LoginFailedError: If the login fails — the scan stops before the crawl.
+        """
+        login: LoginSection | None = self._config.auth.login
+        if login is None:
+            return None
+        if self._config.scan.mode is not ScanMode.ACTIVE:
+            warnings.append("a login requires --mode active - no login was attempted")
+            return None
+        credentials = self._credentials or Credentials.from_environment(
+            login.username, login.password_env
+        )
+        authenticator = Authenticator(http, target, login, credentials)
+        http.use_session(authenticator.session)
+        outcome = await authenticator.login()
+        authenticator.session.confirmed = outcome.confirmed
+        return authenticator.session
 
     async def _load_openapi(
         self, http: HttpClient, target: Target, warnings: list[str]

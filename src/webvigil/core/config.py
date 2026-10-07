@@ -7,11 +7,19 @@ Precedence is CLI flag > config file > model default. The model mirrors
 
 from __future__ import annotations
 
+import re
 import tomllib
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from webvigil.core.errors import ConfigError
 from webvigil.core.findings import ScanMode
@@ -120,6 +128,125 @@ class ActiveSection(_Section):
     authorized_by: str
 
 
+class LoginSection(_Section):
+    """
+    The ``[auth.login]`` table: an automated login (spec 019).
+
+    The password is **not** a field: it comes from the environment variable named by
+    ``password_env`` (or a prompt) and travels as ``Credentials``, outside the config, so
+    dumping or merging a :class:`ScanConfig` can never leak it. A ``password`` key is
+    rejected with a message that says so (RF-02).
+
+    Attributes:
+        url (str): The login page, in scope.
+        username (str): The account name or e-mail to submit.
+        password_env (str): Name of the environment variable that holds the password.
+            Defaults to ``WEBVIGIL_LOGIN_PASSWORD``.
+        username_field (str | None): Input name of the username field, when the nearest
+            preceding text / e-mail input is the wrong guess. Defaults to ``None``.
+        password_field (str | None): Input name of the password field. Defaults to ``None``.
+        form_index (int | None): Which candidate form (0-based, among the ``POST`` forms
+            with a password input) to submit. Defaults to ``None``.
+        extra_fields (list[str]): Fixed ``name=value`` pairs added to the body (a tenant, a
+            "remember me" box). Defaults to empty.
+        logged_in_marker (str | None): Regular expression that matches the body of a
+            logged-in page. Defaults to ``None``.
+        logged_out_marker (str | None): Regular expression that matches the body of a
+            logged-out page. Defaults to ``None``.
+        check_url (str | None): An in-scope URL that answers differently when logged out.
+            Defaults to ``None``.
+        max_relogins (int): Re-authentications allowed per scan, failed ones included.
+            Defaults to 3.
+    """
+
+    url: str
+    username: str
+    password_env: str = "WEBVIGIL_LOGIN_PASSWORD"
+    username_field: str | None = None
+    password_field: str | None = None
+    form_index: int | None = Field(default=None, ge=0)
+    extra_fields: list[str] = []
+    logged_in_marker: str | None = None
+    logged_out_marker: str | None = None
+    check_url: str | None = None
+    max_relogins: int = Field(default=3, ge=0, le=10)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _no_password(cls, data: Any) -> Any:
+        """
+        Refuse a ``password`` key: a secret does not belong in a file that gets committed.
+
+        Args:
+            data (Any): The raw table.
+
+        Returns:
+            Any: ``data`` unchanged when it has no ``password`` key.
+
+        Raises:
+            ValueError: If the table has a ``password`` key.
+        """
+        if isinstance(data, dict) and "password" in data:
+            raise ValueError(
+                "the password never goes in the config file: put it in an environment "
+                "variable and name it with password_env"
+            )
+        return data
+
+    @field_validator("extra_fields")
+    @classmethod
+    def _check_extra(cls, raw: list[str]) -> list[str]:
+        """
+        Reject an extra field that is not a ``name=value`` pair.
+
+        Args:
+            raw (list[str]): The configured pairs.
+
+        Returns:
+            list[str]: ``raw`` unchanged when every entry is well formed.
+
+        Raises:
+            ValueError: If an entry has no ``=`` or an empty name.
+        """
+        for entry in raw:
+            name, sep, _value = entry.partition("=")
+            if not sep or not name.strip():
+                raise ValueError(f"invalid extra field {entry!r}: expected 'name=value'")
+        return raw
+
+    @field_validator("logged_in_marker", "logged_out_marker")
+    @classmethod
+    def _check_marker(cls, raw: str | None) -> str | None:
+        """
+        Reject a marker that is not a valid regular expression.
+
+        Args:
+            raw (str | None): The configured marker.
+
+        Returns:
+            str | None: ``raw`` unchanged when it compiles.
+
+        Raises:
+            ValueError: If the pattern does not compile.
+        """
+        if raw is not None:
+            try:
+                re.compile(raw)
+            except re.error as exc:
+                raise ValueError(f"invalid marker regular expression {raw!r}: {exc}") from exc
+        return raw
+
+    @property
+    def extra_pairs(self) -> tuple[tuple[str, str], ...]:
+        """
+        Returns:
+            tuple[tuple[str, str], ...]: One ``(name, value)`` per ``extra_fields`` entry; the
+                value keeps any ``=`` after the first.
+        """
+        parts = (entry.partition("=") for entry in self.extra_fields)
+        return tuple((name.strip(), value) for name, _sep, value in parts)
+
+
 class AuthSection(_Section):
     """
     Static credentials for an authenticated scan (spec 007, spec 013).
@@ -137,10 +264,13 @@ class AuthSection(_Section):
         headers (list[str]): Request headers, each ``"Name: Value"``. Defaults
             to empty. ``Host`` and ``Content-Length`` are rejected — the
             transport computes them.
+        login (LoginSection | None): An automated login (spec 019). Defaults
+            to ``None``.
     """
 
     cookies: list[str] = []
     headers: list[str] = []
+    login: LoginSection | None = None
 
     @field_validator("cookies")
     @classmethod
@@ -193,6 +323,23 @@ class AuthSection(_Section):
                     f"header {name.strip()!r} is computed by the transport and cannot be set"
                 )
         return raw
+
+    @property
+    def configured(self) -> bool:
+        """
+        Returns:
+            bool: ``True`` when any credential is configured — a cookie, a header or a login.
+        """
+        return bool(self.cookies or self.headers or self.login)
+
+    @property
+    def has_session(self) -> bool:
+        """
+        Returns:
+            bool: ``True`` when the scan carries a session cookie — a configured cookie or
+                a login (which establishes one).
+        """
+        return bool(self.cookies or self.login)
 
     @property
     def as_header(self) -> str:
