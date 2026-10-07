@@ -61,6 +61,13 @@ Persistence       webvigil.api.db  (SQLite via SQLModel + Alembic, web only)
   cross-site-shaped replays without a valid token, and `csrf.form.token-not-enforced`
   reports the forms the server accepted. See
   [authenticated-scanning.md](authenticated-scanning.md).
+- The crawler (`webvigil.crawler`) reads by default and writes only on request. With
+  `--submit-post-forms` (spec 018, Active Mode) a `POST` phase runs inside
+  `Crawler.discover()` after the `GET` queue drains: it submits each candidate form and
+  `--openapi` `POST` operation once with benign values, keeps each answer as a `Page` with
+  `method="POST"`, and resumes the same BFS on what the answers link to. A `POST` page is
+  never re-requested with `GET` by the later passes. See
+  [authenticated-scanning.md](authenticated-scanning.md).
 - Authentication and API surface (spec 013): `[auth] headers` / `--header` attach a bearer
   token or custom header to target-host requests under the same rules as cookies, and
   `--openapi` (`webvigil.crawler.openapi`) parses an OpenAPI 3.x / Swagger 2.0 JSON document
@@ -108,4 +115,4 @@ dependency fingerprint), `011-rce-injection` (command injection, SSTI),
 (header auth, OpenAPI import, SRI / mixed-content / session-id-in-URL / private-IP checks),
 `014-file-upload` (LDAP / XPath / SSI injection, file upload), `015-web-toolchain-modernization`
 (Node 24, Tailwind 4, Next 16) and `016-el-injection` (expression-language injection) and `017-csrf-confirmation` (active
-CSRF confirmation).
+CSRF confirmation) and `018-post-form-crawl` (the crawler's opt-in `POST` phase).

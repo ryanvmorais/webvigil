@@ -87,13 +87,59 @@ The crawler submits safe **`GET`** forms (search boxes, filters) with their defa
 values and follows the resulting URLs, just like a discovered link. This surfaces search
 results and filtered listings for every check, passive and active.
 
-- **`GET` only.** `POST` forms are recorded in the form inventory but never submitted by
-  the crawler. (The Active injection pass still submits `POST` forms it targets — spec 006.)
+- **`GET` only by default.** `POST` forms are recorded in the form inventory but not
+  submitted unless you opt in to the `POST` phase below. (The Active injection pass submits
+  the `POST` forms it targets with payloads — spec 006 — and does not feed the answers back.)
 - **Default values only** — no payloads, no fuzzing.
 - Login / registration forms and the logout / destructive heuristic above are skipped.
 - Submitted-form URLs count against `max_pages` like any other page.
 
 Turn it off with `[scan] submit_forms = false` (there is no CLI flag).
+
+### `POST` forms — `--submit-post-forms` (opt-in)
+
+Spec [`018-post-form-crawl`](../specs/018-post-form-crawl/). A `POST` form is not safe to
+open the way a search box is: submitting it **writes to the target** — a record, a message, a
+subscription. So the crawler's `POST` phase is **off by default** and runs only in Active Mode
+(`--mode active --authorized-by` **and** `--submit-post-forms` / `[scan] submit_post_forms = true`).
+Without both, no `POST` leaves the crawler. With the switch on in a Passive scan, the scan warns
+that it needs `--mode active` and sends nothing.
+
+```bash
+webvigil scan https://staging.example.com --mode active --authorized-by me \
+  --cookie "session=<paste from devtools>" --submit-post-forms
+```
+
+The phase starts after the `GET` crawl has drained, so a write cannot change a page the crawl is
+still reading. It then submits, once each and in order:
+
+- every distinct candidate **form** — `POST`, `application/x-www-form-urlencoded` or
+  `multipart/form-data` **without a file input**, and not a login / registration / search /
+  logout / destructive-looking form (the same filter as the CSRF confirmation);
+- every `POST` **operation** of an `--openapi` import, with the body the importer synthesised —
+  JSON, form-urlencoded or none. This is the only source of a JSON body: an HTML form cannot send
+  one and WebVigil runs no JavaScript. An operation that looks like authentication or a
+  state-changing action is skipped.
+
+Values are the form's own **defaults** — a hidden token travels as served — and a text field
+with no default gets a benign `wvcrawl<token>` marker you can search for on the target. Never a
+payload, never a file: the injection pass sends payloads and `--file-upload` owns uploads.
+
+Each answer becomes a page: every check that reads the crawled pages sees it (an error page
+after a bad submission, a script with no `integrity` on a "thank you" page), and the links and
+forms on it are followed by the same BFS, within `max_pages`. After each submission the `GET`
+queue is drained again, so a multi-step flow (form → confirmation page → next form) is followed.
+A page that is only the answer to a `POST` is never re-requested with `GET` by another pass.
+
+`max_post_submissions` (default 25) caps the writes; a submission also counts as one page against
+`max_pages`. A scan with the phase on adds one warning with the tallies (`POST crawl: 6 submitted
+— 4 forms, 2 API operations, 5 skipped, 0 not submitted (cap)`). `robots.txt` is honoured, a
+`POST` is never retried, and configured cookies and headers are attached as for any request.
+
+What it does **not** do: guess parameters (parameter mining), build JSON for a form-less
+endpoint, run a form assembled by JavaScript, send `PUT` / `PATCH` / `DELETE`, log in (issue
+#52), or model the hidden state of a wizard across steps. A form that depends on a token bound
+to a session the scan does not hold answers an error page; that page is kept and read.
 
 ## CSRF detection — `csrf.form.no-token`
 
@@ -196,4 +242,5 @@ confirmation:
   the login-flow spec.
 - **Session-security checks** — session fixation, session not invalidated on logout,
   weak/predictable session ids. Each needs the login flow or Active Mode.
-- **`POST` form submission by the crawler**, `multipart`/JSON bodies, parameter mining.
+- **Parameter mining**, JSON bodies that do not come from an OpenAPI document, and forms
+  built by JavaScript — outside the in-band scanner (the `POST` crawl is opt-in, spec 018).
