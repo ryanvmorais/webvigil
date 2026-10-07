@@ -33,6 +33,8 @@ from webvigil.core.config import ScanConfig
 from webvigil.core.context import Page
 from webvigil.core.findings import Confidence, Severity
 from webvigil.core.orchestrator import Orchestrator
+from webvigil.crawler.crawler import PostSummary
+from webvigil.crawler.openapi import ApiOperation
 
 _TARGET = "https://example.com/"
 _SEED = "https://example.com/s?q=hi"
@@ -45,6 +47,7 @@ class _StubCrawler:
 
     forms: tuple[object, ...] = ()
     skipped_destructive = 0
+    post_summary = None  # spec 018: the real crawler exposes the POST phase tally
 
     def __init__(self, *_a: object, **_k: object) -> None: ...
 
@@ -440,3 +443,77 @@ async def test_csrf_pass_runs_after_the_upload_pass(monkeypatch: pytest.MonkeyPa
         _TARGET
     )
     assert order == ["upload", "csrf"]
+
+
+# ---------------------------------------------------------------------------
+# The crawler's POST phase (spec 018, RF-01, RF-03, RF-08, ADR-7)
+# ---------------------------------------------------------------------------
+
+
+def _operation(method: str, path: str) -> ApiOperation:
+    """
+    Args:
+        method (str): ``GET`` or ``POST``.
+        path (str): The operation path.
+
+    Returns:
+        ApiOperation: A bodiless operation on the target.
+    """
+    return ApiOperation(
+        method=method,
+        url=f"https://example.com{path}",
+        url_template=f"https://example.com{path}",
+        query=(),
+        path_params=(),
+        body_fields=(),
+        body_json=None,
+        operation_id="",
+    )
+
+
+async def test_post_operations_reach_the_crawler_and_get_ones_stay_seeds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``POST`` operations go to ``post_operations``; ``GET`` ones stay ``extra_seeds`` (013)."""
+    seen: dict[str, object] = {}
+
+    class _Capturing(_StubCrawler):
+        def __init__(self, *_a: object, **kwargs: object) -> None:
+            seen.update(kwargs)
+
+    async def _ops(self: Orchestrator, *_a: object) -> tuple[ApiOperation, ...]:
+        return (_operation("GET", "/api/list"), _operation("POST", "/api/notes"))
+
+    monkeypatch.setattr(orch_mod, "Crawler", _Capturing)
+    monkeypatch.setattr(Orchestrator, "_load_openapi", _ops)
+    await Orchestrator(_active(), check_types=[HstsCheck]).run(_TARGET)
+    assert seen["extra_seeds"] == ["https://example.com/api/list"]
+    assert [op.url for op in seen["post_operations"]] == ["https://example.com/api/notes"]  # type: ignore[attr-defined]
+
+
+async def test_the_post_crawl_summary_becomes_one_warning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The crawler's tally reaches the result as a single ``POST crawl:`` warning."""
+
+    class _Summarising(_StubCrawler):
+        post_summary = PostSummary(forms=2, operations=1, skipped=3)
+
+    monkeypatch.setattr(orch_mod, "Crawler", _Summarising)
+    result = await Orchestrator(_active(), check_types=[HstsCheck]).run(_TARGET)
+    assert [w for w in result.warnings if w.startswith("POST crawl:")] == [
+        "POST crawl: 3 submitted — 2 forms, 1 API operation, 3 skipped, 0 not submitted (cap)"
+    ]
+
+
+async def test_no_post_crawl_warning_when_the_phase_did_not_run() -> None:
+    """No tally line without a summary (the default stub has none)."""
+    result = await Orchestrator(_active(), check_types=[HstsCheck]).run(_TARGET)
+    assert not any(w.startswith("POST crawl:") for w in result.warnings)
+
+
+async def test_post_crawl_opt_in_without_active_mode_warns() -> None:
+    """The opt-in in Passive mode is a no-op that warns it needs ``--mode active``."""
+    config = ScanConfig.model_validate({"scan": {"submit_post_forms": True}})
+    result = await Orchestrator(config, check_types=[HstsCheck]).run(_TARGET)
+    assert any("POST crawling requires --mode active" in w for w in result.warnings)

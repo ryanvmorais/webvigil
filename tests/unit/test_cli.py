@@ -546,3 +546,50 @@ def test_csrf_confirmation_summary_notes() -> None:
         ["scan", "https://example.com", "--mode", "active", "--authorized-by", "me"],
     )
     assert "CSRF confirmation: enabled" not in without.stderr
+
+
+# ---------------------------------------------------------------------------
+# --submit-post-forms (spec 018)
+# ---------------------------------------------------------------------------
+
+
+def test_submit_post_forms_flag_wins_over_a_config_file_both_ways(tmp_path: Path) -> None:
+    """The two flags override ``[scan] submit_post_forms`` in both directions."""
+    cfg = tmp_path / "webvigil.toml"
+    cfg.write_text("[scan]\nsubmit_post_forms = false\n", "utf-8")
+    runner.invoke(
+        app_mod.app, ["scan", "https://example.com", "--config", str(cfg), "--submit-post-forms"]
+    )
+    assert _StubOrchestrator.last_config.scan.submit_post_forms is True  # type: ignore[attr-defined]
+    cfg.write_text("[scan]\nsubmit_post_forms = true\n", "utf-8")
+    runner.invoke(
+        app_mod.app,
+        ["scan", "https://example.com", "--config", str(cfg), "--no-submit-post-forms"],
+    )
+    assert _StubOrchestrator.last_config.scan.submit_post_forms is False  # type: ignore[attr-defined]
+
+
+def test_post_crawl_summary_note_needs_the_flag_and_active_mode() -> None:
+    """The writes note appears only with the flag in an Active scan."""
+    _StubOrchestrator.result = make_result(
+        make_finding(check_id="injection.xss.reflected", severity=Severity.HIGH),
+        mode=ScanMode.ACTIVE,
+    )
+    with_flag = runner.invoke(
+        app_mod.app,
+        [
+            "scan",
+            "https://example.com",
+            "--mode",
+            "active",
+            "--authorized-by",
+            "me",
+            "--submit-post-forms",
+        ],
+    )
+    assert "POST crawl: enabled" in with_flag.stderr
+    without = runner.invoke(
+        app_mod.app,
+        ["scan", "https://example.com", "--mode", "active", "--authorized-by", "me"],
+    )
+    assert "POST crawl: enabled" not in without.stderr

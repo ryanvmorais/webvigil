@@ -36,8 +36,12 @@ _IDEMPOTENT = frozenset({"GET", "HEAD", "OPTIONS", "TRACE"})
 _REDIRECT_KEEPS_METHOD = frozenset({307, 308})
 
 _Params = dict[str, str] | list[tuple[str, str]]
-# A multipart file part: field name -> (filename, content, content type) (spec 014 upload).
-_Files = dict[str, tuple[str, bytes, str]]
+# Multipart parts: field name -> (filename, content, content type) (spec 014 upload), or a
+# list of (name, (filename | None, content, content type | None)) pairs, which keeps a
+# repeated name and lets a part with no filename be a plain text field (spec 018).
+_Files = (
+    dict[str, tuple[str, bytes, str]] | list[tuple[str, tuple[str | None, str | bytes, str | None]]]
+)
 
 # Backoff between retries; module-level so tests can shrink them.
 BACKOFF_BASE_S = 0.5

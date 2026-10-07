@@ -281,7 +281,8 @@ def enumerate_points(
     points: list[InjectionPoint] = []
 
     for page in pages:
-        if not page.ok:
+        # spec 018: a POST answer's URL is a form action, already a POST point below
+        if not page.ok or not page.fetched_by_get:
             continue
         base, pairs = _base_of(page.requested_url)
         for name, value in pairs:

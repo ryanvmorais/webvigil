@@ -159,7 +159,10 @@ class EnvelopeScanner:
         ordered: list[str] = []
         candidates = [self._target.entry_url]
         candidates += [form.action for form in self._forms]
-        candidates += [page.requested_url for page in self._pages if page.ok]
+        # spec 018: a POST answer's URL answers a GET with 405 — never sample it
+        candidates += [
+            page.requested_url for page in self._pages if page.ok and page.fetched_by_get
+        ]
         for url in candidates:
             path = urlsplit(url).path or "/"
             if path in seen:

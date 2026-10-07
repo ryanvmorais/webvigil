@@ -11,13 +11,16 @@ from __future__ import annotations
 import pytest
 
 from webvigil.crawler.forms import Form, FormField
+from webvigil.crawler.openapi import ApiOperation
 from webvigil.crawler.safety import (
     is_auth_form,
+    is_candidate,
     is_destructive,
     is_destructive_form,
     is_login_url,
     is_logout,
     looks_like_search,
+    looks_unsafe_operation,
 )
 
 
@@ -164,3 +167,61 @@ def test_login_url() -> None:
     assert is_login_url("https://example.com/login?next=/x") is True
     assert is_login_url("https://example.com/users/sign-in") is True
     assert is_login_url("https://example.com/panel") is False
+
+
+# ---------------------------------------------------------------------------
+# Form candidates and unsafe operations (specs 017 / 018)
+# ---------------------------------------------------------------------------
+
+
+def test_is_candidate_is_a_post_that_is_not_auth_or_search() -> None:
+    """A state-changing POST form is a candidate; GET, login and search forms are not."""
+    assert is_candidate(_form("https://example.com/newsletter", "email")) is True
+    assert is_candidate(_form("https://example.com/newsletter", "email", method="GET")) is False
+    assert is_candidate(_form("https://example.com/login", "user")) is False
+    assert is_candidate(_form("https://example.com/search", "q")) is False
+
+
+def _operation(path: str, operation_id: str = "") -> ApiOperation:
+    """
+    Args:
+        path (str): The operation path.
+        operation_id (str): The ``operationId``. Defaults to none.
+
+    Returns:
+        ApiOperation: A bodiless ``POST`` operation.
+    """
+    return ApiOperation(
+        method="POST",
+        url=f"https://example.com{path}",
+        url_template=f"https://example.com{path}",
+        query=(),
+        path_params=(),
+        body_fields=(),
+        body_json=None,
+        operation_id=operation_id,
+    )
+
+
+@pytest.mark.parametrize(
+    "path, operation_id",
+    [
+        ("/auth/login", ""),
+        ("/api/accounts", "delete_account"),
+        ("/orders/remove", ""),
+        ("/api/session", "logoutUser"),
+        ("/users/password", "reset-password"),
+    ],
+)
+def test_unsafe_operations_are_recognised(path: str, operation_id: str) -> None:
+    """Auth, logout and destructive paths or operation ids are left alone."""
+    assert looks_unsafe_operation(_operation(path, operation_id)) is True
+
+
+@pytest.mark.parametrize(
+    "path, operation_id",
+    [("/api/notes", "create_note"), ("/api/tickets", "openTicket"), ("/api/deleted-items", "")],
+)
+def test_benign_operations_are_not_unsafe(path: str, operation_id: str) -> None:
+    """Ordinary create operations — and a near-miss word — pass."""
+    assert looks_unsafe_operation(_operation(path, operation_id)) is False

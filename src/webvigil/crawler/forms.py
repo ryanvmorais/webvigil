@@ -14,6 +14,7 @@ not this module's.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from urllib.parse import urlencode, urljoin, urlsplit, urlunsplit
 
@@ -28,6 +29,17 @@ _DEFAULT_ENCTYPE = "application/x-www-form-urlencoded"
 _SUBMIT_VALUE_TYPES = frozenset(
     {"", "text", "search", "email", "url", "tel", "number", "hidden", "date", "textarea", "select"}
 )
+
+# Text-like inputs with no default get the sentinel; other types get a value a browser would
+# accept, or nothing (password, hidden, select ... are never invented).
+_TEXT_TYPES = frozenset({"", "text", "search", "textarea"})
+_TYPED_FALLBACK = {
+    "url": "https://webvigil.invalid/",
+    "number": "1",
+    "tel": "0",
+    "date": "2000-01-01",
+}
+_SUBMIT_TYPES = frozenset({"submit", "button", "image"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,6 +154,69 @@ def submission_url(form: Form) -> str | None:
     ]
     split = urlsplit(form.action)
     return urlunsplit((split.scheme, split.netloc, split.path, urlencode(pairs), ""))
+
+
+def _fallback(field_type: str, sentinel: str) -> str:
+    """
+    Args:
+        field_type (str): Lower-cased control type.
+        sentinel (str): The sentinel for this submission.
+
+    Returns:
+        str: The value for a control that has no default — the sentinel for a
+            text-like control, a browser-acceptable value for an email / url /
+            number / tel / date, ``""`` for anything else.
+    """
+    if field_type in _TEXT_TYPES:
+        return sentinel
+    if field_type == "email":
+        return f"{sentinel}@webvigil.invalid"
+    return _TYPED_FALLBACK.get(field_type, "")
+
+
+def form_body(
+    form: Form,
+    *,
+    sentinel: str,
+    skip: frozenset[str] = frozenset(),
+    replace: Mapping[str, str] | None = None,
+) -> list[tuple[str, str]]:
+    """
+    Rebuild the body a browser would send for ``form`` (specs 017 and 018).
+
+    Defaults travel unchanged; a control with no default gets a benign fallback;
+    unchecked boxes are omitted and only the first named submit button is sent.
+    The two arguments are the only ways to change a field, and the CSRF
+    confirmation uses them for the token.
+
+    Args:
+        form (Form): The (re-fetched) form.
+        sentinel (str): The marker for a text-like control with no default.
+        skip (frozenset[str]): Field names to leave out. Defaults to none.
+        replace (Mapping[str, str] | None): ``name -> value`` overrides, applied
+            before any type-based rule. Defaults to ``None``.
+
+    Returns:
+        list[tuple[str, str]]: The ``(name, value)`` pairs, in parser order.
+    """
+    overrides = replace or {}
+    pairs: list[tuple[str, str]] = []
+    submit_sent = False
+    for field in form.fields:
+        if field.name in skip:
+            continue
+        if field.name in overrides:
+            pairs.append((field.name, overrides[field.name]))
+        elif field.type in _SUBMIT_TYPES:
+            if not submit_sent:
+                pairs.append((field.name, field.value))
+                submit_sent = True
+        elif field.type in ("checkbox", "radio"):
+            if field.checked:
+                pairs.append((field.name, field.value or "on"))
+        elif field.type not in ("reset", "file"):
+            pairs.append((field.name, field.value or _fallback(field.type, sentinel)))
+    return pairs
 
 
 def _form_from_node(node: Node, page_url: str) -> Form | None:

@@ -14,9 +14,13 @@ imperfect; the limits are documented in ``docs/authenticated-scanning.md``.
 from __future__ import annotations
 
 import re
+from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
 from webvigil.crawler.forms import Form
+
+if TYPE_CHECKING:
+    from webvigil.crawler.openapi import ApiOperation
 
 # Follow-me-and-the-session-dies. Skipped on every crawl — authenticated or not (an
 # anonymous scan gains nothing from a logout endpoint either).
@@ -149,11 +153,46 @@ def is_destructive_form(form: Form) -> bool:
     return bool(_DESTRUCTIVE_RE.search(haystack) or _LOGOUT_RE.search(haystack))
 
 
+def is_candidate(form: Form) -> bool:
+    """
+    Args:
+        form (Form): A parsed form.
+
+    Returns:
+        bool: ``True`` when the form is a ``POST`` that is neither an auth form
+            nor a search form — a meaningful CSRF target and a form a state-changing
+            pass (spec 017 CSRF confirmation, spec 018 POST crawl) may consider.
+    """
+    return form.method == "POST" and not is_auth_form(form) and not looks_like_search(form)
+
+
+def looks_unsafe_operation(op: ApiOperation) -> bool:
+    """
+    Args:
+        op (ApiOperation): An imported OpenAPI operation.
+
+    Returns:
+        bool: ``True`` when the operation's path or ``operationId`` looks like
+            authentication, a logout, or a state-changing action (``login``,
+            ``delete_account``, ``/orders/remove``) — the vocabulary the injection
+            pass already uses to leave such operations alone. ``_`` and ``-`` count
+            as word breaks.
+    """
+    haystack = re.sub(r"[_-]", " ", f"{urlsplit(op.url_template).path} {op.operation_id}")
+    return bool(
+        _DESTRUCTIVE_RE.search(haystack)
+        or _LOGOUT_RE.search(haystack)
+        or _AUTH_FORM_RE.search(haystack)
+    )
+
+
 __all__ = [
     "is_auth_form",
+    "is_candidate",
     "is_destructive",
     "is_destructive_form",
     "is_login_url",
     "is_logout",
     "looks_like_search",
+    "looks_unsafe_operation",
 ]

@@ -34,7 +34,7 @@ from webvigil.core.config import ScanConfig
 from webvigil.core.context import Page
 from webvigil.core.errors import OutOfScopeError, RequestFailed
 from webvigil.core.target import Target
-from webvigil.crawler.forms import Form, parse_forms
+from webvigil.crawler.forms import Form, form_body, parse_forms
 from webvigil.crawler.safety import is_destructive_form, is_login_url
 from webvigil.http.client import HttpClient, Response
 
@@ -65,17 +65,6 @@ _WORD_RE = re.compile(r"\w+|[^\w\s]")
 _SIMILARITY = 0.95
 _LENGTH_GUARD = 0.10
 _TOKEN_CAP = 6000
-
-# Text-like inputs with no default get the sentinel; other types get a value the browser
-# would accept, or nothing (password, hidden, select … are never invented).
-_TEXT_TYPES = frozenset({"", "text", "search", "textarea"})
-_TYPED_FALLBACK = {
-    "url": "https://webvigil.invalid/",
-    "number": "1",
-    "tel": "0",
-    "date": "2000-01-01",
-}
-_SUBMIT_TYPES = frozenset({"submit", "button", "image"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -150,24 +139,6 @@ def _alter(value: str) -> str:
     return altered if altered != value else "x" * max(len(value), 8)
 
 
-def _fallback(field_type: str, sentinel: str) -> str:
-    """
-    Args:
-        field_type (str): Lower-cased control type.
-        sentinel (str): The sentinel for this submission.
-
-    Returns:
-        str: The value for a control that has no default — the sentinel for a
-            text-like control, a browser-acceptable value for an email / url /
-            number / tel / date, ``""`` for anything else.
-    """
-    if field_type in _TEXT_TYPES:
-        return sentinel
-    if field_type == "email":
-        return f"{sentinel}@webvigil.invalid"
-    return _TYPED_FALLBACK.get(field_type, "")
-
-
 def _build_body(
     form: Form,
     *,
@@ -178,9 +149,9 @@ def _build_body(
     """
     Rebuild the urlencoded body a browser would send for ``form``.
 
-    Defaults travel unchanged; a control with no default gets a benign fallback;
-    unchecked boxes are omitted and only the first named submit button is sent.
-    Token fields are the **only** thing a replay changes.
+    A thin wrapper over :func:`~webvigil.crawler.forms.form_body`: token fields are
+    the **only** thing a replay changes — dropped, altered, or (for the control) kept
+    exactly as served, even when empty.
 
     Args:
         form (Form): The (re-fetched) form.
@@ -192,23 +163,11 @@ def _build_body(
     Returns:
         list[tuple[str, str]]: The ``(name, value)`` pairs, in parser order.
     """
-    pairs: list[tuple[str, str]] = []
-    submit_sent = False
-    for field in form.fields:
-        if is_token_field(field):
-            if drop_tokens:
-                continue
-            pairs.append((field.name, _alter(field.value) if alter_tokens else field.value))
-        elif field.type in _SUBMIT_TYPES:
-            if not submit_sent:
-                pairs.append((field.name, field.value))
-                submit_sent = True
-        elif field.type in ("checkbox", "radio"):
-            if field.checked:
-                pairs.append((field.name, field.value or "on"))
-        elif field.type not in ("reset", "file"):
-            pairs.append((field.name, field.value or _fallback(field.type, sentinel)))
-    return pairs
+    tokens = [field for field in form.fields if is_token_field(field)]
+    if drop_tokens:
+        return form_body(form, sentinel=sentinel, skip=frozenset(f.name for f in tokens))
+    replace = {f.name: (_alter(f.value) if alter_tokens else f.value) for f in tokens}
+    return form_body(form, sentinel=sentinel, replace=replace)
 
 
 def _visible(response: Response) -> str:

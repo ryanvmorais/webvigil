@@ -329,3 +329,28 @@ def test_openapi_override_wins_over_file() -> None:
     base = ScanConfig.model_validate({"scan": {"openapi": "old.json"}})
     merged = base.with_overrides(scan={"openapi": "https://target.example/openapi.json"})
     assert merged.scan.openapi == "https://target.example/openapi.json"
+
+
+# ---------------------------------------------------------------------------
+# The POST-crawl keys (spec 018)
+# ---------------------------------------------------------------------------
+
+
+def test_scan_post_crawl_keys_default_off_and_round_trip(tmp_path: Path) -> None:
+    """``submit_post_forms`` is off by default, ``max_post_submissions`` is 25, both load."""
+    defaults = ScanConfig().scan
+    assert defaults.submit_post_forms is False
+    assert defaults.max_post_submissions == 25
+    path = tmp_path / "webvigil.toml"
+    path.write_text("[scan]\nsubmit_post_forms = true\nmax_post_submissions = 3\n", "utf-8")
+    loaded = ScanConfig.load(path).scan
+    assert loaded.submit_post_forms is True
+    assert loaded.max_post_submissions == 3
+
+
+def test_max_post_submissions_must_be_positive(tmp_path: Path) -> None:
+    """A zero or negative cap is a :class:`ConfigError`."""
+    path = tmp_path / "webvigil.toml"
+    path.write_text("[scan]\nmax_post_submissions = 0\n", "utf-8")
+    with pytest.raises(ConfigError):
+        ScanConfig.load(path)
