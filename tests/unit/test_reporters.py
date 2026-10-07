@@ -160,3 +160,33 @@ def test_unknown_format_raises() -> None:
     """``get_reporter`` with an unknown format raises ``ValueError``."""
     with pytest.raises(ValueError, match="unknown report format"):
         get_reporter("pdf")
+
+
+# ---------------------------------------------------------------------------
+# The report's schema version (the 1.0 compatibility contract)
+# ---------------------------------------------------------------------------
+
+
+def test_the_json_report_starts_with_its_schema_version_and_round_trips() -> None:
+    """``schema_version`` leads the document, is 1 today and survives a round trip."""
+    result = make_result(make_finding(check_id="csrf.form.no-token"))
+    rendered = get_reporter("json").render(result)
+
+    document = json.loads(rendered)
+    assert next(iter(document)) == "schema_version" and document["schema_version"] == 1
+    assert load_result_from_string(rendered) == result
+
+
+def test_a_report_without_a_schema_version_reads_as_version_1() -> None:
+    """A report written before the field existed (a pre-1.0 one) still loads."""
+    document = json.loads(get_reporter("json").render(_result()))
+    del document["schema_version"]
+    assert load_result_from_string(json.dumps(document)).schema_version == 1
+
+
+def test_a_report_from_a_newer_schema_is_refused_with_a_message_that_says_to_upgrade() -> None:
+    """Reading a schema this WebVigil does not know is an error, never a silent misread."""
+    document = json.loads(get_reporter("json").render(_result()))
+    document["schema_version"] = 2
+    with pytest.raises(ValueError, match=r"schema 2.*upgrade WebVigil"):
+        load_result_from_string(json.dumps(document))

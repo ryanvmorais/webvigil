@@ -29,6 +29,7 @@ from webvigil.core.errors import LoginFailedError
 from webvigil.core.findings import ScanMode, Severity
 from webvigil.core.result import LoginSummary, ScanResult
 from webvigil.core.technology import DetectionMethod, Technology
+from webvigil.reporting import get_reporter
 
 runner = CliRunner()
 _SCAN = ["scan", "https://example.com"]
@@ -522,3 +523,17 @@ def test_the_session_checks_summary_line_says_what_was_asked_for() -> None:
     # logout is not "tested" in a Passive scan even with the switch
     passive = runner.invoke(app_mod.app, [*_SCAN, *_LOGIN, "--test-logout"])
     assert "logout tested" not in passive.stderr
+
+
+def test_report_refuses_a_scan_file_from_a_newer_schema(tmp_path: Path) -> None:
+    """``webvigil report`` on a newer-schema file: exit 4 and a message that says to upgrade."""
+    document = json.loads(get_reporter("json").render(make_result()))
+    document["schema_version"] = 99
+    scan = tmp_path / "scan.json"
+    scan.write_text(json.dumps(document), "utf-8")
+
+    result = runner.invoke(app_mod.app, ["report", str(scan), "--format", "md"])
+
+    assert result.exit_code == ExitCode.OPERATIONAL
+    assert "schema 99" in result.stderr and "upgrade WebVigil" in result.stderr
+    assert "Traceback" not in result.stderr
