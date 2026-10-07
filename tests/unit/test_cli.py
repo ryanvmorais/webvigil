@@ -331,6 +331,8 @@ def test_authenticated_summary_counts_cookies_and_headers_but_never_shows_them()
     assert "secret-xyz" not in both.stderr
     cookie_only = runner.invoke(app_mod.app, [*_SCAN, "--cookie", "session=abc"])
     assert "Authenticated scan: 1 cookie supplied" in cookie_only.stderr
+    header_only = runner.invoke(app_mod.app, [*_SCAN, "--header", "X-API-Key: k"])
+    assert "Authenticated scan: 1 header supplied" in header_only.stderr
 
 
 # ---------------------------------------------------------------------------
