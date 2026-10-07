@@ -261,6 +261,10 @@ class InjectionSection(_Section):
             cannot reliably delete (like ``stored_xss``).
         upload_budget (int): Total requests the file-upload pass may spend.
             Defaults to 80.
+        csrf_confirm (bool): Run the opt-in active CSRF confirmation pass
+            (spec 017) — submit each candidate form as a control and as
+            cross-site-shaped replays without a valid token. Off by default: it
+            writes to the target (up to three submissions per form).
         envelope_url_sample (int): Cap on the pages the request-envelope pass
             (spec 012) re-requests with a poisoned Host / an OPTIONS probe.
             Defaults to 15.
@@ -277,6 +281,7 @@ class InjectionSection(_Section):
     xxe: bool = False
     file_upload: bool = False
     upload_budget: int = 80
+    csrf_confirm: bool = False
     envelope_url_sample: int = 15
     envelope_budget: int = 120
 

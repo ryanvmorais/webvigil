@@ -20,6 +20,7 @@ from webvigil.core.target import Target, normalize_url
 from webvigil.core.technology import DetectionMethod, Technology
 
 if TYPE_CHECKING:
+    from webvigil.checks.csrf.scanner import CsrfHit
     from webvigil.checks.deps.advisories import Advisory
     from webvigil.checks.disclosure.probe import ProbeHit
     from webvigil.checks.envelope.scanner import EnvelopeHit
@@ -179,6 +180,8 @@ class Observations:
             spec 012). Defaults to empty.
         upload_hits (tuple[UploadHit, ...]): Confirmed hits from the file-upload
             pass (spec 014). Defaults to empty.
+        csrf_hits (tuple[CsrfHit, ...]): Forms the active CSRF confirmation pass
+            (spec 017) saw accepted without a valid token. Defaults to empty.
         warnings (list[str]): Non-fatal notices a check wants surfaced on the
             result. Defaults to empty.
     """
@@ -189,6 +192,7 @@ class Observations:
     injection_hits: tuple[InjectionHit, ...] = ()
     envelope_hits: tuple[EnvelopeHit, ...] = ()
     upload_hits: tuple[UploadHit, ...] = ()
+    csrf_hits: tuple[CsrfHit, ...] = ()
     _technologies: dict[tuple[str, str | None], Technology] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
 

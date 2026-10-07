@@ -365,6 +365,9 @@ behaviour is documented, like a stored-XSS marker.
 - **`GET` and `POST` only** — with the single exception of the `--file-upload` `PUT` probe
   (one benign marker to the entry directory, only under the opt-in). Never `PATCH`,
   `DELETE`, or `PUT` anywhere else.
+- **`--confirm-csrf` submits state-changing forms** (opt-in; a control and up to two
+  replays per form, default values only). See
+  [Active CSRF confirmation](authenticated-scanning.md#active-csrf-confirmation----confirm-csrf-opt-in).
 - **Forms that look like authentication or destruction are not fuzzed** — the heuristic
   matches `login`, `logout`, `register`, `delete`, `password`, `checkout`, `pay`,
   `transfer`, and similar in the action or field names. It is best-effort: a login form at
@@ -385,13 +388,15 @@ stored_xss = false          # run the two-phase stored-XSS pass; --stored-xss ov
 xxe = false                 # spec 012: re-send POST bodies as XML; --xxe overrides
 file_upload = false         # spec 014: upload benign markers through upload forms; --file-upload overrides
 upload_budget = 80          # spec 014: total requests the file-upload pass may spend
+csrf_confirm = false        # spec 017: replay forms without a valid token; --confirm-csrf overrides
 ```
 
 Per point the pass sends at most 42 crafted requests (raised from 30 in v0.11 for the
 command-injection / SSTI families, to 38 in v0.14 for LDAP / XPath / SSI, and to 42 in
 spec 016 for the expression-language canary); the time-based
 detectors share a cap of 8 sleep-inducing requests per scan; the stored-XSS re-crawl
-fetches at most 120 pages; the file-upload pass has its own `upload_budget`. Hitting any cap
+fetches at most 120 pages; the file-upload pass has its own `upload_budget`; the CSRF
+confirmation pass tests at most 20 forms with at most 5 requests each. Hitting any cap
 is a scan **warning**, not an error.
 
 Disable any check by id (`[checks] disabled`). Disabling **every** `injection.*` id skips

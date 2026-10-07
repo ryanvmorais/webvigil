@@ -16,6 +16,8 @@ import re
 import httpx
 import pytest
 
+from webvigil.checks.csrf.checks import TokenNotEnforcedCheck
+from webvigil.checks.csrf.scanner import CsrfHit
 from webvigil.checks.headers.hsts import HstsCheck
 from webvigil.checks.injection.checks import (
     ExpressionLanguageInjectionCheck,
@@ -331,3 +333,110 @@ async def test_stored_opt_in_without_active_mode_warns(monkeypatch: pytest.Monke
     config = ScanConfig.model_validate({"injection": {"stored_xss": True}})
     result = await Orchestrator(config, check_types=[HstsCheck]).run(_TARGET)
     assert any("requires --mode active" in w for w in result.warnings)
+
+
+# ---------------------------------------------------------------------------
+# The active CSRF confirmation pass (spec 017, RF-11, ADR-6, ADR-7)
+# ---------------------------------------------------------------------------
+
+
+def _csrf_boom(*_a: object, **_k: object) -> object:
+    """A stand-in that fails the test if ``CsrfScanner`` is constructed."""
+    raise AssertionError("CsrfScanner must not run")
+
+
+class _CsrfStub:
+    """A CSRF pass that confirms one form and reports a tally line."""
+
+    def __init__(self, *_a: object, **_k: object) -> None:
+        self.warnings = ["CSRF confirmation: 1 form tested — 1 confirmed"]
+
+    async def run(self) -> list[CsrfHit]:
+        return [
+            CsrfHit(
+                url="https://example.com/settings",
+                source_url=_TARGET,
+                replay="no token field",
+                token_fields=(),
+                control="POST /settings -> 200",
+                attack="POST /settings -> 200",
+            )
+        ]
+
+
+async def test_csrf_pass_skipped_without_the_opt_in(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Without ``[injection] csrf_confirm`` the CSRF pass is never constructed."""
+    monkeypatch.setattr(orch_mod, "CsrfScanner", _csrf_boom)
+    result = await Orchestrator(_active(), check_types=[TokenNotEnforcedCheck]).run(_TARGET)
+    assert not any(f.check_id == "csrf.form.token-not-enforced" for f in result.findings)
+
+
+async def test_csrf_pass_skipped_when_check_not_selected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The opt-in alone is not enough — with the check disabled the pass is skipped."""
+    monkeypatch.setattr(orch_mod, "CsrfScanner", _csrf_boom)
+    config = _active(injection={"csrf_confirm": True})
+    result = await Orchestrator(config, check_types=[HstsCheck]).run(_TARGET)
+    assert not any(f.check_id == "csrf.form.token-not-enforced" for f in result.findings)
+
+
+async def test_csrf_pass_runs_and_reaches_the_check(monkeypatch: pytest.MonkeyPatch) -> None:
+    """With the opt-in and the check, the hit becomes a finding and the tally a warning."""
+    monkeypatch.setattr(orch_mod, "CsrfScanner", _CsrfStub)
+    config = _active(injection={"csrf_confirm": True})
+    result = await Orchestrator(config, check_types=[TokenNotEnforcedCheck]).run(_TARGET)
+    found = [f for f in result.findings if f.check_id == "csrf.form.token-not-enforced"]
+    assert [f.location.url for f in found] == ["https://example.com/settings"]
+    assert any("CSRF confirmation: 1 form tested" in w for w in result.warnings)
+
+
+async def test_a_raising_csrf_pass_becomes_a_warning(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An exception from the CSRF pass degrades to a scan warning."""
+
+    class _Raises:
+        def __init__(self, *_a: object, **_k: object) -> None: ...
+
+        async def run(self) -> object:
+            raise RuntimeError("replay blew up")
+
+    monkeypatch.setattr(orch_mod, "CsrfScanner", _Raises)
+    config = _active(injection={"csrf_confirm": True})
+    result = await Orchestrator(config, check_types=[TokenNotEnforcedCheck]).run(_TARGET)
+    assert any("CSRF confirmation pass failed" in w for w in result.warnings)
+
+
+async def test_csrf_opt_in_without_active_mode_warns(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The opt-in in Passive mode is a no-op that warns it needs ``--mode active``."""
+    monkeypatch.setattr(orch_mod, "CsrfScanner", _csrf_boom)
+    config = ScanConfig.model_validate({"injection": {"csrf_confirm": True}})
+    result = await Orchestrator(config, check_types=[HstsCheck]).run(_TARGET)
+    assert any("CSRF confirmation requires --mode active" in w for w in result.warnings)
+
+
+async def test_csrf_pass_runs_after_the_upload_pass(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The CSRF pass is last: it is the one that changes server state (ADR-6)."""
+    order: list[str] = []
+
+    class _Upload:
+        def __init__(self, *_a: object, **_k: object) -> None:
+            self.warnings: list[str] = []
+
+        async def run(self) -> list[object]:
+            order.append("upload")
+            return []
+
+    class _Csrf(_CsrfStub):
+        async def run(self) -> list[CsrfHit]:
+            order.append("csrf")
+            return []
+
+    from webvigil.checks.upload.checks import UnrestrictedUploadCheck
+
+    monkeypatch.setattr(orch_mod, "UploadScanner", _Upload)
+    monkeypatch.setattr(orch_mod, "CsrfScanner", _Csrf)
+    config = _active(injection={"csrf_confirm": True, "file_upload": True})
+    await Orchestrator(config, check_types=[UnrestrictedUploadCheck, TokenNotEnforcedCheck]).run(
+        _TARGET
+    )
+    assert order == ["upload", "csrf"]

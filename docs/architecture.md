@@ -55,7 +55,11 @@ Persistence       webvigil.api.db  (SQLite via SQLModel + Alembic, web only)
 - `webvigil.checks.csrf` adds one passive check (spec 007): `csrf.form.no-token` flags a
   state-changing `POST` form with no anti-CSRF token, weighted by the session cookie's
   `SameSite`. It reads `ScanContext.forms` — the `<form>` inventory the crawler now parses
-  during `discover()` and also uses to submit safe `GET` forms. See
+  during `discover()` and also uses to submit safe `GET` forms. Spec 017 adds its active
+  counterpart: with `--confirm-csrf` a `CsrfScanner` pass (the last one the orchestrator
+  runs, since it changes server state) submits each candidate form as a control and as
+  cross-site-shaped replays without a valid token, and `csrf.form.token-not-enforced`
+  reports the forms the server accepted. See
   [authenticated-scanning.md](authenticated-scanning.md).
 - Authentication and API surface (spec 013): `[auth] headers` / `--header` attach a bearer
   token or custom header to target-host requests under the same rules as cookies, and
@@ -103,4 +107,5 @@ dependency fingerprint), `011-rce-injection` (command injection, SSTI),
 `012-protocol-injection` (CRLF, host header, XXE, HTTP methods), `013-auth-and-api-surface`
 (header auth, OpenAPI import, SRI / mixed-content / session-id-in-URL / private-IP checks),
 `014-file-upload` (LDAP / XPath / SSI injection, file upload), `015-web-toolchain-modernization`
-(Node 24, Tailwind 4, Next 16) and `016-el-injection` (expression-language injection).
+(Node 24, Tailwind 4, Next 16) and `016-el-injection` (expression-language injection) and `017-csrf-confirmation` (active
+CSRF confirmation).

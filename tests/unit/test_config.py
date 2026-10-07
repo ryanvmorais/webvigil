@@ -135,11 +135,13 @@ def test_injection_section_defaults_and_round_trips(tmp_path: Path) -> None:
     assert defaults.xxe is False
     assert defaults.file_upload is False
     assert defaults.upload_budget == 80
+    assert defaults.csrf_confirm is False
     assert defaults.envelope_url_sample == 15
     path = tmp_path / "webvigil.toml"
     path.write_text(
         "[injection]\nrequest_budget = 40\ntime_based_sqli = false\n"
-        "time_based_cmdi = false\nstored_xss = true\nxxe = true\nfile_upload = true\n",
+        "time_based_cmdi = false\nstored_xss = true\nxxe = true\nfile_upload = true\n"
+        "csrf_confirm = true\n",
         "utf-8",
     )
     loaded = ScanConfig.load(path).injection
@@ -149,6 +151,7 @@ def test_injection_section_defaults_and_round_trips(tmp_path: Path) -> None:
     assert loaded.stored_xss is True
     assert loaded.xxe is True
     assert loaded.file_upload is True
+    assert loaded.csrf_confirm is True
 
 
 def test_unknown_injection_key_is_rejected(tmp_path: Path) -> None:
