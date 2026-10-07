@@ -399,3 +399,89 @@ async def test_a_401_page_unrelated_to_the_session_is_vetoed_once_then_learned()
 
     assert (first.status_code, second.status_code) == (401, 401)
     assert (session.relogins, len(calls), app.issued) == (0, 1, 1)
+
+
+# ---------------------------------------------------------------------------
+# anonymous() and close() (spec 020)
+# ---------------------------------------------------------------------------
+
+
+async def test_an_anonymous_request_carries_only_the_callers_own_headers() -> None:
+    """No static cookie, no static header, no jar; an explicit Cookie header goes out as given."""
+    app = _App()
+    seen: list[httpx.Headers] = []
+    original = app.handle
+
+    def spy(request: httpx.Request) -> httpx.Response:
+        seen.append(request.headers)
+        return original(request)
+
+    config = ScanConfig.model_validate(
+        {"auth": {"cookies": ["lang=en"], "headers": ["X-Api-Key: k1"]}}
+    )
+    target = Target.parse(_BASE, scope=Scope.HOST)
+    async with HttpClient(target, config, transport=HandlerTransport(spy)) as http:
+        session = _session(http)
+        await _login(http, session)
+        seen.clear()
+
+        await http.get(f"{_BASE}/page")  # a normal request: cookies and the header ride along
+        async with http.anonymous():
+            await http.get(f"{_BASE}/page")
+            await http.get(f"{_BASE}/page", headers={"cookie": "sid=explicit"})
+
+    normal, bare, explicit = seen
+    assert normal["cookie"] == "lang=en; sid=tok1" and normal["x-api-key"] == "k1"
+    assert "cookie" not in bare and "x-api-key" not in bare
+    assert explicit["cookie"] == "sid=explicit" and "x-api-key" not in explicit
+
+
+async def test_an_anonymous_request_neither_absorbs_cookies_nor_triggers_a_relogin() -> None:
+    """A 401 inside ``anonymous()`` is returned as it is, and the jar is untouched."""
+    app = _App()
+    async with _client(app) as http:
+        session = _session(http)
+        await _login(http, session)
+        before = session.jar.pairs_for(f"{_BASE}/page", handshake=False)
+        app.expire()
+
+        async with http.anonymous():
+            response = await http.get(f"{_BASE}/page", headers={"cookie": "sid=tok1"})
+        assert response.status_code == 401
+
+    assert (app.issued, session.relogins) == (1, 0)
+    assert session.jar.pairs_for(f"{_BASE}/page", handshake=False) == before
+
+
+async def test_anonymous_is_scoped_to_its_task() -> None:
+    """A request another task makes while this one is anonymous still carries the session."""
+    app = _App()
+    async with _client(app) as http:
+        session = _session(http)
+        await _login(http, session)
+        go = asyncio.Event()
+
+        async def concurrent() -> httpx.Response:
+            await go.wait()
+            return await http.get(f"{_BASE}/page")
+
+        task = asyncio.create_task(concurrent())
+        async with http.anonymous():
+            go.set()
+            await task
+    assert app.cookie_seen[-1] == "sid=tok1"
+
+
+async def test_a_closed_session_is_not_recovered() -> None:
+    """After ``close()`` a drop is returned as it is: no re-login after the logout test."""
+    app = _App()
+    async with _client(app) as http:
+        session = _session(http)
+        await _login(http, session)
+        session.close()
+        app.expire()
+
+        response = await http.get(f"{_BASE}/page")
+
+    assert response.status_code == 401
+    assert (app.issued, session.relogins, session.closed) == (1, 0, True)

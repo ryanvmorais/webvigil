@@ -491,3 +491,46 @@ async def test_confirm_dropped_falls_back_to_the_page_the_login_landed_on() -> N
         assert await auth.confirm_dropped() is False
         state["status"] = 401
         assert await auth.confirm_dropped() is True
+
+
+# ---------------------------------------------------------------------------
+# The cookie transition and the reference page (spec 020)
+# ---------------------------------------------------------------------------
+
+
+async def test_the_transition_holds_the_cookies_before_and_after_the_post() -> None:
+    """``pre`` is what the login page set, ``post`` what the chain ended with; both are values."""
+    site = _Site()
+    async with _open(site) as auth:
+        assert auth.transition is None
+        await auth.login()
+
+    assert auth.transition is not None
+    assert auth.transition.pre == {"pre": "pre-77aa"}
+    assert auth.transition.post == {"pre": "pre-77aa", "sid": "sess-9f3a"}
+
+
+async def test_a_failed_login_records_no_transition_and_a_relogin_replaces_it() -> None:
+    """Only a committed login leaves a transition behind; the next one overwrites it."""
+    site = _Site(post=lambda r, b: _html(_FORM, "<p>Invalid credentials</p>"))
+    async with _open(site) as auth:
+        with pytest.raises(LoginFailedError):
+            await auth.login()
+        assert auth.transition is None
+
+        site.post = _Site._default_post
+        await auth.login()
+        first = auth.transition
+        await auth.login()
+        assert auth.transition is not first and auth.transition == first
+
+
+async def test_the_reference_page_is_check_url_else_the_landing_page() -> None:
+    """``reference_url``: none before a login, then ``check_url`` if set, else the landing page."""
+    site = _Site(pages={"/account": lambda r: _html("ok")})
+    async with _open(site) as plain:
+        assert plain.reference_url is None
+        await plain.login()
+        assert plain.reference_url == "http://demo.test/home"
+    async with _open(site, check_url="http://demo.test/account") as checked:
+        assert checked.reference_url == "http://demo.test/account"

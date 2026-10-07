@@ -143,3 +143,34 @@ def test_cookies_are_sent_to_the_target_host_only() -> None:
 
     assert jar.pairs_for("http://evil.test/", handshake=False) == []
     assert jar.pairs_for("http://sub.demo.test/", handshake=False) == []
+
+
+# ---------------------------------------------------------------------------
+# A Secure cookie over plain http (spec 020)
+# ---------------------------------------------------------------------------
+
+
+def test_a_secure_cookie_set_over_http_is_refused_like_a_browser_does() -> None:
+    """It neither enters the handshake jar nor replaces the live session cookie."""
+    jar = SessionJar("demo.test")
+    jar.begin()
+    jar.absorb(_response(_URL, "sid=one; Path=/", "tracker=t; Path=/; Secure"), handshake=True)
+    jar.commit()
+    assert jar.pairs_for(_URL, handshake=False) == [("sid", "one")]
+
+    jar.absorb(_response(_URL, "sid=two; Path=/; Secure; HttpOnly"), handshake=False)
+    assert jar.pairs_for(_URL, handshake=False) == [
+        ("sid", "one")
+    ]  # the Secure rotation is refused
+
+    jar.absorb(_response(_URL, "sid=three; Path=/", "other=x; Secure"), handshake=False)
+    assert jar.pairs_for(_URL, handshake=False) == [("sid", "three")]  # a plain one still rotates
+
+
+def test_the_same_secure_cookie_over_https_is_accepted() -> None:
+    """Over ``https`` the rule does not apply."""
+    jar = SessionJar("demo.test")
+    jar.begin()
+    jar.absorb(_response("https://demo.test/signin", "sid=one; Path=/; Secure"), handshake=True)
+    jar.commit()
+    assert jar.pairs_for("https://demo.test/", handshake=False) == [("sid", "one")]

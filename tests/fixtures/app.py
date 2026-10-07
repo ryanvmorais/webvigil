@@ -24,6 +24,7 @@ The route handlers are one-liners with inline comments per spec; only
 from __future__ import annotations
 
 import ast
+import hashlib
 import html
 import inspect
 import re
@@ -182,6 +183,17 @@ _HARDENED_HEADERS = {
 }
 
 
+def _random_id(seed: str) -> str:
+    """
+    Args:
+        seed (str): Anything that differs per use.
+
+    Returns:
+        str: A 32-character hex id that looks random and is the same for the same seed.
+    """
+    return hashlib.sha256(seed.encode()).hexdigest()[:32]
+
+
 def _insecure(request: Request) -> Response:
     response = HTMLResponse(_INSECURE_PAGE)
     response.headers["server"] = "Apache/2.4.41 (Ubuntu)"
@@ -198,7 +210,14 @@ def _hardened(request: Request) -> Response:
     response = HTMLResponse(_PAGE)
     for name, value in _HARDENED_HEADERS.items():
         response.headers[name] = value
-    response.headers["set-cookie"] = "__Host-session=abc123; Secure; HttpOnly; Path=/; SameSite=Lax"
+    # spec 020: a long, random-looking id that differs on every visit (a constant one would be a
+    # "duplicates" finding of the session-id sampling); deterministic per app, so scans repeat.
+    state = request.app.state
+    state.index_visits += 1
+    visit = _random_id(f"index-{state.index_visits}")
+    response.headers["set-cookie"] = (
+        f"__Host-session={visit}; Secure; HttpOnly; Path=/; SameSite=Lax"
+    )
     return response
 
 
@@ -870,7 +889,16 @@ def _signin(cookie_name: str, *, lockout: bool) -> Callable[[Request], Awaitable
         if request.method == "GET":
             token = f"csrf-{len(state.csrf_issued) + 1:03d}"
             state.csrf_issued.add(token)
-            return _signin_page(token)
+            page = _signin_page(token)
+            # spec 020: an anonymous visitor already gets a session id. The insecure app hands out
+            # a counter (predictable); the hardened one a long random id.
+            state.signin_visits += 1
+            if lockout:
+                anon = _random_id(f"anon-{state.signin_visits}")
+                page.set_cookie(cookie_name, anon, path="/", httponly=True, samesite="lax")
+            else:
+                page.set_cookie(cookie_name, str(1000 + state.signin_visits), path="/")
+            return page
         form = await request.form()
         csrf = str(form.get("csrf", ""))
         if not csrf or csrf != request.cookies.get("pre") or csrf not in state.csrf_issued:
@@ -885,10 +913,15 @@ def _signin(cookie_name: str, *, lockout: bool) -> Callable[[Request], Awaitable
             return _signin_page(csrf, "Invalid credentials")
         state.failed_logins = 0
         state.login_log.append("ok")
-        token = f"fx-session-{len(state.sessions) + len(state.expired) + 1:03d}"
-        state.sessions[token] = 0
         done = RedirectResponse("/signin/done", status_code=302)
-        done.set_cookie(cookie_name, token, path="/", httponly=True, samesite="lax")
+        anonymous = request.cookies.get(cookie_name)
+        if lockout or not anonymous:
+            # the hardened app (and any visitor without an id) gets a NEW id at login
+            token = _random_id(f"session-{len(state.sessions) + len(state.expired) + 1}")
+            done.set_cookie(cookie_name, token, path="/", httponly=True, samesite="lax")
+        else:
+            token = anonymous  # session fixation: the anonymous id becomes the session (spec 020)
+        state.sessions[token] = 0
         return done
 
     return view
@@ -914,7 +947,25 @@ async def _profile(request: Request) -> Response:
 
 
 def _logout(request: Request) -> Response:
-    return RedirectResponse("/", status_code=302)
+    """
+    Log out (spec 020): the cookie is always cleared in the browser; only the hardened app also
+    ends the session on the server.
+
+    Args:
+        request (Request): The request.
+
+    Returns:
+        Response: A redirect to the index, deleting the session cookie.
+    """
+    state = request.app.state
+    value = request.cookies.get(state.session_cookie)
+    state.logout_log.append(bool(value))
+    if state.logout_invalidates and value in state.sessions:
+        del state.sessions[value]
+        state.expired.add(value)
+    response = RedirectResponse("/", status_code=302)
+    response.delete_cookie(state.session_cookie, path="/")
+    return response
 
 
 # --- spec 008: the guestbook — stored XSS on a per-entry page (RF-13) -------------
@@ -1442,4 +1493,9 @@ def make_app(profile: str, *, session_ttl: int | None = None) -> Starlette:
     app.state.csrf_issued = set()
     app.state.login_log = []  # spec 019: one entry per POST /signin: ok / bad-password / ...
     app.state.failed_logins = 0
+    app.state.session_cookie = cookie_name  # spec 020
+    app.state.logout_invalidates = not is_insecure
+    app.state.logout_log = []  # one entry per GET /logout: whether it carried a session cookie
+    app.state.index_visits = 0
+    app.state.signin_visits = 0
     return app

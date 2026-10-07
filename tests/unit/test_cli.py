@@ -186,6 +186,10 @@ _FLAG_CASES = [
     ("--confirm-csrf", "[injection]\ncsrf_confirm = false\n", "injection.csrf_confirm", True),
     ("--no-confirm-csrf", "[injection]\ncsrf_confirm = true\n", "injection.csrf_confirm", False),
     ("--submit-post-forms", "[scan]\nsubmit_post_forms = false\n", "scan.submit_post_forms", True),
+    ("--sample-sessions", "[session]\nsample_ids = false\n", "session.sample_ids", True),
+    ("--no-sample-sessions", "[session]\nsample_ids = true\n", "session.sample_ids", False),
+    ("--test-logout", "[session]\ntest_logout = false\n", "session.test_logout", True),
+    ("--no-test-logout", "[session]\ntest_logout = true\n", "session.test_logout", False),
     (
         "--no-submit-post-forms",
         "[scan]\nsubmit_post_forms = true\n",
@@ -481,3 +485,40 @@ def test_the_login_summary_line_reports_facts_and_the_account_but_no_secret() ->
         assert "pw-from-env" not in result.stderr
     _StubOrchestrator.result = make_result()
     assert "Login:" not in runner.invoke(app_mod.app, _SCAN).stderr
+
+
+def test_logout_url_merges_into_the_files_login_table(tmp_path: Path) -> None:
+    """``--logout-url`` sets that key and leaves the rest of ``[auth.login]`` alone (spec 020)."""
+    cfg = tmp_path / "webvigil.toml"
+    cfg.write_text(
+        "[auth.login]\nurl = 'https://example.com/in'\nusername = 'file-user'\nmax_relogins = 5\n",
+        "utf-8",
+    )
+    runner.invoke(
+        app_mod.app, [*_SCAN, "--config", str(cfg), "--logout-url", "https://example.com/out"]
+    )
+    login = _config().auth.login  # type: ignore[attr-defined]
+    assert (login.logout_url, login.username, login.max_relogins) == (
+        "https://example.com/out",
+        "file-user",
+        5,
+    )
+
+
+def test_the_session_checks_summary_line_says_what_was_asked_for() -> None:
+    """Sampling shows in any mode; fixation and logout need Active and a login."""
+    cases = [
+        ([*_SCAN, "--sample-sessions"], "Session checks: 10 ids sampled"),
+        (
+            [*_ACTIVE, *_LOGIN, "--sample-sessions", "--test-logout"],
+            "Session checks: 10 ids sampled, fixation checked, logout tested",
+        ),
+        ([*_ACTIVE, *_LOGIN], "Session checks: fixation checked"),
+    ]
+    for args, line in cases:
+        result = runner.invoke(app_mod.app, args, env=_PASSWORD_ENV)
+        assert line in result.stderr, line
+    assert "Session checks" not in runner.invoke(app_mod.app, _SCAN).stderr
+    # logout is not "tested" in a Passive scan even with the switch
+    passive = runner.invoke(app_mod.app, [*_SCAN, *_LOGIN, "--test-logout"])
+    assert "logout tested" not in passive.stderr

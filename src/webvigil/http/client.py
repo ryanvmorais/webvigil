@@ -45,6 +45,9 @@ _HANDSHAKE: contextvars.ContextVar[bool] = contextvars.ContextVar(
     "webvigil_handshake", default=False
 )
 _QUIET: contextvars.ContextVar[bool] = contextvars.ContextVar("webvigil_quiet", default=False)
+# spec 020: inside ``HttpClient.anonymous()`` a request carries only the headers its caller
+# passes - no static ``[auth]`` cookie or header, no session jar.
+_ANON: contextvars.ContextVar[bool] = contextvars.ContextVar("webvigil_anon", default=False)
 
 _Params = dict[str, str] | list[tuple[str, str]]
 # Multipart parts: field name -> (filename, content, content type) (spec 014 upload), or a
@@ -246,6 +249,27 @@ class HttpClient:
         finally:
             _QUIET.reset(quiet_token)
             _HANDSHAKE.reset(handshake_token)
+
+    @contextlib.asynccontextmanager
+    async def anonymous(self) -> AsyncIterator[None]:
+        """
+        Run requests as an anonymous visitor (spec 020): only the caller's own headers go out.
+
+        No static ``[auth]`` cookie or header, no session jar, nothing absorbed and no drop
+        detection; an explicit ``Cookie`` header the caller passes is sent as given. Used for the
+        session-id samples, the fixation confirmation and the logout replay. Scoped to the calling
+        task (a ``ContextVar``).
+
+        Yields:
+            None: Control, with the anonymous mode on for this task.
+        """
+        anon_token = _ANON.set(True)
+        quiet_token = _QUIET.set(True)
+        try:
+            yield
+        finally:
+            _QUIET.reset(quiet_token)
+            _ANON.reset(anon_token)
 
     @contextlib.asynccontextmanager
     async def quiet(self) -> AsyncIterator[None]:
@@ -535,9 +559,10 @@ class HttpClient:
         self._active_client.cookies.clear()
         req_headers = dict(headers or {})
         on_target = _host_of(url) == self._target.host
-        session = self._session
+        anonymous = _ANON.get()
+        session = None if anonymous else self._session
         handshake = _HANDSHAKE.get()
-        cookie_header = self._cookie_header
+        cookie_header = "" if anonymous else self._cookie_header
         if session is not None and on_target:
             session_pairs = session.jar.pairs_for(url, handshake=handshake)
             if session_pairs:
@@ -554,7 +579,7 @@ class HttpClient:
             req_headers["cookie"] = f"{existing}; {cookie_header}" if existing else cookie_header
         # spec 013: configured [auth] headers, target-host only, without clobbering a header
         # the caller already set for this request (case-insensitive).
-        if self._auth_headers and _host_of(url) == self._target.host:
+        if self._auth_headers and on_target and not anonymous:
             present = {name.lower() for name in req_headers}
             for name, value in self._auth_headers:
                 if name.lower() not in present:

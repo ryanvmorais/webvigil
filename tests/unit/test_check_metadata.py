@@ -58,6 +58,9 @@ _CHECKS = [
     ("injection.xss.reflected", "INJECTION", "active", "HIGH", (79, 20)),
     ("injection.xss.stored", "INJECTION", "active", "HIGH", (79, 20)),
     ("injection.xxe", "INJECTION", "active", "HIGH", (611, 827)),
+    ("session.fixation", "SESSION", "active", "MEDIUM", (384,)),
+    ("session.id.weak", "SESSION", "passive", "MEDIUM", (330, 331, 340)),
+    ("session.logout.not-invalidated", "SESSION", "active", "MEDIUM", (613,)),
     ("tls.https", "TLS", "passive", "HIGH", (319, 295)),
     ("upload.unrestricted", "UPLOAD", "active", "HIGH", (434, 646)),
 ]

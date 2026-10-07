@@ -22,12 +22,12 @@ same action, so one proof is never reported twice.
 
 from __future__ import annotations
 
-import re
 from http.cookies import SimpleCookie
 
 from webvigil.checks.base import Check
 from webvigil.checks.csrf.tokens import is_candidate, is_token_field
 from webvigil.checks.registry import register
+from webvigil.checks.session.cookies import SESSION_NAME_RE
 from webvigil.core.context import Page, ScanContext
 from webvigil.core.findings import (
     Category,
@@ -39,7 +39,6 @@ from webvigil.core.findings import (
     Severity,
 )
 
-_SESSION_NAME_RE = re.compile(r"session|sess(?:id)?|sid|auth|jwt|(?:^|[_-])token", re.I)
 _PROTECTION = {"strict": 2, "lax": 1, "none": 0}
 
 OWASP_CSRF = "https://owasp.org/www-community/attacks/csrf"
@@ -108,7 +107,7 @@ def _session_samesite(pages: tuple[Page, ...]) -> str | None:
             except Exception:  # a malformed Set-Cookie must not break the check
                 continue
             for name, morsel in jar.items():
-                if not _SESSION_NAME_RE.search(name):
+                if not SESSION_NAME_RE.search(name):
                     continue
                 samesite = (morsel["samesite"] or "none").strip().lower() or "none"
                 seen = _weaker(seen, samesite)

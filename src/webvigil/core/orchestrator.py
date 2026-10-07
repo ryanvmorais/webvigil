@@ -30,6 +30,7 @@ from webvigil.checks.injection.engine import KIND_BY_CHECK_ID, InjectionScanner
 from webvigil.checks.injection.models import InjectionHit
 from webvigil.checks.injection.stored import StoredXssScanner
 from webvigil.checks.registry import iter_checks, load_plugins, unknown_check_ids
+from webvigil.checks.session.scanner import SessionHit, SessionScanner, kinds_for
 from webvigil.checks.upload.scanner import UploadHit, UploadScanner
 from webvigil.core.config import LoginSection, ScanConfig
 from webvigil.core.context import Detection, Observations, Page, ScanContext
@@ -121,10 +122,17 @@ class Orchestrator:
             warnings.append("CSRF confirmation requires --mode active — the CSRF pass did not run")
         if self._config.scan.submit_post_forms and self._config.scan.mode is not ScanMode.ACTIVE:
             warnings.append("POST crawling requires --mode active — the POST phase did not run")
+        if self._config.session.test_logout and (
+            self._config.scan.mode is not ScanMode.ACTIVE or self._config.auth.login is None
+        ):
+            warnings.append(
+                "the logout test requires --mode active and a login - the logout test did not run"
+            )
         technologies: tuple[Technology, ...] = ()
         session: Session | None = None
         async with HttpClient(target, self._config) as http:
-            session = await self._log_in(http, target, warnings)
+            authenticator = await self._log_in(http, target, warnings)
+            session = authenticator.session if authenticator is not None else None
             operations = await self._load_openapi(http, target, warnings)
             crawler = Crawler(
                 http,
@@ -158,6 +166,10 @@ class Orchestrator:
             upload_hits = await self._scan_upload(check_types, http, target, pages, forms, warnings)
             # Last: the one pass whose requests change server state (spec 017, ADR-6).
             csrf_hits = await self._scan_csrf(check_types, http, target, pages, forms, warnings)
+            # Then the session checks (spec 020): their logout test ends the session, so it is last.
+            session_hits = await self._scan_session(
+                check_types, http, target, pages, forms, authenticator, warnings
+            )
             context = ScanContext(
                 config=self._config,
                 target=target,
@@ -173,6 +185,7 @@ class Orchestrator:
                     envelope_hits=envelope_hits,
                     upload_hits=upload_hits,
                     csrf_hits=csrf_hits,
+                    session_hits=session_hits,
                 ),
             )
             findings, errors = await self._run_checks(check_types, context)
@@ -209,7 +222,7 @@ class Orchestrator:
 
     async def _log_in(
         self, http: HttpClient, target: Target, warnings: list[str]
-    ) -> Session | None:
+    ) -> Authenticator | None:
         """
         Run the automated login (spec 019) when one is configured and the scan is Active.
 
@@ -220,7 +233,8 @@ class Orchestrator:
                 says nothing was attempted, an unconfirmed login says so.
 
         Returns:
-            Session | None: The session, or ``None`` when no login ran.
+            Authenticator | None: The authenticator (its ``session`` is attached to ``http``),
+                or ``None`` when no login ran.
 
         Raises:
             LoginFailedError: If the login fails — the scan stops before the crawl.
@@ -238,7 +252,7 @@ class Orchestrator:
         http.use_session(authenticator.session)
         outcome = await authenticator.login()
         authenticator.session.confirmed = outcome.confirmed
-        return authenticator.session
+        return authenticator
 
     async def _load_openapi(
         self, http: HttpClient, target: Target, warnings: list[str]
@@ -463,6 +477,60 @@ class Orchestrator:
             hits = await scanner.run()
         except Exception as exc:  # a pass bug must not abort the whole scan
             warnings.append(f"file-upload pass failed: {exc or type(exc).__name__}")
+            return ()
+        warnings.extend(scanner.warnings)
+        return tuple(hits)
+
+    async def _scan_session(
+        self,
+        check_types: Sequence[type[Check]],
+        http: HttpClient,
+        target: Target,
+        pages: tuple[Page, ...],
+        forms: tuple[Form, ...],
+        authenticator: Authenticator | None,
+        warnings: list[str],
+    ) -> tuple[SessionHit, ...]:
+        """
+        Run the session-security pass when any ``session.*`` check is selected (spec 020).
+
+        The pass judges the session ids the crawl saw, samples anonymous visits when
+        ``[session] sample_ids`` is on, compares the cookies across the login, and, with
+        ``[session] test_logout`` and a login, logs out and replays the old session last.
+        A pass bug is caught here and downgraded to a warning.
+
+        Args:
+            check_types (Sequence[type[Check]]): The checks selected for the run.
+            http (HttpClient): The shared, scope-guarded HTTP client.
+            target (Target): The normalized target.
+            pages (tuple[Page, ...]): The pages the crawler discovered.
+            forms (tuple[Form, ...]): The parsed ``<form>`` inventory.
+            authenticator (Authenticator | None): The login's authenticator, if one ran.
+            warnings (list[str]): Scan-level warning list, appended to in place.
+
+        Returns:
+            tuple[SessionHit, ...]: What the pass observed; ``()`` when no ``session.*`` check is
+                selected.
+        """
+        kinds = kinds_for([check.id for check in check_types])
+        if not self._config.session.test_logout:
+            kinds -= {"logout"}
+        if not kinds:
+            return ()
+        try:
+            scanner = SessionScanner(
+                http,
+                target,
+                self._config,
+                pages,
+                forms,
+                session=authenticator.session if authenticator is not None else None,
+                authenticator=authenticator,
+                kinds=kinds,
+            )
+            hits = await scanner.run()
+        except Exception as exc:  # a pass bug must not abort the whole scan
+            warnings.append(f"session checks failed: {exc or type(exc).__name__}")
             return ()
         warnings.extend(scanner.warnings)
         return tuple(hits)

@@ -35,6 +35,34 @@ _MARKER_BODY_CHARS = 200_000
 # The jar
 # ---------------------------------------------------------------------------
 
+_SECURE_ATTRIBUTE = re.compile(r";\s*secure\s*(?:;|$)", re.I)
+
+
+def _without_insecure_secure_cookies(raw: httpx.Response) -> httpx.Response:
+    """
+    Drop the ``Set-Cookie`` lines a browser would refuse (spec 020).
+
+    A ``Secure`` cookie set over plain ``http`` is rejected by every modern browser ("Leave Secure
+    Cookies Alone"); the stdlib jar accepts it, and it would silently replace a session cookie
+    with one that is never sent back over that same ``http``. Over ``https`` nothing is dropped.
+
+    Args:
+        raw (httpx.Response): A response of a request to the target host.
+
+    Returns:
+        httpx.Response: ``raw`` itself when nothing needs dropping, else a copy without those
+            ``Set-Cookie`` lines.
+    """
+    if raw.url.scheme == "https":
+        return raw
+    lines = raw.headers.get_list("set-cookie")
+    kept = [line for line in lines if not _SECURE_ATTRIBUTE.search(line)]
+    if len(kept) == len(lines):
+        return raw
+    headers = [(k, v) for k, v in raw.headers.multi_items() if k.lower() != "set-cookie"]
+    headers += [("set-cookie", line) for line in kept]
+    return httpx.Response(raw.status_code, headers=headers, request=raw.request)
+
 
 class SessionJar:
     """
@@ -121,6 +149,7 @@ class SessionJar:
             handshake (bool): ``True`` inside a handshake (every cookie is kept, in the
                 pending jar); ``False`` for a live request (only a rotation of a held name).
         """
+        raw = _without_insecure_secure_cookies(raw)
         if handshake:
             if self._pending is None:
                 return
@@ -189,6 +218,8 @@ class Session:
         relogins (int): Re-authentications attempted so far, failed ones included.
         max_relogins (int): The cap.
         lost (bool): ``True`` once the cap was hit while the session was still dropping.
+        closed (bool): ``True`` once the session was ended on purpose (the logout test):
+            a dropped session is then not recovered.
         confirmed (bool): ``False`` when the first login could not be verified.
         known_login_redirects (set[str]): URLs that bounce to the login page even with a
             fresh session (an app that sends unauthorised users there): never a drop signal.
@@ -225,6 +256,7 @@ class Session:
         self.max_relogins = max_relogins
         self.lost = False
         self.confirmed = True
+        self.closed = False
         self.known_login_redirects: set[str] = set()
         self.failed_relogins = 0
         self._failures: list[str] = []
@@ -298,7 +330,7 @@ class Session:
         async with self._lock:
             if self.generation != seen:
                 return True  # another task re-logged in while this one waited
-            if self._relogin is None:
+            if self._relogin is None or self.closed:
                 return False
             if self.relogins >= self.max_relogins:
                 self.lost = True
@@ -320,6 +352,12 @@ class Session:
             message (str): The failure message; it never carries a secret.
         """
         self._failures.append(message)
+
+    def close(self) -> None:
+        """
+        Mark the session ended on purpose (the logout test, spec 020): no re-login follows.
+        """
+        self.closed = True
 
     def committed(self) -> None:
         """Record a committed (re)login: a new generation."""

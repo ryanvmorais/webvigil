@@ -40,6 +40,7 @@ def _load_builtin_checks() -> None:
         envelope,
         headers,
         injection,
+        session,
         tls,
         upload,
     )
