@@ -244,6 +244,21 @@ async def test_a_get_search_form_is_submitted(httpx_mock: object) -> None:
     assert any(f.action == "https://example.com/search" for f in crawler.forms)
 
 
+async def test_a_get_form_is_submitted_with_its_named_submit_button(httpx_mock: object) -> None:
+    """The crawled URL carries ``Submit=Submit``: pages that guard on it show their results."""
+    router = _Router(
+        {
+            _SEED: _page(
+                '<form method="get" action="/find"><input name="id">'
+                '<input type="submit" name="Submit" value="Submit"></form>'
+            ),
+            "https://example.com/find?id=&Submit=Submit": _page(_html()),
+        }
+    )
+    await _crawl(ScanConfig(), router, httpx_mock)
+    assert "https://example.com/find?id=&Submit=Submit" in router.seen
+
+
 async def test_a_post_form_is_recorded_but_never_submitted(httpx_mock: object) -> None:
     """A POST form is inventoried but never sent by the crawler."""
     form = '<form method="post" action="/comment"><textarea name="b"></textarea></form>'

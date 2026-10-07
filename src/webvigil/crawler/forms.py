@@ -150,7 +150,10 @@ def submission_url(form: Form) -> str | None:
 
     The form's default field values replace whatever query the action already
     carries; fields are taken in a stable parser order so the URL is
-    deterministic (RNF-04).
+    deterministic (RNF-04). Like a browser, it also sends the **first named submit
+    button**: an application that guards its handler with ``isset($_GET["Submit"])``
+    (DVWA's SQL-injection page does) shows nothing for a submission without it, and the
+    injection pass builds its points from this URL.
 
     Args:
         form (Form): The form to resolve.
@@ -161,12 +164,17 @@ def submission_url(form: Form) -> str | None:
     """
     if form.method != "GET":
         return None
-    pairs = [
-        (field.name, field.value)
-        for field in form.fields
-        if field.type in _SUBMIT_VALUE_TYPES
-        or (field.type in ("checkbox", "radio") and field.checked)
-    ]
+    pairs: list[tuple[str, str]] = []
+    submit_sent = False
+    for field in form.fields:
+        if field.type == "submit":
+            if field.name and not submit_sent:
+                pairs.append((field.name, field.value))
+                submit_sent = True
+        elif field.type in _SUBMIT_VALUE_TYPES or (
+            field.type in ("checkbox", "radio") and field.checked
+        ):
+            pairs.append((field.name, field.value))
     split = urlsplit(form.action)
     return urlunsplit((split.scheme, split.netloc, split.path, urlencode(pairs), ""))
 
