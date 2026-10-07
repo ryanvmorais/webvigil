@@ -73,6 +73,7 @@ def summary(
     osv_online: bool = False,
     file_upload: bool = False,
     confirm_csrf: bool = False,
+    post_crawl: bool = False,
 ) -> None:
     """
     Print the human-readable scan summary to stderr.
@@ -93,6 +94,8 @@ def summary(
             note that files were written to the target. Defaults to ``False``.
         confirm_csrf (bool): Whether the spec-017 CSRF confirmation pass ran, for
             a note that test submissions were made. Defaults to ``False``.
+        post_crawl (bool): Whether the spec-018 POST crawl phase ran, for a note
+            that forms were submitted. Defaults to ``False``.
     """
     meta = result.metadata
     table = Table(title=f"WebVigil — {meta.target}", title_justify="left")
@@ -141,6 +144,11 @@ def summary(
             _console.print(
                 "[dim]CSRF confirmation: enabled - each tested form was submitted up to 3 "
                 'times; test data marked "wvcsrf" was left on the target[/]'
+            )
+        if post_crawl:
+            _console.print(
+                "[dim]POST crawl: enabled - candidate forms were submitted with benign "
+                'values; test data marked "wvcrawl" was left on the target[/]'
             )
 
     if cookie_count or header_count:

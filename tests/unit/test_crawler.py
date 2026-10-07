@@ -418,3 +418,33 @@ async def test_recrawl_skips_a_new_logout_or_destructive_link(httpx_mock: object
     assert "https://example.com/ok" in fetched
     assert "https://example.com/logout" not in fetched
     assert "https://example.com/items/9/delete" not in fetched
+
+
+# ---------------------------------------------------------------------------
+# Page.method (spec 018)
+# ---------------------------------------------------------------------------
+
+
+def test_a_page_is_fetched_by_get_unless_told_otherwise() -> None:
+    """``Page.method`` defaults to ``GET`` and ``fetched_by_get`` follows it."""
+    page = Page.failed(_SEED, "boom")
+    assert page.method == "GET" and page.fetched_by_get is True
+    post = Page.failed(_SEED, "boom", method="POST")
+    assert post.method == "POST" and post.fetched_by_get is False
+
+
+def test_from_response_passes_the_method_through() -> None:
+    """A page built from a response carries the verb that produced it."""
+    from webvigil.http.client import Response
+
+    response = Response(
+        url=_SEED,
+        requested_url=_SEED,
+        status_code=200,
+        headers=httpx.Headers({"content-type": "text/html"}),
+        text="<p>ok</p>",
+        content=b"<p>ok</p>",
+        elapsed_ms=1.0,
+    )
+    assert Page.from_response(response).method == "GET"
+    assert Page.from_response(response, method="POST").method == "POST"

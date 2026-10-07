@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import re
 
-from webvigil.crawler.forms import Form, FormField
-from webvigil.crawler.safety import is_auth_form, looks_like_search
+from webvigil.crawler.forms import FormField
+from webvigil.crawler.safety import is_candidate
 
 _TOKEN_NAME_RE = re.compile(
     r"csrf|xsrf|_token|authenticity_token|__requestverificationtoken|csrfmiddlewaretoken|"
@@ -32,13 +32,6 @@ def is_token_field(field: FormField) -> bool:
     return bool(_TOKEN_NAME_RE.search(field.name))
 
 
-def is_candidate(form: Form) -> bool:
-    """
-    Args:
-        form (Form): A parsed form.
-
-    Returns:
-        bool: ``True`` when the form is a ``POST`` that is neither an auth form
-            nor a search form — i.e. a meaningful CSRF target.
-    """
-    return form.method == "POST" and not is_auth_form(form) and not looks_like_search(form)
+# ``is_candidate`` lives in ``webvigil.crawler.safety`` since spec 018 (the crawler must not
+# import from ``checks``); re-exported so the passive check and the 017 pass keep their imports.
+__all__ = ["is_candidate", "is_token_field"]

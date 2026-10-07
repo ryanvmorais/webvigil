@@ -368,6 +368,9 @@ behaviour is documented, like a stored-XSS marker.
 - **`--confirm-csrf` submits state-changing forms** (opt-in; a control and up to two
   replays per form, default values only). See
   [Active CSRF confirmation](authenticated-scanning.md#active-csrf-confirmation----confirm-csrf-opt-in).
+- **`--submit-post-forms` makes the crawler submit forms** (opt-in; once per distinct
+  candidate form and `--openapi` `POST` operation, default values only, never a payload or a
+  file). See [the POST crawl](authenticated-scanning.md#post-forms----submit-post-forms-opt-in).
 - **Forms that look like authentication or destruction are not fuzzed** — the heuristic
   matches `login`, `logout`, `register`, `delete`, `password`, `checkout`, `pay`,
   `transfer`, and similar in the action or field names. It is best-effort: a login form at

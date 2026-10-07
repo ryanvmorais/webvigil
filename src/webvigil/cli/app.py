@@ -145,6 +145,17 @@ def scan(
             ),
         ),
     ] = None,
+    submit_post_forms: Annotated[
+        bool | None,
+        typer.Option(
+            "--submit-post-forms/--no-submit-post-forms",
+            help=(
+                "Let the crawler submit candidate POST forms and --openapi POST operations "
+                "with benign values during an Active scan, and follow what the answers link "
+                "to. Off by default (writes to the target)."
+            ),
+        ),
+    ] = None,
     cookie: Annotated[
         list[str] | None,
         typer.Option(
@@ -204,6 +215,7 @@ def scan(
             xxe=xxe,
             file_upload=file_upload,
             confirm_csrf=confirm_csrf,
+            submit_post_forms=submit_post_forms,
             cookie=cookie,
             header=header,
             openapi=openapi,
@@ -235,6 +247,7 @@ def scan(
         osv_online=cfg.deps.osv_online,
         file_upload=cfg.injection.file_upload and cfg.scan.mode is ScanMode.ACTIVE,
         confirm_csrf=cfg.injection.csrf_confirm and cfg.scan.mode is ScanMode.ACTIVE,
+        post_crawl=cfg.scan.submit_post_forms and cfg.scan.mode is ScanMode.ACTIVE,
     )
     raise typer.Exit(int(evaluate(result, cfg.report.fail_on)))
 
@@ -288,6 +301,7 @@ def _build_config(
     xxe: bool | None,
     file_upload: bool | None,
     confirm_csrf: bool | None,
+    submit_post_forms: bool | None,
     cookie: list[str] | None,
     header: list[str] | None,
     openapi: str | None,
@@ -304,7 +318,8 @@ def _build_config(
         config (Path | None): Path to a ``webvigil.toml``, or ``None``.
         mode, scope, max_pages, delay, fail_on, authorized_by, probe,
             time_based_sqli, time_based_cmdi, stored_xss, xxe, file_upload,
-            confirm_csrf, cookie, header, openapi, osv_online: The optional CLI overrides;
+            confirm_csrf, submit_post_forms, cookie, header, openapi, osv_online: The
+            optional CLI overrides;
             ``None`` means "not passed".
         verify_tls (bool): The resolved TLS-verification flag.
 
@@ -325,6 +340,8 @@ def _build_config(
         scan_overrides["max_pages"] = max_pages
     if openapi is not None:
         scan_overrides["openapi"] = openapi
+    if submit_post_forms is not None:
+        scan_overrides["submit_post_forms"] = submit_post_forms
 
     http_overrides: dict[str, object] = {"verify_tls": verify_tls}
     if delay is not None:
@@ -422,6 +439,7 @@ def _emit(
     osv_online: bool = False,
     file_upload: bool = False,
     confirm_csrf: bool = False,
+    post_crawl: bool = False,
 ) -> None:
     """
     Emit the scan output: the terminal summary, or a rendered report.
@@ -446,6 +464,8 @@ def _emit(
             Defaults to ``False``.
         confirm_csrf (bool): Whether the CSRF confirmation pass ran, for the
             summary. Defaults to ``False``.
+        post_crawl (bool): Whether the crawler's POST phase ran, for the
+            summary. Defaults to ``False``.
     """
     if output_format is None:
         _render.summary(
@@ -455,6 +475,7 @@ def _emit(
             osv_online=osv_online,
             file_upload=file_upload,
             confirm_csrf=confirm_csrf,
+            post_crawl=post_crawl,
         )
         return
     rendered = get_reporter(output_format).render(result)
@@ -470,6 +491,7 @@ def _emit(
         osv_online=osv_online,
         file_upload=file_upload,
         confirm_csrf=confirm_csrf,
+        post_crawl=post_crawl,
     )
 
 

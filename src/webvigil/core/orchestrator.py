@@ -111,6 +111,8 @@ class Orchestrator:
             )
         if self._config.injection.csrf_confirm and self._config.scan.mode is not ScanMode.ACTIVE:
             warnings.append("CSRF confirmation requires --mode active — the CSRF pass did not run")
+        if self._config.scan.submit_post_forms and self._config.scan.mode is not ScanMode.ACTIVE:
+            warnings.append("POST crawling requires --mode active — the POST phase did not run")
         technologies: tuple[Technology, ...] = ()
         async with HttpClient(target, self._config) as http:
             operations = await self._load_openapi(http, target, warnings)
@@ -119,8 +121,11 @@ class Orchestrator:
                 target,
                 self._config,
                 extra_seeds=[op.url for op in operations if op.method == "GET"],
+                post_operations=[op for op in operations if op.method == "POST"],
             )
             pages = tuple(await crawler.discover())
+            if crawler.post_summary is not None and (line := crawler.post_summary.warning()):
+                warnings.append(line)
             forms = crawler.forms
             if crawler.skipped_destructive:
                 warnings.append(

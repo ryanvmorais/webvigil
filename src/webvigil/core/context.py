@@ -51,6 +51,9 @@ class Page:
             not followed, when applicable.
         error (str | None): Description of the transport failure, or ``None``
             on success.
+        method (str): The verb that produced this response: ``"GET"`` for a
+            fetched page, ``"POST"`` for the answer to a submission by the crawler
+            (spec 018). Defaults to ``"GET"``.
     """
 
     requested_url: str
@@ -63,6 +66,17 @@ class Page:
     redirected_out_of_scope: bool = False
     final_location: str | None = None
     error: str | None = None
+    method: str = "GET"
+
+    @property
+    def fetched_by_get(self) -> bool:
+        """
+        Returns:
+            bool: ``True`` when the page was fetched with ``GET`` — the only kind a
+                pass may re-request or derive a ``GET`` injection point from. The
+                answer to a ``POST`` exists only as a response (spec 018).
+        """
+        return self.method == "GET"
 
     @property
     def ok(self) -> bool:
@@ -81,12 +95,13 @@ class Page:
         return "html" in self.headers.get("content-type", "").lower()
 
     @classmethod
-    def from_response(cls, response: Response) -> Page:
+    def from_response(cls, response: Response, method: str = "GET") -> Page:
         """
         Build a page from a successful HTTP response.
 
         Args:
             response (Response): The response returned by the HTTP client.
+            method (str): The verb that produced it. Defaults to ``"GET"``.
 
         Returns:
             Page: A page carrying the response's final URL, status, headers,
@@ -102,10 +117,11 @@ class Page:
             history=response.history,
             redirected_out_of_scope=response.redirected_out_of_scope,
             final_location=response.final_location,
+            method=method,
         )
 
     @classmethod
-    def failed(cls, url: str, error: str) -> Page:
+    def failed(cls, url: str, error: str, method: str = "GET") -> Page:
         """
         Build a placeholder page for a URL that could not be fetched.
 
@@ -125,6 +141,7 @@ class Page:
             text="",
             elapsed_ms=0.0,
             error=error,
+            method=method,
         )
 
 

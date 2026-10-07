@@ -44,6 +44,7 @@ class _StubCrawler:
 
     forms: tuple[object, ...] = ()
     skipped_destructive = 0
+    post_summary = None  # spec 018: the real crawler exposes the POST phase tally
 
     def __init__(self, *_args: object, **_kwargs: object) -> None: ...
 

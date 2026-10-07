@@ -284,7 +284,8 @@ class DisclosureProbe:
         prefixes: list[str] = []
         seen: set[str] = set()
         for page in self._pages:
-            if not page.ok:
+            # spec 018: the path of a POST answer is not a directory the target serves
+            if not (page.ok and page.fetched_by_get):
                 continue
             path = urlsplit(page.url).path
             segments = [segment for segment in path.split("/") if segment]

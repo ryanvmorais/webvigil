@@ -120,8 +120,10 @@ class StoredXssScanner:
             return report
 
         # Phase B — depth-1 re-crawl from the first crawl's frontier.
-        frontier = tuple(page.url for page in self._pages if page.ok)
-        pre = {normalize_url(page.url): page.text for page in self._pages if page.ok}
+        # spec 018: the answer to a crawler POST cannot be re-fetched with GET
+        readable = [page for page in self._pages if page.ok and page.fetched_by_get]
+        frontier = tuple(page.url for page in readable)
+        pre = {normalize_url(page.url): page.text for page in readable}
         max_fetches = min(_STORED_REFETCH_CAP, max(1, self._config.scan.max_pages))
         recrawled = await Crawler(self._http, self._target, self._config).recrawl(
             frontier, should_fetch=self._budget.take_recrawl, max_fetches=max_fetches

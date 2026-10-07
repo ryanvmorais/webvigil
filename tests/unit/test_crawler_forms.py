@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from tests.support import make_page
 from webvigil.core.target import Target
-from webvigil.crawler.forms import extract_forms, parse_forms, submission_url
+from webvigil.crawler.forms import extract_forms, form_body, parse_forms, submission_url
 
 _TARGET = Target.parse("https://example.com/")
 
@@ -150,3 +150,52 @@ def test_submission_url_is_none_for_a_post_form() -> None:
     """``submission_url`` only builds a URL for GET forms; a POST form gets ``None``."""
     (form,) = _forms('<form action="/s" method="post"><input name="q"></form>')
     assert submission_url(form) is None
+
+
+# ---------------------------------------------------------------------------
+# form_body — the submission body shared by specs 017 and 018
+# ---------------------------------------------------------------------------
+
+
+def test_form_body_field_table() -> None:
+    """Defaults travel, empty text gets the sentinel, typed fallbacks apply, boxes behave."""
+    html = (
+        '<form method="post" action="/x">'
+        '<input type="hidden" name="h" value="keep">'
+        '<input name="t"><input type="email" name="e"><input type="url" name="u">'
+        '<input type="number" name="n"><input type="password" name="p">'
+        '<input type="checkbox" name="on" value="1" checked><input type="checkbox" name="off">'
+        '<textarea name="body">typed</textarea>'
+        '<input type="submit" name="go" value="Save"><input type="submit" name="other" value="x">'
+        "</form>"
+    )
+    (form,) = _forms(html)
+    assert form_body(form, sentinel="S") == [
+        ("h", "keep"),
+        ("t", "S"),
+        ("e", "S@webvigil.invalid"),
+        ("u", "https://webvigil.invalid/"),
+        ("n", "1"),
+        ("p", ""),
+        ("on", "1"),
+        ("go", "Save"),
+        ("body", "typed"),  # the parser yields <textarea> after the <input>s
+    ]
+
+
+def test_form_body_skip_and_replace_change_only_the_named_fields() -> None:
+    """``skip`` leaves a field out; ``replace`` wins over the type rules, even for an empty one."""
+    html = (
+        '<form method="post" action="/x"><input type="hidden" name="csrf" value="tok">'
+        '<input name="note"><input name="blank"></form>'
+    )
+    (form,) = _forms(html)
+    assert form_body(form, sentinel="S", skip=frozenset({"csrf"})) == [
+        ("note", "S"),
+        ("blank", "S"),
+    ]
+    assert form_body(form, sentinel="S", replace={"csrf": "tpk", "blank": ""}) == [
+        ("csrf", "tpk"),
+        ("note", "S"),
+        ("blank", ""),
+    ]

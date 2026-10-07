@@ -35,6 +35,11 @@ Operations whose path or `operationId` looks like authentication or a state-chan
 (`login`, `logout`, `delete`, `password`, `checkout`, …) are **not** fuzzed, mirroring the
 form-exclusion rule.
 
+With `--submit-post-forms` (spec 018, Active Mode only, off by default) the crawler also
+**submits** each remaining `POST` operation once, with its synthesised JSON or
+form-urlencoded body, and reads the answer as a page. It writes to the target; see
+[the POST crawl](authenticated-scanning.md#post-forms----submit-post-forms-opt-in).
+
 ## Limits
 
 - **JSON only.** `--openapi` reads a `.json` file or a URL returning JSON. A YAML document

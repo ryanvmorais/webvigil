@@ -16,6 +16,7 @@ from __future__ import annotations
 import functools
 import json
 import re
+from pathlib import Path
 
 import httpx
 import pytest
@@ -122,8 +123,8 @@ def scan(monkeypatch: pytest.MonkeyPatch):
 
     The returned callable takes the profile name plus optional ``probe`` /
     ``active`` / ``cookies`` / ``stored_xss`` / ``xxe`` / ``file_upload`` /
-    ``confirm_csrf`` / ``openapi`` / ``osv_online`` / ``osv_up`` / ``time_based`` switches,
-    assembles the :class:`ScanConfig`, points the engine's HTTP client
+    ``confirm_csrf`` / ``post_forms`` / ``openapi`` / ``osv_online`` / ``osv_up`` /
+    ``time_based`` switches, assembles the :class:`ScanConfig`, points the engine's HTTP client
     (and, for OSV, its provider) at in-process transports, runs the scan, and
     returns the :class:`ScanResult`. The built app is stashed on ``scan.holder``
     so a test can read ``app.state.requests``. ``time_based=False`` turns off the
@@ -143,6 +144,7 @@ def scan(monkeypatch: pytest.MonkeyPatch):
         xxe: bool = False,
         file_upload: bool = False,
         confirm_csrf: bool = False,
+        post_forms: bool = False,
         openapi: str | None = None,
         osv_online: bool = False,
         osv_up: bool = True,
@@ -178,11 +180,15 @@ def scan(monkeypatch: pytest.MonkeyPatch):
                 "file_upload": file_upload,
                 "csrf_confirm": confirm_csrf,
                 # keep the spec-012 envelope pass small for the fixture; the sample takes the
-                # entry, then every form action, then the other pages, so spec 017's four
-                # /panel form actions pushed /reset and /resource out of a sample of 20
-                "envelope_url_sample": 24,
-                "envelope_budget": 150,
+                # entry, then every form action, then the other pages, so the form actions of
+                # spec 017 (/panel, four) and spec 018 (/support, three) pushed /reset and
+                # /resource out of the earlier samples of 20 and then 24
+                "envelope_url_sample": 30,
+                "envelope_budget": 180,
             }
+        if post_forms:
+            raw.setdefault("scan", {})
+            raw["scan"]["submit_post_forms"] = True  # type: ignore[index]
         if openapi is not None:
             raw.setdefault("scan", {})
             raw["scan"]["openapi"] = openapi  # type: ignore[index]
@@ -315,17 +321,17 @@ async def test_hardened_profile_reports_nothing(scan) -> None:
 
 
 async def test_crawler_reaches_the_linked_pages(scan) -> None:
-    """The crawler reaches all 24 linked pages of the fixture app (index, forms, endpoints)."""
+    """The crawler reaches all 25 linked pages of the fixture app (index, forms, endpoints)."""
     result = await scan("hardened")
     # /, /about, /contact + the injectable endpoints linked from the index: /search, /item,
     # /download, /go (spec 006), /fetch, /webhook (spec 009), /ping, /greet (spec 011),
     # /set-lang, /reset, /resource (spec 012) and /dir, /xdoc, /page (spec 014) + the GET
     # /search?q= the crawler submits from the search form + /account (→ /login for an
     # anonymous scan) (spec 007 RF-05) + /guestbook (spec 008 RF-13) + /report, /banner, /rule
-    # (spec 016) + /panel (spec 017). The spec-013
+    # (spec 016) + /panel (spec 017) + /support (spec 018). The spec-013
     # /openapi.json + /api/* routes and the spec-014 /upload + /files routes are linked from
     # no page.
-    assert result.metadata.pages_scanned == 24
+    assert result.metadata.pages_scanned == 25
 
 
 # ---------------------------------------------------------------------------
@@ -972,5 +978,131 @@ async def test_csrf_confirmation_is_deterministic(scan) -> None:
         return _csrf_confirmed(
             await scan("insecure", active=True, confirm_csrf=True, time_based=False)
         )
+
+    assert await _once() == await _once()
+
+
+# ---------------------------------------------------------------------------
+# The crawler's POST phase (spec 018)
+# ---------------------------------------------------------------------------
+
+_NOTES_DOC = {
+    "openapi": "3.0.0",
+    "info": {"title": "notes", "version": "1"},
+    "paths": {
+        "/api/notes": {
+            "post": {
+                "operationId": "createNote",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {"text": {"type": "string"}},
+                            }
+                        }
+                    }
+                },
+                "responses": {"200": {"description": "ok"}},
+            }
+        }
+    },
+}
+
+
+def _crawl_posts(holder: dict[str, object]) -> list[tuple[str, str, dict[str, object]]]:
+    """
+    Args:
+        holder (dict[str, object]): ``scan.holder`` — the app the scan ran against.
+
+    Returns:
+        list[tuple[str, str, dict[str, object]]]: The ``post_log`` entries the crawler's POST
+            phase caused: the ones carrying its ``wvcrawl`` marker, plus the JSON notes post
+            (the importer's synthesised body has no marker, and nothing else posts JSON).
+    """
+    app = holder["app"]
+    return [
+        entry
+        for entry in app.state.post_log  # type: ignore[attr-defined]
+        if entry[1] == "application/json"
+        or any(str(value).startswith("wvcrawl") for value in entry[2].values())
+    ]
+
+
+def _notes_doc(tmp_path: Path) -> str:
+    """
+    Args:
+        tmp_path (Path): A temporary directory.
+
+    Returns:
+        str: The path of a one-operation OpenAPI document with a JSON ``POST /api/notes``.
+    """
+    import json
+
+    path = tmp_path / "notes.json"
+    path.write_text(json.dumps(_NOTES_DOC), "utf-8")
+    return str(path)
+
+
+async def test_post_crawl_reaches_what_only_a_post_leads_to(scan, tmp_path) -> None:
+    """Insecure + ``--submit-post-forms``: the answers become pages and their links are followed."""
+    result = await scan(
+        "insecure", active=True, post_forms=True, time_based=False, openapi=_notes_doc(tmp_path)
+    )
+    app = scan.holder["app"]
+    posts = _crawl_posts(scan.holder)  # type: ignore[arg-type]
+    assert {"ticket", "callback", "feedback", "notes"} <= {entry[0] for entry in posts}
+    # the answers' links were followed: the status page is linked only from the ticket answer, and
+    # the received page is reachable only through the callback redirect
+    log = app.state.requests  # type: ignore[attr-defined]
+    assert any(line.startswith("GET /support/status") for line in log)
+    # the multipart and JSON bodies arrived as such
+    kinds = {entry[0]: entry[1] for entry in posts}
+    assert kinds["callback"].startswith("multipart/form-data")
+    assert kinds["notes"] == "application/json"
+    # defaults and the marker only: no payload
+    for route, _, fields in posts:
+        if route == "notes":
+            continue
+        assert all(
+            str(v) in {"supporttok", "xml", "1"} or str(v).startswith("wvcrawl")
+            for v in fields.values()
+        ), (route, fields)
+    # the passive checks read the page only a POST reaches
+    feedback = {f.check_id for f in result.findings if f.location.url.endswith("/support/feedback")}
+    assert {"disclosure.debug.error-page", "content.sri.missing"} <= feedback
+    tally = next(w for w in result.warnings if w.startswith("POST crawl:"))
+    assert "API operation" in tally and "0 not submitted" in tally
+    # the API operation's URL is not a form action: no pass re-requested it with GET
+    assert not any(line.startswith("GET /api/notes") for line in log)
+
+
+async def test_post_crawl_not_run_without_the_switch_or_in_passive_mode(scan) -> None:
+    """No crawler POST without the switch; with it in a Passive scan only a warning appears."""
+    passive = await scan("insecure", post_forms=True)
+    assert _crawl_posts(scan.holder) == []  # type: ignore[arg-type]
+    assert any("POST crawling requires --mode active" in w for w in passive.warnings)
+    assert not any(w.startswith("POST crawl:") for w in passive.warnings)
+    active = await scan("insecure", active=True, time_based=False)
+    assert _crawl_posts(scan.holder) == []  # type: ignore[arg-type]
+    assert not any(w.startswith("POST crawl:") for w in active.warnings)
+
+
+async def test_hardened_profile_post_crawl_reports_nothing(scan) -> None:
+    """The hardened answers are reached and read, and nothing is reported."""
+    result = await scan("hardened", active=True, post_forms=True, time_based=False)
+    assert {"ticket", "callback", "feedback"} <= {
+        entry[0] for entry in _crawl_posts(scan.holder)  # type: ignore[arg-type]
+    }
+    assert result.findings == ()
+    assert result.errors == ()
+
+
+async def test_post_crawl_is_deterministic(scan) -> None:
+    """Two POST-crawl scans of the insecure profile report the same findings."""
+
+    async def _once() -> set[tuple[str, str]]:
+        result = await scan("insecure", active=True, post_forms=True, time_based=False)
+        return {(f.check_id, f.fingerprint) for f in result.findings}
 
     assert await _once() == await _once()

@@ -11,7 +11,7 @@ import tomllib
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from webvigil.core.errors import ConfigError
 from webvigil.core.findings import ScanMode
@@ -42,7 +42,13 @@ class ScanSection(_Section):
         follow_robots (bool): Honour ``robots.txt``. Defaults to ``True``.
         submit_forms (bool): Submit safe ``GET`` forms — search, filters —
             during the crawl to widen the surface (spec 007, RF-06). ``POST``
-            forms are never submitted by the crawler. Defaults to ``True``.
+            forms are never submitted by this switch. Defaults to ``True``.
+        submit_post_forms (bool): Let the crawler submit candidate ``POST``
+            forms and the ``POST`` operations of an ``--openapi`` import with
+            benign values, and follow what the answers link to (spec 018). Active
+            Mode only, and off by default: it writes to the target.
+        max_post_submissions (int): Cap on the submissions per scan. Defaults
+            to 25.
         openapi (str | None): A local ``.json`` path or an in-scope URL
             returning JSON — an OpenAPI 3.0 / 3.1 or Swagger 2.0 document
             whose operations seed the crawl and the injection pass (spec
@@ -56,6 +62,8 @@ class ScanSection(_Section):
     max_pages: int = 50
     follow_robots: bool = True
     submit_forms: bool = True
+    submit_post_forms: bool = False
+    max_post_submissions: int = Field(default=25, gt=0)
     openapi: str | None = None
     openapi_max_operations: int = 150
 
