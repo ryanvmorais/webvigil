@@ -17,7 +17,7 @@ from webvigil.core.findings import Category, Finding, Location, Severity
 class XContentTypeOptionsCheck(Check):
     id = "http.headers.content-type-options"      # stable, dotted, unique
     name = "X-Content-Type-Options not nosniff"
-    category = Category.HEADERS                    # HEADERS | COOKIES | TLS | CORS
+    category = Category.HEADERS                    # HEADERS | COOKIES | TLS | CORS | SESSION | ...
     mode = ScanMode.PASSIVE                        # PASSIVE (default) | ACTIVE
     default_severity = Severity.LOW
     cwe = (693,)
