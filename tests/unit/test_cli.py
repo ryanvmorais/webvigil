@@ -139,8 +139,8 @@ def test_list_checks_prints_every_registered_check() -> None:
     """``list-checks`` names every registered check, every category and every severity in use."""
     load_plugins()
     checks = list(all_checks())
-    # a wide terminal: the longest ids would wrap at the default width of 80 columns
-    result = runner.invoke(app_mod.app, ["list-checks"], env={"COLUMNS": "200"})
+    # a narrow terminal: an id is what `[checks] disabled` takes, so it is never cut or wrapped
+    result = runner.invoke(app_mod.app, ["list-checks"], env={"COLUMNS": "40"})
     assert result.exit_code == 0
     assert checks
     missing = [check.id for check in checks if check.id not in result.stdout]

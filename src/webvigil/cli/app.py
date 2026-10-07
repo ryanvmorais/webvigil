@@ -14,6 +14,7 @@ from typing import Annotated
 
 import typer
 from rich.console import Console
+from rich.measure import Measurement
 from rich.table import Table
 
 from webvigil import __version__
@@ -39,6 +40,8 @@ app = typer.Typer(
 
 _FORMATS = ("json", "sarif", "html", "md")
 _FAIL_ON = ("none", "info", "low", "medium", "high", "critical")
+# Wide enough that Rich measures a table at its natural size, whatever the terminal is.
+_UNBOUNDED_WIDTH = 10_000
 
 
 @app.callback()
@@ -257,11 +260,22 @@ def list_checks() -> None:
     """List every registered check."""
     load_plugins()
     table = Table(title="WebVigil checks")
+    # The id is what a user types into ``[checks] disabled``: never wrap or cut a cell, even if the
+    # table ends up wider than the terminal (issue #105).
     for column in ("id", "category", "mode", "default severity"):
-        table.add_column(column)
+        table.add_column(column, no_wrap=True, overflow="ignore")
     for check in all_checks():
         table.add_row(check.id, check.category.value, check.mode.value, check.default_severity.name)
-    Console().print(table)
+    console = Console()
+    # Rich crops a table at the terminal width however the columns are set (and `measure` is
+    # clamped to it too): measure the table unbounded and, if it is wider than the terminal,
+    # render on a console as wide as the table, so a narrow terminal scrolls instead of losing
+    # the end of an id.
+    unbounded = console.options.update(width=_UNBOUNDED_WIDTH)
+    natural = Measurement.get(console, unbounded, table).maximum
+    if natural > console.width:
+        console = Console(width=natural)
+    console.print(table)
 
 
 @app.command()
