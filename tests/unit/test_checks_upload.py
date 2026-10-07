@@ -12,7 +12,7 @@ from tests.support import make_context, make_page
 from webvigil.checks.upload.checks import UnrestrictedUploadCheck
 from webvigil.checks.upload.scanner import UploadHit
 from webvigil.core.context import Observations
-from webvigil.core.findings import Category, Confidence, ScanMode, Severity
+from webvigil.core.findings import Confidence, Severity
 
 
 def _hit(outcome: str, *, severity: Severity, field: str | None = "avatar") -> UploadHit:
@@ -31,15 +31,6 @@ def _hit(outcome: str, *, severity: Severity, field: str | None = "avatar") -> U
             ("Payload file", "wvabc.php"),
         ),
     )
-
-
-def test_check_metadata() -> None:
-    """``upload.unrestricted`` is an Active ``Category.UPLOAD`` check, HIGH, CWE-434."""
-    assert UnrestrictedUploadCheck.id == "upload.unrestricted"
-    assert UnrestrictedUploadCheck.category is Category.UPLOAD
-    assert UnrestrictedUploadCheck.mode is ScanMode.ACTIVE
-    assert UnrestrictedUploadCheck.default_severity is Severity.HIGH
-    assert 434 in UnrestrictedUploadCheck.cwe
 
 
 async def test_one_finding_per_hit_with_the_hit_severity() -> None:

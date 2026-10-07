@@ -5,6 +5,11 @@ plus stored XSS (spec 008) and SSRF (spec 009).
 ``_hit`` builds an :class:`~webvigil.checks.injection.models.InjectionHit` as the
 scanner passes would leave it on ``Observations.injection_hits``; the checks
 issue no HTTP.
+
+Audited under issue #101: six per-spec "metadata and finding shape" tests each rebuilt a hit and
+re-asserted what the generic tests below already prove for all 17 checks (it emits only its own
+kind, at the hit's location, with the hit's evidence). What was unique in them — the ids, default
+severities and CWEs — is now ``test_check_metadata.py``; the references and fix text stay here.
 """
 
 from __future__ import annotations
@@ -31,7 +36,7 @@ from webvigil.checks.injection.checks import (
 )
 from webvigil.checks.injection.models import InjectionHit
 from webvigil.core.context import Observations
-from webvigil.core.findings import Category, Confidence, ScanMode, Severity
+from webvigil.core.findings import Confidence, Severity
 
 
 def _hit(kind: str) -> InjectionHit:
@@ -53,7 +58,11 @@ def _hit(kind: str) -> InjectionHit:
         confidence=Confidence.HIGH,
         title=f"{kind} via the 'q' parameter",
         payload="payload",
-        evidence=(("Injection point", "POST https://example.com/s"), ("Payload", "payload")),
+        evidence=(
+            ("Injection point", "POST https://example.com/s"),
+            ("Payload", "payload"),
+            ("Rendered on", "https://example.com/guestbook/e/0"),
+        ),
     )
 
 
@@ -91,13 +100,10 @@ async def test_each_check_emits_only_its_own_kind() -> None:
         assert finding.location.method == "POST"
         assert finding.location.url == "https://example.com/s"
         assert finding.evidence[1].label == "Payload"
-
-
-async def test_checks_are_active_injection_category() -> None:
-    """Every injection check is ``Category.INJECTION`` and Active-only."""
-    for check_cls, _ in _ALL:
-        assert check_cls.category is Category.INJECTION
-        assert check_cls.mode is ScanMode.ACTIVE
+        # the hit severity wins over the check default (SSRF metadata defaults to CRITICAL)
+        assert finding.severity is Severity.HIGH, kind
+        # extra evidence a detector adds (e.g. the stored-XSS render page) passes through
+        assert {e.label: e.content for e in finding.evidence}["Rendered on"].endswith("/e/0")
 
 
 async def test_no_hits_means_no_findings() -> None:
@@ -107,183 +113,13 @@ async def test_no_hits_means_no_findings() -> None:
         assert await check_cls().run(ctx) == []
 
 
-async def test_stored_xss_check_metadata_and_finding() -> None:
-    """The stored-XSS finding is located at the injection point; the render page is evidence."""
-    assert StoredXssCheck.id == "injection.xss.stored"
-    assert StoredXssCheck.default_severity is Severity.HIGH
-    hit = InjectionHit(
-        kind="xss-stored",
-        check_id="injection.xss.stored",
-        method="POST",
-        url="https://example.com/guestbook",
-        param="body",
-        severity=Severity.HIGH,
-        confidence=Confidence.HIGH,
-        title="Stored XSS: the 'body' field of POST https://example.com/guestbook renders …",
-        payload="<wvstoredabc>",
-        evidence=(
-            ("Injection point", "POST https://example.com/guestbook — parameter 'body'"),
-            ("Rendered on", "https://example.com/guestbook/e/0"),
-        ),
-    )
-    ctx = make_context(make_page(), observations=Observations(injection_hits=(hit,)))
-    findings = await StoredXssCheck().run(ctx)
-    assert len(findings) == 1
-    finding = findings[0]
-    assert finding.location.url == "https://example.com/guestbook"  # the injection point
-    assert finding.location.method == "POST"
-    assert finding.location.param == "body"
-    rendered_on = {e.label: e.content for e in finding.evidence}["Rendered on"]
-    assert rendered_on.endswith("/e/0")
-
-
-async def test_ssrf_checks_metadata_and_finding_shape() -> None:
-    """The metadata check emits a CRITICAL CWE-918 finding; the internal check ignores that kind."""
-    assert SsrfMetadataCheck.id == "injection.ssrf.metadata"
-    assert SsrfMetadataCheck.default_severity is Severity.CRITICAL
-    assert SsrfInternalCheck.default_severity is Severity.HIGH
-    assert 918 in SsrfMetadataCheck.cwe and 918 in SsrfInternalCheck.cwe
-
-    hit = InjectionHit(
-        kind="ssrf-metadata",
-        check_id="injection.ssrf.metadata",
-        method="GET",
-        url="https://example.com/fetch",
-        param="url",
-        severity=Severity.CRITICAL,
-        confidence=Confidence.HIGH,
-        title="SSRF to the AWS instance metadata service via the 'url' parameter",
-        payload="http://169.254.169.254/latest/meta-data/",
-        evidence=(
-            ("Injection point", "GET https://example.com/fetch — parameter 'url'"),
-            ("Payload", "http://169.254.169.254/latest/meta-data/"),
-            ("AWS metadata marker", '{"AccessKeyId":"ASIA...'),
-        ),
-    )
-    ctx = make_context(make_page(), observations=Observations(injection_hits=(hit,)))
-    findings = await SsrfMetadataCheck().run(ctx)
-    assert len(findings) == 1
-    finding = findings[0]
-    assert finding.severity is Severity.CRITICAL
-    assert finding.location.url == "https://example.com/fetch"
-    assert finding.location.param == "url"
-    assert "AccessKeyId" in {e.label: e.content for e in finding.evidence}["AWS metadata marker"]
-    assert any("Server_Side_Request_Forgery" in r for r in finding.references)
-    # the internal check ignores a metadata-kind hit
-    assert await SsrfInternalCheck().run(ctx) == []
-
-
-async def test_cmdi_and_ssti_check_metadata_and_finding_shape() -> None:
-    """``injection.cmdi.os`` is a CRITICAL CWE-78 finding; ``injection.ssti`` is HIGH CWE-1336."""
-    assert OsCommandInjectionCheck.id == "injection.cmdi.os"
-    assert OsCommandInjectionCheck.default_severity is Severity.CRITICAL
-    assert 78 in OsCommandInjectionCheck.cwe
-    assert TemplateInjectionCheck.id == "injection.ssti"
-    assert TemplateInjectionCheck.default_severity is Severity.HIGH
-    assert 1336 in TemplateInjectionCheck.cwe
-
-    hit = InjectionHit(
-        kind="cmdi",
-        check_id="injection.cmdi.os",
-        method="GET",
-        url="https://example.com/ping",
-        param="host",
-        severity=Severity.CRITICAL,
-        confidence=Confidence.HIGH,
-        title="OS command injection via the 'host' parameter",
-        payload="localhost;echo wvabc=221",
-        evidence=(
-            ("Injection point", "GET https://example.com/ping — parameter 'host'"),
-            ("Payload", "localhost;echo wvabc=221"),
-            ("Command output", "wvabc=221"),
-        ),
-    )
-    ctx = make_context(make_page(), observations=Observations(injection_hits=(hit,)))
-    findings = await OsCommandInjectionCheck().run(ctx)
-    assert len(findings) == 1
-    assert findings[0].severity is Severity.CRITICAL
-    assert findings[0].location.param == "host"
-    assert await TemplateInjectionCheck().run(ctx) == []  # ignores a cmdi-kind hit
-
-
-async def test_el_check_metadata_and_finding_shape() -> None:
-    """``injection.el`` is HIGH by default, CWE-917 / 94, and keeps the hit's own severity."""
-    check = ExpressionLanguageInjectionCheck
-    assert check.id == "injection.el"
-    assert check.category is Category.INJECTION
-    assert check.mode is ScanMode.ACTIVE
-    assert check.default_severity is Severity.HIGH
-    assert check.cwe == (917, 94)
-    assert any("Expression_Language_Injection" in ref for ref in check.references)
-    assert any("cwe.mitre.org/data/definitions/917" in ref for ref in check.references)
-
-    hit = InjectionHit(
-        kind="el",
-        check_id="injection.el",
-        method="GET",
-        url="https://example.com/report",
-        param="filter",
-        severity=Severity.CRITICAL,
-        confidence=Confidence.HIGH,
-        title="Expression-language injection (SpEL) via the 'filter' parameter",
-        payload="'wvabc'+(12*13)",
-        evidence=(
-            ("Injection point", "GET https://example.com/report — parameter 'filter'"),
-            ("Type access", "'wvabc'+(T(java.lang.Math).abs(-413))  ->  wvabc413"),
-        ),
-    )
-    ctx = make_context(make_page(), observations=Observations(injection_hits=(hit,)))
-    findings = await check().run(ctx)
-    assert len(findings) == 1
-    assert findings[0].severity is Severity.CRITICAL  # the hit's severity wins over the default
-    assert findings[0].location.param == "filter"
-    assert "expression" in findings[0].description.lower()
-    assert "SimpleEvaluationContext" in findings[0].remediation
-    assert await TemplateInjectionCheck().run(ctx) == []  # ignores an el-kind hit
-
-
-async def test_crlf_and_xxe_check_metadata() -> None:
-    """``injection.crlf`` is HIGH CWE-113; ``injection.xxe`` is HIGH CWE-611 (spec 012)."""
-    assert CrlfCheck.id == "injection.crlf"
-    assert CrlfCheck.default_severity is Severity.HIGH
-    assert 113 in CrlfCheck.cwe
-    assert XxeCheck.id == "injection.xxe"
-    assert XxeCheck.default_severity is Severity.HIGH
-    assert 611 in XxeCheck.cwe
-
-    hit = InjectionHit(
-        kind="crlf",
-        check_id="injection.crlf",
-        method="GET",
-        url="https://example.com/set-lang",
-        param="lang",
-        severity=Severity.HIGH,
-        confidence=Confidence.HIGH,
-        title="CRLF injection via the 'lang' parameter",
-        payload="en\r\nX-WvInjected: abc",
-        evidence=(
-            ("Injection point", "GET https://example.com/set-lang — parameter 'lang'"),
-            ("Payload", "en\r\nX-WvInjected: abc"),
-            ("Injected (response header)", "X-WvInjected: abc"),
-        ),
-    )
-    ctx = make_context(make_page(), observations=Observations(injection_hits=(hit,)))
-    findings = await CrlfCheck().run(ctx)
-    assert len(findings) == 1 and findings[0].location.param == "lang"
-    assert await XxeCheck().run(ctx) == []
-
-
-async def test_ldap_xpath_ssi_check_metadata_and_finding_shape() -> None:
-    """The three spec-014 checks are HIGH with their CWEs and each renders its own kind."""
-    assert (LdapInjectionCheck.id, LdapInjectionCheck.cwe) == ("injection.ldap", (90,))
-    assert (XpathInjectionCheck.id, XpathInjectionCheck.cwe) == ("injection.xpath", (643,))
-    assert XpathInjectionCheck.category is Category.INJECTION
-    assert SsiInjectionCheck.id == "injection.ssi" and 97 in SsiInjectionCheck.cwe
-    for check in (LdapInjectionCheck, XpathInjectionCheck, SsiInjectionCheck):
-        assert check.default_severity is Severity.HIGH
-        assert check.mode is ScanMode.ACTIVE
-
-    ctx = make_context(make_page(), observations=Observations(injection_hits=(_hit("ldap"),)))
-    findings = await LdapInjectionCheck().run(ctx)
-    assert len(findings) == 1 and findings[0].location.param == "q"
-    assert await XpathInjectionCheck().run(ctx) == []
+async def test_findings_point_a_reader_at_the_right_references_and_fix() -> None:
+    """The SSRF and EL findings cite their OWASP / CWE pages; EL names the safe evaluator."""
+    assert any("Server_Side_Request_Forgery" in r for r in SsrfMetadataCheck.references)
+    el_refs = ExpressionLanguageInjectionCheck.references
+    assert any("Expression_Language_Injection" in r for r in el_refs)
+    assert any("cwe.mitre.org/data/definitions/917" in r for r in el_refs)
+    ctx = make_context(make_page(), observations=Observations(injection_hits=(_hit("el"),)))
+    (finding,) = await ExpressionLanguageInjectionCheck().run(ctx)
+    assert "expression" in finding.description.lower()
+    assert "SimpleEvaluationContext" in finding.remediation

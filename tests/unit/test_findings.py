@@ -43,25 +43,13 @@ def test_severity_is_ordered() -> None:
     assert Severity.from_name("high") is Severity.HIGH
 
 
-def test_category_http_is_a_plain_string_member() -> None:
-    """``Category.HTTP`` (spec 012) is a ``StrEnum`` value that serialises to ``"HTTP"``."""
-    assert Category.HTTP == "HTTP"
-    assert str(Category.HTTP) == "HTTP"
-    assert Category("HTTP") is Category.HTTP
-
-
-def test_category_content_is_a_plain_string_member() -> None:
-    """``Category.CONTENT`` (spec 013) is a ``StrEnum`` value that serialises to ``"CONTENT"``."""
-    assert Category.CONTENT == "CONTENT"
-    assert str(Category.CONTENT) == "CONTENT"
-    assert Category("CONTENT") is Category.CONTENT
-
-
-def test_category_upload_is_a_plain_string_member() -> None:
-    """``Category.UPLOAD`` (spec 014) is a ``StrEnum`` value that serialises to ``"UPLOAD"``."""
-    assert Category.UPLOAD == "UPLOAD"
-    assert str(Category.UPLOAD) == "UPLOAD"
-    assert Category("UPLOAD") is Category.UPLOAD
+def test_every_category_is_a_plain_string_member() -> None:
+    """Each ``Category`` (``HTTP`` 012, ``CONTENT`` 013, ``UPLOAD`` 014, ...) is a ``StrEnum``."""
+    for category in Category:
+        assert category == category.name
+        assert str(category) == category.name
+        assert Category(category.name) is category
+    assert {"HTTP", "CONTENT", "UPLOAD"} <= {category.name for category in Category}
 
 
 # ---------------------------------------------------------------------------

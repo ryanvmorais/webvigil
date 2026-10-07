@@ -5,6 +5,10 @@ InjectionScanner: budget, gating, and one shared baseline per point — spec 006
 params/body and returns whatever a ``render`` callable produces, so the tests
 watch the scanner's request accounting and detector ordering without any real
 HTTP. The detectors themselves are covered by the per-technique modules.
+
+Audited under issue #101: the five per-spec "registered and mapped" tests and the five
+"front-loaded" tests were two invariants repeated; they are now one registry-driven wiring test,
+one ordering test and one table of front-loading cases (every old assertion is kept).
 """
 
 from __future__ import annotations
@@ -22,7 +26,9 @@ from webvigil.checks.injection.engine import (
     _merge_el,
 )
 from webvigil.checks.injection.models import InjectionPoint
+from webvigil.checks.registry import all_checks, load_plugins
 from webvigil.core.config import InjectionSection
+from webvigil.core.findings import Category
 from webvigil.core.target import Target
 from webvigil.crawler.forms import Form, FormField
 from webvigil.http.client import Response
@@ -157,30 +163,60 @@ async def test_one_baseline_per_point_shared_by_all_detectors() -> None:
 
 
 # ---------------------------------------------------------------------------
-# SSRF detector registration and ordering (spec 009)
+# Detector wiring, ordering and front-loading (specs 009, 011, 012, 014, 016)
 # ---------------------------------------------------------------------------
 
 
-def test_ssrf_is_registered_and_maps_both_check_ids() -> None:
-    """The ``ssrf`` detector is registered, ordered last, and maps both SSRF check ids."""
-    assert "ssrf" in _DETECTORS
-    # last in the base order so it never starves the 006 detectors on an unhelpfully-named
-    # point; front-loaded by _ordered_kinds for a URL-shaped one.
-    assert _BASE_ORDER[-1] == "ssrf"
-    assert KIND_BY_CHECK_ID["injection.ssrf.metadata"] == "ssrf"
-    assert KIND_BY_CHECK_ID["injection.ssrf.internal"] == "ssrf"
+def test_every_injection_check_is_wired_to_a_registered_detector() -> None:
+    """Each scanner-fed injection check maps to a kind the table runs; both SSRF ids share one."""
+    load_plugins()
+    seen = set()
+    for check in all_checks():
+        kind = getattr(check, "kind", None)
+        # stored XSS is fed by its own pass, not by a detector kind
+        if check.category is not Category.INJECTION or kind in (None, "xss-stored"):
+            continue
+        expected = "ssrf" if kind.startswith("ssrf-") else kind
+        assert KIND_BY_CHECK_ID[check.id] == expected, check.id
+        assert expected in _DETECTORS, check.id
+        seen.add(expected)
+    # every detector in the table (but the merged entry) is reached by at least one check
+    assert seen == set(_DETECTORS) - {"ssti+el"}
+    assert "ssti+el" in _DETECTORS
 
 
-def test_ssrf_is_front_loaded_for_a_url_shaped_point() -> None:
-    """For a URL-shaped point ``ssrf`` runs first; for a plain point it does not."""
+def test_the_base_order_puts_slow_and_broad_detectors_last() -> None:
+    """Fast 006 detectors first; the later families in spec order; ``ssrf`` is always last."""
+    order = list(_BASE_ORDER)
+    assert order[-1] == "ssrf"  # never starves the others on an unhelpfully-named point
+    for kind in ("ssti", "cmdi", "crlf", "ldap", "xpath", "ssi"):
+        assert order.index("xss") < order.index(kind) < order.index("ssrf"), kind
+    # right after ssti, so it never starves the fast detectors nor sits behind the slow ones
+    assert order.index("el") == order.index("ssti") + 1
+
+
+# (a parameter name, the kinds selected, the kinds that must run first for it) — and a plain
+# ``q`` point must get none of them first
+_FRONT_LOADED = [
+    ("callback", {"xss", "ssrf", "sqli-error"}, {"ssrf"}),
+    ("host", {"xss", "cmdi", "ssti", "sqli-error"}, {"cmdi", "ssti"}),
+    ("lang", {"xss", "crlf", "sqli-error"}, {"crlf"}),
+    ("uid", {"xss", "ldap", "xpath", "ssi", "sqli-error"}, {"ldap"}),
+    ("node", {"xss", "ldap", "xpath", "ssi", "sqli-error"}, {"xpath"}),
+    ("tpl", {"xss", "ldap", "xpath", "ssi", "sqli-error"}, {"ssi"}),
+    ("filter", {"xss", "ssti", "el", "sqli-error"}, {"ssti+el"}),
+]
+
+
+def test_a_matching_parameter_name_front_loads_its_detector() -> None:
+    """A URL-, command-, header-, directory-, XPath-, template- or expression-shaped name wins."""
     http = _FakeHttp(lambda url, p: _resp())
-    scanner = _scanner(http, kinds={"xss", "ssrf", "sqli-error"})
-    url_point = InjectionPoint(
-        "GET", "https://example.com/fetch", "callback", "x", (("callback", "x"),)
-    )
-    assert scanner._ordered_kinds(url_point)[0] == "ssrf"
-    plain_point = InjectionPoint("GET", "https://example.com/s", "q", "x", (("q", "x"),))
-    assert scanner._ordered_kinds(plain_point)[0] != "ssrf"
+    for name, kinds, first in _FRONT_LOADED:
+        scanner = _scanner(http, kinds=kinds)
+        point = InjectionPoint("GET", "https://example.com/p", name, "x", ((name, "x"),))
+        assert set(scanner._ordered_kinds(point)[: len(first)]) == first, name
+        plain = InjectionPoint("GET", "https://example.com/s", "q", "x", (("q", "x"),))
+        assert not set(scanner._ordered_kinds(plain)[: len(first)]) & first, name
 
 
 def test_ssrf_detector_absent_when_no_ssrf_kind_selected() -> None:
@@ -191,50 +227,6 @@ def test_ssrf_detector_absent_when_no_ssrf_kind_selected() -> None:
     assert "ssrf" not in scanner._ordered_kinds(point)
 
 
-# ---------------------------------------------------------------------------
-# Command-injection and SSTI detector registration and ordering (spec 011)
-# ---------------------------------------------------------------------------
-
-
-def test_cmdi_and_ssti_are_registered_and_mapped() -> None:
-    """Both new detectors are in the table and each check id maps to its kind."""
-    assert "cmdi" in _DETECTORS and "ssti" in _DETECTORS
-    assert KIND_BY_CHECK_ID["injection.cmdi.os"] == "cmdi"
-    assert KIND_BY_CHECK_ID["injection.ssti"] == "ssti"
-    # slow / broad detectors sit near the end, ahead of ssrf.
-    assert _BASE_ORDER.index("cmdi") > _BASE_ORDER.index("xss")
-    assert _BASE_ORDER.index("ssti") > _BASE_ORDER.index("xss")
-
-
-def test_cmdi_and_ssti_are_front_loaded_for_a_command_shaped_point() -> None:
-    """A ``host`` point front-loads ``cmdi`` / ``ssti``; a plain ``q`` point does not."""
-    http = _FakeHttp(lambda url, p: _resp())
-    scanner = _scanner(http, kinds={"xss", "cmdi", "ssti", "sqli-error"})
-    host_point = InjectionPoint("GET", "https://example.com/ping", "host", "x", (("host", "x"),))
-    assert set(scanner._ordered_kinds(host_point)[:2]) == {"cmdi", "ssti"}
-    plain_point = InjectionPoint("GET", "https://example.com/s", "q", "x", (("q", "x"),))
-    assert scanner._ordered_kinds(plain_point)[0] not in {"cmdi", "ssti"}
-
-
-def test_crlf_and_xxe_are_registered_and_mapped() -> None:
-    """``crlf`` / ``xxe`` are in the detector table; each check id maps to its kind (spec 012)."""
-    assert "crlf" in _DETECTORS and "xxe" in _DETECTORS
-    assert KIND_BY_CHECK_ID["injection.crlf"] == "crlf"
-    assert KIND_BY_CHECK_ID["injection.xxe"] == "xxe"
-    assert _BASE_ORDER.index("crlf") > _BASE_ORDER.index("xss")
-    assert _BASE_ORDER[-1] == "ssrf"
-
-
-def test_crlf_is_front_loaded_for_a_headerlike_point() -> None:
-    """A ``lang`` point front-loads ``crlf``; a plain ``x`` point does not."""
-    http = _FakeHttp(lambda url, p: _resp())
-    scanner = _scanner(http, kinds={"xss", "crlf", "sqli-error"})
-    lang_point = InjectionPoint("GET", "https://example.com/l", "lang", "en", (("lang", "en"),))
-    assert scanner._ordered_kinds(lang_point)[0] == "crlf"
-    plain = InjectionPoint("GET", "https://example.com/s", "x", "1", (("x", "1"),))
-    assert scanner._ordered_kinds(plain)[0] != "crlf"
-
-
 def test_xxe_kind_is_dropped_unless_the_opt_in_is_on() -> None:
     """``xxe`` runs only when ``[injection] xxe`` is set."""
     http = _FakeHttp(lambda url, p: _resp())
@@ -242,32 +234,6 @@ def test_xxe_kind_is_dropped_unless_the_opt_in_is_on() -> None:
     assert "xxe" not in off.selected_kinds
     on = _scanner(http, kinds={"xxe"}, config=InjectionSection(xxe=True))
     assert "xxe" in on.selected_kinds
-
-
-def test_ldap_xpath_ssi_are_registered_and_mapped() -> None:
-    """The three spec-014 detectors are in the table and each check id maps to its kind."""
-    assert {"ldap", "xpath", "ssi"} <= set(_DETECTORS)
-    assert KIND_BY_CHECK_ID["injection.ldap"] == "ldap"
-    assert KIND_BY_CHECK_ID["injection.xpath"] == "xpath"
-    assert KIND_BY_CHECK_ID["injection.ssi"] == "ssi"
-    # slow / broad families sit past the fast 006 detectors, still ahead of ssrf.
-    assert _BASE_ORDER.index("xss") < _BASE_ORDER.index("ldap") < _BASE_ORDER.index("ssrf")
-    assert _BASE_ORDER.index("xss") < _BASE_ORDER.index("xpath") < _BASE_ORDER.index("ssrf")
-    assert _BASE_ORDER.index("xss") < _BASE_ORDER.index("ssi") < _BASE_ORDER.index("ssrf")
-
-
-def test_ldap_xpath_ssi_are_front_loaded_for_a_matching_point() -> None:
-    """A ``user`` point front-loads ``ldap``; a ``tpl`` point front-loads ``ssi``."""
-    http = _FakeHttp(lambda url, p: _resp())
-    scanner = _scanner(http, kinds={"xss", "ldap", "xpath", "ssi", "sqli-error"})
-    uid_point = InjectionPoint("GET", "https://example.com/dir", "uid", "x", (("uid", "x"),))
-    assert scanner._ordered_kinds(uid_point)[0] == "ldap"
-    node_point = InjectionPoint("GET", "https://example.com/x", "node", "x", (("node", "x"),))
-    assert scanner._ordered_kinds(node_point)[0] == "xpath"
-    tpl_point = InjectionPoint("GET", "https://example.com/p", "tpl", "x", (("tpl", "x"),))
-    assert scanner._ordered_kinds(tpl_point)[0] == "ssi"
-    plain = InjectionPoint("GET", "https://example.com/s", "colour", "1", (("colour", "1"),))
-    assert scanner._ordered_kinds(plain)[0] not in {"ldap", "xpath", "ssi"}
 
 
 def test_time_sub_budget_is_enabled_by_time_based_cmdi_alone() -> None:
@@ -305,16 +271,8 @@ async def test_form_points_are_posted() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Expression-language detector registration, ordering and the ssti + el merge (spec 016)
+# The ssti + el merge (spec 016)
 # ---------------------------------------------------------------------------
-
-
-def test_el_is_registered_and_mapped() -> None:
-    """The EL detector and the combined entry are in the table; the check id maps to ``el``."""
-    assert "el" in _DETECTORS and "ssti+el" in _DETECTORS
-    assert KIND_BY_CHECK_ID["injection.el"] == "el"
-    # right after ssti, so it never starves the fast 006 detectors nor sits behind the slow ones.
-    assert _BASE_ORDER.index("el") == _BASE_ORDER.index("ssti") + 1
 
 
 def test_merge_el_collapses_both_kinds_at_the_earlier_position() -> None:
@@ -336,13 +294,3 @@ def test_ordered_kinds_runs_the_detector_entry_that_matches_the_selected_checks(
     assert _scanner(http, kinds={"xss", "ssti"})._ordered_kinds(point) == ["xss", "ssti"]
     assert _scanner(http, kinds={"xss", "el"})._ordered_kinds(point) == ["xss", "el"]
     assert _scanner(http, kinds={"xss"})._ordered_kinds(point) == ["xss"]
-
-
-def test_el_is_front_loaded_for_an_expression_shaped_point() -> None:
-    """A ``filter`` point puts the combined entry first; a plain ``q`` point does not."""
-    http = _FakeHttp(lambda url, p: _resp())
-    scanner = _scanner(http, kinds={"xss", "ssti", "el", "sqli-error"})
-    filter_point = InjectionPoint("GET", "https://example.com/r", "filter", "1", (("filter", "1"),))
-    assert scanner._ordered_kinds(filter_point)[0] == "ssti+el"
-    plain_point = InjectionPoint("GET", "https://example.com/s", "q", "x", (("q", "x"),))
-    assert scanner._ordered_kinds(plain_point)[0] != "ssti+el"

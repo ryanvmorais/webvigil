@@ -7,6 +7,10 @@ with, so the tests drive the real Typer app (via ``CliRunner``) and assert on
 exit codes, the stdout/stderr split, the summary lines, and
 ``_StubOrchestrator.last_config`` — without running a scan. The ``report`` tests
 re-render a real result file offline.
+
+Audited under issue #101: the per-spec ``list-checks`` tests became one registry-driven test, the
+per-flag "overrides the config file" tests one table, and the per-pass "writes to the target"
+summary notes one table; every assertion they made is still made.
 """
 
 from __future__ import annotations
@@ -18,12 +22,16 @@ import pytest
 from typer.testing import CliRunner
 
 from tests.support import make_finding, make_result
+from webvigil.checks.registry import all_checks, load_plugins
 from webvigil.cli import app as app_mod
 from webvigil.cli._exit import ExitCode
 from webvigil.core.findings import ScanMode, Severity
 from webvigil.core.result import ScanResult
+from webvigil.core.technology import DetectionMethod, Technology
 
 runner = CliRunner()
+_SCAN = ["scan", "https://example.com"]
+_ACTIVE = [*_SCAN, "--mode", "active", "--authorized-by", "me"]
 
 
 class _StubOrchestrator:
@@ -48,6 +56,14 @@ def _stub_orchestrator(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(app_mod, "Orchestrator", _StubOrchestrator)
 
 
+def _config() -> object:
+    """
+    Returns:
+        object: The config the last CLI invocation handed to the stub orchestrator.
+    """
+    return _StubOrchestrator.last_config
+
+
 # ---------------------------------------------------------------------------
 # Output routing and exit codes
 # ---------------------------------------------------------------------------
@@ -55,7 +71,7 @@ def _stub_orchestrator(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_no_format_prints_summary_to_stderr_only() -> None:
     """With no ``--format`` the summary goes to stderr and stdout stays empty."""
-    result = runner.invoke(app_mod.app, ["scan", "https://example.com"])
+    result = runner.invoke(app_mod.app, _SCAN)
     assert result.exit_code == ExitCode.OK
     assert result.stdout == ""
     assert "WebVigil" in result.stderr
@@ -63,7 +79,7 @@ def test_no_format_prints_summary_to_stderr_only() -> None:
 
 def test_format_json_goes_to_stdout() -> None:
     """``--format json`` writes valid JSON to stdout and keeps the summary on stderr."""
-    result = runner.invoke(app_mod.app, ["scan", "https://example.com", "--format", "json"])
+    result = runner.invoke(app_mod.app, [*_SCAN, "--format", "json"])
     assert result.exit_code == ExitCode.OK
     json.loads(result.stdout)  # valid JSON on stdout
     assert "WebVigil" in result.stderr
@@ -72,33 +88,24 @@ def test_format_json_goes_to_stdout() -> None:
 def test_output_file_leaves_stdout_empty(tmp_path: Path) -> None:
     """``--output`` writes the report to the file and leaves stdout empty."""
     target = tmp_path / "r.sarif"
-    result = runner.invoke(
-        app_mod.app,
-        ["scan", "https://example.com", "--format", "sarif", "--output", str(target)],
-    )
+    result = runner.invoke(app_mod.app, [*_SCAN, "--format", "sarif", "--output", str(target)])
     assert result.exit_code == ExitCode.OK
     assert result.stdout == ""
     assert target.read_text("utf-8").strip().startswith("{")
 
 
-def test_fail_on_high_with_a_high_finding_exits_findings() -> None:
-    """``--fail-on high`` with a HIGH finding present exits with the FINDINGS code."""
+def test_fail_on_controls_the_exit_code() -> None:
+    """``--fail-on high`` exits FINDINGS on a HIGH finding; ``--fail-on none`` exits OK."""
     _StubOrchestrator.result = make_result(
         make_finding(check_id="tls.https", severity=Severity.HIGH)
     )
-    result = runner.invoke(app_mod.app, ["scan", "https://example.com", "--fail-on", "high"])
-    assert result.exit_code == ExitCode.FINDINGS
-
-
-def test_fail_on_none_exits_ok_even_with_findings() -> None:
-    """``--fail-on none`` exits OK even when findings are present."""
-    result = runner.invoke(app_mod.app, ["scan", "https://example.com", "--fail-on", "none"])
-    assert result.exit_code == ExitCode.OK
+    assert runner.invoke(app_mod.app, [*_SCAN, "--fail-on", "high"]).exit_code == ExitCode.FINDINGS
+    assert runner.invoke(app_mod.app, [*_SCAN, "--fail-on", "none"]).exit_code == ExitCode.OK
 
 
 def test_unknown_format_is_a_usage_error() -> None:
     """An unknown ``--format`` is a USAGE error, not a crash."""
-    result = runner.invoke(app_mod.app, ["scan", "https://example.com", "--format", "pdf"])
+    result = runner.invoke(app_mod.app, [*_SCAN, "--format", "pdf"])
     assert result.exit_code == ExitCode.USAGE
 
 
@@ -109,7 +116,7 @@ def test_unknown_format_is_a_usage_error() -> None:
 
 def test_active_mode_without_authorization_in_non_tty_is_rejected() -> None:
     """``--mode active`` with no ``--authorized-by`` in a non-TTY is NOT_AUTHORIZED."""
-    result = runner.invoke(app_mod.app, ["scan", "https://example.com", "--mode", "active"])
+    result = runner.invoke(app_mod.app, [*_SCAN, "--mode", "active"])
     assert result.exit_code == ExitCode.NOT_AUTHORIZED
     assert "authorized-by" in result.stderr.lower()
 
@@ -117,349 +124,213 @@ def test_active_mode_without_authorization_in_non_tty_is_rejected() -> None:
 def test_active_mode_with_authorization_runs_and_shows_banner() -> None:
     """``--mode active --authorized-by`` runs and prints the Active Mode banner."""
     result = runner.invoke(
-        app_mod.app,
-        ["scan", "https://example.com", "--mode", "active", "--authorized-by", "Jane / #9"],
+        app_mod.app, [*_SCAN, "--mode", "active", "--authorized-by", "Jane / #9"]
     )
     assert result.exit_code == ExitCode.OK
     assert "Active Mode" in result.stderr
 
 
 # ---------------------------------------------------------------------------
-# list-checks and the scan summary lines
+# list-checks
 # ---------------------------------------------------------------------------
 
 
-def test_list_checks_lists_registered_checks() -> None:
-    """``list-checks`` prints the registered check ids."""
-    result = runner.invoke(app_mod.app, ["list-checks"])
+def test_list_checks_prints_every_registered_check() -> None:
+    """``list-checks`` names every registered check, every category and every severity in use."""
+    load_plugins()
+    checks = list(all_checks())
+    # a wide terminal: the longest ids would wrap at the default width of 80 columns
+    result = runner.invoke(app_mod.app, ["list-checks"], env={"COLUMNS": "200"})
     assert result.exit_code == 0
-    assert "http.headers.csp" in result.stdout
-    assert "deps.js.vulnerable-library" in result.stdout
+    assert checks
+    missing = [check.id for check in checks if check.id not in result.stdout]
+    assert not missing, missing
+    for category in {check.category.value for check in checks}:
+        assert category in result.stdout, category
+    for severity in {check.default_severity.name for check in checks}:
+        assert severity in result.stdout, severity
+    assert {"active", "passive"} <= {check.mode.value for check in checks}
 
 
-def test_scan_summary_reports_detected_libraries() -> None:
-    """The summary names the client-side library count and how many are vulnerable."""
-    from webvigil.core.technology import DetectionMethod, Technology
+# ---------------------------------------------------------------------------
+# Flags that override the config file
+# ---------------------------------------------------------------------------
 
-    _StubOrchestrator.result = make_result(
-        make_finding(check_id="deps.js.vulnerable-library"),
-        technologies=(
-            Technology(
-                name="jquery",
-                version="1.12.4",
-                detection=DetectionMethod.FILENAME,
-                source_url="https://example.com/j.js",
-                vulnerable=True,
-            ),
-        ),
-    )
-    result = runner.invoke(app_mod.app, ["scan", "https://example.com"])
-    assert "Detected 1 client-side library (1 with known vulnerabilities)" in result.stderr
+# (flag, TOML that sets the opposite value, the config attribute path, the value the flag gives)
+_FLAG_CASES = [
+    ("--probe", "", "disclosure.probe", True),
+    ("--no-probe", "[disclosure]\nprobe = true\n", "disclosure.probe", False),
+    (
+        "--no-time-based-sqli",
+        "[injection]\ntime_based_sqli = true\n",
+        "injection.time_based_sqli",
+        False,
+    ),
+    (
+        "--no-time-based-cmdi",
+        "[injection]\ntime_based_cmdi = true\n",
+        "injection.time_based_cmdi",
+        False,
+    ),
+    ("--xxe", "[injection]\nxxe = false\n", "injection.xxe", True),
+    ("--file-upload", "[injection]\nfile_upload = false\n", "injection.file_upload", True),
+    ("--stored-xss", "[injection]\nstored_xss = false\n", "injection.stored_xss", True),
+    ("--no-stored-xss", "[injection]\nstored_xss = true\n", "injection.stored_xss", False),
+    ("--osv-online", "[deps]\nosv_online = false\n", "deps.osv_online", True),
+    ("--no-osv-online", "[deps]\nosv_online = true\n", "deps.osv_online", False),
+    ("--confirm-csrf", "[injection]\ncsrf_confirm = false\n", "injection.csrf_confirm", True),
+    ("--no-confirm-csrf", "[injection]\ncsrf_confirm = true\n", "injection.csrf_confirm", False),
+    ("--submit-post-forms", "[scan]\nsubmit_post_forms = false\n", "scan.submit_post_forms", True),
+    (
+        "--no-submit-post-forms",
+        "[scan]\nsubmit_post_forms = true\n",
+        "scan.submit_post_forms",
+        False,
+    ),
+]
 
 
-def test_list_checks_lists_the_disclosure_checks() -> None:
-    """``list-checks`` includes the disclosure checks and their category."""
-    result = runner.invoke(app_mod.app, ["list-checks"])
-    assert "disclosure.vcs.exposed" in result.stdout
-    assert "disclosure.debug.error-page" in result.stdout
-    assert "DISCLOSURE" in result.stdout
-
-
-def test_probe_flag_enables_the_disclosure_probe_in_the_config() -> None:
-    """``--probe`` sets ``disclosure.probe`` on the config handed to the orchestrator."""
-    runner.invoke(app_mod.app, ["scan", "https://example.com", "--probe"])
-    assert _StubOrchestrator.last_config.disclosure.probe is True  # type: ignore[attr-defined]
-
-
-def test_no_probe_flag_disables_it_over_a_config_file(tmp_path: Path) -> None:
-    """``--no-probe`` overrides a config file that turned the probe on."""
+def test_flags_override_the_config_file(tmp_path: Path) -> None:
+    """Each switch flag wins over the value a config file gives it (both ways when it has two)."""
     cfg = tmp_path / "webvigil.toml"
-    cfg.write_text("[disclosure]\nprobe = true\n", "utf-8")
-    runner.invoke(app_mod.app, ["scan", "https://example.com", "--config", str(cfg), "--no-probe"])
-    assert _StubOrchestrator.last_config.disclosure.probe is False  # type: ignore[attr-defined]
+    for flag, toml, path, expected in _FLAG_CASES:
+        cfg.write_text(toml, "utf-8")
+        args = [*_SCAN, "--config", str(cfg), flag]
+        result = runner.invoke(app_mod.app, args)
+        value = _config()
+        for part in path.split("."):
+            value = getattr(value, part)
+        assert value is expected, f"{flag}: {path} is {value!r}, expected {expected!r}"
+        if flag == "--probe":
+            assert result.exit_code == 0  # GET-only: it does not trip the Active-mode gate
 
 
-def test_probe_does_not_trip_the_active_mode_gate() -> None:
-    """``--probe`` is GET-only and does not require Active-mode authorization."""
-    result = runner.invoke(app_mod.app, ["scan", "https://example.com", "--probe"])
-    assert result.exit_code == 0
+# ---------------------------------------------------------------------------
+# The scan summary lines
+# ---------------------------------------------------------------------------
 
 
-def test_scan_summary_reports_exposed_paths() -> None:
-    """The summary counts disclosure findings as exposed paths."""
-    _StubOrchestrator.result = make_result(
-        make_finding(check_id="disclosure.vcs.exposed", severity=Severity.HIGH),
-        make_finding(check_id="disclosure.debug.error-page", severity=Severity.MEDIUM),
-    )
-    result = runner.invoke(app_mod.app, ["scan", "https://example.com"])
-    assert "Information disclosure: 1 exposed path found" in result.stderr
+def _tech(version: str, method: DetectionMethod) -> Technology:
+    """
+    Args:
+        version (str): The detected jQuery version.
+        method (DetectionMethod): How it was detected.
 
-
-def test_list_checks_lists_the_injection_checks() -> None:
-    """``list-checks`` includes the injection checks, the CRITICAL SSRF one, and the category."""
-    result = runner.invoke(app_mod.app, ["list-checks"])
-    assert "injection.xss.reflected" in result.stdout
-    assert "injection.sqli.time-based" in result.stdout
-    assert "injection.xss.stored" in result.stdout
-    assert "injection.ssrf.metadata" in result.stdout
-    assert "injection.ssrf.internal" in result.stdout
-    assert "injection.cmdi.os" in result.stdout
-    assert "injection.ssti" in result.stdout
-    assert "injection.el" in result.stdout  # spec 016
-    assert "injection.crlf" in result.stdout
-    assert "injection.xxe" in result.stdout
-    assert "injection.host-header" in result.stdout
-    assert "http.methods.unsafe" in result.stdout
-    assert "CRITICAL" in result.stdout  # ssrf.metadata, cmdi.os
-    assert "INJECTION" in result.stdout
-    assert "HTTP" in result.stdout  # http.methods.unsafe category (spec 012)
-
-
-def test_list_checks_lists_the_spec_013_passive_checks() -> None:
-    """``list-checks`` includes the four spec-013 checks and the CONTENT category."""
-    result = runner.invoke(app_mod.app, ["list-checks"])
-    assert "content.sri.missing" in result.stdout
-    assert "content.mixed" in result.stdout
-    assert "disclosure.session-id-in-url" in result.stdout
-    assert "disclosure.private-ip" in result.stdout
-    assert "CONTENT" in result.stdout
-
-
-def test_list_checks_lists_the_spec_014_checks() -> None:
-    """``list-checks`` includes the four spec-014 checks and the UPLOAD category."""
-    result = runner.invoke(app_mod.app, ["list-checks"])
-    assert "injection.ldap" in result.stdout
-    assert "injection.xpath" in result.stdout
-    assert "injection.ssi" in result.stdout
-    assert "upload.unrestricted" in result.stdout
-    assert "UPLOAD" in result.stdout
-
-
-def test_no_time_based_sqli_flag_disables_it_over_a_config_file(tmp_path: Path) -> None:
-    """``--no-time-based-sqli`` overrides a config file that enabled it."""
-    cfg = tmp_path / "webvigil.toml"
-    cfg.write_text("[injection]\ntime_based_sqli = true\n", "utf-8")
-    runner.invoke(
-        app_mod.app,
-        ["scan", "https://example.com", "--config", str(cfg), "--no-time-based-sqli"],
-    )
-    assert _StubOrchestrator.last_config.injection.time_based_sqli is False  # type: ignore[attr-defined]
-
-
-def test_no_time_based_cmdi_flag_disables_it_over_a_config_file(tmp_path: Path) -> None:
-    """``--no-time-based-cmdi`` overrides a config file that enabled it (spec 011)."""
-    cfg = tmp_path / "webvigil.toml"
-    cfg.write_text("[injection]\ntime_based_cmdi = true\n", "utf-8")
-    runner.invoke(
-        app_mod.app,
-        ["scan", "https://example.com", "--config", str(cfg), "--no-time-based-cmdi"],
-    )
-    assert _StubOrchestrator.last_config.injection.time_based_cmdi is False  # type: ignore[attr-defined]
-
-
-def test_xxe_flag_enables_it_over_a_config_file(tmp_path: Path) -> None:
-    """``--xxe`` turns the spec-012 XXE step on over an off config value."""
-    cfg = tmp_path / "webvigil.toml"
-    cfg.write_text("[injection]\nxxe = false\n", "utf-8")
-    runner.invoke(app_mod.app, ["scan", "https://example.com", "--config", str(cfg), "--xxe"])
-    assert _StubOrchestrator.last_config.injection.xxe is True  # type: ignore[attr-defined]
-
-
-def test_file_upload_flag_enables_it_over_a_config_file(tmp_path: Path) -> None:
-    """``--file-upload`` turns the spec-014 upload pass on over an off config value."""
-    cfg = tmp_path / "webvigil.toml"
-    cfg.write_text("[injection]\nfile_upload = false\n", "utf-8")
-    runner.invoke(
-        app_mod.app, ["scan", "https://example.com", "--config", str(cfg), "--file-upload"]
-    )
-    assert _StubOrchestrator.last_config.injection.file_upload is True  # type: ignore[attr-defined]
-
-
-def test_stored_xss_flag_enables_it_over_a_config_file(tmp_path: Path) -> None:
-    """``--stored-xss`` / ``--no-stored-xss`` win over the config file in both directions."""
-    cfg = tmp_path / "webvigil.toml"
-    cfg.write_text("[injection]\nstored_xss = false\n", "utf-8")
-    runner.invoke(
-        app_mod.app,
-        ["scan", "https://example.com", "--config", str(cfg), "--stored-xss"],
-    )
-    assert _StubOrchestrator.last_config.injection.stored_xss is True  # type: ignore[attr-defined]
-    runner.invoke(app_mod.app, ["scan", "https://example.com", "--no-stored-xss"])
-    assert _StubOrchestrator.last_config.injection.stored_xss is False  # type: ignore[attr-defined]
-
-
-def test_osv_online_flag_enables_it_over_a_config_file(tmp_path: Path) -> None:
-    """``--osv-online`` / ``--no-osv-online`` win over the config file in both directions."""
-    cfg = tmp_path / "webvigil.toml"
-    cfg.write_text("[deps]\nosv_online = false\n", "utf-8")
-    runner.invoke(
-        app_mod.app,
-        ["scan", "https://example.com", "--config", str(cfg), "--osv-online"],
-    )
-    assert _StubOrchestrator.last_config.deps.osv_online is True  # type: ignore[attr-defined]
-    runner.invoke(app_mod.app, ["scan", "https://example.com", "--no-osv-online"])
-    assert _StubOrchestrator.last_config.deps.osv_online is False  # type: ignore[attr-defined]
-
-
-def test_summary_names_osv_as_an_advisory_source_only_when_enabled() -> None:
-    """The summary names OSV.dev as an advisory source only when ``--osv-online`` is set."""
-    from webvigil.core.technology import DetectionMethod, Technology
-
-    tech = Technology(
+    Returns:
+        Technology: A vulnerable jQuery detection.
+    """
+    return Technology(
         name="jquery",
-        version="3.4.1",
-        detection=DetectionMethod.FILECONTENT,
-        source_url="https://example.com/jquery.js",
+        version=version,
+        detection=method,
+        source_url="https://example.com/j.js",
         vulnerable=True,
     )
-    _StubOrchestrator.result = make_result(
-        make_finding(check_id="deps.js.vulnerable-library"), technologies=[tech]
-    )
-    with_osv = runner.invoke(app_mod.app, ["scan", "https://example.com", "--osv-online"])
-    assert "Advisory sources: offline database + OSV.dev" in with_osv.stderr
 
-    without = runner.invoke(app_mod.app, ["scan", "https://example.com"])
+
+def test_scan_summary_reports_detected_libraries_and_the_advisory_source() -> None:
+    """The summary counts the libraries and names OSV.dev as a source only with ``--osv-online``."""
+    _StubOrchestrator.result = make_result(
+        make_finding(check_id="deps.js.vulnerable-library"),
+        technologies=(_tech("1.12.4", DetectionMethod.FILENAME),),
+    )
+    with_osv = runner.invoke(app_mod.app, [*_SCAN, "--osv-online"])
+    assert "Detected 1 client-side library (1 with known vulnerabilities)" in with_osv.stderr
+    assert "Advisory sources: offline database + OSV.dev" in with_osv.stderr
+    without = runner.invoke(app_mod.app, _SCAN)
+    assert "Detected 1 client-side library" in without.stderr
     assert "OSV.dev" not in without.stderr
 
 
-def test_active_scan_summary_reports_injection_findings() -> None:
-    """An active scan's summary counts the injection findings."""
+def test_scan_summary_counts_exposed_paths_injection_and_csrf_findings() -> None:
+    """The summary counts exposed paths, active injection findings and token-less CSRF forms."""
     _StubOrchestrator.result = make_result(
+        make_finding(check_id="disclosure.vcs.exposed", severity=Severity.HIGH),
+        make_finding(check_id="disclosure.debug.error-page", severity=Severity.MEDIUM),
         make_finding(check_id="injection.xss.reflected", severity=Severity.HIGH),
         make_finding(check_id="injection.sqli.error-based", severity=Severity.HIGH),
+        make_finding(check_id="csrf.form.no-token", severity=Severity.MEDIUM),
         mode=ScanMode.ACTIVE,
     )
-    result = runner.invoke(
-        app_mod.app,
-        ["scan", "https://example.com", "--mode", "active", "--authorized-by", "me"],
-    )
+    result = runner.invoke(app_mod.app, _ACTIVE)
+    assert "Information disclosure: 1 exposed path found" in result.stderr
     assert "Active injection: 2 findings" in result.stderr
+    assert "CSRF: 1 form without an anti-CSRF token" in result.stderr
 
 
-def test_file_upload_summary_note_appears_only_with_the_flag() -> None:
-    """The summary notes that files were left on the target only when ``--file-upload`` ran."""
+# (flag, a finding id, the summary line the flag adds)
+_WRITE_NOTES = [
+    ("--file-upload", "upload.unrestricted", "File-upload testing: enabled"),
+    ("--confirm-csrf", "csrf.form.token-not-enforced", "CSRF confirmation: enabled"),
+    ("--submit-post-forms", "injection.xss.reflected", "POST crawl: enabled"),
+]
+
+
+def test_write_pass_notes_appear_only_with_their_flag_in_active_mode() -> None:
+    """A pass that writes to the target says so in the summary only when its flag is set."""
+    for flag, check_id, note in _WRITE_NOTES:
+        _StubOrchestrator.result = make_result(
+            make_finding(check_id=check_id, severity=Severity.MEDIUM), mode=ScanMode.ACTIVE
+        )
+        assert note in runner.invoke(app_mod.app, [*_ACTIVE, flag]).stderr, flag
+        assert note not in runner.invoke(app_mod.app, _ACTIVE).stderr, flag
+    # the confirmed-CSRF line needs a confirming finding, not the flag
     _StubOrchestrator.result = make_result(
-        make_finding(check_id="upload.unrestricted", severity=Severity.HIGH), mode=ScanMode.ACTIVE
+        make_finding(check_id="csrf.form.token-not-enforced", severity=Severity.MEDIUM),
+        mode=ScanMode.ACTIVE,
     )
-    with_flag = runner.invoke(
-        app_mod.app,
-        [
-            "scan",
-            "https://example.com",
-            "--mode",
-            "active",
-            "--authorized-by",
-            "me",
-            "--file-upload",
-        ],
-    )
-    assert "File-upload testing: enabled" in with_flag.stderr
-    without = runner.invoke(
-        app_mod.app,
-        ["scan", "https://example.com", "--mode", "active", "--authorized-by", "me"],
-    )
-    assert "File-upload testing" not in without.stderr
+    assert "CSRF confirmed: 1 form accepted" in runner.invoke(app_mod.app, _ACTIVE).stderr
 
 
 # ---------------------------------------------------------------------------
-# --cookie, the CSRF check, and the authenticated-scan summary (spec 007)
+# --cookie / --header and the authenticated-scan summary (specs 007, 013)
 # ---------------------------------------------------------------------------
 
 
-def test_cookie_flags_populate_the_auth_config() -> None:
-    """Repeated ``--cookie`` flags become the ``auth.cookies`` list on the config."""
-    runner.invoke(
-        app_mod.app,
-        ["scan", "https://example.com", "--cookie", "session=abc", "--cookie", "csrf=xyz"],
-    )
-    assert _StubOrchestrator.last_config.auth.cookies == ["session=abc", "csrf=xyz"]  # type: ignore[attr-defined]
-
-
-def test_cookie_flags_replace_a_config_file_list(tmp_path: Path) -> None:
-    """A ``--cookie`` flag replaces the whole config-file cookie list."""
-    cfg = tmp_path / "webvigil.toml"
-    cfg.write_text("[auth]\ncookies = ['from=file']\n", "utf-8")
-    runner.invoke(
-        app_mod.app,
-        ["scan", "https://example.com", "--config", str(cfg), "--cookie", "from=cli"],
-    )
-    assert _StubOrchestrator.last_config.auth.cookies == ["from=cli"]  # type: ignore[attr-defined]
-
-
-def test_a_malformed_cookie_is_a_clean_error() -> None:
-    """A malformed ``--cookie`` value is a clean error message, not a traceback."""
-    result = runner.invoke(app_mod.app, ["scan", "https://example.com", "--cookie", "nope"])
-    assert result.exit_code != 0
-    assert "invalid cookie" in result.stderr
-    assert "Traceback" not in result.stderr
-
-
-def test_header_flags_populate_the_auth_config(tmp_path: Path) -> None:
-    """Repeated ``--header`` flags become ``auth.headers`` and replace a config-file list."""
+def test_cookie_and_header_flags_populate_and_replace_the_auth_config(tmp_path: Path) -> None:
+    """Repeated flags become the ``auth`` lists, and replace a config-file list entirely."""
     runner.invoke(
         app_mod.app,
         [
-            "scan",
-            "https://example.com",
-            "--header",
-            "Authorization: Bearer abc",
-            "--header",
-            "X-API-Key: k",
+            *_SCAN,
+            *["--cookie", "session=abc", "--cookie", "csrf=xyz"],
+            *["--header", "Authorization: Bearer abc", "--header", "X-API-Key: k"],
         ],
     )
-    assert _StubOrchestrator.last_config.auth.headers == [  # type: ignore[attr-defined]
+    assert _config().auth.cookies == ["session=abc", "csrf=xyz"]  # type: ignore[attr-defined]
+    assert _config().auth.headers == [  # type: ignore[attr-defined]
         "Authorization: Bearer abc",
         "X-API-Key: k",
     ]
     cfg = tmp_path / "webvigil.toml"
-    cfg.write_text("[auth]\nheaders = ['X-Old: 1']\n", "utf-8")
+    cfg.write_text("[auth]\ncookies = ['from=file']\nheaders = ['X-Old: 1']\n", "utf-8")
     runner.invoke(
         app_mod.app,
-        ["scan", "https://example.com", "--config", str(cfg), "--header", "X-New: 2"],
+        [*_SCAN, "--config", str(cfg), "--cookie", "from=cli", "--header", "X-New: 2"],
     )
-    assert _StubOrchestrator.last_config.auth.headers == ["X-New: 2"]  # type: ignore[attr-defined]
+    assert _config().auth.cookies == ["from=cli"]  # type: ignore[attr-defined]
+    assert _config().auth.headers == ["X-New: 2"]  # type: ignore[attr-defined]
 
 
-def test_a_malformed_header_is_a_clean_error() -> None:
-    """A malformed ``--header`` value is a clean error message, not a traceback."""
-    result = runner.invoke(app_mod.app, ["scan", "https://example.com", "--header", "nope"])
-    assert result.exit_code != 0
-    assert "invalid header" in result.stderr
-    assert "Traceback" not in result.stderr
+def test_a_malformed_cookie_or_header_is_a_clean_error() -> None:
+    """A malformed ``--cookie`` / ``--header`` value is a clean message, not a traceback."""
+    for flag, message in (("--cookie", "invalid cookie"), ("--header", "invalid header")):
+        result = runner.invoke(app_mod.app, [*_SCAN, flag, "nope"])
+        assert result.exit_code != 0, flag
+        assert message in result.stderr, flag
+        assert "Traceback" not in result.stderr, flag
 
 
-def test_summary_counts_both_cookies_and_headers() -> None:
-    """The authenticated-scan line reports cookies and ``[auth]`` headers, counts only."""
-    result = runner.invoke(
+def test_authenticated_summary_counts_cookies_and_headers_but_never_shows_them() -> None:
+    """The authenticated-scan line reports counts only (cookies and ``[auth]`` headers)."""
+    both = runner.invoke(
         app_mod.app,
-        [
-            "scan",
-            "https://example.com",
-            "--cookie",
-            "session=abc",
-            "--header",
-            "Authorization: Bearer secret-xyz",
-        ],
+        [*_SCAN, "--cookie", "session=abc", "--header", "Authorization: Bearer secret-xyz"],
     )
-    assert "Authenticated scan: 1 cookie + 1 header supplied" in result.stderr
-    assert "secret-xyz" not in result.stderr
-
-
-def test_list_checks_lists_the_csrf_check() -> None:
-    """``list-checks`` includes the CSRF check and its category."""
-    result = runner.invoke(app_mod.app, ["list-checks"])
-    assert "csrf.form.no-token" in result.stdout
-    assert "CSRF" in result.stdout
-
-
-def test_summary_reports_the_authenticated_scan_and_csrf_count() -> None:
-    """The summary notes the authenticated scan and counts the CSRF findings."""
-    _StubOrchestrator.result = make_result(
-        make_finding(check_id="csrf.form.no-token", severity=Severity.MEDIUM),
-    )
-    result = runner.invoke(app_mod.app, ["scan", "https://example.com", "--cookie", "session=abc"])
-    assert "Authenticated scan: 1 cookie supplied" in result.stderr
-    assert "CSRF: 1 form without an anti-CSRF token" in result.stderr
+    assert "Authenticated scan: 1 cookie + 1 header supplied" in both.stderr
+    assert "secret-xyz" not in both.stderr
+    cookie_only = runner.invoke(app_mod.app, [*_SCAN, "--cookie", "session=abc"])
+    assert "Authenticated scan: 1 cookie supplied" in cookie_only.stderr
 
 
 # ---------------------------------------------------------------------------
@@ -467,129 +338,26 @@ def test_summary_reports_the_authenticated_scan_and_csrf_count() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_version_warns_when_the_advisory_database_is_stale(monkeypatch: pytest.MonkeyPatch) -> None:
-    """``version`` prints a staleness warning to stderr when the advisory DB is old."""
+def test_version_warns_only_when_the_advisory_database_is_stale(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``version`` prints a staleness warning to stderr when the advisory DB is old, else none."""
     monkeypatch.setattr(
         app_mod, "staleness_warning", lambda _rules: ["advisory data is 200 days old"]
     )
-    result = runner.invoke(app_mod.app, ["version"])
-    assert result.exit_code == 0
-    assert "webvigil" in result.stdout
-    assert "advisory data is 200 days old" in result.stderr
-
-
-def test_version_is_quiet_when_the_database_is_fresh(monkeypatch: pytest.MonkeyPatch) -> None:
-    """``version`` prints no warning when the advisory DB is fresh."""
+    stale = runner.invoke(app_mod.app, ["version"])
+    assert stale.exit_code == 0
+    assert "webvigil" in stale.stdout
+    assert "advisory data is 200 days old" in stale.stderr
     monkeypatch.setattr(app_mod, "staleness_warning", lambda _rules: [])
-    result = runner.invoke(app_mod.app, ["version"])
-    assert "warning:" not in result.stderr
+    assert "warning:" not in runner.invoke(app_mod.app, ["version"]).stderr
 
 
-@pytest.mark.parametrize("fmt", ["json", "sarif", "html", "md"])
-def test_report_re_renders_offline(tmp_path: Path, fmt: str) -> None:
+def test_report_re_renders_offline_in_every_format(tmp_path: Path) -> None:
     """``report`` re-renders a saved scan JSON into any format without a network."""
     scan_json = tmp_path / "scan.json"
     scan_json.write_text(make_result(make_finding()).model_dump_json(), "utf-8")
-    result = runner.invoke(app_mod.app, ["report", str(scan_json), "--format", fmt])
-    assert result.exit_code == 0
-    assert result.stdout.strip()
-
-
-# ---------------------------------------------------------------------------
-# --confirm-csrf (spec 017)
-# ---------------------------------------------------------------------------
-
-
-def test_list_checks_lists_the_active_csrf_check() -> None:
-    """``list-checks`` shows ``csrf.form.token-not-enforced`` as an active CSRF check."""
-    result = runner.invoke(app_mod.app, ["list-checks"])
-    assert "csrf.form.token-not-enforced" in result.stdout
-
-
-def test_confirm_csrf_flag_enables_it_over_a_config_file(tmp_path: Path) -> None:
-    """``--confirm-csrf`` / ``--no-confirm-csrf`` win over the config file in both directions."""
-    cfg = tmp_path / "webvigil.toml"
-    cfg.write_text("[injection]\ncsrf_confirm = false\n", "utf-8")
-    runner.invoke(
-        app_mod.app, ["scan", "https://example.com", "--config", str(cfg), "--confirm-csrf"]
-    )
-    assert _StubOrchestrator.last_config.injection.csrf_confirm is True  # type: ignore[attr-defined]
-    cfg.write_text("[injection]\ncsrf_confirm = true\n", "utf-8")
-    runner.invoke(
-        app_mod.app, ["scan", "https://example.com", "--config", str(cfg), "--no-confirm-csrf"]
-    )
-    assert _StubOrchestrator.last_config.injection.csrf_confirm is False  # type: ignore[attr-defined]
-
-
-def test_csrf_confirmation_summary_notes() -> None:
-    """The writes note needs the flag and Active mode; the confirmed line needs a finding."""
-    _StubOrchestrator.result = make_result(
-        make_finding(check_id="csrf.form.token-not-enforced", severity=Severity.MEDIUM),
-        mode=ScanMode.ACTIVE,
-    )
-    with_flag = runner.invoke(
-        app_mod.app,
-        [
-            "scan",
-            "https://example.com",
-            "--mode",
-            "active",
-            "--authorized-by",
-            "me",
-            "--confirm-csrf",
-        ],
-    )
-    assert "CSRF confirmation: enabled" in with_flag.stderr
-    assert "CSRF confirmed: 1 form accepted" in with_flag.stderr
-    without = runner.invoke(
-        app_mod.app,
-        ["scan", "https://example.com", "--mode", "active", "--authorized-by", "me"],
-    )
-    assert "CSRF confirmation: enabled" not in without.stderr
-
-
-# ---------------------------------------------------------------------------
-# --submit-post-forms (spec 018)
-# ---------------------------------------------------------------------------
-
-
-def test_submit_post_forms_flag_wins_over_a_config_file_both_ways(tmp_path: Path) -> None:
-    """The two flags override ``[scan] submit_post_forms`` in both directions."""
-    cfg = tmp_path / "webvigil.toml"
-    cfg.write_text("[scan]\nsubmit_post_forms = false\n", "utf-8")
-    runner.invoke(
-        app_mod.app, ["scan", "https://example.com", "--config", str(cfg), "--submit-post-forms"]
-    )
-    assert _StubOrchestrator.last_config.scan.submit_post_forms is True  # type: ignore[attr-defined]
-    cfg.write_text("[scan]\nsubmit_post_forms = true\n", "utf-8")
-    runner.invoke(
-        app_mod.app,
-        ["scan", "https://example.com", "--config", str(cfg), "--no-submit-post-forms"],
-    )
-    assert _StubOrchestrator.last_config.scan.submit_post_forms is False  # type: ignore[attr-defined]
-
-
-def test_post_crawl_summary_note_needs_the_flag_and_active_mode() -> None:
-    """The writes note appears only with the flag in an Active scan."""
-    _StubOrchestrator.result = make_result(
-        make_finding(check_id="injection.xss.reflected", severity=Severity.HIGH),
-        mode=ScanMode.ACTIVE,
-    )
-    with_flag = runner.invoke(
-        app_mod.app,
-        [
-            "scan",
-            "https://example.com",
-            "--mode",
-            "active",
-            "--authorized-by",
-            "me",
-            "--submit-post-forms",
-        ],
-    )
-    assert "POST crawl: enabled" in with_flag.stderr
-    without = runner.invoke(
-        app_mod.app,
-        ["scan", "https://example.com", "--mode", "active", "--authorized-by", "me"],
-    )
-    assert "POST crawl: enabled" not in without.stderr
+    for fmt in ("json", "sarif", "html", "md"):
+        result = runner.invoke(app_mod.app, ["report", str(scan_json), "--format", fmt])
+        assert result.exit_code == 0, fmt
+        assert result.stdout.strip(), fmt

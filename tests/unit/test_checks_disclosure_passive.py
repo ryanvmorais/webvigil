@@ -10,7 +10,7 @@ from __future__ import annotations
 from tests.support import make_context, make_page
 from webvigil.checks.disclosure.errors import ErrorPageCheck
 from webvigil.checks.disclosure.listing import DirectoryListingCheck
-from webvigil.core.findings import Category, Confidence, Severity
+from webvigil.core.findings import Confidence, Severity
 
 _WERKZEUG = (
     "<title>X // Werkzeug Debugger</title>Traceback (most recent call last): File &quot;a&quot;"
@@ -80,9 +80,3 @@ async def test_directory_listing_check_is_quiet_on_a_normal_page() -> None:
     """A normal page is not mistaken for an index."""
     ctx = make_context(make_page(text=_CLEAN))
     assert await DirectoryListingCheck().run(ctx) == []
-
-
-def test_both_checks_are_registered_under_disclosure() -> None:
-    """Both passive checks carry ``Category.DISCLOSURE``."""
-    assert ErrorPageCheck.category is Category.DISCLOSURE
-    assert DirectoryListingCheck.category is Category.DISCLOSURE

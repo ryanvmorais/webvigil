@@ -5,6 +5,10 @@ Pure unit of ``tests/fixtures/app.py``: ``/support`` and its POST routes are dri
 ``httpx.ASGITransport`` with no crawl, so a regression in what a route answers cannot hide behind
 the integration test. Each test builds its own app, so ``app.state.post_log`` starts empty. Every
 post carries the form's token: the hardened profile refuses a post without it.
+
+Audited under issue #101: the page-content test and the log-reset test were dropped — the
+integration scans prove the forms are reached and every test here builds a fresh app and asserts the
+log exactly.
 """
 
 from __future__ import annotations
@@ -28,19 +32,6 @@ def _client(app: Starlette) -> httpx.AsyncClient:
         httpx.AsyncClient: A client wired to ``app`` in-process.
     """
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=_BASE)
-
-
-@pytest.mark.parametrize("profile", ["insecure", "hardened"])
-async def test_support_page_lists_three_forms_and_is_linked(profile: str) -> None:
-    """Both profiles serve ``/support`` with its forms and link it from the index."""
-    app = make_app(profile)
-    async with _client(app) as client:
-        page = (await client.get("/support")).text
-        index = (await client.get("/")).text
-    for action in ("/support/ticket", "/support/callback", "/support/feedback"):
-        assert f'action="{action}"' in page
-    assert 'enctype="multipart/form-data"' in page
-    assert 'href="/support"' in index
 
 
 @pytest.mark.parametrize("profile", ["insecure", "hardened"])
@@ -130,11 +121,3 @@ async def test_the_hardened_profile_enforces_the_token_the_insecure_one_ignores(
         assert (await client.post(path, data={"format": "json"})).status_code == 403
     async with _client(make_app("insecure")) as client:
         assert (await client.post(path, data={"format": "json"})).status_code == 200
-
-
-async def test_the_log_is_reset_per_app() -> None:
-    """A fresh app starts with an empty ``post_log``."""
-    first = make_app("insecure")
-    async with _client(first) as client:
-        await client.post("/support/ticket", data={"subject": "x"})
-    assert make_app("insecure").state.post_log == []

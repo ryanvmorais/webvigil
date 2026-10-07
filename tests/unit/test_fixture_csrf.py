@@ -5,6 +5,10 @@ Pure unit of ``tests/fixtures/app.py``: ``/panel`` and its four POST routes are 
 ``httpx.ASGITransport`` with no scan, so a regression in what each route accepts or refuses
 cannot hide behind the integration test (which would then fail for the wrong reason). The app is
 built per test, so ``app.state.csrf_log`` starts empty.
+
+Audited under issue #101: the page-content test and the log-reset test were dropped — the
+integration scans prove the forms are reached and every test here builds a fresh app and asserts the
+log exactly.
 """
 
 from __future__ import annotations
@@ -44,18 +48,6 @@ async def _post(
     """
     async with _client(app) as client:
         return await client.post(path, data=data, headers=headers)
-
-
-@pytest.mark.parametrize("profile", ["insecure", "hardened"])
-async def test_panel_lists_four_post_forms(profile: str) -> None:
-    """Both profiles serve ``/panel`` with the four forms (and link it from the index)."""
-    app = make_app(profile)
-    async with _client(app) as client:
-        panel = (await client.get("/panel")).text
-        index = (await client.get("/")).text
-    for action in ("/newsletter", "/settings", "/transfer", "/prefs"):
-        assert f'action="{action}"' in panel
-    assert 'href="/panel"' in index
 
 
 async def test_insecure_newsletter_has_no_token_field_and_accepts_anything() -> None:
@@ -108,10 +100,3 @@ async def test_hardened_newsletter_and_settings_enforce_the_token() -> None:
     assert (await _post(app, "/settings", {"display_name": "y"})).status_code == 403
     ok = await _post(app, "/settings", {"csrf_token": _CSRF_TOKEN, "display_name": "y"})
     assert ok.status_code == 200
-
-
-async def test_the_log_is_reset_per_app() -> None:
-    """A fresh app starts with an empty ``csrf_log`` so a test counts only its own writes."""
-    first = make_app("insecure")
-    await _post(first, "/settings", {"display_name": "y"})
-    assert make_app("insecure").state.csrf_log == []

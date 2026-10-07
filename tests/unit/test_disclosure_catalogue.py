@@ -4,11 +4,14 @@ The curated probe catalogue loads, expands, and validates — RF-05, ADR-4, Risk
 Runs against the real shipped ``paths.toml`` (via :mod:`importlib.resources`),
 so these double as a guard on whatever the file currently declares — the counts
 are lower bounds, not fixed numbers.
+
+Audited under issue #101: a parametrized ``every_content_regex_compiled`` (one row per catalogue
+entry, about 75) was dropped — it was vacuous: the loader compiles each ``content`` regex inside
+``load_catalogue()``, so a bad pattern already fails the loading test above
+(and used to fail at collection), and ``.pattern`` of a compiled regex is trivially truthy.
 """
 
 from __future__ import annotations
-
-import pytest
 
 from webvigil.checks.disclosure.catalogue import (
     PROBE_CHECK_IDS,
@@ -87,10 +90,3 @@ def test_magic_validator_matches_a_byte_prefix() -> None:
     v = Validator(magic=(b"PK\x03\x04",))
     assert v.passes(body="", raw=b"PK\x03\x04rest", content_type="application/zip")
     assert not v.passes(body="", raw=b"<html>", content_type="text/html")
-
-
-@pytest.mark.parametrize("entry", load_catalogue())
-def test_every_content_regex_compiled(entry: object) -> None:
-    """Every entry's ``content`` regex either is absent or compiled to a real pattern."""
-    validator = entry.validator  # type: ignore[attr-defined]
-    assert validator.content is None or validator.content.pattern

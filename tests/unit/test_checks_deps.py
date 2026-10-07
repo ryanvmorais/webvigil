@@ -22,7 +22,7 @@ from webvigil.checks.deps.advisories import Advisory, RetireJsProvider
 from webvigil.checks.deps.check import LibraryDetectedCheck, VulnerableLibraryCheck
 from webvigil.checks.deps.rules import RetireJsRules
 from webvigil.core.context import Detection, Observations
-from webvigil.core.findings import Category, Confidence, ScanMode, Severity
+from webvigil.core.findings import Confidence, Severity
 from webvigil.core.technology import DetectionMethod
 
 _MINI = Path(__file__).parent.parent / "data" / "retirejs-mini.json"
@@ -72,13 +72,6 @@ def _det(
 # ---------------------------------------------------------------------------
 # The offline (Retire.js) path
 # ---------------------------------------------------------------------------
-
-
-async def test_metadata() -> None:
-    """The two checks carry the expected category, mode and default severity."""
-    assert VulnerableLibraryCheck.category is Category.DEPS
-    assert VulnerableLibraryCheck.mode is ScanMode.PASSIVE
-    assert LibraryDetectedCheck.default_severity is Severity.INFO
 
 
 async def test_vulnerable_library_finding_shape() -> None:
