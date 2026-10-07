@@ -72,6 +72,7 @@ def summary(
     header_count: int = 0,
     osv_online: bool = False,
     file_upload: bool = False,
+    confirm_csrf: bool = False,
 ) -> None:
     """
     Print the human-readable scan summary to stderr.
@@ -90,6 +91,8 @@ def summary(
             sources line. Defaults to ``False``.
         file_upload (bool): Whether the spec-014 file-upload pass ran, for a
             note that files were written to the target. Defaults to ``False``.
+        confirm_csrf (bool): Whether the spec-017 CSRF confirmation pass ran, for
+            a note that test submissions were made. Defaults to ``False``.
     """
     meta = result.metadata
     table = Table(title=f"WebVigil — {meta.target}", title_justify="left")
@@ -134,6 +137,11 @@ def summary(
                 "[dim]File-upload testing: enabled — benign marker files were left on the "
                 "target[/]"
             )
+        if confirm_csrf:
+            _console.print(
+                "[dim]CSRF confirmation: enabled - each tested form was submitted up to 3 "
+                'times; test data marked "wvcsrf" was left on the target[/]'
+            )
 
     if cookie_count or header_count:
         parts: list[str] = []
@@ -142,6 +150,12 @@ def summary(
         if header_count:
             parts.append(f"{header_count} header{'' if header_count == 1 else 's'}")
         _console.print(f"[dim]Authenticated scan: {' + '.join(parts)} supplied[/]")
+    csrf_confirmed = sum(1 for f in result.findings if f.check_id == "csrf.form.token-not-enforced")
+    if csrf_confirmed:
+        _console.print(
+            f"[red]CSRF confirmed: {csrf_confirmed} form{'' if csrf_confirmed == 1 else 's'} "
+            "accepted a cross-site replay without a valid token[/]"
+        )
     csrf_forms = sum(1 for f in result.findings if f.check_id == "csrf.form.no-token")
     if csrf_forms:
         _console.print(

@@ -134,6 +134,17 @@ def scan(
             ),
         ),
     ] = None,
+    confirm_csrf: Annotated[
+        bool | None,
+        typer.Option(
+            "--confirm-csrf/--no-confirm-csrf",
+            help=(
+                "Confirm CSRF during an Active scan: submit each state-changing form as a "
+                "control and as cross-site replays without a valid token. Off by default "
+                "(writes to the target, up to three submissions per form)."
+            ),
+        ),
+    ] = None,
     cookie: Annotated[
         list[str] | None,
         typer.Option(
@@ -192,6 +203,7 @@ def scan(
             stored_xss=stored_xss,
             xxe=xxe,
             file_upload=file_upload,
+            confirm_csrf=confirm_csrf,
             cookie=cookie,
             header=header,
             openapi=openapi,
@@ -222,6 +234,7 @@ def scan(
         header_count=len(cfg.auth.headers),
         osv_online=cfg.deps.osv_online,
         file_upload=cfg.injection.file_upload and cfg.scan.mode is ScanMode.ACTIVE,
+        confirm_csrf=cfg.injection.csrf_confirm and cfg.scan.mode is ScanMode.ACTIVE,
     )
     raise typer.Exit(int(evaluate(result, cfg.report.fail_on)))
 
@@ -274,6 +287,7 @@ def _build_config(
     stored_xss: bool | None,
     xxe: bool | None,
     file_upload: bool | None,
+    confirm_csrf: bool | None,
     cookie: list[str] | None,
     header: list[str] | None,
     openapi: str | None,
@@ -290,7 +304,7 @@ def _build_config(
         config (Path | None): Path to a ``webvigil.toml``, or ``None``.
         mode, scope, max_pages, delay, fail_on, authorized_by, probe,
             time_based_sqli, time_based_cmdi, stored_xss, xxe, file_upload,
-            cookie, header, openapi, osv_online: The optional CLI overrides;
+            confirm_csrf, cookie, header, openapi, osv_online: The optional CLI overrides;
             ``None`` means "not passed".
         verify_tls (bool): The resolved TLS-verification flag.
 
@@ -339,6 +353,8 @@ def _build_config(
         injection_overrides["xxe"] = xxe
     if file_upload is not None:
         injection_overrides["file_upload"] = file_upload
+    if confirm_csrf is not None:
+        injection_overrides["csrf_confirm"] = confirm_csrf
 
     auth_overrides: dict[str, object] = {}
     if cookie is not None:
@@ -405,6 +421,7 @@ def _emit(
     header_count: int = 0,
     osv_online: bool = False,
     file_upload: bool = False,
+    confirm_csrf: bool = False,
 ) -> None:
     """
     Emit the scan output: the terminal summary, or a rendered report.
@@ -427,6 +444,8 @@ def _emit(
             ``False``.
         file_upload (bool): Whether the file-upload pass ran, for the summary.
             Defaults to ``False``.
+        confirm_csrf (bool): Whether the CSRF confirmation pass ran, for the
+            summary. Defaults to ``False``.
     """
     if output_format is None:
         _render.summary(
@@ -435,6 +454,7 @@ def _emit(
             header_count=header_count,
             osv_online=osv_online,
             file_upload=file_upload,
+            confirm_csrf=confirm_csrf,
         )
         return
     rendered = get_reporter(output_format).render(result)
@@ -449,6 +469,7 @@ def _emit(
         header_count=header_count,
         osv_online=osv_online,
         file_upload=file_upload,
+        confirm_csrf=confirm_csrf,
     )
 
 

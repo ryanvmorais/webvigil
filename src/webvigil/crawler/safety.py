@@ -116,4 +116,44 @@ def looks_like_search(form: Form) -> bool:
     )
 
 
-__all__ = ["is_auth_form", "is_destructive", "is_logout", "looks_like_search"]
+def is_login_url(url: str) -> bool:
+    """
+    Args:
+        url (str): The absolute URL to test.
+
+    Returns:
+        bool: ``True`` when the URL path looks like a login / registration
+            page — where a rejected, session-less submission usually lands.
+    """
+    return bool(_AUTH_FORM_RE.search(urlsplit(url).path))
+
+
+def is_destructive_form(form: Form) -> bool:
+    """
+    Args:
+        form (Form): The form to classify.
+
+    Returns:
+        bool: ``True`` when the form looks destructive or like a logout — the
+            action's path and query, a field name, or the value of a named
+            ``submit`` / ``button`` input matches the destructive vocabulary.
+            ``_`` and ``-`` count as word breaks (``delete_account`` matches,
+            which ``\bdelete\b`` alone would miss). A ``<button>`` element's text
+            is not parsed into :class:`Form`, so a destructive verb only there is
+            not seen — the gap is documented in ``docs/authenticated-scanning.md``.
+    """
+    parts = [_path_and_query(form.action)]
+    parts += [field.name for field in form.fields]
+    parts += [field.value for field in form.fields if field.type in ("submit", "button")]
+    haystack = re.sub(r"[_-]", " ", " ".join(parts))
+    return bool(_DESTRUCTIVE_RE.search(haystack) or _LOGOUT_RE.search(haystack))
+
+
+__all__ = [
+    "is_auth_form",
+    "is_destructive",
+    "is_destructive_form",
+    "is_login_url",
+    "is_logout",
+    "looks_like_search",
+]

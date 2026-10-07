@@ -493,3 +493,56 @@ def test_report_re_renders_offline(tmp_path: Path, fmt: str) -> None:
     result = runner.invoke(app_mod.app, ["report", str(scan_json), "--format", fmt])
     assert result.exit_code == 0
     assert result.stdout.strip()
+
+
+# ---------------------------------------------------------------------------
+# --confirm-csrf (spec 017)
+# ---------------------------------------------------------------------------
+
+
+def test_list_checks_lists_the_active_csrf_check() -> None:
+    """``list-checks`` shows ``csrf.form.token-not-enforced`` as an active CSRF check."""
+    result = runner.invoke(app_mod.app, ["list-checks"])
+    assert "csrf.form.token-not-enforced" in result.stdout
+
+
+def test_confirm_csrf_flag_enables_it_over_a_config_file(tmp_path: Path) -> None:
+    """``--confirm-csrf`` / ``--no-confirm-csrf`` win over the config file in both directions."""
+    cfg = tmp_path / "webvigil.toml"
+    cfg.write_text("[injection]\ncsrf_confirm = false\n", "utf-8")
+    runner.invoke(
+        app_mod.app, ["scan", "https://example.com", "--config", str(cfg), "--confirm-csrf"]
+    )
+    assert _StubOrchestrator.last_config.injection.csrf_confirm is True  # type: ignore[attr-defined]
+    cfg.write_text("[injection]\ncsrf_confirm = true\n", "utf-8")
+    runner.invoke(
+        app_mod.app, ["scan", "https://example.com", "--config", str(cfg), "--no-confirm-csrf"]
+    )
+    assert _StubOrchestrator.last_config.injection.csrf_confirm is False  # type: ignore[attr-defined]
+
+
+def test_csrf_confirmation_summary_notes() -> None:
+    """The writes note needs the flag and Active mode; the confirmed line needs a finding."""
+    _StubOrchestrator.result = make_result(
+        make_finding(check_id="csrf.form.token-not-enforced", severity=Severity.MEDIUM),
+        mode=ScanMode.ACTIVE,
+    )
+    with_flag = runner.invoke(
+        app_mod.app,
+        [
+            "scan",
+            "https://example.com",
+            "--mode",
+            "active",
+            "--authorized-by",
+            "me",
+            "--confirm-csrf",
+        ],
+    )
+    assert "CSRF confirmation: enabled" in with_flag.stderr
+    assert "CSRF confirmed: 1 form accepted" in with_flag.stderr
+    without = runner.invoke(
+        app_mod.app,
+        ["scan", "https://example.com", "--mode", "active", "--authorized-by", "me"],
+    )
+    assert "CSRF confirmation: enabled" not in without.stderr

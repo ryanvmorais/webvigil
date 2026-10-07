@@ -11,7 +11,14 @@ from __future__ import annotations
 import pytest
 
 from webvigil.crawler.forms import Form, FormField
-from webvigil.crawler.safety import is_auth_form, is_destructive, is_logout, looks_like_search
+from webvigil.crawler.safety import (
+    is_auth_form,
+    is_destructive,
+    is_destructive_form,
+    is_login_url,
+    is_logout,
+    looks_like_search,
+)
 
 
 def _form(action: str, *names: str, method: str = "POST") -> Form:
@@ -100,3 +107,60 @@ def test_looks_like_search_matches_search_forms() -> None:
     assert looks_like_search(_form("/products", "query", method="GET")) is True
     assert looks_like_search(_form("/catalog", "q", method="GET")) is True
     assert looks_like_search(_form("/profile", "nickname")) is False
+
+
+# ---------------------------------------------------------------------------
+# Destructive forms and login URLs (spec 017 RF-04)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "action, names",
+    [
+        ("https://example.com/items/remove", ("id",)),
+        ("https://example.com/account", ("delete_account",)),
+        ("https://example.com/account", ("do-purge",)),
+        ("https://example.com/logout", ("next",)),
+        ("https://example.com/x?action=revoke", ("id",)),
+    ],
+)
+def test_destructive_form_matches_action_and_field_names(
+    action: str, names: tuple[str, ...]
+) -> None:
+    """A destructive verb in the path, the query or a field name (``_`` / ``-`` are breaks)."""
+    assert is_destructive_form(_form(action, *names)) is True
+
+
+def test_destructive_form_reads_a_named_submit_value() -> None:
+    """``<input type=submit name=op value=Delete>`` marks an otherwise neutral form."""
+    form = Form(
+        method="POST",
+        action="https://example.com/items/5",
+        enctype="application/x-www-form-urlencoded",
+        fields=(
+            FormField(name="id", type="hidden", value="5"),
+            FormField(name="op", type="submit", value="Delete"),
+        ),
+        source_url="https://example.com/",
+    )
+    assert is_destructive_form(form) is True
+
+
+@pytest.mark.parametrize(
+    "action, names",
+    [
+        ("https://example.com/newsletter", ("email", "topic")),
+        ("https://example.com/settings", ("display_name",)),
+        ("https://example.com/deleted-items", ("page",)),  # the delete word boundary holds
+    ],
+)
+def test_destructive_form_leaves_benign_forms_alone(action: str, names: tuple[str, ...]) -> None:
+    """Benign forms, including a near-miss word, are not destructive."""
+    assert is_destructive_form(_form(action, *names)) is False
+
+
+def test_login_url() -> None:
+    """A login / sign-in path is a login URL; an ordinary page is not."""
+    assert is_login_url("https://example.com/login?next=/x") is True
+    assert is_login_url("https://example.com/users/sign-in") is True
+    assert is_login_url("https://example.com/panel") is False

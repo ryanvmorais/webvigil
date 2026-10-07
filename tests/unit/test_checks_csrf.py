@@ -1,9 +1,10 @@
 """
-csrf.form.no-token — a state-changing form with no anti-CSRF token — spec 007 RF-08/09.
+csrf.form.no-token (spec 007 RF-08/09) and csrf.form.token-not-enforced (spec 017 RF-09/10).
 
 Forms are built by hand with ``_form`` and handed to the check via
 ``ScanContext.forms``; ``_run`` also supplies the crawl's ``Set-Cookie`` headers,
-which weight the confidence.
+which weight the confidence. The active check issues no request: ``_hit`` builds the
+``CsrfHit`` the ``CsrfScanner`` pass would leave on ``Observations.csrf_hits``.
 """
 
 from __future__ import annotations
@@ -11,8 +12,11 @@ from __future__ import annotations
 import pytest
 
 from tests.support import make_context, make_page
-from webvigil.checks.csrf.checks import NoCsrfTokenCheck
-from webvigil.core.findings import Confidence
+from webvigil.checks.csrf.checks import NoCsrfTokenCheck, TokenNotEnforcedCheck
+from webvigil.checks.csrf.scanner import CsrfHit
+from webvigil.core.config import ScanConfig
+from webvigil.core.context import Observations
+from webvigil.core.findings import Confidence, ScanMode
 from webvigil.crawler.forms import Form, FormField
 
 
@@ -139,3 +143,112 @@ async def test_the_same_action_seen_twice_shares_a_fingerprint() -> None:
     )
     findings = await _run([form, other])
     assert len({f.fingerprint for f in findings}) == 1
+
+
+# ---------------------------------------------------------------------------
+# csrf.form.token-not-enforced — the active check (spec 017)
+# ---------------------------------------------------------------------------
+
+_ACTION = "https://example.com/profile"
+
+
+def _hit(url: str = _ACTION, replay: str = "token removed") -> CsrfHit:
+    """
+    Args:
+        url (str): The form action the pass confirmed.
+        replay (str): The replay that was accepted. Defaults to ``token removed``.
+
+    Returns:
+        CsrfHit: A hit as the confirmation pass would record it.
+    """
+    return CsrfHit(
+        url=url,
+        source_url="https://example.com/account",
+        replay=replay,
+        token_fields=("csrf_token",),
+        control="POST /profile -> 200",
+        attack="POST /profile -> 200",
+    )
+
+
+async def _run_active(
+    hits: tuple[CsrfHit, ...],
+    *,
+    cookies: list[str] | None = None,
+    set_cookies: list[str] | None = None,
+):
+    """
+    Args:
+        hits (tuple[CsrfHit, ...]): The pass's confirmed forms.
+        cookies (list[str] | None): ``[auth] cookies`` configured for the scan.
+        set_cookies (list[str] | None): Raw ``Set-Cookie`` values seen on the crawl.
+
+    Returns:
+        list: The findings the active check produced.
+    """
+    page = make_page(url="https://example.com/account", set_cookies=set_cookies or [])
+    config = ScanConfig.model_validate({"auth": {"cookies": cookies or []}})
+    ctx = make_context(
+        page, config=config, observations=Observations(csrf_hits=hits), forms=[_form("x")]
+    )
+    return await TokenNotEnforcedCheck().run(ctx)
+
+
+def test_active_check_is_registered_as_active_csrf() -> None:
+    """The check is an Active, MEDIUM, CWE-352 CSRF check with the OWASP references."""
+    check = TokenNotEnforcedCheck
+    assert check.id == "csrf.form.token-not-enforced"
+    assert check.mode is ScanMode.ACTIVE
+    assert check.cwe == (352,)
+    assert check.default_severity.name == "MEDIUM"
+
+
+async def test_a_confirmed_form_becomes_one_finding() -> None:
+    """One hit is one finding at the form's action, with the proof in the evidence."""
+    findings = await _run_active((_hit(),), cookies=["session=abc"])
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding.location.url == _ACTION and finding.location.method == "POST"
+    assert "accepted a cross-site request" in finding.title
+    labels = {item.label: item.content for item in finding.evidence}
+    assert labels["replay"] == "token removed"
+    assert labels["control"] == "POST /profile -> 200"
+    assert labels["credentials"] == "session cookies configured"
+
+
+async def test_no_hits_means_no_findings() -> None:
+    """With nothing confirmed (or the pass off) the check emits nothing."""
+    assert await _run_active(()) == []
+
+
+@pytest.mark.parametrize(
+    "set_cookies, cookies, expected",
+    [
+        (["session=a; Path=/"], ["session=a"], Confidence.HIGH),
+        (["session=a; Path=/"], [], Confidence.MEDIUM),  # anonymous replay: capped
+        (["session=a; Path=/; SameSite=Lax"], ["session=a"], Confidence.LOW),
+        (["session=a; Path=/; SameSite=Lax"], [], Confidence.LOW),
+        ([], ["session=a"], Confidence.MEDIUM),
+    ],
+)
+async def test_confidence_follows_samesite_and_is_capped_without_a_cookie(
+    set_cookies: list[str], cookies: list[str], expected: Confidence
+) -> None:
+    """The 007 SameSite weighting applies; with no configured cookie it never exceeds MEDIUM."""
+    findings = await _run_active((_hit(),), cookies=cookies, set_cookies=set_cookies)
+    assert findings[0].confidence is expected
+
+
+async def test_a_confirmation_replaces_the_passive_finding_for_the_same_action() -> None:
+    """The passive check skips a form the active pass confirmed — one proof, one finding."""
+    page = make_page(url="https://example.com/account")
+    forms = [_form("nickname"), _form("bio", action="https://example.com/other")]
+    ctx = make_context(page, forms=forms, observations=Observations(csrf_hits=(_hit(),)))
+    findings = await NoCsrfTokenCheck().run(ctx)
+    assert [f.location.url for f in findings] == ["https://example.com/other"]
+
+
+async def test_the_passive_check_is_unchanged_without_hits() -> None:
+    """With no confirmation the passive finding is exactly what 007 emitted."""
+    findings = await _run([_form("nickname")])
+    assert len(findings) == 1 and findings[0].check_id == "csrf.form.no-token"

@@ -15,6 +15,7 @@ from datetime import UTC, datetime
 
 from webvigil import __version__
 from webvigil.checks.base import Check
+from webvigil.checks.csrf.scanner import CsrfHit, CsrfScanner
 from webvigil.checks.deps.advisories import Advisory
 from webvigil.checks.deps.fingerprint import Fingerprinter
 from webvigil.checks.deps.osv import OsvLookupError, OsvProvider
@@ -44,6 +45,7 @@ _PROBE_FAMILIES = frozenset({"vcs", "config", "manifest", "backup", "debug", "so
 _STORED_CHECK_ID = "injection.xss.stored"
 _ENVELOPE_CHECK_IDS = frozenset({"injection.host-header", "http.methods.unsafe"})
 _UPLOAD_CHECK_ID = "upload.unrestricted"
+_CSRF_CHECK_ID = "csrf.form.token-not-enforced"
 
 
 class Orchestrator:
@@ -107,6 +109,8 @@ class Orchestrator:
             warnings.append(
                 "file-upload testing requires --mode active — the upload pass did not run"
             )
+        if self._config.injection.csrf_confirm and self._config.scan.mode is not ScanMode.ACTIVE:
+            warnings.append("CSRF confirmation requires --mode active — the CSRF pass did not run")
         technologies: tuple[Technology, ...] = ()
         async with HttpClient(target, self._config) as http:
             operations = await self._load_openapi(http, target, warnings)
@@ -137,6 +141,8 @@ class Orchestrator:
                 check_types, http, target, pages, forms, warnings
             )
             upload_hits = await self._scan_upload(check_types, http, target, pages, forms, warnings)
+            # Last: the one pass whose requests change server state (spec 017, ADR-6).
+            csrf_hits = await self._scan_csrf(check_types, http, target, pages, forms, warnings)
             context = ScanContext(
                 config=self._config,
                 target=target,
@@ -151,6 +157,7 @@ class Orchestrator:
                     injection_hits=injection_hits + stored_hits,
                     envelope_hits=envelope_hits,
                     upload_hits=upload_hits,
+                    csrf_hits=csrf_hits,
                 ),
             )
             findings, errors = await self._run_checks(check_types, context)
@@ -401,6 +408,48 @@ class Orchestrator:
             hits = await scanner.run()
         except Exception as exc:  # a pass bug must not abort the whole scan
             warnings.append(f"file-upload pass failed: {exc or type(exc).__name__}")
+            return ()
+        warnings.extend(scanner.warnings)
+        return tuple(hits)
+
+    async def _scan_csrf(
+        self,
+        check_types: Sequence[type[Check]],
+        http: HttpClient,
+        target: Target,
+        pages: tuple[Page, ...],
+        forms: tuple[Form, ...],
+        warnings: list[str],
+    ) -> tuple[CsrfHit, ...]:
+        """
+        Run the active CSRF confirmation pass when it is Active, selected, and opted in (spec 017).
+
+        A no-op returning ``()`` in Passive Mode, when ``[injection] csrf_confirm``
+        is off, or when ``csrf.form.token-not-enforced`` is not selected. A pass bug
+        is caught here and downgraded to a warning.
+
+        Args:
+            check_types (Sequence[type[Check]]): The checks selected for the run.
+            http (HttpClient): The shared, scope-guarded HTTP client.
+            target (Target): The normalized target.
+            pages (tuple[Page, ...]): The pages the crawler discovered.
+            forms (tuple[Form, ...]): The parsed ``<form>`` inventory.
+            warnings (list[str]): Scan-level warning list, appended to in place.
+
+        Returns:
+            tuple[CsrfHit, ...]: The forms the server accepted without a valid token.
+        """
+        if self._config.scan.mode is not ScanMode.ACTIVE:
+            return ()
+        if not self._config.injection.csrf_confirm:
+            return ()
+        if not any(check.id == _CSRF_CHECK_ID for check in check_types):
+            return ()
+        try:
+            scanner = CsrfScanner(http, target, self._config, pages, forms)
+            hits = await scanner.run()
+        except Exception as exc:  # a pass bug must not abort the whole scan
+            warnings.append(f"CSRF confirmation pass failed: {exc or type(exc).__name__}")
             return ()
         warnings.extend(scanner.warnings)
         return tuple(hits)
