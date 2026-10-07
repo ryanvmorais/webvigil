@@ -147,9 +147,13 @@ class ScanRunner:
         :meth:`stop` sets the flag and wakes it.
         """
         while not self._should_stop():
+            # Clear BEFORE looking at the queue: a ``wake()`` that lands while the claim is
+            # running (a scan enqueued right after the query saw an empty queue) then survives
+            # to the ``wait()`` below. Clearing after the claim erased it and left that scan
+            # QUEUED until the next scan was created.
+            self._event.clear()
             started = await self._start_next()
             if started is None:
-                self._event.clear()
                 if self._should_stop():
                     return
                 await self._event.wait()
