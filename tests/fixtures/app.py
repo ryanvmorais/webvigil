@@ -11,9 +11,10 @@ this URL" endpoints), spec 011 (a shell-backed ``/ping`` and a template-backed
 ``/greet``) and spec 012 (a CRLF ``/set-lang``, a host-header ``/reset``, an XML
 ``/api/xml`` and a ``/resource`` that advertises TRACE / PUT), spec 016 (three
 simulated expression-language sinks: ``/report`` SpEL, ``/banner`` OGNL, ``/rule``
-sandboxed SpEL) and spec 017 (a ``/panel`` page with four POST forms that accept or
+sandboxed SpEL), spec 017 (a ``/panel`` page with four POST forms that accept or
 reject a replay without the CSRF token: ``/newsletter``, ``/settings``, ``/transfer``,
-``/prefs``). The app is plain HTTP by nature, so the integration test disables
+``/prefs``) and spec 018 (a ``/support`` page whose POST forms answer pages nothing links to,
+plus a JSON ``POST /api/notes``). The app is plain HTTP by nature, so the integration test disables
 ``tls.https``; TLS cases live in the socket-based unit tests.
 
 The route handlers are one-liners with inline comments per spec; only
@@ -72,7 +73,9 @@ _INJECTION_LINKS = (
     '<a href="/banner?caption=hello">banner</a> '
     '<a href="/rule?cond=ok">rule</a> '
     # spec 017: a page of four POST forms for the active CSRF confirmation pass.
-    '<a href="/panel">panel</a>'
+    '<a href="/panel">panel</a> '
+    # spec 018: a page of three POST forms whose answers the crawler's POST phase follows.
+    '<a href="/support">support</a>'
 )
 # spec 013: the insecure index also carries a cross-origin script with no SRI, a session
 # token handed to a third-party link, and an internal IP in a comment — inlined here rather
@@ -980,6 +983,127 @@ def _csrf_route(
     return view
 
 
+# --- spec 018: the crawler's POST phase (RF-12) -------------------------------------
+#
+# ``/support`` carries three POST forms; each answers something a GET crawl never reaches.
+# ``/support/ticket`` answers a page with a link to ``/support/status`` (linked from nowhere
+# else), ``/support/callback`` is a multipart form that redirects to ``/support/received``
+# (reachable only through that redirect), and ``/support/feedback`` — whose hidden
+# ``format=xml`` default the crawler submits as served — answers an error page. In the
+# insecure profile that page is a stack trace with a cross-origin script that has no
+# ``integrity`` and a cookie with no flags; the hardened profile answers a plain ``400``.
+# ``POST /api/notes`` takes a JSON body (described by a document the integration test
+# writes to a temp path, so the shared ``/openapi.json`` of spec 013 stays as it is).
+# Every form carries a constant token so the passive CSRF check stays quiet, every answer
+# escapes what it echoes, and ``app.state.post_log`` records each post as
+# ``(route, content type, fields)`` so a test can count the writes and read what was sent.
+
+_SUPPORT_TOKEN = "supporttok"
+_SUPPORT_PAGE = (
+    "<!doctype html><html><body><h1>Support</h1>"
+    f'<form method="post" action="/support/ticket">'
+    f'<input type="hidden" name="csrf_token" value="{_SUPPORT_TOKEN}">'
+    '<input name="subject"><textarea name="message"></textarea></form>'
+    '<form method="post" action="/support/callback" enctype="multipart/form-data">'
+    f'<input type="hidden" name="csrf_token" value="{_SUPPORT_TOKEN}">'
+    '<input name="name"><input name="phone"></form>'
+    '<form method="post" action="/support/feedback">'
+    f'<input type="hidden" name="csrf_token" value="{_SUPPORT_TOKEN}">'
+    '<input type="hidden" name="format" value="xml"><input type="number" name="rating">'
+    '<input name="comment"></form>'
+    "</body></html>"
+)
+_SUPPORT_TRACE = (
+    "<!doctype html><html><body><h1>Internal Server Error</h1><pre>Traceback (most recent call "
+    'last):\n  File "/srv/app/support.py", line 42, in feedback\n    raise ValueError('
+    '"unsupported feedback format")\nValueError: unsupported feedback format</pre>'
+    '<script src="https://cdn.example.com/widget.js"></script></body></html>'
+)
+
+
+async def _log_post(request: Request, name: str) -> Request:
+    """
+    Args:
+        request (Request): The request being answered.
+        name (str): The route name to record.
+
+    Returns:
+        Request: ``request``, after appending ``(name, content type, fields)`` to
+            ``app.state.post_log`` — the body is parsed as a form, or as JSON for
+            ``application/json``.
+    """
+    kind = request.headers.get("content-type", "").split(";")[0].strip()
+    if kind == "application/json":
+        fields: dict[str, object] = dict(await request.json())
+    else:
+        fields = {key: str(value) for key, value in (await request.form()).items()}
+    request.app.state.post_log.append((name, kind, fields))
+    return request
+
+
+async def _support_ticket(request: Request) -> Response:
+    await _log_post(request, "ticket")
+    return HTMLResponse(
+        '<!doctype html><h1>Ticket received</h1><a href="/support/status">status</a>'
+    )
+
+
+async def _support_callback(request: Request) -> Response:
+    await _log_post(request, "callback")
+    return RedirectResponse("/support/received", status_code=302)
+
+
+async def _support_feedback_insecure(request: Request) -> Response:
+    await _log_post(request, "feedback")
+    raw = request.app.state.post_log[-1][2]
+    if raw.get("format") == "xml":
+        response = HTMLResponse(_SUPPORT_TRACE, status_code=500)
+        response.headers["set-cookie"] = "ticket=abc123; Path=/"
+        return response
+    return HTMLResponse("<!doctype html><p>Thanks</p>")
+
+
+async def _support_feedback_hardened(request: Request) -> Response:
+    await _log_post(request, "feedback")
+    if request.app.state.post_log[-1][2].get("format") == "xml":
+        return PlainTextResponse("Bad request", status_code=400)
+    return HTMLResponse("<!doctype html><p>Thanks</p>")
+
+
+def _support_guarded(
+    view: Callable[[Request], Awaitable[Response]],
+) -> Callable[[Request], Awaitable[Response]]:
+    """
+    Args:
+        view (Callable[[Request], Awaitable[Response]]): A ``/support`` form route.
+
+    Returns:
+        Callable[[Request], Awaitable[Response]]: ``view``, but a ``403`` unless the form
+            (urlencoded or multipart) carries the token it was served with — the hardened
+            profile enforces what it shows, so the CSRF confirmation (spec 017) finds nothing.
+    """
+
+    async def guarded(request: Request) -> Response:
+        if (await request.form()).get("csrf_token") != _SUPPORT_TOKEN:
+            return PlainTextResponse("Forbidden", status_code=403)
+        return await view(request)
+
+    return guarded
+
+
+async def _api_notes(request: Request) -> Response:
+    await _log_post(request, "notes")
+    return JSONResponse({"ok": True})
+
+
+_SUPPORT_ROUTES: tuple[tuple[str, Callable[..., object], list[str]], ...] = (
+    ("/support", _html(_SUPPORT_PAGE), ["GET"]),
+    ("/support/status", _html("<!doctype html><p>Ticket status: open</p>"), ["GET"]),
+    ("/support/received", _html("<!doctype html><p>Callback received</p>"), ["GET"]),
+    ("/api/notes", _api_notes, ["POST"]),
+)
+
+
 def _token_enforced(
     field: str, token: str, view: Callable[[Request], Awaitable[Response] | Response]
 ) -> Callable[[Request], Awaitable[Response]]:
@@ -1052,6 +1176,10 @@ _INJECTION_ROUTES = {
         ("/guestbook", _guestbook, ["GET", "POST"]),
         ("/guestbook/e/{i:int}", _guestbook_entry(escape=False), ["GET"]),
         ("/panel", _panel(newsletter_token=False), ["GET"]),
+        *_SUPPORT_ROUTES,
+        ("/support/ticket", _support_ticket, ["POST"]),
+        ("/support/callback", _support_callback, ["POST"]),
+        ("/support/feedback", _support_feedback_insecure, ["POST"]),
         (
             "/newsletter",
             _csrf_route("newsletter", "email", enforce_token=False, redirect=True),
@@ -1097,6 +1225,10 @@ _INJECTION_ROUTES = {
         ("/guestbook", _token_enforced("csrf_token", "gbtok", _guestbook), ["GET", "POST"]),
         ("/guestbook/e/{i:int}", _guestbook_entry(escape=True), ["GET"]),
         ("/panel", _panel(newsletter_token=True), ["GET"]),
+        *_SUPPORT_ROUTES,
+        ("/support/ticket", _support_guarded(_support_ticket), ["POST"]),
+        ("/support/callback", _support_guarded(_support_callback), ["POST"]),
+        ("/support/feedback", _support_guarded(_support_feedback_hardened), ["POST"]),
         (
             "/newsletter",
             _csrf_route("newsletter", "email", enforce_token=True, redirect=True),
@@ -1170,4 +1302,5 @@ def make_app(profile: str) -> Starlette:
     app.state.uploads = {}  # spec 014: reset per app
     app.state.root_uploads = {}
     app.state.csrf_log = []  # spec 017: reset per app
+    app.state.post_log = []  # spec 018: reset per app
     return app
