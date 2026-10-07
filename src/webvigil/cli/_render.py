@@ -71,6 +71,7 @@ def summary(
     cookie_count: int = 0,
     header_count: int = 0,
     login_user: str | None = None,
+    session_checks: str | None = None,
     osv_online: bool = False,
     file_upload: bool = False,
     confirm_csrf: bool = False,
@@ -91,6 +92,8 @@ def summary(
             for the authenticated-scan line. Defaults to 0.
         login_user (str | None): The ``[auth.login]`` account, for the login line (spec 019);
             the result itself never carries it. Defaults to ``None``.
+        session_checks (str | None): What the session-security pass was asked to do (spec 020).
+            Defaults to ``None``.
         osv_online (bool): Whether the OSV.dev lookup ran, for the advisory-
             sources line. Defaults to ``False``.
         file_upload (bool): Whether the spec-014 file-upload pass ran, for a
@@ -161,6 +164,9 @@ def summary(
         if header_count:
             parts.append(f"{header_count} header{'' if header_count == 1 else 's'}")
         _console.print(f"[dim]Authenticated scan: {' + '.join(parts)} supplied[/]")
+
+    if session_checks:
+        _console.print(f"[dim]Session checks: {session_checks}[/]")
 
     if meta.login is not None:
         as_user = f" as {login_user}" if login_user else ""

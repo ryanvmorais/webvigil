@@ -14,7 +14,8 @@ inspects a result the same one (issue #101: the suite used to run ``("insecure",
 * ``scan("insecure")`` — the passive baseline;
 * ``scan("insecure", **_ACTIVE)`` — the default Active scan, with the time-delay detectors on;
 * ``scan(profile, **_full(profile))`` — **every** switch on at once (stored XSS, XXE, file upload,
-  CSRF confirmation, POST crawl, an OpenAPI import, an automated login and a bearer header),
+  CSRF confirmation, POST crawl, an OpenAPI import, an automated login, session-id sampling,
+  the logout test and a bearer header),
   with the time-delay detectors off (issue #58: they decide on wall-clock time). The hardened twin
   of that scan is the "reports nothing" check for every spec at once;
 * ``scan("hardened", ..., login=True, session_ttl=2)`` — the one extra scan of spec 019: the
@@ -81,6 +82,8 @@ def _full(profile: str) -> dict[str, object]:
         "time_based": False,
         "openapi": _OPENAPI_URL,
         "login": True,
+        "sample_sessions": True,
+        "test_logout": True,
         "headers": [_BEARER],
         **_OPT_INS,
     }
@@ -176,7 +179,8 @@ def scan(monkeypatch: pytest.MonkeyPatch):
     """Yield an ``async`` runner that scans the fixture app for a given profile.
 
     The returned callable takes the profile name plus optional ``probe`` / ``active`` /
-    ``cookies`` / ``headers`` / ``login`` / ``session_ttl`` / ``stored_xss`` / ``xxe`` /
+    ``cookies`` / ``headers`` / ``login`` / ``session_ttl`` / ``sample_sessions`` /
+    ``test_logout`` / ``stored_xss`` / ``xxe`` /
     ``file_upload`` / ``confirm_csrf`` / ``post_forms`` / ``openapi`` / ``osv_online`` /
     ``osv_up`` / ``time_based`` switches,
     assembles the :class:`ScanConfig`, points the engine's HTTP client (and, for OSV, its
@@ -200,6 +204,8 @@ def scan(monkeypatch: pytest.MonkeyPatch):
         headers: list[str] | None,
         login: bool,
         session_ttl: int | None,
+        sample_sessions: bool,
+        test_logout: bool,
         stored_xss: bool,
         xxe: bool,
         file_upload: bool,
@@ -253,6 +259,8 @@ def scan(monkeypatch: pytest.MonkeyPatch):
             raw["scan"] = {**raw["scan"], "openapi": openapi}  # type: ignore[dict-item]
         if cookies is not None or headers is not None:
             raw["auth"] = {"cookies": cookies or [], "headers": headers or []}
+        if sample_sessions or test_logout:
+            raw["session"] = {"sample_ids": sample_sessions, "test_logout": test_logout}
         if login:
             # the password comes in as Credentials, never through the config (spec 019, ADR-8)
             raw["auth"] = {
@@ -287,6 +295,8 @@ def scan(monkeypatch: pytest.MonkeyPatch):
         headers: list[str] | None = None,
         login: bool = False,
         session_ttl: int | None = None,
+        sample_sessions: bool = False,
+        test_logout: bool = False,
         stored_xss: bool = False,
         xxe: bool = False,
         file_upload: bool = False,
@@ -304,6 +314,8 @@ def scan(monkeypatch: pytest.MonkeyPatch):
             "headers": headers,
             "login": login,
             "session_ttl": session_ttl,
+            "sample_sessions": sample_sessions,
+            "test_logout": test_logout,
             "stored_xss": stored_xss,
             "xxe": xxe,
             "file_upload": file_upload,
@@ -899,6 +911,49 @@ async def test_a_passive_scan_with_a_login_sends_no_login_request(scan) -> None:
     assert scan.holder["app"].state.login_log == []
     assert any("login requires --mode active" in w for w in result.warnings)
     assert result.metadata.login is None and result.metadata.authenticated is False
+
+
+_SESSION_CHECKS = {
+    "session.id.weak",
+    "session.fixation",
+    "session.logout.not-invalidated",
+}
+
+
+async def test_session_checks_find_the_three_weaknesses_of_the_insecure_app(scan) -> None:
+    """Weak ids, a fixed session and a logout that does not end it, each naming the cookie only."""
+    result = await scan("insecure", **_full("insecure"))
+    found = {f.check_id: f for f in result.findings if f.check_id in _SESSION_CHECKS}
+    assert set(found) == _SESSION_CHECKS
+    assert {f.location.cookie for f in found.values()} == {"session"}
+    assert found["session.id.weak"].confidence.name == "HIGH"  # the sampled visits repeated an id
+
+    app = scan.holder["app"]
+    values = {*app.state.sessions, *app.state.expired, "abc123"}
+    for finding in found.values():
+        text = finding.model_dump_json()
+        assert not any(value in text for value in values), finding.check_id
+
+
+async def test_the_logout_test_runs_last_and_no_login_follows_it(scan) -> None:
+    """Right after the logout: the redirect it follows, the anonymous replay, and no re-login."""
+    await scan("insecure", **_full("insecure"))
+    log = _log(scan)
+    logout = max(i for i, entry in enumerate(log) if entry.startswith("GET /logout?"))
+    assert log[logout + 1 : logout + 3] == ["GET /?", "GET /account?"]  # the redirect, the replay
+    # the session was closed on purpose: nothing logs in again (the checks that still run, such as
+    # the CORS probe, make their own unauthenticated requests)
+    assert not any("/signin" in entry for entry in log[logout:])
+    assert scan.holder["app"].state.logout_log == [True]
+
+
+async def test_the_hardened_app_passes_every_session_check(scan) -> None:
+    """Long random ids, a new id at login and a server-side logout: nothing to report."""
+    result = await scan("hardened", **_full("hardened"))
+    assert not [f for f in result.findings if f.check_id in _SESSION_CHECKS]
+    app = scan.holder["app"]
+    assert app.state.logout_log == [True] and app.state.expired  # the logout really ended it
+    assert not any("session" in w and "skipped" in w for w in result.warnings)
 
 
 async def test_secrets_never_appear_in_any_report(scan) -> None:

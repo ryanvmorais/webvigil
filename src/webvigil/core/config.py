@@ -155,6 +155,9 @@ class LoginSection(_Section):
             logged-out page. Defaults to ``None``.
         check_url (str | None): An in-scope URL that answers differently when logged out.
             Defaults to ``None``.
+        logout_url (str | None): The logout endpoint for the logout test (spec 020), requested
+            with ``GET``. Without it the test looks for a logout link or form in the crawl.
+            Defaults to ``None``.
         max_relogins (int): Re-authentications allowed per scan, failed ones included.
             Defaults to 3.
     """
@@ -169,6 +172,7 @@ class LoginSection(_Section):
     logged_in_marker: str | None = None
     logged_out_marker: str | None = None
     check_url: str | None = None
+    logout_url: str | None = None
     max_relogins: int = Field(default=3, ge=0, le=10)
 
     @model_validator(mode="before")
@@ -463,6 +467,27 @@ class DepsSection(_Section):
     osv_base_url: str = "https://api.osv.dev"
 
 
+class SessionSection(_Section):
+    """
+    The ``[session]`` table: the session-security checks (spec 020).
+
+    ``sample_ids`` sends ``sample_count`` anonymous ``GET`` requests of the entry URL (no cookie,
+    no carried state) to judge the ids the target issues; it is ``GET``-only, so it is allowed in
+    any mode. ``test_logout`` logs out and replays the old session, which ends the session the
+    scan used, so it needs Active Mode and a login and runs last.
+
+    Attributes:
+        sample_ids (bool): Sample fresh anonymous session ids. Defaults to ``False``.
+        sample_count (int): How many anonymous visits to sample, 3 to 20. Defaults to 10.
+        test_logout (bool): Test that a logout invalidates the session. Defaults to
+            ``False``.
+    """
+
+    sample_ids: bool = False
+    sample_count: int = Field(default=10, ge=3, le=20)
+    test_logout: bool = False
+
+
 class ScanConfig(_Section):
     """
     The whole configuration for one scan.
@@ -477,6 +502,7 @@ class ScanConfig(_Section):
         disclosure (DisclosureSection): Information-disclosure probing.
         injection (InjectionSection): Active-injection tuning.
         deps (DepsSection): Dependency-fingerprint tuning.
+        session (SessionSection): The session-security checks (spec 020).
         web (dict[str, Any] | None): Passthrough for the Web API's ``[web]``
             table so one ``webvigil.toml`` serves both tools. The engine and
             CLI never read it; ``webvigil.api`` parses it into its own strict
@@ -492,6 +518,7 @@ class ScanConfig(_Section):
     disclosure: DisclosureSection = DisclosureSection()
     injection: InjectionSection = InjectionSection()
     deps: DepsSection = DepsSection()
+    session: SessionSection = SessionSection()
     web: dict[str, Any] | None = None
 
     @classmethod
@@ -550,7 +577,7 @@ class ScanConfig(_Section):
         Args:
             **sections (dict[str, Any]): Maps a section name (``scan``,
                 ``http``, ``report``, ``active``, ``auth``, ``checks``,
-                ``disclosure``, ``injection``, ``deps``) to a dict of the
+                ``disclosure``, ``injection``, ``deps``, ``session``) to a dict of the
                 fields to override. ``scan`` covers spec 013's ``openapi``;
                 ``auth`` covers spec 013's ``headers``; ``injection`` covers
                 spec 006 tuning plus spec 008's ``stored_xss``, spec 011's

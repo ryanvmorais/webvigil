@@ -146,6 +146,58 @@ token logins (`POST /api/login` returning a bearer token), registration or passw
 For those, keep pasting a cookie or a `--header`. The crawl and the Active passes still skip
 login, logout and password forms; the Authenticator is the only thing that logs in.
 
+### Session-security checks
+
+Spec [`020-session-security`](../specs/020-session-security/). Three checks on the session
+itself, not on the attributes of its cookie (`http.cookies.flags` owns those) or an id in a URL
+(`disclosure.session-id-in-url`). A cookie is a session id by its **name** (`session`, `sid`,
+`auth`, `token`, and the framework names `JSESSIONID`, `PHPSESSID`, `connect.sid`…); a JWT-shaped
+value is skipped, because it is a signed document and not a random id. The checks never guess or
+try an id against the target, and **no finding, evidence item, warning or report ever carries a
+cookie value, a prefix or a hash of one**: the evidence is the cookie's name, its length, its
+alphabet, an estimated number of bits and the rule that fired.
+
+| Check | Needs | Switch |
+|---|---|---|
+| `session.id.weak` | the cookies the crawl saw (no request); with sampling, a few fresh visits | none; `--sample-sessions` / `[session] sample_ids` for sampling (`GET`-only, any mode) |
+| `session.fixation` | a login (spec 019) | none beyond the login: Active Mode and `[auth.login]` |
+| `session.logout.not-invalidated` | a login and a logout endpoint | `--test-logout` / `[session] test_logout`, Active Mode only |
+
+**Weak or predictable ids** (`session.id.weak`, CWE-330/331/340). Each cookie name is judged once,
+on the first value the crawl saw. The rules measure the *capacity* of the alphabet the id uses, so
+a finding means "this cannot be good", never "this is a bit short of ideal": shorter than 16
+characters, fewer than 64 bits even at the alphabet's full capacity (16 lower-case hex characters
+pass), digits only, one character or block repeated, a small number (a counter) or an epoch
+timestamp. With `--sample-sessions` the entry URL is visited `sample_count` times (default 10,
+3 to 20), **each with no cookie and no carried state**, and the series is judged too: two visits
+that got the same id, consecutive numbers, ids that grow like timestamps, most characters equal
+in every visit. A target that issues no session cookie to an anonymous visit earns a warning, not
+a finding. Severity is `HIGH` for the structural rules and a repeated or sequential series,
+`MEDIUM` for the length and entropy floors alone.
+
+**Session fixation** (`session.fixation`, CWE-384). The automated login already holds the cookies of
+the login page (what an attacker's pre-login visit has) and of the account. A session-looking cookie
+that is the **same** in both is a candidate: the server kept the id it gave an anonymous visitor and
+made it the authenticated session. One request confirms it is what authenticates: the login's
+reference page (`check_url`, else the page the login landed on) is fetched with the session minus
+that cookie; if the page now looks logged out the finding is raised (high confidence), and if it
+still answers as logged in the cookie was unrelated (a tracking id) and nothing is reported. With no
+reference page, or a login that could not be confirmed, the finding is medium confidence and its
+evidence says it was not verified. At most three candidates are confirmed.
+
+**Logout that does not invalidate** (`session.logout.not-invalidated`, CWE-613). With `--test-logout`
+the scan takes the logout from `[auth.login] logout_url` (or `--logout-url`), else the first logout
+link, else the first `POST` logout form of the crawl; it does not guess `/logout`. It first checks
+that an **anonymous** visit to the reference page looks logged out (otherwise "the old session still
+works" would prove nothing and the test is skipped with a warning), snapshots the session cookies,
+requests the logout once with the live session, and replays the snapshot **without the session
+jar**. A page that still answers as logged in is the finding. This is the last pass of the scan and
+it ends the session WebVigil itself created, so no re-login follows it.
+
+Skipped tests (no logout endpoint, a public reference page, a failing logout request, no login) are
+warnings, never findings. The summary prints one line, e.g. `Session checks: 10 ids sampled,
+fixation checked, logout tested`.
+
 ### Session-safe crawling
 
 An authenticated crawl can *actually* log you out or *actually* delete something, where an
@@ -319,9 +371,6 @@ confirmation:
 
 ## What is deferred
 
-- **Session-security checks** — session fixation, session not invalidated on logout,
-  weak/predictable session ids. They build on the automated login (spec 019) and are a spec
-  of their own (issue #53).
 - **JSON / token logins** (`POST /api/login` returning a bearer token), CAPTCHA, MFA and
   delegated (SSO) logins — the automated login handles form logins only.
 - **Parameter mining**, JSON bodies that do not come from an OpenAPI document, and forms

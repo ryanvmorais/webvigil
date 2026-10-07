@@ -115,4 +115,5 @@ dependency fingerprint), `011-rce-injection` (command injection, SSTI),
 (header auth, OpenAPI import, SRI / mixed-content / session-id-in-URL / private-IP checks),
 `014-file-upload` (LDAP / XPath / SSI injection, file upload), `015-web-toolchain-modernization`
 (Node 24, Tailwind 4, Next 16) and `016-el-injection` (expression-language injection) and `017-csrf-confirmation` (active
-CSRF confirmation) and `018-post-form-crawl` (the crawler's opt-in `POST` phase).
+CSRF confirmation) and `018-post-form-crawl` (the crawler's opt-in `POST` phase) and `019-automated-login`
+(form login with re-login) and `020-session-security` (weak ids, fixation, logout).

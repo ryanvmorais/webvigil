@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from urllib.parse import urlencode, urlsplit
 
@@ -72,6 +73,25 @@ class Credentials:
                 f"no password for the login: set the environment variable {env_name}"
             )
         return cls(username=username, password=password)
+
+
+@dataclass(frozen=True, slots=True)
+class CookieTransition:
+    """
+    The cookies across one login (spec 020, ADR-3): what an attacker's pre-login visit holds,
+    and what the account holds afterwards. The session-fixation check compares the two.
+
+    The values are secrets: they stay in memory, are never serialised or logged, and the
+    findings built from them carry names and numbers only.
+
+    Attributes:
+        pre (Mapping[str, str]): ``name -> value`` after the ``GET`` of the login page.
+        post (Mapping[str, str]): ``name -> value`` after the ``POST`` and its redirect chain,
+            before the commit.
+    """
+
+    pre: Mapping[str, str]
+    post: Mapping[str, str]
 
 
 @dataclass(frozen=True, slots=True)
@@ -138,6 +158,8 @@ class Authenticator:
         # reference for "is the session really gone?" when no check_url is configured
         self._landing: str | None = None
         self._candidate_landing: str | None = None
+        self.transition: CookieTransition | None = None
+        self._candidate_transition: CookieTransition | None = None
         self.session = Session(
             jar=SessionJar(target.host),
             is_login_url=self.is_login_url,
@@ -147,6 +169,15 @@ class Authenticator:
             confirm_dropped=self.confirm_dropped,
             secrets=[credentials.password],
         )
+
+    @property
+    def reference_url(self) -> str | None:
+        """
+        Returns:
+            str | None: A page that answers differently when logged out: ``check_url``, else
+                the page the last login landed on, else ``None`` (before any login).
+        """
+        return self._login.check_url or self._landing
 
     def is_login_url(self, url: str) -> bool:
         """
@@ -180,6 +211,7 @@ class Authenticator:
         except (OutOfScopeError, RequestFailed) as exc:
             raise LoginFailedError(f"the login request failed: {exc}") from exc
         self._landing = self._candidate_landing
+        self.transition = self._candidate_transition
         self.session.committed()
         return result
 
@@ -210,7 +242,7 @@ class Authenticator:
             bool: ``True`` when the session looks dropped; also when there is no reference
                 page to ask.
         """
-        reference = self._login.check_url or self._landing
+        reference = self.reference_url
         if reference is None:
             return True
         async with self._http.quiet():
@@ -252,6 +284,7 @@ class Authenticator:
                 f"the login page {_safe(page.url)} answered {page.status_code}"
                 f"{'' if page.is_html else ' without HTML'}"
             )
+        pre_login = dict(self.session.jar.pending_items())
         form = self._pick_form(page)
         self._check_gate(form.action, "the login form action")
         user_field, password_field = self._pick_fields(form)
@@ -279,6 +312,9 @@ class Authenticator:
             and self._target.in_scope(response.url)
         )
         self._candidate_landing = response.url if ends_on_a_page else None
+        self._candidate_transition = CookieTransition(
+            pre=pre_login, post=dict(self.session.jar.pending_items())
+        )
         return await self._verify(response, before)
 
     def _check_delegated(self, response: Response) -> None:
@@ -459,4 +495,4 @@ class Authenticator:
         return LoginResult(confirmed=bool(new_cookie))
 
 
-__all__ = ["Authenticator", "Credentials", "LoginResult"]
+__all__ = ["Authenticator", "CookieTransition", "Credentials", "LoginResult"]

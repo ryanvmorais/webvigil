@@ -76,16 +76,16 @@ async def test_the_form_token_is_enforced(profile: str) -> None:
 
 
 @pytest.mark.parametrize("profile", ["insecure", "hardened"])
-async def test_a_right_login_redirects_through_a_chain_and_sets_the_session_first(
-    profile: str,
-) -> None:
-    """The session cookie rides the first hop; the chain ends on ``/account`` with the cookie."""
+async def test_a_right_login_redirects_through_a_chain_ending_on_the_account(profile: str) -> None:
+    """POST -> /signin/done -> /account; the hardened app sets the session on the first hop."""
     app = make_app(profile)
     async with _client(app) as client:
         first = await _login(client)
         assert first.status_code == 302 and first.headers["location"] == "/signin/done"
-        assert any("session" in c for c in first.headers.get_list("set-cookie"))
+        sets_a_session = any("session" in c for c in first.headers.get_list("set-cookie"))
         final = await client.get("/signin/done", follow_redirects=True)
+    # spec 020: the insecure app keeps the id it gave the anonymous visitor (fixation)
+    assert sets_a_session is (profile == "hardened")
     assert final.status_code == 200 and final.url.path == "/account"
     assert app.state.login_log == ["ok"]
 

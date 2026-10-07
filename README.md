@@ -17,7 +17,7 @@ and **in production** (non-intrusive checks that are safe to run against live sy
 WebVigil ships as a reusable **scan engine**, a **CLI**, and an optional **web dashboard**
 built on top of the same engine.
 
-> **Status:** the planned coverage roadmap (`v0.1`–`v0.19`) is complete. The CLI, config,
+> **Status:** the planned coverage roadmap (`v0.1`–`v0.20`) is complete. The CLI, config,
 > and report formats have been stable across the last several milestones; there is no
 > `1.0` package tag yet. See [Scope and limitations](#scope-and-limitations) for what
 > WebVigil deliberately does not do.
@@ -82,12 +82,14 @@ shipped and links to its docs; each was designed as a spec first, under
 | `v0.17` | Active Mode: opt-in CSRF confirmation (`--confirm-csrf`) — each state-changing form is submitted as a control and as cross-site-shaped replays (foreign `Origin`, token removed or altered), and reported only when the server accepts the replay ([docs](docs/authenticated-scanning.md#active-csrf-confirmation----confirm-csrf-opt-in)) | shipped |
 | `v0.18` | Active Mode: opt-in `POST` crawling (`--submit-post-forms`) — the crawler submits candidate forms (urlencoded, multipart without a file) and `--openapi` `POST` operations once with benign values, reads each answer as a page, and follows what it links to ([docs](docs/authenticated-scanning.md#post-forms----submit-post-forms-opt-in)) | shipped |
 | `v0.19` | Active Mode: automated login (`--login-url`, `--username`, `--password-env`) — WebVigil finds the login form, submits the account once, keeps the session and logs in again when it drops; the password only ever comes from the environment or a prompt ([docs](docs/authenticated-scanning.md#automated-login----login-url-opt-in)) | shipped |
+| `v0.20` | Session-security checks: `session.id.weak` (short, low-entropy, numeric, counter, timestamp or repeated ids, plus opt-in anonymous sampling with `--sample-sessions`), `session.fixation` (the session id survives the login, confirmed with one request) and `session.logout.not-invalidated` (`--test-logout`, Active Mode). Findings name the cookie and never carry a value ([docs](docs/authenticated-scanning.md#session-security-checks)) | shipped |
 
-> The eight opt-in switches, all off by default: `--probe` (sensitive-path probing),
+> The ten opt-in switches, all off by default: `--probe` (sensitive-path probing),
 > `--stored-xss`, `--file-upload`, `--confirm-csrf` and `--submit-post-forms` (all write to
 > the target), `--xxe` (re-types POST bodies as XML), `--osv-online` (sends library names to
-> `api.osv.dev`), and `--login-url` (a real login request with the account you give it;
-> Active Mode only). Everything else only reads.
+> `api.osv.dev`), `--login-url` (a real login request with the account you give it; Active Mode only),
+> `--sample-sessions` (a few cookie-less `GET`s of the entry URL) and `--test-logout` (ends the
+> scan's own session; Active Mode only). Everything else only reads.
 
 ---
 
@@ -122,9 +124,9 @@ to reach for instead.
 - **Authentication.** WebVigil authenticates with a **static** cookie (`--cookie`) or
   header (`--header`) you supply, or — in Active Mode — logs in to a **form** itself
   (`--login-url`) and re-logs in when the session drops. It does not drive CAPTCHA, MFA,
-  an SSO / OAuth flow or a JSON token login, and it does not test session security
-  (fixation, logout invalidation, weak session identifiers). *Instead:* log in with your
-  browser and paste the session cookie. See
+  an SSO / OAuth flow or a JSON token login. It checks session security (weak ids,
+  fixation, a logout that does not invalidate) but never guesses an id. *Instead:* log in
+  with your browser and paste the session cookie. See
   [authenticated scanning](docs/authenticated-scanning.md).
 
 - **Not a template scanner.** There is no Nuclei-style CVE-template database, no CMS or
@@ -165,6 +167,9 @@ uv run webvigil scan https://example.com --mode active --authorized-by me --cook
 uv run webvigil scan https://example.com --cookie "session=<paste from your browser>"      # authenticated scan
 WEBVIGIL_LOGIN_PASSWORD=... uv run webvigil scan https://example.com --mode active --authorized-by me \
   --login-url https://example.com/signin --username scanner@example.com                    # log in by itself
+uv run webvigil scan https://example.com --sample-sessions                                 # also judge fresh anonymous session ids (GET-only)
+WEBVIGIL_LOGIN_PASSWORD=... uv run webvigil scan https://example.com --mode active --authorized-by me \
+  --login-url https://example.com/signin --username scanner@example.com --test-logout      # + logout test (ends the scan's own session)
 uv run webvigil scan https://example.com --openapi ./openapi.json                          # seed the scan from an API schema
 uv run webvigil scan https://example.com --osv-online                                      # also check libraries against OSV.dev
 uv run webvigil list-checks

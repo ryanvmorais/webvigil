@@ -269,3 +269,34 @@ def test_the_login_password_never_enters_the_config_dump() -> None:
     cfg = ScanConfig.model_validate({"auth": {"login": {"url": "http://x/s", "username": "u"}}})
     assert "password" not in cfg.model_dump()["auth"]["login"]
     assert "password_env" in cfg.model_dump()["auth"]["login"]
+
+
+# ---------------------------------------------------------------------------
+# The [session] section and [auth.login] logout_url (spec 020)
+# ---------------------------------------------------------------------------
+
+
+def test_session_section_defaults_ranges_and_round_trip(tmp_path: Path) -> None:
+    """``[session]`` defaults to everything off, 10 samples, and keeps its range at 3..20."""
+    defaults = ScanConfig().session
+    assert (defaults.sample_ids, defaults.sample_count, defaults.test_logout) == (False, 10, False)
+
+    toml = "[session]\nsample_ids = true\nsample_count = 5\ntest_logout = true\n"
+    loaded = ScanConfig.load(_write(tmp_path, toml)).session
+    assert (loaded.sample_ids, loaded.sample_count, loaded.test_logout) == (True, 5, True)
+
+    for bad in ("sample_count = 2", "sample_count = 21", "sample_count = 0", "nope = 1"):
+        with pytest.raises(ConfigError):
+            ScanConfig.load(_write(tmp_path, f"[session]\n{bad}\n"))
+
+
+def test_the_login_table_takes_a_logout_url(tmp_path: Path) -> None:
+    """``[auth.login] logout_url`` is optional and round-trips."""
+    toml = "[auth.login]\nurl = 'http://x/in'\nusername = 'u'\nlogout_url = 'http://x/out'\n"
+    assert ScanConfig.load(_write(tmp_path, toml)).auth.login.logout_url == "http://x/out"  # type: ignore[union-attr]
+    assert (
+        ScanConfig.model_validate(
+            {"auth": {"login": {"url": "http://x/in", "username": "u"}}}
+        ).auth.login.logout_url
+        is None
+    )  # type: ignore[union-attr]

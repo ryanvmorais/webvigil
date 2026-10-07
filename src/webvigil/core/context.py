@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     from webvigil.checks.disclosure.probe import ProbeHit
     from webvigil.checks.envelope.scanner import EnvelopeHit
     from webvigil.checks.injection.models import InjectionHit
+    from webvigil.checks.session.scanner import SessionHit
     from webvigil.checks.upload.scanner import UploadHit
     from webvigil.crawler.forms import Form
     from webvigil.http.client import HttpClient, RedirectHop, Response
@@ -199,6 +200,8 @@ class Observations:
             pass (spec 014). Defaults to empty.
         csrf_hits (tuple[CsrfHit, ...]): Forms the active CSRF confirmation pass
             (spec 017) saw accepted without a valid token. Defaults to empty.
+        session_hits (tuple[SessionHit, ...]): What the session-security pass observed
+            (spec 020); the ``session.*`` checks turn each into a finding.
         warnings (list[str]): Non-fatal notices a check wants surfaced on the
             result. Defaults to empty.
     """
@@ -210,6 +213,7 @@ class Observations:
     envelope_hits: tuple[EnvelopeHit, ...] = ()
     upload_hits: tuple[UploadHit, ...] = ()
     csrf_hits: tuple[CsrfHit, ...] = ()
+    session_hits: tuple[SessionHit, ...] = ()
     _technologies: dict[tuple[str, str | None], Technology] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
 

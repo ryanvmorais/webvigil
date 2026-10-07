@@ -17,6 +17,12 @@ import pytest
 
 from webvigil.auth.login import Credentials, LoginResult
 from webvigil.checks.base import Check
+from webvigil.checks.session.checks import (
+    LogoutNotInvalidatedCheck,
+    SessionFixationCheck,
+    WeakSessionIdCheck,
+)
+from webvigil.checks.session.scanner import SessionHit
 from webvigil.core import orchestrator as orch_mod
 from webvigil.core.config import ScanConfig
 from webvigil.core.context import Page, ScanContext
@@ -345,3 +351,138 @@ async def test_the_password_a_target_reflected_is_scrubbed_from_the_result(
 
     assert _PASSWORD not in result.model_dump_json()
     assert result.findings[0].description == "the page echoed [redacted]"
+
+
+# ---------------------------------------------------------------------------
+# The session-security pass (spec 020)
+# ---------------------------------------------------------------------------
+
+
+class _StubSessionScanner:
+    """A ``SessionScanner`` stand-in: records its arguments and returns canned hits."""
+
+    built: ClassVar[list[dict[str, object]]] = []
+    hits: ClassVar[list[SessionHit]] = []
+    warnings_to_add: ClassVar[list[str]] = []
+    boom: ClassVar[bool] = False
+
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        type(self).built.append({"args": args, **kwargs})
+        self.warnings: list[str] = list(type(self).warnings_to_add)
+
+    async def run(self) -> list[SessionHit]:
+        if type(self).boom:
+            raise RuntimeError("kaboom")
+        return list(type(self).hits)
+
+
+@pytest.fixture
+def _stub_session_scanner(monkeypatch: pytest.MonkeyPatch) -> type[_StubSessionScanner]:
+    """Swap the orchestrator's ``SessionScanner`` and reset what it records."""
+    _StubSessionScanner.built = []
+    _StubSessionScanner.hits = []
+    _StubSessionScanner.warnings_to_add = []
+    _StubSessionScanner.boom = False
+    monkeypatch.setattr(orch_mod, "SessionScanner", _StubSessionScanner)
+    return _StubSessionScanner
+
+
+_WEAK_HIT = SessionHit(
+    kind="weak",
+    name="session",
+    url=_TARGET,
+    severity=Severity.MEDIUM,
+    confidence=Confidence.MEDIUM,
+    rule="short",
+    facts=(("length", "6"),),
+)
+
+
+async def test_the_session_pass_feeds_the_session_checks(
+    _stub_session_scanner: type[_StubSessionScanner],
+) -> None:
+    """A selected ``session.*`` check gets the pass's hits and reports them."""
+    _stub_session_scanner.hits = [_WEAK_HIT]
+    _stub_session_scanner.warnings_to_add = ["session sampling: nothing issued"]
+
+    result = await Orchestrator(ScanConfig(), check_types=[WeakSessionIdCheck]).run(_TARGET)
+
+    assert [f.check_id for f in result.findings] == ["session.id.weak"]
+    assert "session sampling: nothing issued" in result.warnings
+    assert _stub_session_scanner.built[0]["kinds"] == frozenset({"weak"})
+
+
+async def test_the_pass_does_not_run_when_no_session_check_is_selected(
+    _stub_session_scanner: type[_StubSessionScanner],
+) -> None:
+    """Without a ``session.*`` check the scanner is never built."""
+    await Orchestrator(ScanConfig(), check_types=[PassiveOne]).run(_TARGET)
+    assert _stub_session_scanner.built == []
+
+
+async def test_the_logout_step_needs_the_switch_even_when_its_check_is_selected(
+    _stub_session_scanner: type[_StubSessionScanner],
+) -> None:
+    """``test_logout`` off: the pass is asked for fixation only."""
+    config = ScanConfig.model_validate(
+        {"scan": {"mode": "active"}, "active": {"authorized_by": "Jane / #7"}}
+    )
+    checks = [SessionFixationCheck, LogoutNotInvalidatedCheck]
+    await Orchestrator(config, check_types=checks).run(_TARGET)
+    assert _stub_session_scanner.built[0]["kinds"] == frozenset({"fixation"})
+
+    config = config.with_overrides(session={"test_logout": True})
+    await Orchestrator(config, check_types=checks).run(_TARGET)
+    assert _stub_session_scanner.built[1]["kinds"] == frozenset({"fixation", "logout"})
+
+
+async def test_a_session_pass_bug_becomes_a_warning(
+    _stub_session_scanner: type[_StubSessionScanner],
+) -> None:
+    """A pass that raises costs a warning, not the scan."""
+    _stub_session_scanner.boom = True
+    result = await Orchestrator(ScanConfig(), check_types=[WeakSessionIdCheck]).run(_TARGET)
+    assert result.findings == ()
+    assert any("session checks failed: kaboom" in w for w in result.warnings)
+
+
+async def test_the_session_pass_runs_after_the_csrf_pass(
+    _stub_session_scanner: type[_StubSessionScanner], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Last: the logout test ends the session, so nothing may run after it."""
+    order: list[str] = []
+
+    async def csrf(self: object, *_a: object, **_k: object) -> tuple[()]:
+        order.append("csrf")
+        return ()
+
+    class _Recording(_StubSessionScanner):
+        async def run(self) -> list[SessionHit]:
+            order.append("session")
+            return []
+
+    monkeypatch.setattr(Orchestrator, "_scan_csrf", csrf)
+    monkeypatch.setattr(orch_mod, "SessionScanner", _Recording)
+    await Orchestrator(ScanConfig(), check_types=[WeakSessionIdCheck]).run(_TARGET)
+    assert order == ["csrf", "session"]
+
+
+_ACTIVE_RAW = {"scan": {"mode": "active"}, "active": {"authorized_by": "x"}}
+
+
+@pytest.mark.parametrize(
+    ("raw", "warned"),
+    [
+        ({"session": {"test_logout": True}}, True),  # Passive
+        ({**_ACTIVE_RAW, "session": {"test_logout": True}}, True),  # Active but no login
+        (_ACTIVE_RAW, False),
+    ],
+)
+async def test_the_logout_test_warns_when_its_preconditions_are_missing(
+    _stub_session_scanner: type[_StubSessionScanner], raw: dict[str, object], warned: bool
+) -> None:
+    """``test_logout`` outside Active Mode, or without a login, says it did not run."""
+    result = await Orchestrator(ScanConfig.model_validate(raw), check_types=[PassiveOne]).run(
+        _TARGET
+    )
+    assert any("logout test requires" in w for w in result.warnings) is warned

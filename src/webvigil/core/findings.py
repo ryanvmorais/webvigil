@@ -93,6 +93,8 @@ class Category(StrEnum):
             (Subresource Integrity, mixed content).
         UPLOAD (str): How the application handles an uploaded file (its type,
             its content, and where it is served back from).
+        SESSION (str): Session management: how session ids are issued, kept across
+            a login and ended by a logout (spec 020).
     """
 
     HEADERS = "HEADERS"
@@ -106,6 +108,7 @@ class Category(StrEnum):
     HTTP = "HTTP"
     CONTENT = "CONTENT"
     UPLOAD = "UPLOAD"
+    SESSION = "SESSION"
 
 
 class ScanMode(StrEnum):

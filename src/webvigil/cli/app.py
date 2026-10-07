@@ -203,6 +203,35 @@ def scan(
             ),
         ),
     ] = None,
+    sample_sessions: Annotated[
+        bool | None,
+        typer.Option(
+            "--sample-sessions/--no-sample-sessions",
+            help=(
+                "Visit the entry URL a few times with no cookie and judge the session ids the "
+                "target issues (duplicates, counters, timestamps). GET-only, so allowed in any "
+                "mode. Off by default."
+            ),
+        ),
+    ] = None,
+    test_logout: Annotated[
+        bool | None,
+        typer.Option(
+            "--test-logout/--no-test-logout",
+            help=(
+                "Log out and replay the old session to see whether the server still accepts "
+                "it. Ends the session the scan used, so it runs last; Active Mode and a login "
+                "only. Off by default."
+            ),
+        ),
+    ] = None,
+    logout_url: Annotated[
+        str | None,
+        typer.Option(
+            "--logout-url",
+            help="The logout endpoint for --test-logout (else a logout link or form of the crawl).",
+        ),
+    ] = None,
     openapi: Annotated[
         str | None,
         typer.Option(
@@ -253,6 +282,9 @@ def scan(
             login_url=login_url,
             username=username,
             password_env=password_env,
+            logout_url=logout_url,
+            sample_sessions=sample_sessions,
+            test_logout=test_logout,
             openapi=openapi,
             osv_online=osv_online,
         )
@@ -281,6 +313,7 @@ def scan(
         cookie_count=len(cfg.auth.cookies),
         header_count=len(cfg.auth.headers),
         login_user=cfg.auth.login.username if cfg.auth.login else None,
+        session_checks=_session_summary(cfg),
         osv_online=cfg.deps.osv_online,
         file_upload=cfg.injection.file_upload and cfg.scan.mode is ScanMode.ACTIVE,
         confirm_csrf=cfg.injection.csrf_confirm and cfg.scan.mode is ScanMode.ACTIVE,
@@ -355,6 +388,9 @@ def _build_config(
     login_url: str | None,
     username: str | None,
     password_env: str | None,
+    logout_url: str | None,
+    sample_sessions: bool | None,
+    test_logout: bool | None,
     openapi: str | None,
     osv_online: bool | None,
 ) -> ScanConfig:
@@ -370,7 +406,7 @@ def _build_config(
         mode, scope, max_pages, delay, fail_on, authorized_by, probe,
             time_based_sqli, time_based_cmdi, stored_xss, xxe, file_upload,
             confirm_csrf, submit_post_forms, cookie, header, login_url, username,
-            password_env, openapi, osv_online: The
+            password_env, logout_url, sample_sessions, test_logout, openapi, osv_online: The
             optional CLI overrides; the three ``login`` flags merge *into* the file's
             ``[auth.login]`` table (spec 019);
             ``None`` means "not passed".
@@ -438,6 +474,8 @@ def _build_config(
         login_overrides["username"] = username
     if password_env is not None:
         login_overrides["password_env"] = password_env
+    if logout_url is not None:
+        login_overrides["logout_url"] = logout_url
     if login_overrides:
         # with_overrides merges one level deep, so merge the login table here: a flag
         # overrides the file's key and leaves the rest of the file's [auth.login] alone.
@@ -448,6 +486,12 @@ def _build_config(
     if osv_online is not None:
         deps_overrides["osv_online"] = osv_online
 
+    session_overrides: dict[str, object] = {}
+    if sample_sessions is not None:
+        session_overrides["sample_ids"] = sample_sessions
+    if test_logout is not None:
+        session_overrides["test_logout"] = test_logout
+
     return base.with_overrides(
         scan=scan_overrides,
         http=http_overrides,
@@ -457,7 +501,30 @@ def _build_config(
         disclosure=disclosure_overrides,
         injection=injection_overrides,
         deps=deps_overrides,
+        session=session_overrides,
     )
+
+
+def _session_summary(cfg: ScanConfig) -> str | None:
+    """
+    What the session-security pass was asked to do, for the summary (spec 020).
+
+    Args:
+        cfg (ScanConfig): The resolved configuration.
+
+    Returns:
+        str | None: ``"10 ids sampled, fixation checked, logout tested"`` (only the parts that
+            apply), or ``None`` when none does.
+    """
+    active_login = cfg.scan.mode is ScanMode.ACTIVE and cfg.auth.login is not None
+    parts: list[str] = []
+    if cfg.session.sample_ids:
+        parts.append(f"{cfg.session.sample_count} ids sampled")
+    if active_login:
+        parts.append("fixation checked")
+        if cfg.session.test_logout:
+            parts.append("logout tested")
+    return ", ".join(parts) or None
 
 
 def _interactive() -> bool:
@@ -541,6 +608,7 @@ def _emit(
     cookie_count: int = 0,
     header_count: int = 0,
     login_user: str | None = None,
+    session_checks: str | None = None,
     osv_online: bool = False,
     file_upload: bool = False,
     confirm_csrf: bool = False,
@@ -565,6 +633,8 @@ def _emit(
             Defaults to 0.
         login_user (str | None): The ``[auth.login]`` account, for the summary line.
             Defaults to ``None``.
+        session_checks (str | None): What the session-security pass was asked to do (spec
+            020), for the summary line. Defaults to ``None``.
         osv_online (bool): Whether OSV.dev ran, for the summary. Defaults to
             ``False``.
         file_upload (bool): Whether the file-upload pass ran, for the summary.
@@ -580,6 +650,7 @@ def _emit(
             cookie_count=cookie_count,
             header_count=header_count,
             login_user=login_user,
+            session_checks=session_checks,
             osv_online=osv_online,
             file_upload=file_upload,
             confirm_csrf=confirm_csrf,
@@ -597,6 +668,7 @@ def _emit(
         cookie_count=cookie_count,
         header_count=header_count,
         login_user=login_user,
+        session_checks=session_checks,
         osv_online=osv_online,
         file_upload=file_upload,
         confirm_csrf=confirm_csrf,
