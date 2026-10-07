@@ -644,6 +644,19 @@ _OPENAPI_DOC: dict[str, object] = {
                 }
             }
         },
+        # spec 018: a JSON body, so the crawler's POST phase has an operation to submit
+        "/api/notes": {
+            "post": {
+                "operationId": "createNote",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {"type": "object", "properties": {"text": {"type": "string"}}}
+                        }
+                    }
+                },
+            }
+        },
     },
 }
 
@@ -992,8 +1005,8 @@ def _csrf_route(
 # ``format=xml`` default the crawler submits as served — answers an error page. In the
 # insecure profile that page is a stack trace with a cross-origin script that has no
 # ``integrity`` and a cookie with no flags; the hardened profile answers a plain ``400``.
-# ``POST /api/notes`` takes a JSON body (described by a document the integration test
-# writes to a temp path, so the shared ``/openapi.json`` of spec 013 stays as it is).
+# ``POST /api/notes`` takes a JSON body and is declared in the shared ``/openapi.json`` (spec
+# 013's document, extended by the audit of issue #101: only the integration scans read it).
 # Every form carries a constant token so the passive CSRF check stays quiet, every answer
 # escapes what it echoes, and ``app.state.post_log`` records each post as
 # ``(route, content type, fields)`` so a test can count the writes and read what was sent.
