@@ -122,8 +122,8 @@ def scan(monkeypatch: pytest.MonkeyPatch):
 
     The returned callable takes the profile name plus optional ``probe`` /
     ``active`` / ``cookies`` / ``stored_xss`` / ``xxe`` / ``file_upload`` /
-    ``openapi`` / ``osv_online`` / ``osv_up`` / ``time_based`` switches, assembles the
-    :class:`ScanConfig`, points the engine's HTTP client
+    ``confirm_csrf`` / ``openapi`` / ``osv_online`` / ``osv_up`` / ``time_based`` switches,
+    assembles the :class:`ScanConfig`, points the engine's HTTP client
     (and, for OSV, its provider) at in-process transports, runs the scan, and
     returns the :class:`ScanResult`. The built app is stashed on ``scan.holder``
     so a test can read ``app.state.requests``. ``time_based=False`` turns off the
@@ -142,6 +142,7 @@ def scan(monkeypatch: pytest.MonkeyPatch):
         stored_xss: bool = False,
         xxe: bool = False,
         file_upload: bool = False,
+        confirm_csrf: bool = False,
         openapi: str | None = None,
         osv_online: bool = False,
         osv_up: bool = True,
@@ -175,9 +176,12 @@ def scan(monkeypatch: pytest.MonkeyPatch):
                 "stored_xss": stored_xss,
                 "xxe": xxe,
                 "file_upload": file_upload,
-                # keep the spec-012 envelope pass small for the fixture (14-ish URLs)
-                "envelope_url_sample": 20,
-                "envelope_budget": 130,
+                "csrf_confirm": confirm_csrf,
+                # keep the spec-012 envelope pass small for the fixture; the sample takes the
+                # entry, then every form action, then the other pages, so spec 017's four
+                # /panel form actions pushed /reset and /resource out of a sample of 20
+                "envelope_url_sample": 24,
+                "envelope_budget": 150,
             }
         if openapi is not None:
             raw.setdefault("scan", {})
@@ -311,17 +315,17 @@ async def test_hardened_profile_reports_nothing(scan) -> None:
 
 
 async def test_crawler_reaches_the_linked_pages(scan) -> None:
-    """The crawler reaches all 23 linked pages of the fixture app (index, forms, endpoints)."""
+    """The crawler reaches all 24 linked pages of the fixture app (index, forms, endpoints)."""
     result = await scan("hardened")
     # /, /about, /contact + the injectable endpoints linked from the index: /search, /item,
     # /download, /go (spec 006), /fetch, /webhook (spec 009), /ping, /greet (spec 011),
     # /set-lang, /reset, /resource (spec 012) and /dir, /xdoc, /page (spec 014) + the GET
     # /search?q= the crawler submits from the search form + /account (→ /login for an
     # anonymous scan) (spec 007 RF-05) + /guestbook (spec 008 RF-13) + /report, /banner, /rule
-    # (spec 016). The spec-013
+    # (spec 016) + /panel (spec 017). The spec-013
     # /openapi.json + /api/* routes and the spec-014 /upload + /files routes are linked from
     # no page.
-    assert result.metadata.pages_scanned == 23
+    assert result.metadata.pages_scanned == 24
 
 
 # ---------------------------------------------------------------------------
@@ -739,9 +743,11 @@ async def test_csrf_check_flags_the_tokenless_profile_form(scan) -> None:
     """The tokenless POST ``/profile`` form is flagged once by the CSRF check."""
     result = await scan("insecure", cookies=["session=abc123"])
     csrf = [f for f in result.findings if f.check_id == "csrf.form.no-token"]
-    assert len(csrf) == 1
-    assert csrf[0].location.url.endswith("/profile")
-    assert csrf[0].location.method == "POST"
+    profile = [f for f in csrf if f.location.url.endswith("/profile")]
+    assert len(profile) == 1
+    assert profile[0].location.method == "POST"
+    # spec 017: the /panel page adds the tokenless /newsletter form, flagged the same way.
+    assert {f.location.url.rsplit("/", 1)[1] for f in csrf} == {"profile", "newsletter"}
 
 
 async def test_hardened_authenticated_scan_reports_no_csrf(scan) -> None:
@@ -850,5 +856,121 @@ async def test_stored_xss_scan_is_deterministic(scan) -> None:
     async def _once() -> set[tuple[str, str]]:
         result = await scan("insecure", stored_xss=True)
         return {(f.check_id, f.fingerprint) for f in result.findings}
+
+    assert await _once() == await _once()
+
+
+# ---------------------------------------------------------------------------
+# Active CSRF confirmation (spec 017)
+# ---------------------------------------------------------------------------
+
+
+def _csrf_confirmed(result: ScanResult) -> set[str]:
+    """
+    Args:
+        result (ScanResult): A completed scan.
+
+    Returns:
+        set[str]: The last path segment of every form ``csrf.form.token-not-enforced``
+            reported.
+    """
+    return {
+        f.location.url.rsplit("/", 1)[1]
+        for f in result.findings
+        if f.check_id == "csrf.form.token-not-enforced"
+    }
+
+
+def _csrf_writes(scan_holder: dict[str, object]) -> list[tuple[str, bool, str, str]]:
+    """
+    Args:
+        scan_holder (dict[str, object]): ``scan.holder`` — the app the scan ran against.
+
+    Returns:
+        list[tuple[str, bool, str, str]]: The ``csrf_log`` entries the CSRF pass caused (the
+            ones carrying its ``wvcsrf`` sentinel), as ``(route, accepted, Origin, value)``.
+    """
+    app = scan_holder["app"]
+    return [entry for entry in app.state.csrf_log if "wvcsrf" in entry[3]]  # type: ignore[attr-defined]
+
+
+async def test_csrf_confirmation_flags_the_unenforced_forms_only(scan) -> None:
+    """Insecure + ``--confirm-csrf``: the no-token and ignored-token forms are confirmed."""
+    result = await scan("insecure", active=True, confirm_csrf=True, time_based=False)
+    confirmed = _csrf_confirmed(result)
+    assert {"newsletter", "settings"} <= confirmed
+    assert not {"transfer", "prefs"} & confirmed  # token enforced / Origin checked
+    assert any(w.startswith("CSRF confirmation:") and "confirmed" in w for w in result.warnings)
+    for finding in result.findings:
+        if finding.check_id != "csrf.form.token-not-enforced":
+            continue
+        assert finding.location.method == "POST"
+        labels = {item.label: item.content for item in finding.evidence}
+        assert labels["replay"] in {"token removed", "token altered", "no token field"}
+    # one proof, one finding: the passive finding yields to the confirmation
+    passive = {
+        f.location.url.rsplit("/", 1)[1]
+        for f in result.findings
+        if f.check_id == "csrf.form.no-token"
+    }
+    assert not passive & confirmed
+    # the replays carried a foreign Origin; the controls carried the target's own
+    writes = _csrf_writes(scan.holder)  # type: ignore[arg-type]
+    assert any(origin == "https://webvigil.invalid" for _, _, origin, _ in writes)
+    refused = {route for route, accepted, origin, _ in writes if not accepted}
+    assert "prefs" in refused and "transfer" in refused
+
+
+async def test_csrf_confirmation_stops_at_the_first_confirming_replay(scan) -> None:
+    """A confirmed form is written to twice at most: the control and one replay."""
+    await scan("insecure", active=True, confirm_csrf=True, time_based=False)
+    writes = _csrf_writes(scan.holder)  # type: ignore[arg-type]
+    assert sum(1 for route, *_ in writes if route == "settings") == 2
+    assert sum(1 for route, *_ in writes if route == "newsletter") == 2
+
+
+async def test_csrf_confirmation_not_run_without_the_opt_in(scan) -> None:
+    """An active scan without ``--confirm-csrf`` submits nothing carrying the pass's sentinel."""
+    result = await scan("insecure", active=True, time_based=False)
+    assert _csrf_confirmed(result) == set()
+    assert _csrf_writes(scan.holder) == []  # type: ignore[arg-type]
+    assert not any(w.startswith("CSRF confirmation:") for w in result.warnings)
+    # the passive finding for the tokenless form is untouched
+    assert any(
+        f.check_id == "csrf.form.no-token" and f.location.url.endswith("/newsletter")
+        for f in result.findings
+    )
+
+
+async def test_csrf_confirmation_passive_scan_does_nothing(scan) -> None:
+    """A passive scan makes no crafted POST to the panel routes."""
+    result = await scan("insecure")
+    assert _csrf_confirmed(result) == set()
+    assert scan.holder["app"].state.csrf_log == []  # type: ignore[attr-defined]
+
+
+async def test_hardened_profile_reports_no_unenforced_csrf(scan) -> None:
+    """Every token the hardened profile serves is enforced: the pass confirms nothing."""
+    result = await scan("hardened", active=True, confirm_csrf=True, time_based=False)
+    assert _csrf_confirmed(result) == set()
+    assert not any(f.check_id.startswith("csrf.") for f in result.findings)
+    assert any(w.startswith("CSRF confirmation:") and "0 confirmed" in w for w in result.warnings)
+    writes = _csrf_writes(scan.holder)  # type: ignore[arg-type]
+    replays = [
+        accepted for _, accepted, origin, _ in writes if origin == "https://webvigil.invalid"
+    ]
+    assert replays and not any(replays)  # every cross-site replay was refused
+    assert any(
+        accepted for _, accepted, origin, _ in writes if origin != "https://webvigil.invalid"
+    )
+
+
+async def test_csrf_confirmation_is_deterministic(scan) -> None:
+    """Two confirmation scans of the insecure profile confirm the same forms."""
+
+    async def _once() -> set[str]:
+        return _csrf_confirmed(
+            await scan("insecure", active=True, confirm_csrf=True, time_based=False)
+        )
 
     assert await _once() == await _once()

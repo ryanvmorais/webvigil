@@ -9,9 +9,11 @@ crawler must not follow), spec 008 (a guestbook and a behind-login profile page
 that render stored input unescaped on a later request), spec 009 (two "fetch
 this URL" endpoints), spec 011 (a shell-backed ``/ping`` and a template-backed
 ``/greet``) and spec 012 (a CRLF ``/set-lang``, a host-header ``/reset``, an XML
-``/api/xml`` and a ``/resource`` that advertises TRACE / PUT) and spec 016 (three
+``/api/xml`` and a ``/resource`` that advertises TRACE / PUT), spec 016 (three
 simulated expression-language sinks: ``/report`` SpEL, ``/banner`` OGNL, ``/rule``
-sandboxed SpEL). The app is plain HTTP by nature, so the integration test disables
+sandboxed SpEL) and spec 017 (a ``/panel`` page with four POST forms that accept or
+reject a replay without the CSRF token: ``/newsletter``, ``/settings``, ``/transfer``,
+``/prefs``). The app is plain HTTP by nature, so the integration test disables
 ``tls.https``; TLS cases live in the socket-based unit tests.
 
 The route handlers are one-liners with inline comments per spec; only
@@ -22,11 +24,12 @@ from __future__ import annotations
 
 import ast
 import html
+import inspect
 import re
 import sqlite3
 import time
-from collections.abc import Callable
-from urllib.parse import unquote
+from collections.abc import Awaitable, Callable
+from urllib.parse import parse_qs, unquote, urlsplit
 
 import jinja2
 from starlette.applications import Starlette
@@ -67,7 +70,9 @@ _INJECTION_LINKS = (
     # spec 016: three simulated expression-language sinks (SpEL, OGNL, sandboxed SpEL).
     '<a href="/report?filter=1">report</a> '
     '<a href="/banner?caption=hello">banner</a> '
-    '<a href="/rule?cond=ok">rule</a>'
+    '<a href="/rule?cond=ok">rule</a> '
+    # spec 017: a page of four POST forms for the active CSRF confirmation pass.
+    '<a href="/panel">panel</a>'
 )
 # spec 013: the insecure index also carries a cross-origin script with no SRI, a session
 # token handed to a third-party link, and an internal IP in a comment — inlined here rather
@@ -918,6 +923,92 @@ def _resource_hardened(request: Request) -> Response:
     return response
 
 
+# --- spec 017: the active CSRF confirmation pass (RF-12) ----------------------------
+#
+# ``/panel`` carries four POST forms. Both profiles serve ``/transfer`` (token enforced) and
+# ``/prefs`` (token ignored, but a foreign ``Origin`` is refused), so the pass has something to
+# refute; the insecure profile serves ``/newsletter`` with no token field at all and
+# ``/settings`` with a token field the server never checks, so it has something to confirm.
+# The hardened profile gives ``/newsletter`` a token and enforces it on ``/settings``. Every
+# response escapes what it echoes (no incidental XSS), the token is one constant, and
+# ``app.state.csrf_log`` records every post as ``(route, accepted, Origin, first value)`` so a
+# test can count the writes the pass caused.
+
+_CSRF_TOKEN = "wvfixturetoken"
+
+
+def _panel(*, newsletter_token: bool) -> Callable[[Request], Response]:
+    token = f'<input type="hidden" name="csrf_token" value="{_CSRF_TOKEN}">'
+    page = (
+        "<!doctype html><html><body><h1>Panel</h1>"
+        f'<form method="post" action="/newsletter">{token if newsletter_token else ""}'
+        '<input type="email" name="email"><input name="topic"></form>'
+        f'<form method="post" action="/settings">{token}<input name="display_name"></form>'
+        f'<form method="post" action="/transfer">{token}<input name="to_account">'
+        '<input type="number" name="amount"></form>'
+        f'<form method="post" action="/prefs">{token}<input name="theme"></form>'
+        "</body></html>"
+    )
+    return _html(page)
+
+
+def _csrf_route(
+    name: str,
+    field: str,
+    *,
+    enforce_token: bool,
+    enforce_origin: bool = False,
+    redirect: bool = False,
+) -> Callable[[Request], Awaitable[Response]]:
+    async def view(request: Request) -> Response:
+        form = await request.form()
+        origin = request.headers.get("origin", "")
+        accepted = True
+        # A real defence refuses a *foreign* Origin; a request with none is let through.
+        if enforce_origin and origin and urlsplit(origin).netloc != request.headers.get("host"):
+            accepted = False
+        if enforce_token and form.get("csrf_token") != _CSRF_TOKEN:
+            accepted = False
+        value = str(form.get(field, ""))
+        request.app.state.csrf_log.append((name, accepted, origin, value))
+        if not accepted:
+            return PlainTextResponse("Forbidden", status_code=403)
+        if redirect:
+            return RedirectResponse(f"/panel?saved={name}", status_code=302)
+        return HTMLResponse(f"<!doctype html><p>Saved {html.escape(value)}</p>")
+
+    return view
+
+
+def _token_enforced(
+    field: str, token: str, view: Callable[[Request], Awaitable[Response] | Response]
+) -> Callable[[Request], Awaitable[Response]]:
+    """
+    Args:
+        field (str): The name of the token field the form carries.
+        token (str): The value the form is served with.
+        view (Callable[[Request], Awaitable[Response] | Response]): The route to guard.
+
+    Returns:
+        Callable[[Request], Awaitable[Response]]: ``view`` for a ``GET``; for a ``POST``, a
+            ``403`` unless the urlencoded body carries ``field`` = ``token``. The hardened
+            profile wraps its older POST routes in this so the CSRF confirmation pass (spec 017)
+            finds every token it serves actually enforced.
+    """
+
+    async def guarded(request: Request) -> Response:
+        if request.method == "POST":
+            body = await request.body()  # read first so the wrapped view can still parse it
+            urlencoded = "urlencoded" in request.headers.get("content-type", "")
+            posted = parse_qs(body.decode("latin-1")) if urlencoded else {}
+            if posted.get(field, [""])[0] != token:
+                return PlainTextResponse("Forbidden", status_code=403)
+        result = view(request)
+        return await result if inspect.isawaitable(result) else result
+
+    return guarded
+
+
 _INSECURE_EXTRA_ROUTES: tuple[tuple[str, Callable[[Request], Response]], ...] = (
     (_VULNERABLE_JS_PATH, _vulnerable_js),
     ("/uploads/", _html(_LISTING_PAGE)),
@@ -960,6 +1051,19 @@ _INJECTION_ROUTES = {
         ("/logout", _logout, ["GET"]),
         ("/guestbook", _guestbook, ["GET", "POST"]),
         ("/guestbook/e/{i:int}", _guestbook_entry(escape=False), ["GET"]),
+        ("/panel", _panel(newsletter_token=False), ["GET"]),
+        (
+            "/newsletter",
+            _csrf_route("newsletter", "email", enforce_token=False, redirect=True),
+            ["POST"],
+        ),
+        ("/settings", _csrf_route("settings", "display_name", enforce_token=False), ["POST"]),
+        ("/transfer", _csrf_route("transfer", "to_account", enforce_token=True), ["POST"]),
+        (
+            "/prefs",
+            _csrf_route("prefs", "theme", enforce_token=False, enforce_origin=True),
+            ["POST"],
+        ),
     ),
     "hardened": (
         ("/search", _search_hardened, ["GET"]),
@@ -984,14 +1088,27 @@ _INJECTION_ROUTES = {
         ("/openapi.json", _openapi_doc, ["GET"]),
         ("/api/find", _api_find_hardened, ["GET"]),
         ("/api/items", _api_items, ["POST"]),
-        ("/api/xml", _xml_hardened, ["POST"]),
-        ("/comment", _comment_hardened, ["POST"]),
+        ("/api/xml", _token_enforced("csrf_token", "xmltok", _xml_hardened), ["POST"]),
+        ("/comment", _token_enforced("csrf", "tok123", _comment_hardened), ["POST"]),
         ("/account", _account("__Host-session", _ACCOUNT_HARDENED), ["GET"]),
         ("/account/settings", _account_settings("__Host-session", escape=True), ["GET"]),
-        ("/profile", _profile, ["POST"]),
+        ("/profile", _token_enforced("csrf_token", "tok123", _profile), ["POST"]),
         ("/logout", _logout, ["GET"]),
-        ("/guestbook", _guestbook, ["GET", "POST"]),
+        ("/guestbook", _token_enforced("csrf_token", "gbtok", _guestbook), ["GET", "POST"]),
         ("/guestbook/e/{i:int}", _guestbook_entry(escape=True), ["GET"]),
+        ("/panel", _panel(newsletter_token=True), ["GET"]),
+        (
+            "/newsletter",
+            _csrf_route("newsletter", "email", enforce_token=True, redirect=True),
+            ["POST"],
+        ),
+        ("/settings", _csrf_route("settings", "display_name", enforce_token=True), ["POST"]),
+        ("/transfer", _csrf_route("transfer", "to_account", enforce_token=True), ["POST"]),
+        (
+            "/prefs",
+            _csrf_route("prefs", "theme", enforce_token=False, enforce_origin=True),
+            ["POST"],
+        ),
     ),
 }
 
@@ -1052,4 +1169,5 @@ def make_app(profile: str) -> Starlette:
     app.state.profile = ""
     app.state.uploads = {}  # spec 014: reset per app
     app.state.root_uploads = {}
+    app.state.csrf_log = []  # spec 017: reset per app
     return app
