@@ -17,9 +17,10 @@ and **in production** (non-intrusive checks that are safe to run against live sy
 WebVigil ships as a reusable **scan engine**, a **CLI**, and an optional **web dashboard**
 built on top of the same engine.
 
-> **Status:** the planned coverage roadmap (`v0.1`–`v0.20`) is complete. The CLI, config,
-> and report formats have been stable across the last several milestones; there is no
-> `1.0` package tag yet. See [Scope and limitations](#scope-and-limitations) for what
+> **Status:** the planned coverage roadmap is complete and the first release, `1.0.0`, is
+> being prepared. From `1.0.0` the CLI, the exit codes, the configuration keys, the check
+> ids and the JSON report follow [Semantic Versioning](docs/stability.md); see the
+> [changelog](CHANGELOG.md). [Scope and limitations](#scope-and-limitations) says what
 > WebVigil deliberately does not do.
 
 ## WebVigil vs. other scanners
@@ -58,11 +59,12 @@ be illegal. See [SECURITY.md](SECURITY.md).
 
 ## Coverage
 
-WebVigil was built milestone by milestone against a planned roadmap. Every entry below has
-shipped and links to its docs; each was designed as a spec first, under
-[`specs/`](specs/).
+WebVigil was built milestone by milestone against a planned roadmap. Every entry below is
+in the code and links to its docs; each was designed as a spec first, under
+[`specs/`](specs/). The milestones are the history of the build, not published versions:
+`1.0.0` is the first release and contains all of them.
 
-| Version | Focus | Status |
+| Milestone | Focus | Status |
 |---|---|---|
 | `v0.1` | Security headers, technology-disclosure headers, cookie flags, TLS/HTTPS configuration, CORS misconfiguration (all passive) | shipped |
 | `v0.2` | Web API (FastAPI + SQLite, persistent scans, queued execution) | shipped |
@@ -98,7 +100,7 @@ shipped and links to its docs; each was designed as a spec first, under
 WebVigil is deliberately bounded. It is an **in-band** scanner: the engine talks only to the
 target, sends a small static set of payloads, and confirms every active finding against a
 per-request baseline. That line keeps it fast, low-noise, and safe to distribute as a
-repository with no hosted service — at the cost of the classes below. For each, the thing
+open-source tool with no hosted service — at the cost of the classes below. For each, the thing
 to reach for instead.
 
 - **JavaScript-rendered apps.** The crawler parses HTML; it runs no headless browser, so a
