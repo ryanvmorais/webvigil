@@ -38,6 +38,7 @@ uv run black --check .
 uv run mypy src
 uv run lint-imports      # contrato: engine não importa Typer/Rich/FastAPI/SQLModel/Alembic/pyjwt/argon2
 uv run pytest
+uv run pytest --cov       # per-file line + branch coverage of src/webvigil (the guard of issue #101)
 uv run webvigil scan <url>
 uv run webvigil list-checks
 uv run webvigil report <scan.json> --format html

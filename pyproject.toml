@@ -75,6 +75,9 @@ dev = [
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "pytest-httpx>=0.36.2",
+    # Coverage: the guard of the test-suite audit (issue #101) — a refactor of the tests must not
+    # lower the per-file line and branch coverage of `src/webvigil`.
+    "pytest-cov>=7.1.0",
     # Starlette: the insecure/hardened fixture app for the integration test (RF-27).
     "starlette>=1.7.0",
     # jsonschema: validates the SARIF reporter output against the bundled 2.1.0 schema (ADR-7).
@@ -137,6 +140,17 @@ exclude = ["^src/webvigil/api/migrations/versions/"]
 [[tool.mypy.overrides]]
 module = ["selectolax.*"]
 ignore_missing_imports = true
+
+# --- Coverage (pytest-cov) -------------------------------------------------
+# Not part of the default `pytest` run: `uv run pytest --cov` measures it (issue #101 uses the
+# per-file numbers as the guard when tests are merged or removed).
+[tool.coverage.run]
+source = ["src/webvigil"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
 
 # --- Tests (pytest) --------------------------------------------------------
 [tool.pytest.ini_options]
