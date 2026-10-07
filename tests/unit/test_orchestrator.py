@@ -55,6 +55,7 @@ class _StubCrawler:
 
     forms: tuple[object, ...] = ()
     skipped_destructive = 0
+    skipped_by_robots = 0
     post_summary = None  # spec 018: the real crawler exposes the POST phase tally
 
     def __init__(self, *_args: object, **_kwargs: object) -> None: ...
@@ -197,6 +198,17 @@ async def test_destructive_skip_becomes_a_warning(monkeypatch: pytest.MonkeyPatc
     result = await Orchestrator(ScanConfig(), check_types=[PassiveOne]).run(_TARGET)
     assert any("declined to follow 3 link(s)" in w for w in result.warnings)
     monkeypatch.setattr(_StubCrawler, "skipped_destructive", 0)
+
+
+async def test_robots_skip_becomes_a_warning(monkeypatch: pytest.MonkeyPatch) -> None:
+    """URLs that robots.txt kept out of the crawl are surfaced, with the way to include them."""
+    monkeypatch.setattr(_StubCrawler, "skipped_by_robots", 4)
+    result = await Orchestrator(ScanConfig(), check_types=[PassiveOne]).run(_TARGET)
+    assert any("robots.txt kept the crawler from 4 URL(s)" in w for w in result.warnings)
+    assert any("follow_robots = false" in w for w in result.warnings)
+    monkeypatch.setattr(_StubCrawler, "skipped_by_robots", 0)
+    quiet = await Orchestrator(ScanConfig(), check_types=[PassiveOne]).run(_TARGET)
+    assert not any("robots.txt" in w for w in quiet.warnings)
 
 
 async def test_registry_selection_filters_by_mode_and_reports_unknown_disabled(
