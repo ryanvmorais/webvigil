@@ -211,6 +211,16 @@ async def test_robots_skip_becomes_a_warning(monkeypatch: pytest.MonkeyPatch) ->
     assert not any("robots.txt" in w for w in quiet.warnings)
 
 
+async def test_javascript_app_becomes_a_warning(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A crawl that stopped at a client-rendered shell says so, and only then."""
+    monkeypatch.setattr(orch_mod, "script_app_warning", lambda pages: "looks like a JavaScript app")
+    result = await Orchestrator(ScanConfig(), check_types=[PassiveOne]).run(_TARGET)
+    assert "looks like a JavaScript app" in result.warnings
+    monkeypatch.setattr(orch_mod, "script_app_warning", lambda pages: None)
+    quiet = await Orchestrator(ScanConfig(), check_types=[PassiveOne]).run(_TARGET)
+    assert not any("JavaScript" in w for w in quiet.warnings)
+
+
 async def test_unreachable_target_becomes_a_warning(monkeypatch: pytest.MonkeyPatch) -> None:
     """A target that stopped answering is reported, and only then."""
     monkeypatch.setattr(
