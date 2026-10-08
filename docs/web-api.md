@@ -46,8 +46,20 @@ The API reads the `[web]` table of `webvigil.toml` (or `--config PATH`, or
 ## Authentication
 
 Login sets an httpOnly, `SameSite=Lax` cookie holding a signed JWT. There is no server-side
-session store, so "log out everywhere" is not possible without rotating `session_secret`;
-the short default TTL bounds exposure. Passwords are argon2id hashes.
+session store, so logging out only clears this browser's cookie, and a stolen token cannot be
+revoked without rotating `session_secret`; the short default TTL bounds exposure. Passwords are
+argon2id hashes.
+
+**A credential change ends the other sessions.** Changing the password (or running
+`webvigil-web reset-password`) rejects every token minted before the change; the session that
+changed it gets a fresh cookie and stays signed in.
+
+**Login attempts are throttled.** After 5 failed attempts a client address, or a username, must
+wait before trying again, whatever the password: 1 second, doubling with each further failure up
+to 5 minutes, answered with `429` and `Retry-After`; a successful login forgets the failures. The
+state is in memory, per process. Behind a reverse proxy every request carries the proxy's address
+(`X-Forwarded-For` is not trusted: the client controls it), so the per-username limit is what
+holds. Someone guessing can delay you by a few minutes, never lock you out.
 
 **Session secret:** if `session_secret` is unset the server generates one and stores it in
 the database (a `setting` row), so sessions survive restarts. Pin `session_secret`
@@ -69,7 +81,8 @@ only. Two things make that the right default:
 
 If you expose it on purpose (another machine, a reverse proxy), do it over HTTPS with
 `cookie_secure = true`, pin a long random `session_secret`, list `cors_origins` explicitly (never
-`*`), and put it behind something that limits login attempts: the API does not throttle them.
+`*`). Login attempts are throttled (see Authentication), but that state is per process and
+in memory: a proxy that limits them too is better.
 
 ## Scan execution
 

@@ -56,6 +56,8 @@ confirmed against a per-request baseline)
 - A FastAPI service with SQLite persistence and a queued scan runner, and a Next.js dashboard for
   it.
   `docker compose` publishes them on `127.0.0.1` only; see [Who can reach it](docs/web-api.md#who-can-reach-it).
+  Login attempts are throttled (a wait that doubles up to 5 minutes), and changing the password signs
+  the other sessions out.
 
 **Packaging**
 - A package for PyPI: the engine, the CLI and (with the `web` extra) the Web API, published from a
