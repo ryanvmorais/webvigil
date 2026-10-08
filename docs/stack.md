@@ -98,8 +98,10 @@ brings the Domain, Path, `Secure` and expiry rules a hand-rolled parser would ge
 
 ### selectolax
 
-A very fast HTML parser (a binding over the C library Lexbor). Used to pull
-links, forms, `<script src>`, meta tags and inline content out of fetched pages.
+A very fast HTML parser (a binding over the C library Modest; selectolax also ships a Lexbor
+backend). Used to pull links, forms, `<script src>`, meta tags and inline content out of fetched
+pages. The engine imports `selectolax.parser`, the Modest one, which version 1.0 removed, so the
+dependency is capped below 1.0 until the move to Lexbor.
 
 **Why not** BeautifulSoup / lxml: selectolax is 5–30× faster and the parse step
 runs on every crawled page. The API is small — CSS selectors and node text.
@@ -410,6 +412,25 @@ byte stream, because httpx records `Response.elapsed` only on a closed stream.
 (`@pytest.mark.parametrize`), `assert` rewriting, `pytest -k <expr>` /
 `pytest path::test_name` to run a subset, and the "vulnerable fixture +
 hardened fixture" pattern every check test uses.
+
+### Packaging and release — Hatchling, PyPI Trusted Publishing, GHCR
+
+How a version reaches users. **Hatchling** builds the wheel and the source distribution
+(`uv build`), and **hatch-fancy-pypi-readme** rewrites the README's relative links to absolute
+GitHub URLs, because PyPI cannot resolve them. `.github/workflows/release.yml` runs when a GitHub
+Release is published: **PyPI Trusted Publishing** swaps a short-lived OpenID Connect token from the
+workflow for an upload credential, so no token is stored anywhere, and the CLI image is built for
+amd64 and arm64 (under QEMU), smoke-tested, scanned with **Trivy** and pushed to **GHCR**
+(`ghcr.io`) with signed build provenance and an SBOM.
+
+**Why not** a stored PyPI token: if it leaks, anyone can upload as the project; the OIDC token
+lives for minutes and only works from this workflow. **Why not** Docker Hub: GHCR needs no extra
+account and takes the workflow's own `GITHUB_TOKEN`. Hatchling is the small default backend and has
+the readme hook.
+
+**Learn:** `uv build`, [`docs/releasing.md`](releasing.md) (the one-time setup and every release),
+`scripts/check-package.py` (what CI checks about the package), what a PyPI "pending publisher" is,
+and `gh attestation verify` for the image's provenance.
 
 ### Playwright — Web UI end-to-end
 
