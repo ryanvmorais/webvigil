@@ -5,6 +5,8 @@
 # Schedule: Sunday, 09:00 (America/Sao_Paulo). Each ecosystem opens a single PR
 # grouping its minor and patch bumps; a major stays in its own PR. Security
 # updates follow the alerts and ignore this schedule.
+# Cooldown: a new release waits 7 days before Dependabot proposes it (selectolax 1.0.0, which broke the
+# engine, became a pull request the day it was published); security updates ignore the cooldown.
 version: 2
 updates:
   # Engine + CLI + Web API — direct deps from pyproject.toml, graph pinned in uv.lock.
@@ -21,6 +23,8 @@ updates:
       prefix-development: "chore(deps-dev)"
     labels:
       - "dependencies"
+    cooldown:
+      default-days: 7
     groups:
       uv-minor-patch:
         update-types:
@@ -41,6 +45,8 @@ updates:
       prefix-development: "chore(deps-dev)"
     labels:
       - "dependencies"
+    cooldown:
+      default-days: 7
     groups:
       npm-minor-patch:
         update-types:
@@ -60,6 +66,8 @@ updates:
       prefix: "chore(ci)"
     labels:
       - "dependencies"
+    cooldown:
+      default-days: 7
     groups:
       github-actions-minor-patch:
         update-types:
@@ -84,6 +92,8 @@ updates:
       prefix: "chore(docker)"
     labels:
       - "dependencies"
+    cooldown:
+      default-days: 7
     groups:
       docker-minor-patch:
         update-types:
