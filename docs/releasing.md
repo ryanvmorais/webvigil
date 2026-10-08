@@ -40,12 +40,18 @@ OpenID Connect token from the workflow for an upload credential.
    webvigil version && webvigil list-checks
    ```
 
-   TestPyPI refuses a version it has already seen, so a second dry run needs a new version.
+   TestPyPI refuses a version it has already seen, so a second dry run needs a new version. It
+   also takes about a minute to list a version after the upload says `200 OK`, so retry before
+   deciding the upload failed. To try the `web` extra, install the wheel you downloaded from
+   TestPyPI and let the dependencies come from pypi.org: resolving them through TestPyPI can pick
+   an unrelated package with the same name (it did for `fastapi`).
 2. **Version.** One PR sets `version` in `pyproject.toml` (and `uv.lock`) and moves the changelog's
    `[Unreleased]` to the new version, with its date.
-3. **Release.** Tag `vX.Y.Z` on the merged commit and publish a GitHub Release from it. The
-   workflow builds, refuses to continue if the tag and `pyproject.toml` disagree, checks the
-   package, and, once you approve the `pypi` environment, uploads it.
+3. **Release.** Tag `vX.Y.Z` on the merged commit and publish a GitHub Release from it, with the
+   [notes](#release-notes) below. The workflow builds, refuses to continue if the tag and
+   `pyproject.toml` disagree, checks the package, and, once you approve the `pypi` environment,
+   uploads it. Approve it after the `image` job has finished: the two are independent, but
+   approving is the step that cannot be undone.
 4. **Verify.** In a clean environment:
 
    ```bash
@@ -64,6 +70,28 @@ and the next release picks them up.
 
 A wrong release is not undone by deleting it: PyPI never accepts the same version twice. *Yank* the
 release on pypi.org (installs that pin it still work, new installs skip it) and publish a patch.
+
+## Release notes
+
+The notes of a GitHub Release are short and written for someone who has not read the
+[changelog](../CHANGELOG.md), which keeps the full list. The title is `WebVigil X.Y.Z`; the body has
+four parts, in this order:
+
+1. **One sentence** saying what the release is (the first release, a patch, a minor) and what does
+   not change. For a patch: the CLI, the exit codes, the configuration keys, the check ids and the
+   JSON report, the surface [stability.md](stability.md) promises.
+2. **Three to five bullets**, only what a user notices. Anything that can break an upgrade (a
+   setting that is now refused, say) goes in bold with what to do before upgrading. The last bullet
+   is the upgrade line, `pipx upgrade webvigil` or `docker pull ghcr.io/ryanvmorais/webvigil:X.Y.Z`
+   (the first release has the install line instead).
+3. **The authorized-use line**: "Scan only systems you own or have permission to test." and the
+   link to `docs/stability.md`.
+4. **The changelog link**, to the section on the tag:
+   `Full list of what changed in X.Y.Z: [CHANGELOG](https://github.com/ryanvmorais/webvigil/blob/vX.Y.Z/CHANGELOG.md#xyz---yyyy-mm-dd)`.
+
+Every claim comes from the changelog entry, nothing that was not measured. A security fix is
+described by what the user gets, without naming an advisory that is still a draft: the advisory is
+published after the release, and only then does anything link to it.
 
 ## What CI already guarantees
 
