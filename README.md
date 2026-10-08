@@ -23,8 +23,8 @@ It helps teams find and fix security problems in web apps, both **in development
 against live systems). WebVigil ships as a reusable **scan engine**, a **CLI**, and an
 optional **web dashboard** built on top of the same engine.
 
-> **Status:** the planned coverage roadmap is complete and `1.0.0` is the first release. The
-> CLI, the exit codes, the configuration keys, the check ids and the JSON report follow
+> **Status:** the planned coverage roadmap is complete and `1.0.0`, published on 2026-10-08, is
+> the first release ([install it](#install)). The CLI, the exit codes, the configuration keys, the check ids and the JSON report follow
 > [Semantic Versioning](docs/stability.md); see the [changelog](CHANGELOG.md). [Scope and limitations](#scope-and-limitations) says what
 > WebVigil deliberately does not do.
 
