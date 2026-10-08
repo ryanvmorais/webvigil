@@ -28,6 +28,14 @@ release and contains all of them.
 
 ### Security
 
+- The Web API refuses, at start, a pinned `session_secret` shorter than 32 characters and a `*` in
+  `cors_origins` (the API sends the session cookie), with a one-line error and exit code 4 instead of a
+  traceback. **If you pinned a shorter secret, generate a longer one**
+  (`python -c 'import secrets; print(secrets.token_urlsafe(48))'`) or unset it so one is generated; changing
+  it signs every session out.
+- `webvigil-web serve` warns when it listens beyond this machine with `cookie_secure` off.
+- Login takes the same time for a username that does not exist as for a wrong password (it checked no hash
+  before), so the response time no longer tells a real username from a made-up one.
 - The dashboard sends security headers on every page: it cannot be framed (`frame-ancestors 'none'`,
   `X-Frame-Options: DENY`), the browser may not sniff content types, a cross-origin request gets the
   origin and never the path of a scan, and camera, microphone, geolocation, payment and USB are

@@ -13,13 +13,15 @@ import time
 from datetime import timedelta
 
 import jwt
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine
 
 from tests.api.conftest import ADMIN
 from webvigil.api.config import WebConfig
 from webvigil.api.db import User, session_scope, utcnow
-from webvigil.api.security import SESSION_COOKIE
+from webvigil.api.routes import auth as auth_routes
+from webvigil.api.security import SESSION_COOKIE, dummy_password_hash
 
 _WRONG = {"username": "admin", "password": "not-the-password"}
 
@@ -117,3 +119,31 @@ def test_a_token_without_an_issue_time_is_not_accepted(
     """A token that cannot say when it was minted cannot be compared with the last change."""
     auth_client.cookies.set(SESSION_COOKIE, _token(web_config, issued_ago=0, with_iat=False))
     assert auth_client.get("/api/auth/me").status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# Timing: an unknown username costs the same password check (issue #139)
+# ---------------------------------------------------------------------------
+
+
+def test_an_unknown_username_runs_the_same_password_check_as_a_wrong_password(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Both failures verify one Argon2 hash, so the response time does not tell them apart."""
+    assert client.post("/api/setup", json=ADMIN).status_code == 201
+    checked: list[str] = []
+    real = auth_routes.verify_password
+
+    def _spy(password: str, hashed: str) -> bool:
+        checked.append(hashed)
+        return real(password, hashed)
+
+    monkeypatch.setattr(auth_routes, "verify_password", _spy)
+
+    wrong = client.post("/api/auth/login", json=_WRONG)
+    unknown = client.post("/api/auth/login", json={"username": "nobody", "password": "x"})
+
+    assert wrong.status_code == unknown.status_code == 401
+    assert wrong.json() == unknown.json()  # the body does not say which either
+    assert len(checked) == 2  # one check each; the unknown user did not skip it
+    assert checked[1] == dummy_password_hash()
