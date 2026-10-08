@@ -1,6 +1,6 @@
 # Releasing
 
-How a version of WebVigil reaches PyPI. Publishing is an irreversible, public act, so it belongs
+How a version of WebVigil reaches PyPI and the GitHub Container Registry (`ghcr.io`). Publishing is an irreversible, public act, so it belongs
 to the maintainer: the workflow in [`.github/workflows/release.yml`](../.github/workflows/release.yml)
 prepares and checks the package, and runs only when you start it. No token is stored anywhere:
 PyPI [Trusted Publishing](https://docs.pypi.org/trusted-publishers/) exchanges a short-lived
@@ -23,11 +23,17 @@ OpenID Connect token from the workflow for an upload credential.
    the environment name `testpypi`.
 3. **GitHub.** *Settings → Environments*: create `pypi` and `testpypi`. On `pypi`, add yourself as a
    **required reviewer**: the publish job then waits for your click, a second gate after the Release.
+4. **The container image needs no setup before the first release**: the workflow pushes to
+   `ghcr.io/ryanvmorais/webvigil` with its own `GITHUB_TOKEN`. The package is created **private**,
+   though. After the first push open *your profile → Packages → webvigil → Package settings* and
+   change the visibility to **Public**, or nobody else can pull it. (The image's `source` label
+   already links the package to this repository.)
 
 ## Every release
 
 1. **Dry run.** *Actions → Release → Run workflow* publishes the build to TestPyPI and never
-   touches pypi.org. Then, in a clean environment:
+   touches pypi.org. In the same run the `image` job builds the container image for amd64 and
+   arm64, smoke-tests it and scans it, and pushes nothing. Then, in a clean environment:
 
    ```bash
    pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple webvigil
@@ -40,7 +46,21 @@ OpenID Connect token from the workflow for an upload credential.
 3. **Release.** Tag `vX.Y.Z` on the merged commit and publish a GitHub Release from it. The
    workflow builds, refuses to continue if the tag and `pyproject.toml` disagree, checks the
    package, and, once you approve the `pypi` environment, uploads it.
-4. **Verify.** In a clean environment: `pip install webvigil==X.Y.Z && webvigil version`.
+4. **Verify.** In a clean environment:
+
+   ```bash
+   pip install webvigil==X.Y.Z && webvigil version
+   docker run --rm ghcr.io/ryanvmorais/webvigil:X.Y.Z version
+   gh attestation verify oci://ghcr.io/ryanvmorais/webvigil:X.Y.Z --owner ryanvmorais
+   ```
+
+   The image carries the tags `X.Y.Z`, `X.Y`, `X` and `latest`, for `linux/amd64` and
+   `linux/arm64`, with a signed build provenance and an SBOM.
+
+The `image` job builds the image first, runs `scripts/smoke-image.sh` and a vulnerability scan on
+it (**HIGH** or **CRITICAL** with a fix available stops the release), and only then pushes. A
+fix for a base-image flaw is a rebuild: Dependabot proposes new base images for the `Dockerfile`,
+and the next release picks them up.
 
 A wrong release is not undone by deleting it: PyPI never accepts the same version twice. *Yank* the
 release on pypi.org (installs that pin it still work, new installs skip it) and publish a patch.
@@ -52,6 +72,10 @@ fails when it is not what a release should ship ([`scripts/check-package.py`](..
 the sdist carries the source and not the dashboard, tests, specs or caches; the wheel carries the
 report template, the migrations and the Retire.js database; the README PyPI shows has no relative
 link; `twine check --strict` passes; and the wheel installs in a clean environment and starts.
-That last step installs the newest version of every dependency allowed by `pyproject.toml`, not the
+The `package` job's last step installs the newest version of every dependency allowed by `pyproject.toml`, not the
 locked one, which is how a user installs it. It caught `selectolax` 1.0 removing the parser the
 engine imports, and a floor-only requirement would have shipped a package that failed on start.
+
+The `docker` job does the same for the image on every pull request: it builds amd64 and arm64
+(under QEMU, so a missing wheel shows up here and not in the middle of a release), smoke-tests both
+and fails on a **CRITICAL** vulnerability that has a fix.
