@@ -1,5 +1,3 @@
-![WebVigil dashboard (optional web UI) — scan detail page showing findings grouped by severity](assets/dashboard-scan-detail.png)
-
 # WebVigil
 
 ![Python](https://img.shields.io/badge/Python-3.12+-3776AB?logo=python&logoColor=white)
@@ -10,18 +8,25 @@
 ![Types](https://img.shields.io/badge/types-mypy%20strict-2A6DB2)
 ![License](https://img.shields.io/badge/license-Apache%202.0-blue)
 
-A web application vulnerability scanner for developers. It helps teams find and fix
-security misconfigurations in web apps, both **in development** (terminal, CI, pre-deploy)
-and **in production** (non-intrusive checks that are safe to run against live systems).
+**WebVigil is an open-source web application vulnerability scanner (DAST) for developers.**
+A Python engine and CLI that runs passive, production-safe checks by default and, behind an
+explicit opt-in, an Active Mode for reflected and stored XSS, SQL injection, SSRF, command
+injection, XXE, file upload and more, with every active finding confirmed against a baseline.
+It writes JSON, SARIF 2.1.0, HTML and Markdown reports and fails a build with `--fail-on`,
+so it fits CI.
 
-WebVigil ships as a reusable **scan engine**, a **CLI**, and an optional **web dashboard**
-built on top of the same engine.
+It helps teams find and fix security problems in web apps, both **in development**
+(terminal, CI, pre-deploy) and **in production** (non-intrusive checks that are safe to run
+against live systems). WebVigil ships as a reusable **scan engine**, a **CLI**, and an
+optional **web dashboard** built on top of the same engine.
 
 > **Status:** the planned coverage roadmap is complete and the first release, `1.0.0`, is
 > being prepared. From `1.0.0` the CLI, the exit codes, the configuration keys, the check
 > ids and the JSON report follow [Semantic Versioning](docs/stability.md); see the
 > [changelog](CHANGELOG.md). [Scope and limitations](#scope-and-limitations) says what
 > WebVigil deliberately does not do.
+
+![WebVigil dashboard (optional web UI) — scan detail page showing findings grouped by severity](assets/dashboard-scan-detail.png)
 
 ## WebVigil vs. other scanners
 
@@ -50,10 +55,33 @@ restricted to the target scope.
 **Active Mode** (payload injection: XSS, SQLi, SSRF, etc.) is opt-in, requires an explicit
 authorization flag, and is intended for development and staging environments only.
 
-### Authorized use only
+---
 
-Only scan systems you own or are explicitly authorized to test. Unauthorized scanning may
-be illegal. See [SECURITY.md](SECURITY.md).
+## Responsible use
+
+A scanner sends requests to a system, so who may point it where matters as much as what it
+finds.
+
+- **Authorized targets only.** Scan systems you own or have explicit permission to test.
+  Scanning someone else's system without permission may be illegal where you live, and
+  downloading this tool is not that permission.
+- **Active Mode has a gate.** It needs `--mode active` **and** `--authorized-by "<who /
+  engagement>"`; without the name WebVigil refuses (exit code `5`), and the name is written
+  into the report.
+- **Anything that writes, logs in or phones out is off by default**, each behind its own
+  switch: `--stored-xss`, `--file-upload`, `--submit-post-forms` and `--confirm-csrf` write to
+  the target; `--login-url` creates a session; `--osv-online` sends library names to OSV.dev.
+- **Always on:** a scope guard that keeps every request on the target host, a request budget,
+  a concurrency cap and a delay, and `robots.txt` is honoured unless you turn it off.
+- **What WebVigil will not do:** brute-force credentials, evade a WAF or an IDS, keep access,
+  take data out, or exploit beyond one bounded proof. That is not on the roadmap
+  ([Scope and limitations](#scope-and-limitations)).
+- **Demos stay on safe targets.** The screenshots, recordings and posts for this project scan
+  the bundled test app (`scripts/serve-fixture-app.py`) or the maintainer's own systems,
+  never a third party's.
+
+Found a vulnerability **in WebVigil**? Report it privately, see [SECURITY.md](SECURITY.md).
+Found one in someone else's system with it? Tell its owner, and follow their disclosure policy.
 
 ---
 
@@ -155,34 +183,51 @@ to reach for instead.
 
 ## Quick start
 
-> Requires Python 3.12+ and [uv](https://docs.astral.sh/uv/).
+> Requires Python 3.12+ and [uv](https://docs.astral.sh/uv/). `your-app.example` below stands for
+> **a system you own or may test**: replace it.
+
+Try it first on a target built to be attacked, on your own machine: a test app that ships with
+this repository, or [OWASP Juice Shop](https://github.com/juice-shop/juice-shop) or
+[DVWA](https://github.com/digininja/DVWA) on `localhost`.
 
 ```bash
-uv sync
-uv run webvigil scan https://example.com
-uv run webvigil scan https://example.com --format html --output report.html
-uv run webvigil scan https://example.com --probe   # also probe for exposed .git/.env/backups
-uv run webvigil scan https://example.com --mode active --authorized-by "you / engagement"  # injection + in-band SSRF testing
-uv run webvigil scan https://example.com --mode active --authorized-by me --stored-xss     # + stored XSS (writes markers)
-uv run webvigil scan https://example.com --mode active --authorized-by me --file-upload    # + file-upload testing (writes files)
-uv run webvigil scan https://example.com --mode active --authorized-by me --submit-post-forms  # + the crawler submits POST forms (writes)
-uv run webvigil scan https://example.com --mode active --authorized-by me --cookie "session=<paste>" --confirm-csrf  # + CSRF confirmation (submits forms)
-uv run webvigil scan https://example.com --cookie "session=<paste from your browser>"      # authenticated scan
-WEBVIGIL_LOGIN_PASSWORD=... uv run webvigil scan https://example.com --mode active --authorized-by me \
-  --login-url https://example.com/signin --username scanner@example.com                    # log in by itself
-uv run webvigil scan https://example.com --sample-sessions                                 # also judge fresh anonymous session ids (GET-only)
-WEBVIGIL_LOGIN_PASSWORD=... uv run webvigil scan https://example.com --mode active --authorized-by me \
-  --login-url https://example.com/signin --username scanner@example.com --test-logout      # + logout test (ends the scan's own session)
-uv run webvigil scan https://example.com --openapi ./openapi.json                          # seed the scan from an API schema
-uv run webvigil scan https://example.com --osv-online                                      # also check libraries against OSV.dev
+uv sync --all-extras                                 # the test app needs the web extra
+uv run python scripts/serve-fixture-app.py &        # an intentionally vulnerable app on 127.0.0.1:9100
+uv run webvigil scan http://127.0.0.1:9100 --mode active --authorized-by "trying WebVigil"   # about 2 minutes: it has slow, time-based cases
+```
+
+Then on your own app:
+
+```bash
+uv run webvigil scan https://your-app.example
+uv run webvigil scan https://your-app.example --format html --output report.html
+uv run webvigil scan https://your-app.example --probe   # also probe for exposed .git/.env/backups
+uv run webvigil scan https://your-app.example --mode active --authorized-by "you / engagement"  # injection + in-band SSRF testing
+uv run webvigil scan https://your-app.example --mode active --authorized-by me --stored-xss     # + stored XSS (writes markers)
+uv run webvigil scan https://your-app.example --mode active --authorized-by me --file-upload    # + file-upload testing (writes files)
+uv run webvigil scan https://your-app.example --mode active --authorized-by me --submit-post-forms  # + the crawler submits POST forms (writes)
+uv run webvigil scan https://your-app.example --mode active --authorized-by me --cookie "session=<paste>" --confirm-csrf  # + CSRF confirmation (submits forms)
+uv run webvigil scan https://your-app.example --cookie "session=<paste from your browser>"      # authenticated scan
+WEBVIGIL_LOGIN_PASSWORD=... uv run webvigil scan https://your-app.example --mode active --authorized-by me \
+  --login-url https://your-app.example/signin --username scanner@example.com                    # log in by itself
+uv run webvigil scan https://your-app.example --sample-sessions                                 # also judge fresh anonymous session ids (GET-only)
+WEBVIGIL_LOGIN_PASSWORD=... uv run webvigil scan https://your-app.example --mode active --authorized-by me \
+  --login-url https://your-app.example/signin --username scanner@example.com --test-logout      # + logout test (ends the scan's own session)
+uv run webvigil scan https://your-app.example --openapi ./openapi.json                          # seed the scan from an API schema
+uv run webvigil scan https://your-app.example --osv-online                                      # also check libraries against OSV.dev
 uv run webvigil list-checks
 uv run webvigil report report.json --format md      # re-render a saved scan, offline
 ```
 
-By default the scan prints a summary to your terminal (stderr), a severity-count table
-followed by one line per finding:
+By default the scan prints a summary to your terminal (stderr): a severity-count table
+followed by one line per finding.
 
-![webvigil scan https://example.com — terminal summary with a severity-count table and one line per finding](assets/cli-scan-summary.svg)
+![A webvigil scan of the bundled test app in Active Mode: the authorization banner, the severity-count table and one coloured line per finding](assets/cli-scan-demo.svg)
+
+*A real run against the bundled test app, kept to its first screen by `| head -40`. The command
+is typed for the recording and the wait in the middle is cut (the test app has slow, time-based
+cases, so the real scan takes about a minute and a half). The source is
+[`assets/cli-scan-demo.cast`](assets/cli-scan-demo.cast); play it with `asciinema play`.*
 
 With `--format` it writes the report to stdout (or `--output PATH`), so you can pipe it.
 
@@ -196,7 +241,7 @@ Exit codes: `0` clean · `3` findings at or above `--fail-on` · `4` operational
 (bad target, unreachable host, config) · `5` Active Mode without `--authorized-by`.
 
 Install the CLI standalone with `pipx install .` or `uv tool install .`, or run it from the
-bundled image: `docker build -t webvigil . && docker run --rm webvigil scan https://example.com`.
+bundled image: `docker build -t webvigil . && docker run --rm webvigil scan https://your-app.example`.
 
 ---
 
