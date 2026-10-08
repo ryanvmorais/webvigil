@@ -662,7 +662,7 @@ def _emit(
         output.write_text(rendered, "utf-8")
         _render.status(f"wrote {output_format} report to {output}")
         return
-    sys.stdout.write(rendered + "\n")
+    sys.stdout.buffer.write((rendered + "\n").encode("utf-8"))
     _render.summary(
         result,
         cookie_count=cookie_count,
@@ -689,7 +689,7 @@ def _write_or_print(rendered: str, output: Path | None, output_format: str) -> N
         output.write_text(rendered, "utf-8")
         _render.status(f"wrote {output_format} report to {output}")
     else:
-        sys.stdout.write(rendered + "\n")
+        sys.stdout.buffer.write((rendered + "\n").encode("utf-8"))
 
 
 def main() -> None:
