@@ -65,3 +65,27 @@ updates:
         update-types:
           - "minor"
           - "patch"
+
+  # Container base images: the CLI image (Dockerfile), the scan-target fixture (docker/) and the
+  # dashboard image (web/). A new base image is how the CLI image picks up OS security fixes; the
+  # release workflow rebuilds it from the Dockerfile at every release.
+  - package-ecosystem: "docker"
+    directories:
+      - "/"
+      - "/docker"
+      - "/web"
+    schedule:
+      interval: "weekly"
+      day: "sunday"
+      time: "09:00"
+      timezone: "America/Sao_Paulo"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(docker)"
+    labels:
+      - "dependencies"
+    groups:
+      docker-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
