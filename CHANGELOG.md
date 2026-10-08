@@ -11,6 +11,11 @@ release and contains all of them.
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-10-08
+
+A patch release with one fix, in the error-page signatures of the information-disclosure check.
+Nothing in the CLI, the exit codes, the configuration keys, the check ids or the JSON report changes.
+
 ### Security
 
 - A response from the scanned site can no longer keep a scan busy for a long time in the error-page
@@ -131,6 +136,7 @@ confirmed against a per-request baseline)
 - A security policy with private vulnerability reporting, a code of conduct, and the
   [stability policy](docs/stability.md).
 
-[Unreleased]: https://github.com/ryanvmorais/webvigil/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/ryanvmorais/webvigil/compare/v1.0.2...HEAD
+[1.0.2]: https://github.com/ryanvmorais/webvigil/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/ryanvmorais/webvigil/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/ryanvmorais/webvigil/releases/tag/v1.0.0
