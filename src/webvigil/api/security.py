@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import secrets
 from datetime import UTC, datetime, timedelta
+from typing import NamedTuple
 
 import jwt
 from argon2 import PasswordHasher
@@ -13,7 +14,7 @@ from fastapi import Response
 from sqlalchemy import Engine
 
 from webvigil.api.config import WebConfig
-from webvigil.api.db import Setting, session_scope
+from webvigil.api.db import Setting, User, session_scope
 
 logger = logging.getLogger("webvigil.api")
 
@@ -67,21 +68,54 @@ def create_token(user_id: int, secret: str, ttl_hours: int) -> str:
     return jwt.encode(payload, secret, algorithm=_ALGORITHM)
 
 
-def decode_token(token: str, secret: str) -> int | None:
+class TokenClaims(NamedTuple):
+    """
+    What a valid session token says.
+
+    Attributes:
+        user_id (int): The user the token authenticates.
+        issued_at (int): When it was minted, in whole seconds since the epoch.
+    """
+
+    user_id: int
+    issued_at: int
+
+
+def decode_token(token: str, secret: str) -> TokenClaims | None:
     """
     Args:
         token (str): A session JWT.
         secret (str): The HS256 signing secret.
 
     Returns:
-        int | None: The user id from a valid, unexpired, well-formed token, or
-            ``None``.
+        TokenClaims | None: The claims of a valid, unexpired, well-formed token that carries an
+            issue time, or ``None``.
     """
     try:
         payload = jwt.decode(token, secret, algorithms=[_ALGORITHM])
-        return int(payload["sub"])
+        return TokenClaims(user_id=int(payload["sub"]), issued_at=int(payload["iat"]))
     except (jwt.PyJWTError, KeyError, ValueError, TypeError):
         return None
+
+
+def credentials_changed_at(user: User) -> int:
+    """
+    When the user's credentials last changed: a password change or ``reset-password``.
+
+    ``User.updated_at`` is set by exactly those two paths. A token minted before that moment was
+    issued against the old credentials and is no longer accepted. SQLite hands the timestamp back
+    without a zone; it is UTC, and reading it as local time would shift it by the machine's offset.
+
+    Args:
+        user (User): The user row.
+
+    Returns:
+        int: That moment, in whole seconds since the epoch.
+    """
+    stamp = user.updated_at
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=UTC)
+    return int(stamp.timestamp())
 
 
 def set_session_cookie(response: Response, token: str, config: WebConfig) -> None:

@@ -20,6 +20,7 @@ from webvigil.api.db import make_engine, run_alembic_upgrade
 from webvigil.api.routes import auth, meta, reports, scans, setup
 from webvigil.api.runner import OrchestratorFactory, ScanRunner, recover_interrupted_scans
 from webvigil.api.security import resolve_session_secret
+from webvigil.api.throttle import LoginThrottle
 
 
 def create_app(
@@ -67,6 +68,7 @@ def create_app(
             engine.dispose()
 
     app = FastAPI(title="WebVigil API", version=__version__, lifespan=lifespan)
+    app.state.login_throttle = LoginThrottle()
     if cfg.cors_origins:
         app.add_middleware(
             CORSMiddleware,

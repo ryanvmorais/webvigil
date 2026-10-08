@@ -15,7 +15,7 @@ export interface paths {
         put?: never;
         /**
          * Login
-         * @description Verify the credentials and set the session cookie. 401 on any mismatch.
+         * @description Verify the credentials and set the session cookie. 401 on a mismatch, 429 after too many.
          */
         post: operations["login_api_auth_login_post"];
         delete?: never;
@@ -76,6 +76,8 @@ export interface paths {
         /**
          * Change Password
          * @description Change the password after re-checking the current one. 403 if it is wrong.
+         *
+         *     Every other session is signed out; this one gets a fresh cookie and stays signed in.
          */
         post: operations["change_password_api_auth_password_post"];
         delete?: never;

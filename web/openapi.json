@@ -829,7 +829,7 @@
   "paths": {
     "/api/auth/login": {
       "post": {
-        "description": "Verify the credentials and set the session cookie. 401 on any mismatch.",
+        "description": "Verify the credentials and set the session cookie. 401 on a mismatch, 429 after too many.",
         "operationId": "login_api_auth_login_post",
         "requestBody": {
           "content": {
@@ -901,7 +901,7 @@
     },
     "/api/auth/password": {
       "post": {
-        "description": "Change the password after re-checking the current one. 403 if it is wrong.",
+        "description": "Change the password after re-checking the current one. 403 if it is wrong.\n\nEvery other session is signed out; this one gets a fresh cookie and stays signed in.",
         "operationId": "change_password_api_auth_password_post",
         "requestBody": {
           "content": {

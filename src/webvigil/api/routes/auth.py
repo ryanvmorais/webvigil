@@ -17,16 +17,29 @@ from webvigil.api.security import (
     set_session_cookie,
     verify_password,
 )
+from webvigil.api.throttle import LoginThrottle
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/login", status_code=status.HTTP_204_NO_CONTENT)
 def login(body: LoginIn, request: Request, response: Response, session: SessionDep) -> None:
-    """Verify the credentials and set the session cookie. 401 on any mismatch."""
+    """Verify the credentials and set the session cookie. 401 on a mismatch, 429 after too many."""
+    throttle: LoginThrottle = request.app.state.login_throttle
+    client = request.client.host if request.client else "unknown"
+    keys = (f"client:{client}", f"user:{body.username.lower()}")
+    wait = throttle.retry_after(*keys)
+    if wait:
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            "too many failed logins: try again later",
+            headers={"Retry-After": str(wait)},
+        )
     user = session.exec(select(User).where(User.username == body.username)).first()
     if user is None or not verify_password(body.password, user.password_hash):
+        throttle.record_failure(*keys)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid username or password")
+    throttle.clear(*keys)
     assert user.id is not None
     config = request.app.state.config
     token = create_token(user.id, request.app.state.session_secret, config.session_ttl_hours)
@@ -47,11 +60,23 @@ def me(user: CurrentUser) -> UserOut:
 
 
 @router.post("/password", status_code=status.HTTP_204_NO_CONTENT)
-def change_password(body: PasswordChangeIn, user: CurrentUser, session: SessionDep) -> None:
-    """Change the password after re-checking the current one. 403 if it is wrong."""
+def change_password(
+    body: PasswordChangeIn,
+    request: Request,
+    response: Response,
+    user: CurrentUser,
+    session: SessionDep,
+) -> None:
+    """Change the password after re-checking the current one. 403 if it is wrong.
+
+    Every other session is signed out; this one gets a fresh cookie and stays signed in."""
     if not verify_password(body.current_password, user.password_hash):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "current password is incorrect")
     user.password_hash = hash_password(body.new_password)
     user.updated_at = utcnow()
     session.add(user)
     session.commit()
+    assert user.id is not None
+    config = request.app.state.config
+    token = create_token(user.id, request.app.state.session_secret, config.session_ttl_hours)
+    set_session_cookie(response, token, config)
