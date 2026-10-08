@@ -3,8 +3,12 @@
 #   build     one `uv build`, checked the same way CI checks it; the artifact is what gets published
 #   testpypi  dry run on test.pypi.org, started by hand (workflow_dispatch); never touches pypi.org
 #   pypi      the real release on pypi.org, only from a published GitHub Release (tag vX.Y.Z)
+#   image     the CLI container image on ghcr.io: built, smoke-tested and scanned first, then pushed for
+#             linux/amd64 and linux/arm64 with signed build provenance. A manual run builds, tests and
+#             scans everything and pushes nothing.
 # PyPI Trusted Publishing (OIDC): no token is stored anywhere. The "pending publisher" and the two
-# environments below are created by the maintainer once (see docs/releasing.md).
+# environments below are created by the maintainer once (see docs/releasing.md). The image uses the
+# workflow's own GITHUB_TOKEN to write to ghcr.io/ryanvmorais/webvigil.
 name: Release
 
 on:
@@ -86,3 +90,87 @@ jobs:
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+
+  image:
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      packages: write # push to ghcr.io
+      id-token: write # sign the provenance
+      attestations: write
+    env:
+      IMAGE: ghcr.io/${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      # Tags 1.0.0, 1.0, 1 and latest from the release tag v1.0.0. A manual run has no tag: it gets
+      # the branch name, and is never pushed.
+      - name: Image tags and labels
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=ref,event=branch
+
+      # Built once for the host architecture and loaded, so the tests and the scan look at the
+      # image that is about to be published and nothing is pushed until they pass.
+      - name: Build the image for testing
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          load: true
+          tags: webvigil:release
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke-test the image
+        run: scripts/smoke-image.sh webvigil:release
+
+      # Stricter than CI: HIGH as well as CRITICAL, with a fix available, stops the release.
+      - name: Scan the image for known vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: webvigil:release
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Log in to ghcr.io
+        if: github.event_name == 'release'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push for amd64 and arm64
+        id: push
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name == 'release' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha
+
+      - name: Sign the build provenance
+        if: github.event_name == 'release'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true

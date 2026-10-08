@@ -5,7 +5,7 @@
 #   web      dashboard — generated types current, lint, format, typecheck, test, build, e2e
 #   package  `uv build`: the sdist is lean, the wheel complete, the README renders on PyPI, and the
 #            wheel installs and runs in a clean environment (the release workflow ships this exact build)
-#   docker   both images build; the CLI image smoke-tests a report render offline
+#   docker   the CLI image (amd64 and arm64) builds, passes scripts/smoke-image.sh and a vulnerability scan
 #   compose  `docker compose up --build`: the API and the dashboard start and talk to each other
 name: CI
 
@@ -158,12 +158,27 @@ jobs:
         run: docker build -t webvigil:ci .
 
       - name: Smoke-test the image
+        run: scripts/smoke-image.sh webvigil:ci
+
+      # CRITICAL with a fix available: a base-image or dependency flaw that a rebuild or a bump
+      # would remove. The release workflow is stricter (HIGH too) before it publishes.
+      - name: Scan the image for known vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: webvigil:ci
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      # The release image is multi-arch. Building arm64 here, under QEMU, finds a missing wheel or
+      # a platform-only failure on a pull request instead of in the middle of a release.
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+
+      - name: Build and smoke-test the arm64 image
         run: |
-          docker run --rm webvigil:ci version
-          docker run --rm webvigil:ci list-checks
-          # report re-renders a saved scan offline, exercising the packaged HTML template
-          echo '{"metadata":{"target":"https://example.com/","mode":"passive","scope":"host","tool_version":"0","started_at":"2026-01-01T00:00:00Z","finished_at":"2026-01-01T00:00:01Z","pages_scanned":1,"counts":{"INFO":0,"LOW":0,"MEDIUM":0,"HIGH":0,"CRITICAL":0}},"findings":[],"errors":[],"warnings":[]}' > scan.json
-          docker run --rm -v "$PWD:/work" webvigil:ci report /work/scan.json --format html > /dev/null
+          docker buildx build --platform linux/arm64 --load -t webvigil:ci-arm64 .
+          scripts/smoke-image.sh webvigil:ci-arm64 linux/arm64
 
   compose:
     runs-on: ubuntu-26.04

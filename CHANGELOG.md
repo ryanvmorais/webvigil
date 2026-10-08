@@ -60,6 +60,9 @@ confirmed against a per-request baseline)
 - A package for PyPI: the engine, the CLI and (with the `web` extra) the Web API, published from a
   GitHub Release with PyPI Trusted Publishing (no stored token) after a dry run on TestPyPI. The
   dashboard stays in the repository. See [releasing](docs/releasing.md).
+- A container image for the CLI on `ghcr.io/ryanvmorais/webvigil` (`linux/amd64` and `linux/arm64`; tags
+  `X.Y.Z`, `X.Y`, `X` and `latest`), built, smoke-tested and vulnerability-scanned before it is pushed,
+  with signed build provenance and an SBOM.
 - `selectolax` is capped below 1.0: version 1.0 removed the parser the engine imports.
 
 **Quality and security of the project**
