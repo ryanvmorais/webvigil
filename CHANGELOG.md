@@ -36,6 +36,10 @@ release and contains all of them.
 - `webvigil-web serve` warns when it listens beyond this machine with `cookie_secure` off.
 - Login takes the same time for a username that does not exist as for a wrong password (it checked no hash
   before), so the response time no longer tells a real username from a made-up one.
+- The dashboard sends security headers on every page: it cannot be framed (`frame-ancestors 'none'`,
+  `X-Frame-Options: DENY`), the browser may not sniff content types, a cross-origin request gets the
+  origin and never the path of a scan, and camera, microphone, geolocation, payment and USB are
+  granted to nobody. A script and style policy is not part of this change.
 
 ## [1.0.0] - 2026-10-08
 

@@ -54,6 +54,24 @@ Next evaluates `next.config.ts` `rewrites()` **at build time**, so:
 `API_PROXY_TARGET` is read only in `next.config.ts` (server side). It never reaches the
 browser bundle, and the bundle contains no credentials or session secret.
 
+## Security headers
+
+Every page and static file the dashboard serves carries `Content-Security-Policy:
+frame-ancestors 'none'` and `X-Frame-Options: DENY` (it cannot be framed), `X-Content-Type-Options:
+nosniff`, `Referrer-Policy: strict-origin-when-cross-origin` (a cross-origin request gets the origin,
+never the path) and a `Permissions-Policy` that grants camera, microphone, geolocation, payment and
+USB to nobody. The list is [`web/src/lib/security-headers.ts`](../web/src/lib/security-headers.ts),
+applied by `headers()` in `next.config.ts`; a unit test reads it and an e2e test checks it on the
+built dashboard.
+
+- **The report preview still works.** It frames a `blob:` document the page builds, which does not
+  carry these headers.
+- **`/api/*` is not covered.** Next only proxies it; the answer carries the API's own headers.
+- **No `Strict-Transport-Security`.** It only means something over HTTPS, so whoever terminates TLS
+  in front of the dashboard sets it.
+- **No script and style policy yet.** That needs a per-request nonce for Next's inline scripts and
+  is the second step of [#138](https://github.com/ryanvmorais/webvigil/issues/138).
+
 ## Scripts
 
 | Command (in `web/`) | What it does |
