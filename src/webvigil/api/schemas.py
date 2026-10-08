@@ -54,14 +54,15 @@ class SetupIn(BaseModel):
 class LoginIn(BaseModel):
     """Login body."""
 
-    username: str
-    password: str
+    # Capped like the setup body: the login is unauthenticated, and the throttle keeps what failed.
+    username: str = Field(max_length=64)
+    password: str = Field(max_length=256)
 
 
 class PasswordChangeIn(BaseModel):
     """Password-change body: the current password plus the new one."""
 
-    current_password: str
+    current_password: str = Field(max_length=256)
     new_password: str = Field(min_length=8, max_length=256)
 
 

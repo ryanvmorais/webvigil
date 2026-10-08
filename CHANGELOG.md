@@ -38,6 +38,10 @@ release and contains all of them.
 - `webvigil-web serve` warns when it listens beyond this machine with `cookie_secure` off.
 - Login takes the same time for a username that does not exist as for a wrong password (it checked no hash
   before), so the response time no longer tells a real username from a made-up one.
+- The Web API no longer lets an unauthenticated client make it hold memory in proportion to what it sends
+  (GHSA-vw64-75mj-x37q): a request body over 1 MiB is refused with `413`, the login username and password are
+  capped at 64 and 256 characters like the setup ones (a longer one is `422`), and the table of failed
+  logins keeps at most 10,000 short keys. 1.0.0 kept every failed username for 15 minutes, whatever its size.
 - The dashboard sends security headers on every page: it cannot be framed (`frame-ancestors 'none'`,
   `X-Frame-Options: DENY`), the browser may not sniff content types, a cross-origin request gets the
   origin and never the path of a scan, and camera, microphone, geolocation, payment and USB are

@@ -63,6 +63,12 @@ holds. Someone guessing can delay you by a few minutes, never lock you out. A us
 not exist takes the same time as a wrong password (one Argon2 check each) and gets the same
 answer, so the response does not say which usernames are real.
 
+**Request sizes are bounded.** A request body over 1 MiB is refused with `413` before the API reads
+the rest of it (a scan request is a few kilobytes), the login username and password are capped at
+64 and 256 characters like the ones `POST /api/setup` takes, and the table of failed logins keeps at
+most 10,000 keys, dropping the one that failed longest ago. A reverse proxy that limits body size
+as well is still better.
+
 **Session secret:** if `session_secret` is unset the server generates one and stores it in
 the database (a `setting` row), so sessions survive restarts. Pin `session_secret`
 explicitly for a shared or containerised deployment. A pinned secret must be at least 32

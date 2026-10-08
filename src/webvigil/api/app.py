@@ -15,6 +15,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from webvigil import __version__
+from webvigil.api.body_limit import BodyLimitMiddleware
 from webvigil.api.config import WebConfig
 from webvigil.api.db import make_engine, run_alembic_upgrade
 from webvigil.api.routes import auth, meta, reports, scans, setup
@@ -78,6 +79,9 @@ def create_app(
             allow_methods=["*"],
             allow_headers=["*"],
         )
+    # Added last, so it is the outermost layer: an oversized body is refused before anything else
+    # (CORS included) looks at it.
+    app.add_middleware(BodyLimitMiddleware)
     for router in (meta.router, setup.router, auth.router, scans.router, reports.router):
         app.include_router(router, prefix="/api")
     return app

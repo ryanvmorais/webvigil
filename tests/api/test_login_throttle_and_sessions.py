@@ -147,3 +147,31 @@ def test_an_unknown_username_runs_the_same_password_check_as_a_wrong_password(
     assert wrong.json() == unknown.json()  # the body does not say which either
     assert len(checked) == 2  # one check each; the unknown user did not skip it
     assert checked[1] == dummy_password_hash()
+
+
+def test_a_login_body_over_the_cap_is_refused_before_it_is_counted(client: TestClient) -> None:
+    """A huge username or password is a 422 and never reaches the throttle table.
+
+    The throttle keeps a key per failed username for 15 minutes, so an unbounded username let an
+    unauthenticated client grow the process by what it sent.
+    """
+    app_throttle = client.app.state.login_throttle  # type: ignore[attr-defined]
+    for body in (
+        {"username": "a" * 65, "password": "x"},
+        {"username": "admin", "password": "p" * 257},
+    ):
+        assert client.post("/api/auth/login", json=body).status_code == 422
+    assert app_throttle._failures == {}
+
+
+def test_the_caps_are_the_same_as_the_ones_setup_enforces(client: TestClient) -> None:
+    """A real account always fits: 64-character names and 256-character passwords still log in."""
+    account = {"username": "n" * 64, "password": "p" * 256}
+    assert client.post("/api/setup", json=account).status_code == 201
+    assert client.post("/api/auth/login", json=account).status_code == 204
+
+
+def test_changing_the_password_caps_the_current_password(auth_client: TestClient) -> None:
+    """The current password in a password change is capped like every other password field."""
+    body = {"current_password": "c" * 257, "new_password": "a-new-long-password"}
+    assert auth_client.post("/api/auth/password", json=body).status_code == 422

@@ -11,7 +11,14 @@ from datetime import UTC, datetime
 
 from webvigil.api.db import User
 from webvigil.api.security import credentials_changed_at
-from webvigil.api.throttle import FORGET_AFTER_S, FREE_ATTEMPTS, MAX_DELAY_S, LoginThrottle
+from webvigil.api.throttle import (
+    FORGET_AFTER_S,
+    FREE_ATTEMPTS,
+    MAX_DELAY_S,
+    MAX_KEY_CHARS,
+    MAX_KEYS,
+    LoginThrottle,
+)
 
 
 class _Clock:
@@ -108,3 +115,35 @@ def test_credentials_changed_at_reads_a_zoneless_timestamp_as_utc() -> None:
     expected = int(datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC).timestamp())
     assert credentials_changed_at(naive) == expected
     assert credentials_changed_at(aware) == expected
+
+
+def test_the_table_never_holds_more_than_max_keys() -> None:
+    """A flood of made-up keys cannot grow the table past ``MAX_KEYS``."""
+    throttle = LoginThrottle(clock=_Clock())
+    for index in range(MAX_KEYS + 500):
+        throttle.record_failure(f"user:made-up-{index}")
+    assert len(throttle._failures) == MAX_KEYS
+
+
+def test_a_full_table_drops_the_key_that_failed_longest_ago() -> None:
+    """The first key in is the first out; a key that fails again moves to the back of the line."""
+    throttle = LoginThrottle(clock=_Clock())
+    for index in range(MAX_KEYS):
+        throttle.record_failure(f"user:{index}")
+    throttle.record_failure("user:0")  # the oldest fails again, so it is now the newest
+    throttle.record_failure("user:new")  # the table is full: user:1 is the one that goes
+    assert "user:0" in throttle._failures
+    assert "user:1" not in throttle._failures
+    assert "user:new" in throttle._failures
+
+
+def test_a_huge_key_is_stored_short_and_still_counts() -> None:
+    """A key longer than ``MAX_KEY_CHARS`` is kept as its digest, so it costs a fixed amount."""
+    throttle = LoginThrottle(clock=_Clock())
+    huge = "user:" + "a" * 5_000_000
+    _fail(throttle, FREE_ATTEMPTS, huge)
+    assert throttle.retry_after(huge) == 1
+    assert all(len(key) <= MAX_KEY_CHARS for key in throttle._failures)
+    assert throttle.retry_after("user:" + "a" * 4_999_999) == 0  # another key, another count
+    throttle.clear(huge)
+    assert throttle.retry_after(huge) == 0

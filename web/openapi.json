@@ -241,10 +241,12 @@
         "description": "Login body.",
         "properties": {
           "password": {
+            "maxLength": 256,
             "title": "Password",
             "type": "string"
           },
           "username": {
+            "maxLength": 64,
             "title": "Username",
             "type": "string"
           }
@@ -287,6 +289,7 @@
         "description": "Password-change body: the current password plus the new one.",
         "properties": {
           "current_password": {
+            "maxLength": 256,
             "title": "Current Password",
             "type": "string"
           },

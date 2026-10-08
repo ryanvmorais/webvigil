@@ -10,10 +10,15 @@ State lives in memory, per process: a restart forgets it, which is acceptable fo
 single-user, local-first service. Behind a reverse proxy every request has the proxy's address,
 so the per-client key becomes one key for everybody and the per-username key does the work;
 ``X-Forwarded-For`` is not trusted because the client controls it.
+
+The table is bounded, because its keys come from unauthenticated requests: a key is never kept
+longer than ``MAX_KEY_CHARS``, and when ``MAX_KEYS`` are held the key that failed longest ago is
+dropped to make room.
 """
 
 from __future__ import annotations
 
+import hashlib
 import math
 import time
 from collections.abc import Callable
@@ -24,6 +29,13 @@ FREE_ATTEMPTS = 5
 MAX_DELAY_S = 300
 # A client that stays quiet this long is forgotten (and the table cannot grow forever).
 FORGET_AFTER_S = 900
+# Distinct keys held at once. Each costs a short string and a tuple, so this is about a megabyte;
+# more than a single-user service ever sees, and the cap that keeps a flood of made-up usernames
+# from growing the process without limit.
+MAX_KEYS = 10_000
+# A key longer than this is replaced by its SHA-256, so a key never holds more than this many
+# characters whatever the caller built it from.
+MAX_KEY_CHARS = 128
 
 
 class LoginThrottle:
@@ -50,7 +62,7 @@ class LoginThrottle:
         now = self._clock()
         self._forget(now)
         wait = 0.0
-        for key in keys:
+        for key in map(_bounded, keys):
             count, last = self._failures.get(key, (0, 0.0))
             if count >= FREE_ATTEMPTS:
                 delay = min(MAX_DELAY_S, 2 ** (count - FREE_ATTEMPTS))
@@ -63,8 +75,12 @@ class LoginThrottle:
             *keys (str): The keys a failed attempt counts against.
         """
         now = self._clock()
-        for key in keys:
-            count, _last = self._failures.get(key, (0, 0.0))
+        for key in map(_bounded, keys):
+            # Pop and re-insert, so the dict stays ordered by the last failure and the first
+            # entry is always the one to drop when the table is full.
+            count, _last = self._failures.pop(key, (0, 0.0))
+            if len(self._failures) >= MAX_KEYS:
+                del self._failures[next(iter(self._failures))]
             self._failures[key] = (count + 1, now)
 
     def clear(self, *keys: str) -> None:
@@ -72,7 +88,7 @@ class LoginThrottle:
         Args:
             *keys (str): The keys to forget, after a successful login.
         """
-        for key in keys:
+        for key in map(_bounded, keys):
             self._failures.pop(key, None)
 
     def _forget(self, now: float) -> None:
@@ -85,3 +101,17 @@ class LoginThrottle:
         ]
         for key in stale:
             del self._failures[key]
+
+
+def _bounded(key: str) -> str:
+    """
+    Args:
+        key (str): A throttle key, possibly built from what an unauthenticated client sent.
+
+    Returns:
+        str: ``key`` itself when it is at most ``MAX_KEY_CHARS`` long, otherwise ``"sha256:"``
+            and the hex digest of its UTF-8 bytes: the same input always maps to the same key.
+    """
+    if len(key) <= MAX_KEY_CHARS:
+        return key
+    return "sha256:" + hashlib.sha256(key.encode("utf-8", "surrogatepass")).hexdigest()
