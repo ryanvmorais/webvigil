@@ -1,8 +1,10 @@
-# CI pipeline (GitHub Actions). Four independent jobs, each mirroring a slice of
+# CI pipeline (GitHub Actions). Five independent jobs, each mirroring a slice of
 # the local quality gate so that a green check means the same as a clean checkout:
 #   quality  engine/CLI on 3.12 (the floor), 3.13 and 3.14 (the newest stable) — ruff, black, mypy,
 #            import-linter, pytest
 #   web      dashboard — generated types current, lint, format, typecheck, test, build, e2e
+#   package  `uv build`: the sdist is lean, the wheel complete, the README renders on PyPI, and the
+#            wheel installs and runs in a clean environment (the release workflow ships this exact build)
 #   docker   both images build; the CLI image smoke-tests a report render offline
 #   compose  `docker compose up --build`: the API and the dashboard start and talk to each other
 name: CI
@@ -118,6 +120,34 @@ jobs:
 
       - name: Web image builds
         run: docker build --build-arg API_PROXY_TARGET=http://api:8000 -t webvigil-web:ci ./web
+
+  package:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.12"
+
+      - name: Build the sdist and the wheel
+        run: uv build
+
+      - name: The package is what a release should ship
+        run: uv run --no-project python scripts/check-package.py dist
+
+      - name: The metadata renders on PyPI
+        run: uvx twine check --strict dist/*
+
+      - name: The wheel installs in a clean environment and runs
+        run: |
+          uv venv --python 3.12 "$RUNNER_TEMP/clean"
+          uv pip install --python "$RUNNER_TEMP/clean" "$(ls dist/*.whl)[web]"
+          "$RUNNER_TEMP/clean/bin/webvigil" version
+          "$RUNNER_TEMP/clean/bin/webvigil" list-checks > /dev/null
+          # the Web API extra brings its migrations along
+          "$RUNNER_TEMP/clean/bin/webvigil-web" --help > /dev/null
 
   docker:
     runs-on: ubuntu-26.04
