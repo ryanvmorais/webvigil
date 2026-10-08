@@ -76,7 +76,7 @@ confirmed against a per-request baseline)
 
 **Quality and security of the project**
 - Strict typing, an import contract that keeps the engine independent of the CLI, the API and the
-  database, 1137 tests, a CI matrix on Python 3.12 to 3.14, Lighthouse CI for the dashboard, CodeQL
+  database, 1138 tests, a CI matrix on Python 3.12 to 3.14, Lighthouse CI for the dashboard, CodeQL
   and Dependabot.
 - A security policy with private vulnerability reporting, a code of conduct, and the
   [stability policy](docs/stability.md).
