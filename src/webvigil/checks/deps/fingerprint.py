@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from urllib.parse import urljoin
 
-from selectolax.parser import HTMLParser
+from selectolax.lexbor import LexborHTMLParser as HTMLParser
 
 from webvigil.checks.deps.rules import RetireJsRules
 from webvigil.core.context import Detection, Page

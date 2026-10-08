@@ -20,7 +20,8 @@ from __future__ import annotations
 
 from urllib.parse import urljoin, urlsplit
 
-from selectolax.parser import HTMLParser, Node
+from selectolax.lexbor import LexborHTMLParser as HTMLParser
+from selectolax.lexbor import LexborNode as Node
 
 from webvigil.checks.base import Check
 from webvigil.checks.registry import register

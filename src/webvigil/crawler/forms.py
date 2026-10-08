@@ -18,7 +18,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from urllib.parse import urlencode, urljoin, urlsplit, urlunsplit
 
-from selectolax.parser import HTMLParser, Node
+from selectolax.lexbor import LexborHTMLParser as HTMLParser
+from selectolax.lexbor import LexborNode as Node
 
 from webvigil.core.context import Page
 from webvigil.core.target import Target, normalize_url

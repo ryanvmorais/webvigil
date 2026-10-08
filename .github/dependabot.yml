@@ -26,12 +26,6 @@ updates:
         update-types:
           - "minor"
           - "patch"
-    # selectolax 1.0 removed the Modest backend (`selectolax.parser`) that the engine imports, and
-    # Dependabot widened the `<1` cap in pyproject.toml to propose it, which broke every CI job.
-    # Skip the major until the engine moves to the Lexbor backend; then delete this rule.
-    ignore:
-      - dependency-name: "selectolax"
-        update-types: ["version-update:semver-major"]
 
   # Web UI — pnpm workspace under web/, lockfile is web/pnpm-lock.yaml.
   - package-ecosystem: "npm"
