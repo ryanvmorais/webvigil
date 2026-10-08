@@ -233,6 +233,9 @@ docker compose up --build          # dashboard on http://localhost:3000
 The dashboard calls same-origin `/api/*`; Next proxies that to the API, so no CORS is
 involved. See [docs/web-ui.md](docs/web-ui.md).
 
+The dashboard lives in this repository only; it is **not** in the PyPI package. `pip install
+webvigil` gives the engine and the CLI, and `webvigil[web]` adds the Web API.
+
 ---
 
 ## Development
