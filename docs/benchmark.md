@@ -85,9 +85,12 @@ information-disclosure probe stopped at its 150-request cap (166 candidate paths
 says in its warnings. With `--confirm-csrf` the seven candidate forms came back inconclusive:
 none was confirmed.
 
-**False positives.** None among the injection, upload, session and disclosure findings: each was
-checked by hand against the application. The six `csrf.form.no-token` forms were not each
-reviewed; the active confirmation did not confirm any of them.
+**False positives.** None that I could identify. The injection, upload and session findings each
+match a documented weakness of DVWA at this level (`session.fixation` is a low-confidence candidate
+with `verified: no`), and the disclosure findings were reproduced by hand (the `Dockerfile` is
+served; the PHP deprecation notices are on `/instructions.php`). The six `csrf.form.no-token` forms
+were not each reviewed; the active confirmation did not confirm any of them. Nobody independent has
+counted these results.
 
 ### Why blind SQL injection was missed
 
