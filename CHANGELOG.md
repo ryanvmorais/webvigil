@@ -11,6 +11,13 @@ release and contains all of them.
 
 ## [Unreleased]
 
+### Security
+
+- A response from the scanned site can no longer keep a scan busy for a long time in the error-page
+  signatures (GHSA-wxvq-cw49-p7f6): the patterns for the Java, Node.js and Python stack traces and for the
+  Django and Rails debug pages are bounded, and the signatures read the first 256 KiB of a body. A
+  framework error that appears only past that point is no longer recognised.
+
 ## [1.0.1] - 2026-10-08
 
 A patch release: it fixes the Web API and lifts the `selectolax` cap. Nothing in the CLI, the

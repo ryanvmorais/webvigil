@@ -5,6 +5,11 @@ Pure data — no I/O. Each :class:`ErrorSignature` keys on the framework's
 *chrome* (its debugger markup, its stack-trace layout), not on the words
 "error" or "exception" alone, so a generic "something went wrong" page and a
 blog post that quotes a traceback do not match (RNF-05).
+
+The text these patterns read comes from the scanned site, so each one is written to cost
+time proportional to the size of the body: every repetition is bounded, no two neighbouring
+repetitions can match the same characters, and a pattern that starts on a word starts on a word
+boundary. :func:`match_error` also reads only the first ``_SCAN_MAX`` characters of a body.
 """
 
 from __future__ import annotations
@@ -15,6 +20,10 @@ from dataclasses import dataclass
 from webvigil.core.findings import Severity
 
 _SNIPPET_MAX = 400
+# Characters of a body the signatures read. An error page carries its framework chrome near the
+# top; a body that long past it is a document, not a debugger page, and the patterns would only
+# spend time on it. The HTTP layer already caps a body at 10 MiB.
+_SCAN_MAX = 256 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,7 +73,7 @@ ERROR_SIGNATURES: tuple[ErrorSignature, ...] = (
         "Django",
         re.compile(
             r"You(?:&#39;|&#x27;|')re seeing this error because you have"
-            r"|<div id=\"summary\">\s*<h1>.+ at /"
+            r"|<div id=\"summary\">\s{0,200}<h1>[^<\n]{1,200} at /"
             r"|<th>Django Version:</th>",
             re.S,
         ),
@@ -75,8 +84,8 @@ ERROR_SIGNATURES: tuple[ErrorSignature, ...] = (
         "Ruby on Rails",
         re.compile(
             r"Action Controller: Exception caught"
-            r"|<h1>\s*(?:ActionController|ActiveRecord|NoMethodError|RuntimeError)\b"
-            r"|<code>.+app/controllers/.+\.rb</code>",
+            r"|<h1>\s{0,200}(?:ActionController|ActiveRecord|NoMethodError|RuntimeError)\b"
+            r"|<code>[^<\n]{1,300}app/controllers/[^<\n]{1,300}\.rb</code>",
             re.S,
         ),
         interactive=False,
@@ -117,8 +126,9 @@ ERROR_SIGNATURES: tuple[ErrorSignature, ...] = (
     ErrorSignature(
         "Java",
         re.compile(
-            r"(?:[a-z][\w.]*\.)+[A-Z]\w*(?:Exception|Error)(?::[^\n<]*)?"
-            r"(?:\s|<br\s*/?>|\n)*(?:\s|&nbsp;)*at [\w.$/]+\([\w. ]+\.(?:java|jsp):\d+\)",
+            r"\b[a-z]\w{0,100}(?:\.\w{1,100}){0,12}\.[A-Z]\w{0,100}(?:Exception|Error)"
+            r"(?::[^\n<]{0,500})?(?:\s|<br\s*/?>|&nbsp;){0,200}"
+            r"at [\w.$/]{1,300}\([\w. ]{1,100}\.(?:java|jsp):\d+\)",
             re.S,
         ),
         interactive=False,
@@ -128,8 +138,8 @@ ERROR_SIGNATURES: tuple[ErrorSignature, ...] = (
         "Node.js",
         re.compile(
             r"(?:Error|TypeError|ReferenceError|RangeError|SyntaxError):[^\n<]{1,200}"
-            r"(?:\s|<br\s*/?>|\n)+(?:\s|&nbsp;)*at [^\n<]{1,200}"
-            r"\([^\n<)]*(?::\d+){1,2}\)",
+            r"(?:\s|<br\s*/?>|&nbsp;){1,200}at [^\n<]{1,200}"
+            r"\([^\n<)]{0,300}:\d+(?::\d+)?\)",
             re.S,
         ),
         interactive=False,
@@ -138,7 +148,7 @@ ERROR_SIGNATURES: tuple[ErrorSignature, ...] = (
     ErrorSignature(
         "Python",
         re.compile(
-            r"Traceback \(most recent call last\):" r"(?:\s|<br\s*/?>|\n)+(?:\s|&nbsp;)*File [\"&]",
+            r"Traceback \(most recent call last\):" r"(?:\s|<br\s*/?>|&nbsp;){1,200}File [\"&]",
             re.S,
         ),
         interactive=False,
@@ -162,6 +172,7 @@ def match_error(body: str) -> ErrorMatch | None:
         ErrorMatch | None: The first (most-specific) framework error signature
             that fires, with its matched snippet, or ``None``.
     """
+    body = body[:_SCAN_MAX]
     for signature in ERROR_SIGNATURES:
         hit = signature.pattern.search(body)
         if hit is not None:
@@ -181,4 +192,5 @@ def is_directory_listing(body: str) -> bool:
         bool: ``True`` when ``body`` is a server-generated directory index
             (Apache / nginx / ``http.server``).
     """
+    body = body[:_SCAN_MAX]
     return any(pattern.search(body) for pattern in LISTING_SIGNATURES)

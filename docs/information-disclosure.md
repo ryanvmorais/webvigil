@@ -65,6 +65,9 @@ database. A finding proves exposure by shape, not by quoting the secret.
 
 - **Not a content-discovery scanner.** The catalogue is a small curated list of names that
   are sensitive by definition — not a dirbuster-style wordlist. There is no `--wordlist`.
+- **Reads the top of a page only.** The error-page and directory-listing signatures look at the
+  first 256 KiB of a body, and every pattern is bounded, so a hostile page cannot keep the scan busy
+  in them. A framework error that appears only after that point is not recognised.
 - **No active error induction.** It reads error pages the crawl surfaced; it does not send
   malformed input to trigger one (that is spec 006).
 - **No `.git` exfiltration.** It reports that `.git/` is reachable; it does not download
