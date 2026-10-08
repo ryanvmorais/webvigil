@@ -1,0 +1,60 @@
+# CodeQL code scanning (GitHub Actions), as a workflow in the repository instead of GitHub's
+# "default setup". The default setup ran on a runner label the repository does not control and its
+# runs cannot be re-run: in October 2026 one of its three jobs stayed queued forever on three
+# merges in a row, and each such run reads as a failure on `main`. Here the runner label is pinned
+# like every other workflow's and a stuck job can be re-run.
+#
+# One job per language, each reporting its own category so the alerts stay separate:
+#   actions                  the workflow files themselves
+#   javascript-typescript    the dashboard (web/) and its config
+#   python                   the engine, the CLI and the Web API
+# None of them needs a build (`build-mode: none`): CodeQL reads the source.
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # Weekly, on Sunday at 12:00 UTC (09:00 in Sao Paulo, when Dependabot runs): new queries land in
+  # the CodeQL bundle without a change in this repository.
+  schedule:
+    - cron: "0 12 * * 0"
+
+# Read-only by default; the analyze job asks for the one extra scope it needs.
+permissions:
+  contents: read
+
+# A newer push to the same pull request makes the older analysis pointless; on `main` and on the
+# schedule every run is kept, so a result is never lost to a later one.
+concurrency:
+  group: codeql-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      # Upload the SARIF results to the Security tab.
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [actions, javascript-typescript, python]
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          category: "/language:${{ matrix.language }}"
