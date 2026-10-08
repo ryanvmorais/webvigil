@@ -26,6 +26,13 @@ release and contains all of them.
   the system code page instead of UTF-8, so `webvigil report` could not read it back. It is UTF-8 now,
   as `--output` always was.
 
+### Security
+
+- The dashboard sends security headers on every page: it cannot be framed (`frame-ancestors 'none'`,
+  `X-Frame-Options: DENY`), the browser may not sniff content types, a cross-origin request gets the
+  origin and never the path of a scan, and camera, microphone, geolocation, payment and USB are
+  granted to nobody. A script and style policy is not part of this change.
+
 ## [1.0.0] - 2026-10-08
 
 The first release.
