@@ -11,7 +11,7 @@ from sqlmodel import Session
 
 from webvigil.api.db import User
 from webvigil.api.runner import ScanRunner
-from webvigil.api.security import SESSION_COOKIE, decode_token
+from webvigil.api.security import SESSION_COOKIE, credentials_changed_at, decode_token
 
 _UNAUTHENTICATED = HTTPException(status.HTTP_401_UNAUTHORIZED, "not authenticated")
 
@@ -58,15 +58,19 @@ def optional_user(request: Request, session: SessionDep) -> User | None:
 
     Returns:
         User | None: The authenticated user, or ``None`` when the cookie is
-            absent, invalid, expired, or names a user that no longer exists.
+            absent, invalid, expired, names a user that no longer exists, or was issued before
+            the user's credentials last changed (a password change signs the other sessions out).
     """
     token = request.cookies.get(SESSION_COOKIE)
     if not token:
         return None
-    user_id = decode_token(token, request.app.state.session_secret)
-    if user_id is None:
+    claims = decode_token(token, request.app.state.session_secret)
+    if claims is None:
         return None
-    return session.get(User, user_id)
+    user = session.get(User, claims.user_id)
+    if user is None or claims.issued_at < credentials_changed_at(user):
+        return None
+    return user
 
 
 OptionalUser = Annotated[User | None, Depends(optional_user)]
