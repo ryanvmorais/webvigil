@@ -3,6 +3,9 @@
 ![Python](https://img.shields.io/badge/Python-3.12+-3776AB?logo=python&logoColor=white)
 ![deps](https://img.shields.io/badge/deps-uv-DE5FE9)
 [![CI](https://github.com/ryanvmorais/webvigil/actions/workflows/ci.yml/badge.svg)](https://github.com/ryanvmorais/webvigil/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/webvigil)](https://pypi.org/project/webvigil/)
+[![Release](https://img.shields.io/github/v/release/ryanvmorais/webvigil)](https://github.com/ryanvmorais/webvigil/releases)
+[![Image](https://img.shields.io/badge/ghcr.io-webvigil-2496ED?logo=docker&logoColor=white)](https://github.com/ryanvmorais/webvigil/pkgs/container/webvigil)
 ![Lint](https://img.shields.io/badge/lint-ruff-261230)
 ![Format](https://img.shields.io/badge/style-black-000000)
 ![Types](https://img.shields.io/badge/types-mypy%20strict-2A6DB2)
@@ -20,10 +23,9 @@ It helps teams find and fix security problems in web apps, both **in development
 against live systems). WebVigil ships as a reusable **scan engine**, a **CLI**, and an
 optional **web dashboard** built on top of the same engine.
 
-> **Status:** the planned coverage roadmap is complete and the first release, `1.0.0`, is
-> being prepared. From `1.0.0` the CLI, the exit codes, the configuration keys, the check
-> ids and the JSON report follow [Semantic Versioning](docs/stability.md); see the
-> [changelog](CHANGELOG.md). [Scope and limitations](#scope-and-limitations) says what
+> **Status:** the planned coverage roadmap is complete and `1.0.0` is the first release. The
+> CLI, the exit codes, the configuration keys, the check ids and the JSON report follow
+> [Semantic Versioning](docs/stability.md); see the [changelog](CHANGELOG.md). [Scope and limitations](#scope-and-limitations) says what
 > WebVigil deliberately does not do.
 
 ![WebVigil dashboard (optional web UI) — scan detail page showing findings grouped by severity](assets/dashboard-scan-detail.png)
@@ -181,16 +183,34 @@ to reach for instead.
 
 ---
 
+## Install
+
+Python 3.12 or newer. The package has the engine and the CLI; the dashboard and the bundled
+test app live in this repository only.
+
+```bash
+pipx install webvigil                  # or: uv tool install webvigil, or: pip install webvigil
+webvigil version
+
+# or, without installing Python packages:
+docker run --rm ghcr.io/ryanvmorais/webvigil scan https://your-app.example
+```
+
+The image is built for `linux/amd64` and `linux/arm64` and carries signed build provenance and
+an SBOM (see [releasing](docs/releasing.md#every-release)). `webvigil[web]` adds the Web API.
+
 ## Quick start
 
-> Requires Python 3.12+ and [uv](https://docs.astral.sh/uv/). `your-app.example` below stands for
-> **a system you own or may test**: replace it.
+> The steps below run from a clone of this repository, because the test app ships with it, and
+> need [uv](https://docs.astral.sh/uv/). `your-app.example` stands for **a system you own or
+> may test**: replace it. With the package installed, drop the `uv run`.
 
 Try it first on a target built to be attacked, on your own machine: a test app that ships with
 this repository, or [OWASP Juice Shop](https://github.com/juice-shop/juice-shop) or
 [DVWA](https://github.com/digininja/DVWA) on `localhost`.
 
 ```bash
+git clone https://github.com/ryanvmorais/webvigil && cd webvigil
 uv sync --all-extras                                 # the test app needs the web extra
 uv run python scripts/serve-fixture-app.py &        # an intentionally vulnerable app on 127.0.0.1:9100
 uv run webvigil scan http://127.0.0.1:9100 --mode active --authorized-by "trying WebVigil"   # about 2 minutes: it has slow, time-based cases
@@ -240,8 +260,8 @@ uv run webvigil scan "$TARGET_URL" --format sarif --output results.sarif --fail-
 Exit codes: `0` clean · `3` findings at or above `--fail-on` · `4` operational error
 (bad target, unreachable host, config) · `5` Active Mode without `--authorized-by`.
 
-Install the CLI standalone with `pipx install .` or `uv tool install .`, or run it from the
-bundled image: `docker build -t webvigil . && docker run --rm webvigil scan https://your-app.example`.
+To scan a target on your own machine from the image, add `--network host` (Linux) or use
+`host.docker.internal` as the host name (Docker Desktop).
 
 ---
 

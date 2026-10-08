@@ -10,7 +10,10 @@ create / decode with the right and wrong secret and past expiry, and
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
+
+import jwt
 
 from webvigil.api.config import WebConfig
 from webvigil.api.db import Setting, make_engine, run_alembic_upgrade, session_scope
@@ -41,9 +44,19 @@ def test_verify_rejects_a_garbage_hash() -> None:
 
 
 def test_token_round_trip() -> None:
-    """A token created for a user id decodes back to that id with the same secret."""
+    """A token decodes back to its user id, stamped with the time it was issued."""
+    before = int(time.time())
     token = create_token(42, _SECRET, ttl_hours=1)
-    assert decode_token(token, _SECRET) == 42
+    claims = decode_token(token, _SECRET)
+    assert claims is not None
+    assert claims.user_id == 42
+    assert before <= claims.issued_at <= int(time.time())
+
+
+def test_token_without_an_issue_time_is_rejected() -> None:
+    """A token with no ``iat`` cannot be compared with a password change, so it is refused."""
+    token = jwt.encode({"sub": "42", "exp": int(time.time()) + 3600}, _SECRET, algorithm="HS256")
+    assert decode_token(token, _SECRET) is None
 
 
 def test_token_with_wrong_secret_is_rejected() -> None:

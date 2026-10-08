@@ -11,6 +11,10 @@ release and contains all of them.
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-10-08
+
+The first release.
+
 ### Added
 
 **Scanner and CLI**
@@ -72,9 +76,10 @@ confirmed against a per-request baseline)
 
 **Quality and security of the project**
 - Strict typing, an import contract that keeps the engine independent of the CLI, the API and the
-  database, 1094 tests, a CI matrix on Python 3.12 to 3.14, Lighthouse CI for the dashboard, CodeQL
+  database, 1138 tests, a CI matrix on Python 3.12 to 3.14, Lighthouse CI for the dashboard, CodeQL
   and Dependabot.
 - A security policy with private vulnerability reporting, a code of conduct, and the
   [stability policy](docs/stability.md).
 
-[Unreleased]: https://github.com/ryanvmorais/webvigil/commits/main
+[Unreleased]: https://github.com/ryanvmorais/webvigil/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/ryanvmorais/webvigil/releases/tag/v1.0.0
