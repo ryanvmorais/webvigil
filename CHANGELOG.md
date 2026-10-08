@@ -11,6 +11,11 @@ release and contains all of them.
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-10-08
+
+A patch release: it fixes the Web API and lifts the `selectolax` cap. Nothing in the CLI, the
+exit codes, the configuration keys, the check ids or the JSON report changes.
+
 ### Changed
 
 - The engine parses HTML with the Lexbor backend of `selectolax` (`selectolax.lexbor`) instead of the Modest
@@ -19,6 +24,8 @@ release and contains all of them.
   document order, as a browser sends them, so the parameters of a crawled form can be listed in a different
   order. On the bundled test app a full Active scan gives the same findings; a page with malformed HTML can
   be read differently.
+- The container image is built from a base image pinned by digest, so rebuilding a tag starts from the
+  same base until the pin is bumped.
 
 ### Fixed
 
@@ -117,5 +124,6 @@ confirmed against a per-request baseline)
 - A security policy with private vulnerability reporting, a code of conduct, and the
   [stability policy](docs/stability.md).
 
-[Unreleased]: https://github.com/ryanvmorais/webvigil/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/ryanvmorais/webvigil/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/ryanvmorais/webvigil/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/ryanvmorais/webvigil/releases/tag/v1.0.0

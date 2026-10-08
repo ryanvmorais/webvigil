@@ -39,7 +39,7 @@ uv run mypy src
 uv run lint-imports      # contrato: engine não importa Typer/Rich/FastAPI/SQLModel/Alembic/pyjwt/argon2
 uv run pytest
 uv run pytest --cov       # per-file line + branch coverage of src/webvigil (the guard of issue #101)
-# A suíte inteira leva ~10 min com cobertura (1140 testes). Specs novas seguem as regras de teste
+# A suíte inteira leva ~10 min com cobertura (1165 testes). Specs novas seguem as regras de teste
 # de specs/README.md ("Testes de uma spec"): lógica em unit, integração anexa a um scan compartilhado.
 uv run webvigil scan <url>
 uv run webvigil list-checks
