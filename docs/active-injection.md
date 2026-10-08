@@ -27,7 +27,7 @@ no out-of-band collaborator.
 | `injection.sqli.error-based` | HIGH | A broken quote produces a DBMS parser error (MySQL, PostgreSQL, MSSQL, Oracle, SQLite) that is absent from the baseline. |
 | `injection.sqli.boolean-based` | HIGH | A `TRUE` payload keeps the response like the baseline and a `FALSE` payload changes it — reproduced across a confirmation round, after checking the page is stable. |
 | `injection.sqli.time-based` | HIGH | An injected `SLEEP(n)` delays the response by ~`n` s while a `SLEEP(0)` control returns fast, and the delay scales with a half-length probe. |
-| `injection.traversal.path` | HIGH | A `../` payload returns a known system file — `root:…:0:0:` from `/etc/passwd`, `[fonts]` from `win.ini` — not present in the baseline. |
+| `injection.traversal.path` | HIGH | A `../` or absolute-path payload returns a known system file — `root:…:0:0:` from `/etc/passwd`, `[fonts]` from `win.ini` — not present in the baseline. |
 | `injection.redirect.open` | MEDIUM | An off-site URL injected into the parameter is honoured in the `Location` header (or a `<meta refresh>` / `location.href`). The redirect to the sentinel host is never followed. |
 | `injection.xss.stored` | HIGH | A `<wvstored…>` marker submitted through a form (or query parameter) is stored by the app and later rendered with its markup intact on a **different** page — found by a re-crawl. Opt-in; see below. |
 | `injection.ssrf.metadata` | CRITICAL | A URL payload in the parameter makes the server fetch the cloud instance metadata service — a provider marker (`AccessKeyId`, `computeMetadata`, `vmId`, …) appears in the response, absent from the baseline. |

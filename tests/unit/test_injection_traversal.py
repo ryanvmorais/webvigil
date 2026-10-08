@@ -87,6 +87,16 @@ async def test_win_ini_disclosure_is_a_hit() -> None:
     assert len(hits) == 1
 
 
+async def test_absolute_windows_path_is_tried_when_relative_ones_do_not_reach_the_root() -> None:
+    """An app deep in the tree never reaches the drive root with ``../``; the absolute path does."""
+    hits = await traversal.detect(
+        _POINT,
+        _baseline(),
+        _ctx(lambda v: _resp(_WININI if v == "/windows/win.ini" else "notes")),
+    )
+    assert len(hits) == 1 and hits[0].payload == "/windows/win.ini"
+
+
 async def test_signature_already_in_the_baseline_is_not_a_hit() -> None:
     """A file signature already present in the baseline body does not count."""
     hits = await traversal.detect(_POINT, _baseline(_PASSWD), _ctx(lambda v: _resp(_PASSWD)))

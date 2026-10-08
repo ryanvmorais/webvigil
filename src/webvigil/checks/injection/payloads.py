@@ -79,6 +79,7 @@ TRAVERSAL: tuple[str, ...] = (
     "....//....//....//....//etc/passwd",
     "%2e%2e%2f%2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd",
     "/etc/passwd",
+    "/windows/win.ini",  # absolute, like /etc/passwd: no count of ../ has to reach the drive root
     "../../../../../../windows/win.ini",
     "..\\..\\..\\..\\..\\windows\\win.ini",
 )
