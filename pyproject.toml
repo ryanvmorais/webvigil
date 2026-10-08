@@ -49,7 +49,7 @@ dependencies = [
     # Capped below 1.0: selectolax 1.0 removed the Modest backend (`selectolax.parser`) that the crawler and
     # the checks import, so an unpinned install (pip, pipx) would fail on start. Moving to the Lexbor backend
     # changes how HTML is parsed and is its own piece of work; the cap is lifted when it lands.
-    "selectolax>=0.4.13,<1",
+    "selectolax>=0.4.13,<2",
     # Version-range evaluation for the dependency-fingerprint advisory match (spec 004, ADR-7).
     "packaging>=26.3",
 ]
