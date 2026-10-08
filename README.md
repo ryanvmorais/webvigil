@@ -273,7 +273,7 @@ pnpm install
 pnpm dev                           # http://localhost:3000
 
 # or the whole stack in containers:
-docker compose up --build          # dashboard on http://localhost:3000
+docker compose up --build          # dashboard on http://localhost:3000 (published on 127.0.0.1 only)
 ```
 
 The dashboard calls same-origin `/api/*`; Next proxies that to the API, so no CORS is

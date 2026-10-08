@@ -53,6 +53,24 @@ the short default TTL bounds exposure. Passwords are argon2id hashes.
 the database (a `setting` row), so sessions survive restarts. Pin `session_secret`
 explicitly for a shared or containerised deployment.
 
+## Who can reach it
+
+The API is **local-first and single-user**: `webvigil-web serve` binds to `127.0.0.1`, and
+`docker compose` publishes the API, the dashboard and the optional test target on `127.0.0.1`
+only. Two things make that the right default:
+
+- **First-run setup is open.** Until the first account exists, `POST /api/setup` is
+  unauthenticated (it answers `409` afterwards). Whoever reaches a fresh instance first creates
+  the account, so create yours right after starting it, and never leave a new instance
+  reachable from a network.
+- **A signed-in user can make the host scan any URL it can reach**, internal addresses
+  included, and run Active Mode from the host's address. That is what a scanner is for, and it is
+  why the account is the only access control.
+
+If you expose it on purpose (another machine, a reverse proxy), do it over HTTPS with
+`cookie_secure = true`, pin a long random `session_secret`, list `cors_origins` explicitly (never
+`*`), and put it behind something that limits login attempts: the API does not throttle them.
+
 ## Scan execution
 
 Scans run **one at a time** as an in-process background task; the rest wait in a `queued`

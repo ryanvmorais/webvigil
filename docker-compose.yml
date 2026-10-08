@@ -16,7 +16,9 @@ services:
       # WEBVIGIL_SESSION_SECRET: "change-me"
       # WEBVIGIL_COOKIE_SECURE: "true"          # when served over HTTPS
     ports:
-      - "8000:8000"
+      # Loopback only: until the first account exists POST /api/setup is open to whoever reaches
+      # the port, and a signed-in user can scan any URL this host can reach. See docs/web-api.md.
+      - "127.0.0.1:8000:8000"
     volumes:
       - webvigil-data:/data
 
@@ -30,7 +32,7 @@ services:
     environment:
       API_PROXY_TARGET: "http://api:8000"
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     depends_on:
       - api
 
@@ -44,7 +46,8 @@ services:
       context: .
       dockerfile: docker/target.Dockerfile
     ports:
-      - "8080:8080"
+      # An intentionally vulnerable app: never publish it beyond this machine.
+      - "127.0.0.1:8080:8080"
 
 volumes:
   webvigil-data:
