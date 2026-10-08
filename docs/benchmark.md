@@ -107,7 +107,9 @@ split as evidence. Both are detector work for a minor release, not a bug.
 
 Juice Shop is an Angular single-page application. WebVigil's crawler does not run JavaScript, so
 unaided it sees one page (the shell) and reports headers: **it finds nothing in the application
-itself.** That is the honest result and the main limitation of the benchmark.
+itself.** That is the honest result and the main limitation of the benchmark. A scan like this
+now says so: when the entry page looks like a JavaScript application and the crawl found at most
+two pages, it warns and points to `--openapi`.
 
 Seeded with an OpenAPI document of five public routes (written by hand, since Juice Shop does not
 publish one), it crawled 22 pages and found the intended SQL injection:
