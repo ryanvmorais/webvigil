@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from typing import Literal
 from urllib.parse import urlencode, urlsplit
 
-from selectolax.parser import HTMLParser
+from selectolax.lexbor import LexborHTMLParser as HTMLParser
 
 from webvigil.checks.csrf.tokens import is_candidate, is_token_field
 from webvigil.core.config import ScanConfig

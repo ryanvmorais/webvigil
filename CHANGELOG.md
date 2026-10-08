@@ -11,6 +11,15 @@ release and contains all of them.
 
 ## [Unreleased]
 
+### Changed
+
+- The engine parses HTML with the Lexbor backend of `selectolax` (`selectolax.lexbor`) instead of the Modest
+  one that `selectolax` 1.0 removed, so the `selectolax<1` cap is gone (`selectolax>=1.0.0,<2`) and
+  Dependabot can keep it current. Lexbor follows the HTML5 parsing rules and returns a form's fields in
+  document order, as a browser sends them, so the parameters of a crawled form can be listed in a different
+  order. On the bundled test app a full Active scan gives the same findings; a page with malformed HTML can
+  be read differently.
+
 ### Fixed
 
 - On Windows, a report redirected from stdout (`webvigil scan … --format json > scan.json`) was written in

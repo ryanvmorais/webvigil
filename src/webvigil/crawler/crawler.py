@@ -26,7 +26,7 @@ from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from urllib.parse import urlencode, urljoin, urlsplit
 
-from selectolax.parser import HTMLParser
+from selectolax.lexbor import LexborHTMLParser as HTMLParser
 
 from webvigil.core.config import ScanConfig
 from webvigil.core.context import Page

@@ -199,8 +199,8 @@ def test_form_body_field_table() -> None:
         ("n", "1"),
         ("p", ""),
         ("on", "1"),
-        ("go", "Save"),
-        ("body", "typed"),  # the parser yields <textarea> after the <input>s
+        ("body", "typed"),
+        ("go", "Save"),  # document order, as a browser sends it
     ]
 
 

@@ -98,15 +98,15 @@ brings the Domain, Path, `Secure` and expiry rules a hand-rolled parser would ge
 
 ### selectolax
 
-A very fast HTML parser (a binding over the C library Modest; selectolax also ships a Lexbor
-backend). Used to pull links, forms, `<script src>`, meta tags and inline content out of fetched
-pages. The engine imports `selectolax.parser`, the Modest one, which version 1.0 removed, so the
-dependency is capped below 1.0 until the move to Lexbor.
+A very fast HTML parser (a binding over the C library Lexbor). Used to pull links, forms,
+`<script src>`, meta tags and inline content out of fetched pages. The engine uses the Lexbor
+backend (`selectolax.lexbor`): selectolax 1.0 removed the older Modest backend, and Lexbor follows
+the HTML5 parsing rules and returns elements in document order.
 
 **Why not** BeautifulSoup / lxml: selectolax is 5–30× faster and the parse step
 runs on every crawled page. The API is small — CSS selectors and node text.
 
-**Learn:** `HTMLParser(html)`, `.css(selector)` / `.css_first(selector)`,
+**Learn:** `LexborHTMLParser(html)`, `.css(selector)` / `.css_first(selector)`,
 `node.attributes`, `node.text()`.
 
 ### pydantic v2

@@ -19,7 +19,7 @@ import secrets
 from dataclasses import dataclass, field
 from urllib.parse import urljoin, urlsplit
 
-from selectolax.parser import HTMLParser
+from selectolax.lexbor import LexborHTMLParser as HTMLParser
 
 from webvigil.checks.disclosure import redaction
 from webvigil.checks.disclosure.catalogue import (

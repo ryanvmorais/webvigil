@@ -16,7 +16,7 @@ from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
-from selectolax.parser import HTMLParser
+from selectolax.lexbor import LexborHTMLParser as HTMLParser
 
 from webvigil.auth.login import Authenticator
 from webvigil.checks.session.cookies import is_jwt, is_session_cookie, session_cookies

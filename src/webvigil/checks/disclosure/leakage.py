@@ -20,7 +20,7 @@ from __future__ import annotations
 import re
 from urllib.parse import urljoin
 
-from selectolax.parser import HTMLParser
+from selectolax.lexbor import LexborHTMLParser as HTMLParser
 
 from webvigil.checks.base import Check
 from webvigil.checks.disclosure import redaction
