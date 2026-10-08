@@ -11,6 +11,16 @@ release and contains all of them.
 
 ## [Unreleased]
 
+### Security
+
+- A page, a script or an API description served by the scanned site can no longer keep a scan busy for a
+  long time or make it use a lot of memory (GHSA-7cmg-mh2g-8rwv). The patterns of the library fingerprint
+  (which run in the default Safe Mode), of the Active Mode signatures and body comparison, and of the
+  host-header, `TRACE` and CSRF-confirmation passes are bounded, and they read the first 256 KiB of a body
+  or script. The OpenAPI import caps the size of the request bodies it builds from a schema. A library
+  marker or a framework message that appears only after the first 256 KiB of a body is no longer
+  recognised, and a request body for a very large schema is cut short.
+
 ## [1.0.2] - 2026-10-08
 
 A patch release with one fix, in the error-page signatures of the information-disclosure check.

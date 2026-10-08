@@ -51,8 +51,10 @@ async def detect_error(
         if response is None:
             break
         for dbms, pattern in payloads.SQL_ERROR_SIGNATURES:
-            if pattern.search(response.text) and not pattern.search(baseline.raw_body):
-                match = pattern.search(response.text)
+            if pattern.search(payloads.head(response.text)) and not pattern.search(
+                payloads.head(baseline.raw_body)
+            ):
+                match = pattern.search(payloads.head(response.text))
                 quoted = match.group(0) if match else ""
                 return [
                     InjectionHit(

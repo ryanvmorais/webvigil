@@ -9,6 +9,12 @@ Compile the vendored Retire.js database into matchers (spec 004, RF-05, RF-06).
 
 WebVigil applies only what the file expresses — it adds no identification rules of its own
 (Resolved decision 9).
+
+The text the matchers read comes from the scanned site, and the patterns were written for
+JavaScript, with unbounded repetitions that can cost time proportional to the square of a
+script's size. So every open-ended repetition is bounded when the pattern is compiled
+(:func:`_bound_repeats`), and a body is read up to ``_BODY_MAX`` characters (its SHA-1 still
+covers all of it).
 """
 
 from __future__ import annotations
@@ -26,7 +32,18 @@ from webvigil.core.context import Detection
 from webvigil.core.technology import DetectionMethod
 
 _VERSION_PLACEHOLDER = "§§version§§"
-_VERSION_GROUP = r"([0-9][0-9a-zA-Z._\-]*)"
+# A version string is short; the bound keeps the capture from running along a long run of
+# digits or letters.
+_VERSION_GROUP = r"([0-9][0-9a-zA-Z._\-]{0,64})"
+# What an open-ended repetition (``*``, ``+``, ``{n,}``) in a database pattern is bounded to.
+# Retire.js markers sit a few hundred characters apart at most (a header comment, a variable
+# and its version), so nothing real is lost.
+_REPEAT_MAX = 400
+# Characters of a script the content patterns read, and of a URL path the URI patterns read.
+# Past the head, a body is bundled application code, not a library header.
+_BODY_MAX = 256 * 1024
+_PATH_MAX = 4096
+_OPEN_REPEAT = re.compile(r"\{(\d*),\}")
 # Retire.js authors its regexes for JavaScript, which allows variable-width look-behind;
 # Python's ``re`` does not. Such a pattern is skipped rather than failing the whole load.
 _SUFFIX_RE = re.compile(r"[.\-_](?:min|slim|pack|dev|debug|latest|module|esm|cjs|umd)\b.*$", re.I)
@@ -84,11 +101,60 @@ class Component:
     vulnerabilities: tuple[VulnerabilityEntry, ...]
 
 
+def _bound_repeats(pattern: str) -> str:
+    """
+    Give every open-ended repetition in a regex an upper bound.
+
+    Walks the pattern, skipping escapes and character classes, and rewrites ``*`` to
+    ``{0,N}``, ``+`` to ``{1,N}`` and ``{n,}`` to ``{n,N}`` (a lazy ``?`` after it stays).
+    A pattern that already bounds its repetitions comes back unchanged.
+
+    Args:
+        pattern (str): A regex source.
+
+    Returns:
+        str: The same regex with ``_REPEAT_MAX`` as the largest repetition.
+    """
+    out: list[str] = []
+    i = 0
+    size = len(pattern)
+    while i < size:
+        char = pattern[i]
+        if char == "\\":
+            out.append(pattern[i : i + 2])
+            i += 2
+        elif char == "[":
+            j = i + 1
+            if j < size and pattern[j] == "^":
+                j += 1
+            if j < size and pattern[j] == "]":
+                j += 1
+            while j < size and pattern[j] != "]":
+                j += 2 if pattern[j] == "\\" else 1
+            out.append(pattern[i : j + 1])
+            i = j + 1
+        elif char == "*":
+            out.append(f"{{0,{_REPEAT_MAX}}}")
+            i += 1
+        elif char == "+":
+            out.append(f"{{1,{_REPEAT_MAX}}}")
+            i += 1
+        elif (open_repeat := _OPEN_REPEAT.match(pattern, i)) is not None:
+            low = int(open_repeat.group(1) or 0)
+            out.append(f"{{{low},{max(low, _REPEAT_MAX)}}}")
+            i = open_repeat.end()
+        else:
+            out.append(char)
+            i += 1
+    return "".join(out)
+
+
 def _compile_all(patterns: list[str]) -> tuple[re.Pattern[str], ...]:
     """
     Compile a list of Retire.js extractor patterns.
 
-    The ``§§version§§`` placeholder becomes a capturing group. A pattern that
+    The ``§§version§§`` placeholder becomes a capturing group, and every open-ended
+    repetition is bounded (:func:`_bound_repeats`). A pattern that
     uses a JS-only construct Python's ``re`` rejects (e.g. variable-width
     look-behind) is skipped rather than failing the whole load.
 
@@ -102,7 +168,7 @@ def _compile_all(patterns: list[str]) -> tuple[re.Pattern[str], ...]:
     for pattern in patterns:
         expanded = pattern.replace(_VERSION_PLACEHOLDER, _VERSION_GROUP)
         try:
-            compiled.append(re.compile(expanded))
+            compiled.append(re.compile(_bound_repeats(expanded)))
         except re.error:
             continue  # a JS-only construct (e.g. variable look-behind) — skip this one
     return tuple(compiled)
@@ -237,8 +303,9 @@ class RetireJsRules:
                 cross-source de-duplication).
         """
         detections: list[Detection] = []
-        filename = _basename(url) if url else None
-        path = urlsplit(url).path if url else None
+        filename = _basename(url)[:_PATH_MAX] if url else None
+        path = urlsplit(url).path[:_PATH_MAX] if url else None
+        head = body[:_BODY_MAX] if body is not None else ""
 
         for component in self._components.values():
             if filename is not None:
@@ -269,7 +336,7 @@ class RetireJsRules:
                         )
             if body is not None:
                 for pattern in component.filecontent:
-                    match = pattern.search(body)
+                    match = pattern.search(head)
                     if match:
                         marker = match.group(0)[:120]
                         detections.append(

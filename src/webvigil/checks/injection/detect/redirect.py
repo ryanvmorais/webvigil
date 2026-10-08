@@ -85,9 +85,9 @@ def _honoured(response: Response) -> tuple[str | None, Confidence]:
     location = response.headers.get("location")
     if location and _host(urljoin(response.url, location)) == _SENTINEL:
         return f"Location -> {location}", Confidence.HIGH
-    if _META_RE.search(response.text):
+    if _META_RE.search(payloads.head(response.text)):
         return "meta refresh", Confidence.MEDIUM
-    if _JS_RE.search(response.text):
+    if _JS_RE.search(payloads.head(response.text)):
         return "JavaScript location assignment", Confidence.MEDIUM
     return None, Confidence.LOW
 

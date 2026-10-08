@@ -52,6 +52,10 @@ form-urlencoded body, and reads the answer as a page. It writes to the target; s
 - **Local `$ref` only.** `#/components/…` / `#/definitions/…` pointers are resolved (cycles
   are broken with a placeholder). A `$ref` to another file or a URL is skipped with a
   warning.
+- **Request bodies are bounded in size.** A body is built to a depth of 4 and 24 keys per object, and
+  also to a size: a body stops growing at about 20,000 characters of key names and nodes, and all the
+  bodies of one document share about a million. A schema that many properties reference would otherwise
+  grow with the product of them. A body that reaches the limit is cut short, not an error.
 - **`GET` / `POST` only.** A `PUT` / `PATCH` / `DELETE` operation is not exercised — the
   injection engine sends only `GET` and `POST` (a deliberate scope line since `v0.6`).
 - **The server host is the scan target.** A `servers[0].url` (or Swagger `host`) that names

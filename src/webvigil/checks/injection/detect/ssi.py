@@ -46,8 +46,8 @@ async def detect(point: InjectionPoint, baseline: Baseline, ctx: DetectCtx) -> l
         if directive in response.text:
             continue  # reflected verbatim, not evaluated -> not an SSI hit
         for pattern in payloads.SSI_EVAL_SIGNATURES:
-            match = pattern.search(response.text)
-            if match and not pattern.search(baseline.raw_body):
+            match = pattern.search(payloads.head(response.text))
+            if match and not pattern.search(payloads.head(baseline.raw_body)):
                 return [
                     _hit(
                         point,
@@ -64,8 +64,8 @@ async def detect(point: InjectionPoint, baseline: Baseline, ctx: DetectCtx) -> l
     response = await ctx.send(point, point.original + marker)
     if response is None:
         return []
-    err = payloads.SSI_ERROR_SIGNATURE.search(response.text)
-    if err and not payloads.SSI_ERROR_SIGNATURE.search(baseline.raw_body):
+    err = payloads.SSI_ERROR_SIGNATURE.search(payloads.head(response.text))
+    if err and not payloads.SSI_ERROR_SIGNATURE.search(payloads.head(baseline.raw_body)):
         return [
             _hit(
                 point,

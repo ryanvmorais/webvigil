@@ -32,8 +32,8 @@ async def detect(point: InjectionPoint, baseline: Baseline, ctx: DetectCtx) -> l
         if response is None:
             break
         for pattern in payloads.TRAVERSAL_SIGNATURES:
-            match = pattern.search(response.text)
-            if match and not pattern.search(baseline.raw_body):
+            match = pattern.search(payloads.head(response.text))
+            if match and not pattern.search(payloads.head(baseline.raw_body)):
                 return [
                     InjectionHit(
                         kind="traversal",

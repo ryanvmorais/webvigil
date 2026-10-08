@@ -42,11 +42,15 @@ _SENTINEL = "webvigil.invalid"
 _HOST_VECTORS = ("Host", "X-Forwarded-Host", "X-Forwarded-Server", "X-Host")
 _DANGEROUS_VERBS = ("PUT", "DELETE", "PATCH", "CONNECT")
 
-_SENTINEL_IN_URL = re.compile(rf"https?://[^\s\"'<>]*{re.escape(_SENTINEL)}", re.I)
+# Characters of a body the patterns below read. The body comes from the scanned site, so each
+# pattern is bounded and a body this long past its head is not read (the HTTP layer caps it at
+# 10 MiB).
+_SCAN_MAX = 256 * 1024
+_SENTINEL_IN_URL = re.compile(rf"https?://[^\s\"'<>]{{0,500}}{re.escape(_SENTINEL)}", re.I)
 _BASE_CANON = re.compile(
-    rf"<base[^>]+href=[\"'][^\"']*{re.escape(_SENTINEL)}"
-    rf"|rel=[\"']canonical[\"'][^>]*{re.escape(_SENTINEL)}"
-    rf"|property=[\"']og:url[\"'][^>]*{re.escape(_SENTINEL)}",
+    rf"<base[^<>]{{1,500}}href=[\"'][^\"'<>]{{0,500}}{re.escape(_SENTINEL)}"
+    rf"|rel=[\"']canonical[\"'][^<>]{{0,500}}{re.escape(_SENTINEL)}"
+    rf"|property=[\"']og:url[\"'][^<>]{{0,500}}{re.escape(_SENTINEL)}",
     re.I,
 )
 # A reflection whose surrounding text is a reset / verification link is account takeover.
@@ -54,8 +58,8 @@ _RESET_CONTEXT = re.compile(r"reset|token|password|confirm|verif|activat|magic",
 # A TRACE echo reflects the whole request, including any [auth] cookie / header WebVigil
 # attached (spec 013 RNF-04) — mask those header lines before they enter the evidence.
 _SECRET_HEADER_LINE = re.compile(
-    r"(?im)^\s*(authorization|cookie|proxy-authorization|x-api-key|x-auth-token|"
-    r"api-key|x-amz-security-token|x-csrf-token)\s*:.*$"
+    r"(?im)^[ \t]*(authorization|cookie|proxy-authorization|x-api-key|x-auth-token|"
+    r"api-key|x-amz-security-token|x-csrf-token)[ \t]*:.*$"
 )
 _STATIC_TYPES = ("image/", "font/", "text/css", "javascript", "application/octet-stream")
 _STATIC_EXT = re.compile(r"\.(?:css|js|mjs|png|jpe?g|gif|svg|webp|ico|woff2?|ttf|map|pdf)$", re.I)
@@ -270,7 +274,7 @@ class EnvelopeScanner:
             return []
         if token not in resp.text and "TRACE " not in resp.text:
             return []
-        echoed = _SECRET_HEADER_LINE.sub(r"\1: ***redacted***", resp.text)
+        echoed = _SECRET_HEADER_LINE.sub(r"\1: ***redacted***", resp.text[:_SCAN_MAX])
         return [
             EnvelopeHit(
                 check_id=_METHODS_ID,
@@ -323,9 +327,9 @@ class EnvelopeScanner:
         """
         if _SENTINEL in resp.headers.get("location", ""):
             return "Location"
-        if _BASE_CANON.search(resp.text):
+        if _BASE_CANON.search(resp.text[:_SCAN_MAX]):
             return "canonical/base tag"
-        if _SENTINEL_IN_URL.search(resp.text):
+        if _SENTINEL_IN_URL.search(resp.text[:_SCAN_MAX]):
             return "body URL"
         return None
 

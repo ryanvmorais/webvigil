@@ -88,8 +88,8 @@ def _first_match(
             ``None``.
     """
     for pattern in patterns:
-        match = pattern.search(text)
-        if match and not pattern.search(baseline_text):
+        match = pattern.search(payloads.head(text))
+        if match and not pattern.search(payloads.head(baseline_text)):
             start = text.rfind("\n", 0, match.start()) + 1
             end = text.find("\n", match.start())
             line = text[start : end if end != -1 else len(text)].strip()

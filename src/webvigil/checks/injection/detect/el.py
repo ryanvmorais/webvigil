@@ -331,8 +331,8 @@ def _signature(text: str, baseline_text: str, payload: str) -> _Signature | None
             ``None``.
     """
     for dialect, pattern in payloads.EL_ERROR_SIGNATURES:
-        found = pattern.search(text)
-        if found and not pattern.search(baseline_text):
+        found = pattern.search(payloads.head(text))
+        if found and not pattern.search(payloads.head(baseline_text)):
             line = text[found.start() :].splitlines()[0]
             return _Signature(dialect, line[:_EXCERPT_MAX], payload)
     return None

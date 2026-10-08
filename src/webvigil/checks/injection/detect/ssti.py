@@ -76,7 +76,7 @@ def engine_from_error(text: str, baseline_text: str) -> str | None:
             in the baseline, or ``None``.
     """
     for name, pattern in payloads.SSTI_ERROR_SIGNATURES:
-        if pattern.search(text) and not pattern.search(baseline_text):
+        if pattern.search(payloads.head(text)) and not pattern.search(payloads.head(baseline_text)):
             return name
     return None
 

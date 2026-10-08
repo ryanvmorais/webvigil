@@ -97,8 +97,8 @@ def _metadata_hit(
         InjectionHit | None: A CRITICAL ``ssrf-metadata`` hit, or ``None``.
     """
     for provider, pattern in payloads.SSRF_METADATA_SIGNATURES:
-        match = pattern.search(response.text)
-        if match and not pattern.search(baseline.raw_body):
+        match = pattern.search(payloads.head(response.text))
+        if match and not pattern.search(payloads.head(baseline.raw_body)):
             return InjectionHit(
                 kind="ssrf-metadata",
                 check_id=_METADATA_ID,
@@ -139,8 +139,8 @@ def _file_hit(
     if not payload.lower().startswith("file:"):
         return None
     for pattern in payloads.TRAVERSAL_SIGNATURES:
-        match = pattern.search(response.text)
-        if match and not pattern.search(baseline.raw_body):
+        match = pattern.search(payloads.head(response.text))
+        if match and not pattern.search(payloads.head(baseline.raw_body)):
             return InjectionHit(
                 kind="ssrf-internal",
                 check_id=_INTERNAL_ID,
@@ -177,8 +177,8 @@ def _internal_hit(
             ``None``.
     """
     for service, pattern in payloads.SSRF_INTERNAL_SIGNATURES:
-        match = pattern.search(response.text)
-        if match and not pattern.search(baseline.raw_body):
+        match = pattern.search(payloads.head(response.text))
+        if match and not pattern.search(payloads.head(baseline.raw_body)):
             return InjectionHit(
                 kind="ssrf-internal",
                 check_id=_INTERNAL_ID,
@@ -290,8 +290,8 @@ def _first_match(
             ``None``.
     """
     for pattern in patterns:
-        match = pattern.search(text)
-        if match and not pattern.search(baseline_text):
+        match = pattern.search(payloads.head(text))
+        if match and not pattern.search(payloads.head(baseline_text)):
             return _snippet(text, match.start())
     return None
 

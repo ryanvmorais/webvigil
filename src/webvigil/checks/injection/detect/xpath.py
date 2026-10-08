@@ -41,8 +41,8 @@ async def detect(point: InjectionPoint, baseline: Baseline, ctx: DetectCtx) -> l
         if response is None:
             return []
         for pattern in payloads.XPATH_ERROR_SIGNATURES:
-            match = pattern.search(response.text)
-            if match and not pattern.search(baseline.raw_body):
+            match = pattern.search(payloads.head(response.text))
+            if match and not pattern.search(payloads.head(baseline.raw_body)):
                 return [
                     _hit(
                         point,

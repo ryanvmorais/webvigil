@@ -412,6 +412,10 @@ the pass entirely — no enumeration, no crafted request.
 - **No parameter mining.** It fuzzes parameters the target actually exposes, not guessed
   ones.
 - **No WAF evasion.** Payloads are a small static in-repo set with no mutation engine.
+- **Reads the top of a response only.** The signatures, the body comparison and the envelope and
+  CSRF passes look at the first 256 KiB of a body, and every pattern is bounded, so a hostile response
+  cannot keep the scan busy in them. An error message that appears only after that point is not
+  recognised.
 
 ### Coverage boundaries
 

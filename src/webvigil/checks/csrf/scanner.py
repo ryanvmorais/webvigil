@@ -49,11 +49,15 @@ _PER_FORM_CAP = 5
 _FOREIGN_ORIGIN = "https://webvigil.invalid"
 # Words a rejection page uses. Matched on the visible text only, so the markup of an
 # ordinary page (a hidden ``csrf_token`` input) does not read as a rejection.
+# The text comes from the scanned site: every repetition is bounded, and ``_shape`` reads
+# only the first ``_SCAN_MAX`` characters.
 _REJECTION_RE = re.compile(
     r"csrf|xsrf|cross[\s-]site request|forbidden|"
-    r"(?:invalid|missing|expired|bad|mismatch\w*)\W+(?:\w+\W+){0,2}(?:token|origin|referer)|"
-    r"(?:token|origin|referer)\W+(?:\w+\W+){0,2}(?:invalid|missing|expired|required|mismatch\w*)|"
-    r"session\W+(?:\w+\W+){0,2}expired",
+    r"(?:invalid|missing|expired|bad|mismatch\w{0,30})\W{1,40}(?:\w{1,40}\W{1,40}){0,2}"
+    r"(?:token|origin|referer)|"
+    r"(?:token|origin|referer)\W{1,40}(?:\w{1,40}\W{1,40}){0,2}"
+    r"(?:invalid|missing|expired|required|mismatch\w{0,30})|"
+    r"session\W{1,40}(?:\w{1,40}\W{1,40}){0,2}expired",
     re.I,
 )
 # What legitimately differs between two submissions of the same form: hex ids, ISO-like
@@ -65,6 +69,8 @@ _WORD_RE = re.compile(r"\w+|[^\w\s]")
 _SIMILARITY = 0.95
 _LENGTH_GUARD = 0.10
 _TOKEN_CAP = 6000
+# Characters of a response the rejection words are looked for in.
+_SCAN_MAX = 256 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -508,7 +514,7 @@ class CsrfScanner:
         rejected = (
             response.status_code >= 400
             or is_login_url(response.url)
-            or bool(_REJECTION_RE.search(text))
+            or bool(_REJECTION_RE.search(text[:_SCAN_MAX]))
         )
         body = text
         for value in scrub:

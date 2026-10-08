@@ -5,11 +5,32 @@ Small and well-known — no mutation engine, no WAF-evasion tuning. ``{token}`` 
 ``{d}`` / ``{host}`` are substituted by the detector. Signatures are compiled
 regexes matched against a response body and required to be *absent from the
 baseline*.
+
+The body comes from the scanned site, so each pattern is written to cost time proportional to
+the size of the text: every repetition is bounded, none runs across a line break, and the
+detectors read only the first ``SCAN_MAX`` characters of a body (:func:`head`).
 """
 
 from __future__ import annotations
 
 import re
+
+# Characters of a body the signatures read. A debugger or error message sits near the top of
+# a page; a body this long past it is a document, and the patterns would only spend time on
+# it. The HTTP layer already caps a body at 10 MiB.
+SCAN_MAX = 256 * 1024
+
+
+def head(text: str) -> str:
+    """
+    Args:
+        text (str): A response body.
+
+    Returns:
+        str: The first ``SCAN_MAX`` characters of ``text``, the part the signatures read.
+    """
+    return text[:SCAN_MAX]
+
 
 # --- reflected XSS (RF-08) -------------------------------------------------------------
 
@@ -33,7 +54,9 @@ SQLI_ERROR: tuple[str, ...] = ("'", '"', "')", "';", "\\", "' OR '1")
 SQL_ERROR_SIGNATURES: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "MySQL",
-        re.compile(r"SQL syntax.*MySQL|MySqlException|valid MySQL result|MariaDB server", re.I),
+        re.compile(
+            r"SQL syntax[^\n]{0,200}MySQL|MySqlException|valid MySQL result|MariaDB server", re.I
+        ),
     ),
     (
         "PostgreSQL",
@@ -47,7 +70,8 @@ SQL_ERROR_SIGNATURES: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "SQLite",
         re.compile(
-            r"SQLITE_ERROR|unrecognized token|near \".+?\": syntax error|sqlite3\.OperationalError",
+            r"SQLITE_ERROR|unrecognized token|near \"[^\"\n]{1,200}\": syntax error"
+            r"|sqlite3\.OperationalError",
             re.I,
         ),
     ),
@@ -85,7 +109,7 @@ TRAVERSAL: tuple[str, ...] = (
 )
 
 TRAVERSAL_SIGNATURES: tuple[re.Pattern[str], ...] = (
-    re.compile(r"root:.*?:0:0:"),
+    re.compile(r"root:[^\n]{0,200}:0:0:"),
     re.compile(r"\[fonts\]|\[extensions\]|for 16-bit app support", re.I),
 )
 
@@ -304,7 +328,10 @@ SSTI_ERROR_SIGNATURES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("Smarty", re.compile(r"Smarty(?:CompilerException|_Compiler_)|Smarty error", re.I)),
     ("Mako", re.compile(r"mako\.exceptions|mako\.runtime", re.I)),
     ("ERB", re.compile(r"\(erb\):\d+|SyntaxError \(\(erb\)\)", re.I)),
-    ("Handlebars", re.compile(r"Handlebars.*Parse error|hbs.*Parse error", re.I)),
+    (
+        "Handlebars",
+        re.compile(r"Handlebars[^\n]{0,200}Parse error|hbs[^\n]{0,200}Parse error", re.I),
+    ),
 )
 
 

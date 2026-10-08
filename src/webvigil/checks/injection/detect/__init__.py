@@ -16,7 +16,9 @@ from typing import Protocol
 from webvigil.checks.injection.models import InjectionPoint
 from webvigil.http.client import Response
 
-_HIDDEN_INPUT = re.compile(r"<input[^>]*\btype=[\"']?hidden[\"']?[^>]*>", re.I)
+# A tag never holds an angle bracket, so each ``<input`` scans to the next one at most: the
+# pass costs time proportional to the body however many tags it has.
+_HIDDEN_INPUT = re.compile(r"<input(?=[^<>]*\btype=[\"']?hidden)[^<>]*>", re.I)
 _LONG_TOKEN = re.compile(r"[A-Za-z0-9_\-]{20,}")
 _WS = re.compile(r"\s+")
 

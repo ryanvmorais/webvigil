@@ -49,11 +49,43 @@ _SKIP_OPERATION_RE = re.compile(
 # has no ``example`` / ``default`` / ``enum`` (RNF-06 — no randomness).
 _PLACEHOLDER = {"string": "wv", "integer": "1", "number": "1", "boolean": "true"}
 
-# Bounds on request-body synthesis so a hostile or huge schema cannot blow up.
+# Bounds on request-body synthesis so a hostile or huge schema cannot blow up. Depth and keys
+# per object bound the shape, but a schema that several properties reference grows with the
+# product of them, so the size is bounded too: a node costs one unit and a key costs one plus
+# the characters of its name. One body gets ``_MAX_BODY_UNITS``, and all the bodies of one
+# document share ``_MAX_DOC_UNITS``; a body that runs out stops growing, it is not an error.
 _MAX_BODY_DEPTH = 4
 _MAX_BODY_KEYS = 24
+_MAX_BODY_UNITS = 20_000
+_MAX_DOC_UNITS = 1_000_000
 
 _EXTERNAL_REF_WARNING = "OpenAPI import skipped one or more external $ref pointers"
+
+
+@dataclass(slots=True)
+class _Budget:
+    """
+    What is left of a size allowance for synthesized bodies.
+
+    Attributes:
+        left (int): Units that can still be spent.
+    """
+
+    left: int
+
+    def take(self, cost: int) -> bool:
+        """
+        Args:
+            cost (int): Units to spend.
+
+        Returns:
+            bool: ``True`` and the units are spent when enough are left; ``False`` and
+                nothing is spent otherwise.
+        """
+        if cost > self.left:
+            return False
+        self.left -= cost
+        return True
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,13 +152,14 @@ async def load_openapi(
     base = _base_url(doc, target, warnings)
 
     operations: list[ApiOperation] = []
+    doc_budget = _Budget(_MAX_DOC_UNITS)
     paths = doc.get("paths")
     if isinstance(paths, dict):
         for raw_path, raw_item in paths.items():
             item = _resolve(raw_item, doc, warnings)
             if not isinstance(item, dict):
                 continue
-            operations.extend(_operations_for(str(raw_path), item, doc, base, warnings))
+            operations.extend(_operations_for(str(raw_path), item, doc, base, warnings, doc_budget))
 
     operations.sort(key=lambda operation: (operation.url_template, operation.method))
     if len(operations) > max_operations:
@@ -217,7 +250,7 @@ def _base_url(doc: _Doc, target: Target, warnings: list[str]) -> str:
 
 
 def _operations_for(
-    path: str, item: _Doc, root: _Doc, base: str, warnings: list[str]
+    path: str, item: _Doc, root: _Doc, base: str, warnings: list[str], doc_budget: _Budget
 ) -> list[ApiOperation]:
     """
     Build the acted-on operations declared by one path-item object.
@@ -228,6 +261,7 @@ def _operations_for(
         root (_Doc): The whole document, for ``$ref`` resolution.
         base (str): The base URL from :func:`_base_url`.
         warnings (list[str]): Scan-level warning list, appended to in place.
+        doc_budget (_Budget): The size allowance the whole document's bodies share.
 
     Returns:
         list[ApiOperation]: Zero or more operations; a login / destructive
@@ -253,7 +287,7 @@ def _operations_for(
                 params.append(resolved)
         query = _param_values(params, "query")
         path_params = _param_values(params, "path")
-        body_fields, body_json = _body(op, params, root, warnings)
+        body_fields, body_json = _body(op, params, root, warnings, doc_budget)
 
         template = f"{base}/{path.lstrip('/')}"
         operations.append(
@@ -292,7 +326,7 @@ def _param_values(params: list[_Doc], location: str) -> tuple[tuple[str, str], .
 
 
 def _body(
-    op: _Doc, params: list[_Doc], root: _Doc, warnings: list[str]
+    op: _Doc, params: list[_Doc], root: _Doc, warnings: list[str], doc_budget: _Budget
 ) -> tuple[tuple[tuple[str, str], ...], str | None]:
     """
     Synthesize a request body for one operation.
@@ -303,6 +337,7 @@ def _body(
             body there).
         root (_Doc): The whole document, for ``$ref`` resolution.
         warnings (list[str]): Scan-level warning list, appended to in place.
+        doc_budget (_Budget): The size allowance the whole document's bodies share.
 
     Returns:
         tuple[tuple[tuple[str, str], ...], str | None]: Form-urlencoded fields
@@ -318,7 +353,7 @@ def _body(
             return _form_fields(schema, root, warnings), None
         if "application/json" in content:
             schema = _resolve(_media_schema(content, "application/json"), root, warnings)
-            return (), json.dumps(_synth_object(schema, root, warnings))
+            return (), _synth_json(schema, root, warnings, doc_budget)
 
     # Swagger 2.0: an ``in: formData`` set, or a single ``in: body`` parameter.
     form_data = tuple(
@@ -330,7 +365,7 @@ def _body(
         return form_data, None
     for param in params:
         if param.get("in") == "body" and isinstance(param.get("schema"), dict):
-            return (), json.dumps(_synth_object(param["schema"], root, warnings))
+            return (), _synth_json(param["schema"], root, warnings, doc_budget)
     return (), None
 
 
@@ -396,14 +431,38 @@ def _synth_value(node: _Doc) -> str:
     return _PLACEHOLDER.get(str(schema.get("type", "")), "wv")
 
 
-def _synth_object(schema: Any, root: _Doc, warnings: list[str], _depth: int = 0) -> Any:
+def _synth_json(schema: Any, root: _Doc, warnings: list[str], doc_budget: _Budget) -> str:
     """
-    Build a minimal JSON value from a schema, bounded in depth and breadth.
+    Synthesize one JSON body within the size allowances.
+
+    Args:
+        schema (Any): The body's schema node (possibly a ``$ref``).
+        root (_Doc): The whole document, for ``$ref`` resolution.
+        warnings (list[str]): Scan-level warning list, appended to in place.
+        doc_budget (_Budget): The allowance the whole document's bodies share; what this
+            body spends is taken from it.
+
+    Returns:
+        str: The body as JSON text.
+    """
+    budget = _Budget(min(_MAX_BODY_UNITS, doc_budget.left))
+    allowance = budget.left
+    body = json.dumps(_synth_object(schema, root, warnings, budget))
+    doc_budget.left -= allowance - budget.left
+    return body
+
+
+def _synth_object(
+    schema: Any, root: _Doc, warnings: list[str], budget: _Budget, _depth: int = 0
+) -> Any:
+    """
+    Build a minimal JSON value from a schema, bounded in depth, breadth and size.
 
     Args:
         schema (Any): A schema node (possibly a ``$ref``).
         root (_Doc): The whole document, for ``$ref`` resolution.
         warnings (list[str]): Scan-level warning list, appended to in place.
+        budget (_Budget): The size allowance of this body; a node or key past it is left out.
         _depth (int): Current recursion depth. Defaults to 0.
 
     Returns:
@@ -412,14 +471,19 @@ def _synth_object(schema: Any, root: _Doc, warnings: list[str], _depth: int = 0)
     schema = _resolve(schema, root, warnings)
     if not isinstance(schema, dict):
         return "wv"
-    if _depth >= _MAX_BODY_DEPTH:
+    if _depth >= _MAX_BODY_DEPTH or not budget.take(1):
         return {}
     if schema.get("type") == "object" or "properties" in schema:
         props = schema.get("properties", {})
         items = list(props.items())[:_MAX_BODY_KEYS] if isinstance(props, dict) else []
-        return {name: _synth_object(spec, root, warnings, _depth + 1) for name, spec in items}
+        out: dict[str, Any] = {}
+        for name, spec in items:
+            if not budget.take(1 + len(str(name))):
+                break
+            out[name] = _synth_object(spec, root, warnings, budget, _depth + 1)
+        return out
     if schema.get("type") == "array":
-        return [_synth_object(schema.get("items", {}), root, warnings, _depth + 1)]
+        return [_synth_object(schema.get("items", {}), root, warnings, budget, _depth + 1)]
     return _scalar(schema)
 
 
