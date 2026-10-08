@@ -194,6 +194,12 @@ webvigil version
 
 # or, without installing Python packages:
 docker run --rm ghcr.io/ryanvmorais/webvigil scan https://your-app.example
+
+# keep a report: with --format it goes to stdout, so redirect it on the host
+docker run --rm ghcr.io/ryanvmorais/webvigil scan https://your-app.example --format html > report.html
+
+# re-render a saved scan: mount the folder that holds it
+docker run --rm -v "$PWD:/work" ghcr.io/ryanvmorais/webvigil report /work/scan.json --format html > report.html
 ```
 
 The image is built for `linux/amd64` and `linux/arm64` and carries signed build provenance and
