@@ -13,9 +13,10 @@ from typing import Annotated
 import typer
 from sqlmodel import Session, select
 
-from webvigil.api.config import WebConfig
+from webvigil.api.config import WebConfig, insecure_bind_warning
 from webvigil.api.db import User, make_engine, run_alembic_upgrade, utcnow
 from webvigil.api.security import hash_password
+from webvigil.core.errors import ConfigError
 
 app = typer.Typer(
     name="webvigil-web",
@@ -25,6 +26,28 @@ app = typer.Typer(
 )
 
 _ConfigOpt = Annotated[Path | None, typer.Option("--config", help="Path to webvigil.toml.")]
+
+# The engine's CLI uses the same code for an operational error; this package must not import it.
+_EXIT_OPERATIONAL = 4
+
+
+def _load(config: Path | None) -> WebConfig:
+    """
+    Args:
+        config (Path | None): Path to a ``webvigil.toml``, or ``None`` for the default lookup.
+
+    Returns:
+        WebConfig: The validated configuration.
+
+    Raises:
+        typer.Exit: With the operational exit code and a one-line message when the configuration
+            is invalid (a too-short ``session_secret``, a ``*`` in ``cors_origins``, a bad key).
+    """
+    try:
+        return WebConfig.load(config)
+    except ConfigError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(_EXIT_OPERATIONAL) from exc
 
 
 @app.command()
@@ -39,10 +62,14 @@ def serve(
 
     if config is not None:
         os.environ["WEBVIGIL_CONFIG"] = str(config)
-    cfg = WebConfig.load(config)
+    cfg = _load(config)
+    bind = host or cfg.host
+    warning = insecure_bind_warning(cfg, bind)
+    if warning is not None:
+        typer.echo(f"warning: {warning}", err=True)
     uvicorn.run(
         "webvigil.api.app:app",
-        host=host or cfg.host,
+        host=bind,
         port=port or cfg.port,
         reload=reload,
     )
@@ -51,7 +78,7 @@ def serve(
 @app.command()
 def migrate(config: _ConfigOpt = None) -> None:
     """Run ``alembic upgrade head`` against the configured database."""
-    cfg = WebConfig.load(config)
+    cfg = _load(config)
     run_alembic_upgrade(cfg)
     typer.echo(f"database migrated: {cfg.database_path}")
 
@@ -64,7 +91,7 @@ def reset_password(
     ] = None,
 ) -> None:
     """Set a new password for the single user."""
-    cfg = WebConfig.load(config)
+    cfg = _load(config)
     run_alembic_upgrade(cfg)
     engine = make_engine(cfg)
     with Session(engine) as session:

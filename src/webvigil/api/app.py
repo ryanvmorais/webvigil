@@ -19,7 +19,7 @@ from webvigil.api.config import WebConfig
 from webvigil.api.db import make_engine, run_alembic_upgrade
 from webvigil.api.routes import auth, meta, reports, scans, setup
 from webvigil.api.runner import OrchestratorFactory, ScanRunner, recover_interrupted_scans
-from webvigil.api.security import resolve_session_secret
+from webvigil.api.security import dummy_password_hash, resolve_session_secret
 from webvigil.api.throttle import LoginThrottle
 
 
@@ -52,6 +52,7 @@ def create_app(
         app.state.config = cfg
         app.state.engine = engine
         app.state.session_secret = resolve_session_secret(engine, cfg)
+        dummy_password_hash()  # warm it, so the first unknown username is not slower than the rest
         recover_interrupted_scans(engine)
         runner = (
             ScanRunner(engine, orchestrator_factory=orchestrator_factory)

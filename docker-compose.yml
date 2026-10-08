@@ -13,7 +13,7 @@ services:
     environment:
       WEBVIGIL_DATABASE_PATH: /data/webvigil.db
       # Pin this in production so sessions survive a rebuild:
-      # WEBVIGIL_SESSION_SECRET: "change-me"
+      # WEBVIGIL_SESSION_SECRET: "<32+ characters, e.g. the output of: openssl rand -base64 48>"
       # WEBVIGIL_COOKIE_SECURE: "true"          # when served over HTTPS
     ports:
       # Loopback only: until the first account exists POST /api/setup is open to whoever reaches

@@ -20,6 +20,7 @@ from webvigil.api.db import Setting, make_engine, run_alembic_upgrade, session_s
 from webvigil.api.security import (
     create_token,
     decode_token,
+    dummy_password_hash,
     hash_password,
     resolve_session_secret,
     verify_password,
@@ -28,6 +29,7 @@ from webvigil.api.security import (
 # >= 32 bytes so PyJWT does not warn about HS256 key length.
 _SECRET = "unit-test-secret-that-is-long-enough-for-hs256"
 _OTHER_SECRET = "a-different-secret-also-long-enough-for-hs256"
+_PINNED = "pinned-" + "p" * 32
 
 
 def test_password_hash_round_trip() -> None:
@@ -89,6 +91,16 @@ def test_resolve_session_secret_generates_then_reuses(tmp_path: Path) -> None:
 
 def test_resolve_session_secret_prefers_the_pinned_value(tmp_path: Path) -> None:
     """A config-pinned ``session_secret`` is used verbatim, not replaced by a generated one."""
-    config = WebConfig(database_path=tmp_path / "webvigil.db", session_secret="pinned")
+    config = WebConfig(database_path=tmp_path / "webvigil.db", session_secret=_PINNED)
     run_alembic_upgrade(config)
-    assert resolve_session_secret(make_engine(config), config) == "pinned"
+    assert resolve_session_secret(make_engine(config), config) == _PINNED
+
+
+def test_the_dummy_hash_is_a_real_argon2_hash_with_the_parameters_of_a_real_one() -> None:
+    """Verifying against it costs what a real check costs, and nobody's password matches it."""
+    dummy = dummy_password_hash()
+    real = hash_password("anything")
+    # "$argon2id$v=19$m=...,t=...,p=...$salt$digest": everything before the salt is the cost.
+    assert dummy.split("$")[:4] == real.split("$")[:4]
+    assert dummy_password_hash() == dummy  # built once
+    assert verify_password("", dummy) is False and verify_password("anything", dummy) is False

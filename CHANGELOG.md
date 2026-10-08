@@ -26,6 +26,17 @@ release and contains all of them.
   the system code page instead of UTF-8, so `webvigil report` could not read it back. It is UTF-8 now,
   as `--output` always was.
 
+### Security
+
+- The Web API refuses, at start, a pinned `session_secret` shorter than 32 characters and a `*` in
+  `cors_origins` (the API sends the session cookie), with a one-line error and exit code 4 instead of a
+  traceback. **If you pinned a shorter secret, generate a longer one**
+  (`python -c 'import secrets; print(secrets.token_urlsafe(48))'`) or unset it so one is generated; changing
+  it signs every session out.
+- `webvigil-web serve` warns when it listens beyond this machine with `cookie_secure` off.
+- Login takes the same time for a username that does not exist as for a wrong password (it checked no hash
+  before), so the response time no longer tells a real username from a made-up one.
+
 ## [1.0.0] - 2026-10-08
 
 The first release.

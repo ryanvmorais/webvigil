@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import logging
 import secrets
 from datetime import UTC, datetime, timedelta
@@ -49,6 +50,21 @@ def verify_password(password: str, hashed: str) -> bool:
     except (VerificationError, InvalidHashError):
         return False
     return True
+
+
+@functools.cache
+def dummy_password_hash() -> str:
+    """
+    A hash that nobody knows the password of, built once with the same parameters as a real one.
+
+    Login verifies against it when the username does not exist, so an unknown user costs one Argon2
+    check like a wrong password does, and the response time does not tell the two apart. It is
+    computed on first use and warmed at startup, so the first unknown user is not slower either.
+
+    Returns:
+        str: An Argon2 hash string of a random, discarded password.
+    """
+    return hash_password(secrets.token_urlsafe(32))
 
 
 def create_token(user_id: int, secret: str, ttl_hours: int) -> str:

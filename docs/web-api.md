@@ -37,11 +37,11 @@ The API reads the `[web]` table of `webvigil.toml` (or `--config PATH`, or
 |---|---|---|---|
 | `database_path` | `WEBVIGIL_DATABASE_PATH` | `webvigil.db` | SQLite file |
 | `host` / `port` | `WEBVIGIL_WEB_HOST` / `WEBVIGIL_WEB_PORT` | `127.0.0.1` / `8000` | bind address |
-| `session_secret` | `WEBVIGIL_SESSION_SECRET` | *generated* | JWT signing key — see below |
+| `session_secret` | `WEBVIGIL_SESSION_SECRET` | *generated* | JWT signing key, at least 32 characters when pinned — see below |
 | `session_ttl_hours` | `WEBVIGIL_SESSION_TTL_HOURS` | `12` | cookie lifetime |
 | `cookie_secure` | `WEBVIGIL_COOKIE_SECURE` | `false` | set `true` behind HTTPS |
 | `auto_migrate` | `WEBVIGIL_AUTO_MIGRATE` | `true` | migrate on startup |
-| `cors_origins` | `WEBVIGIL_CORS_ORIGINS` | *(none)* | browser origins allowed to send the cookie |
+| `cors_origins` | `WEBVIGIL_CORS_ORIGINS` | *(none)* | browser origins allowed to send the cookie; `*` is refused |
 
 ## Authentication
 
@@ -59,11 +59,16 @@ wait before trying again, whatever the password: 1 second, doubling with each fu
 to 5 minutes, answered with `429` and `Retry-After`; a successful login forgets the failures. The
 state is in memory, per process. Behind a reverse proxy every request carries the proxy's address
 (`X-Forwarded-For` is not trusted: the client controls it), so the per-username limit is what
-holds. Someone guessing can delay you by a few minutes, never lock you out.
+holds. Someone guessing can delay you by a few minutes, never lock you out. A username that does
+not exist takes the same time as a wrong password (one Argon2 check each) and gets the same
+answer, so the response does not say which usernames are real.
 
 **Session secret:** if `session_secret` is unset the server generates one and stores it in
 the database (a `setting` row), so sessions survive restarts. Pin `session_secret`
-explicitly for a shared or containerised deployment.
+explicitly for a shared or containerised deployment. A pinned secret must be at least 32
+characters: a shorter one is refused at start with a one-line error (exit code `4`) that shows how
+to generate one (`python -c 'import secrets; print(secrets.token_urlsafe(48))'`). Changing the
+secret signs every session out.
 
 ## Who can reach it
 
@@ -80,8 +85,11 @@ only. Two things make that the right default:
   why the account is the only access control.
 
 If you expose it on purpose (another machine, a reverse proxy), do it over HTTPS with
-`cookie_secure = true`, pin a long random `session_secret`, list `cors_origins` explicitly (never
-`*`). Login attempts are throttled (see Authentication), but that state is per process and
+`cookie_secure = true`, pin a long random `session_secret`, list `cors_origins` explicitly (a `*`
+is refused: the API sends the session cookie). `webvigil-web serve` prints a warning when it
+listens beyond this machine with `cookie_secure` off; `docker compose` binds every interface
+inside the container and publishes the port on `127.0.0.1` only, so the warning shows there and is
+expected. Login attempts are throttled (see Authentication), but that state is per process and
 in memory: a proxy that limits them too is better.
 
 ## Scan execution
