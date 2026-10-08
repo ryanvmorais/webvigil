@@ -97,3 +97,47 @@ def test_serve_invokes_uvicorn(_config_env: Path, monkeypatch: pytest.MonkeyPatc
     assert calls["target"] == "webvigil.api.app:app"
     assert calls["port"] == 9123
     assert calls["host"] == "127.0.0.1"
+
+
+def _stub_uvicorn(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
+    """
+    Args:
+        monkeypatch (pytest.MonkeyPatch): Used to replace ``uvicorn.run``.
+
+    Returns:
+        dict[str, object]: Filled with the host and port ``serve`` passes to uvicorn.
+    """
+    calls: dict[str, object] = {}
+
+    def _fake_run(target: str, **kwargs: object) -> None:
+        calls.update(kwargs)
+
+    import uvicorn
+
+    monkeypatch.setattr(uvicorn, "run", _fake_run)
+    return calls
+
+
+def test_serve_warns_when_it_listens_beyond_this_machine_with_an_insecure_cookie(
+    _config_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``--host 0.0.0.0`` with ``cookie_secure`` off prints a warning and still starts."""
+    calls = _stub_uvicorn(monkeypatch)
+    result = runner.invoke(cli.app, ["serve", "--host", "0.0.0.0"])
+    assert result.exit_code == 0 and calls["host"] == "0.0.0.0"
+    assert "warning: listening on 0.0.0.0" in result.stderr and "cookie_secure" in result.stderr
+
+    quiet = runner.invoke(cli.app, ["serve"])  # the default bind is 127.0.0.1
+    assert quiet.exit_code == 0 and "warning" not in quiet.stderr
+
+
+def test_a_short_session_secret_stops_serve_with_one_clear_line(
+    _config_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An invalid config is an operational error (exit 4) with a message, not a traceback."""
+    calls = _stub_uvicorn(monkeypatch)
+    monkeypatch.setenv("WEBVIGIL_SESSION_SECRET", "change-me")
+    result = runner.invoke(cli.app, ["serve"])
+    assert result.exit_code == 4 and not calls
+    assert "error:" in result.stderr and "at least 32 characters" in result.stderr
+    assert "Traceback" not in result.output

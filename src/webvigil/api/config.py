@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
+import ipaddress
 import os
 import tomllib
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 
 from webvigil.core.errors import ConfigError
 
 _ENV_PREFIX = "WEBVIGIL_"
+# HS256 wants a key as long as its 32-byte digest; PyJWT already warns below that. A pinned secret
+# shorter than this is refused at start (the generated one is 64 characters).
+MIN_SESSION_SECRET_LENGTH = 32
 
 
 class WebConfig(BaseModel):
@@ -22,15 +26,16 @@ class WebConfig(BaseModel):
         database_path (Path): SQLite file path. Defaults to ``webvigil.db``.
         host (str): Bind host. Defaults to ``127.0.0.1``.
         port (int): Bind port. Defaults to 8000.
-        session_secret (str | None): Pinned JWT signing secret; when ``None`` a
+        session_secret (str | None): Pinned JWT signing secret, at least
+            ``MIN_SESSION_SECRET_LENGTH`` characters; when ``None`` (or empty) a
             secret is generated and stored in the database on first use.
         session_ttl_hours (int): Session lifetime, in hours. Defaults to 12.
         cookie_secure (bool): Set the ``Secure`` flag on the session cookie.
             Defaults to ``False`` (development over HTTP).
         auto_migrate (bool): Run ``alembic upgrade head`` on startup. Defaults
             to ``True``.
-        cors_origins (list[str]): Allowed CORS origins. Defaults to empty (the
-            bundled UI is same-origin).
+        cors_origins (list[str]): Allowed CORS origins; ``*`` is refused because the
+            API sends credentials. Defaults to empty (the bundled UI is same-origin).
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -43,6 +48,49 @@ class WebConfig(BaseModel):
     cookie_secure: bool = False
     auto_migrate: bool = True
     cors_origins: list[str] = []
+
+    @field_validator("session_secret")
+    @classmethod
+    def _secret_is_long_enough(cls, value: str | None) -> str | None:
+        """
+        Args:
+            value (str | None): The pinned secret; empty or ``None`` means "generate one".
+
+        Returns:
+            str | None: ``value`` unchanged.
+
+        Raises:
+            ValueError: If a non-empty secret is shorter than ``MIN_SESSION_SECRET_LENGTH`` bytes.
+        """
+        if value and len(value.encode("utf-8")) < MIN_SESSION_SECRET_LENGTH:
+            raise ValueError(
+                f"session_secret must be at least {MIN_SESSION_SECRET_LENGTH} characters "
+                "(generate one with: "
+                "python -c 'import secrets; print(secrets.token_urlsafe(48))'), "
+                "or leave it unset to have one generated and stored in the database"
+            )
+        return value
+
+    @field_validator("cors_origins")
+    @classmethod
+    def _no_wildcard_origin(cls, value: list[str]) -> list[str]:
+        """
+        Args:
+            value (list[str]): The allowed origins.
+
+        Returns:
+            list[str]: ``value`` unchanged.
+
+        Raises:
+            ValueError: If ``*`` is listed: the API sends credentials, which a wildcard origin
+                would hand to every site.
+        """
+        if "*" in value:
+            raise ValueError(
+                "cors_origins must list origins explicitly: '*' is not allowed because the API "
+                "sends credentials (the session cookie)"
+            )
+        return value
 
     @classmethod
     def load(cls, path: str | Path | None = None) -> WebConfig:
@@ -117,3 +165,34 @@ def _env_overrides() -> dict[str, Any]:
         else:
             out[field] = value
     return out
+
+
+def insecure_bind_warning(config: WebConfig, host: str) -> str | None:
+    """
+    Say so when the API listens beyond this machine and the session cookie is not marked ``Secure``.
+
+    A warning, not a refusal: ``docker compose`` binds ``0.0.0.0`` inside the container and
+    publishes the port on ``127.0.0.1`` only, and a TLS-terminating proxy is the other legitimate
+    setup.
+
+    Args:
+        config (WebConfig): Supplies ``cookie_secure``.
+        host (str): The address the server will bind (the ``--host`` flag wins over the config).
+
+    Returns:
+        str | None: The warning text, or ``None`` when the host is a loopback address or the cookie
+            is ``Secure``.
+    """
+    if config.cookie_secure:
+        return None
+    try:
+        loopback = ipaddress.ip_address(host).is_loopback
+    except ValueError:  # a name, not an address
+        loopback = host.lower() == "localhost"
+    if loopback:
+        return None
+    return (
+        f"listening on {host}, which other machines can reach, with cookie_secure off: the "
+        "session cookie travels without the Secure flag. Serve it over HTTPS and set "
+        "cookie_secure = true, or bind 127.0.0.1 (docker compose publishes on 127.0.0.1 only)"
+    )

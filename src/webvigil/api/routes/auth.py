@@ -13,6 +13,7 @@ from webvigil.api.schemas import LoginIn, PasswordChangeIn, UserOut
 from webvigil.api.security import (
     clear_session_cookie,
     create_token,
+    dummy_password_hash,
     hash_password,
     set_session_cookie,
     verify_password,
@@ -36,7 +37,10 @@ def login(body: LoginIn, request: Request, response: Response, session: SessionD
             headers={"Retry-After": str(wait)},
         )
     user = session.exec(select(User).where(User.username == body.username)).first()
-    if user is None or not verify_password(body.password, user.password_hash):
+    # One Argon2 check whether or not the user exists, so the response time does not say which.
+    stored_hash = user.password_hash if user is not None else dummy_password_hash()
+    password_ok = verify_password(body.password, stored_hash)
+    if user is None or not password_ok:
         throttle.record_failure(*keys)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid username or password")
     throttle.clear(*keys)
