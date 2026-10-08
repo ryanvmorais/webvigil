@@ -104,7 +104,8 @@ open-source tool with no hosted service — at the cost of the classes below. Fo
 to reach for instead.
 
 - **JavaScript-rendered apps.** The crawler parses HTML; it runs no headless browser, so a
-  SPA that builds its DOM in JS exposes almost no surface to the crawl. *Instead:* point
+  SPA that builds its DOM in JS exposes almost no surface to the crawl (the scan warns when
+  the entry page looks like one). *Instead:* point
   `--openapi` at the app's schema to seed the crawl and the injection pass directly, or
   feed URLs collected by your own browser-based crawler.
 
