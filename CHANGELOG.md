@@ -11,6 +11,12 @@ release and contains all of them.
 
 ## [Unreleased]
 
+### Fixed
+
+- On Windows, a report redirected from stdout (`webvigil scan … --format json > scan.json`) was written in
+  the system code page instead of UTF-8, so `webvigil report` could not read it back. It is UTF-8 now,
+  as `--output` always was.
+
 ## [1.0.0] - 2026-10-08
 
 The first release.

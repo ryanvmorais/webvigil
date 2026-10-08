@@ -662,7 +662,7 @@ def _emit(
         output.write_text(rendered, "utf-8")
         _render.status(f"wrote {output_format} report to {output}")
         return
-    sys.stdout.write(rendered + "\n")
+    _write_stdout(rendered)
     _render.summary(
         result,
         cookie_count=cookie_count,
@@ -689,7 +689,24 @@ def _write_or_print(rendered: str, output: Path | None, output_format: str) -> N
         output.write_text(rendered, "utf-8")
         _render.status(f"wrote {output_format} report to {output}")
     else:
-        sys.stdout.write(rendered + "\n")
+        _write_stdout(rendered)
+
+
+def _write_stdout(rendered: str) -> None:
+    """
+    Write a rendered report to stdout as UTF-8, whatever the platform's default encoding.
+
+    On Windows a redirected stdout (``> scan.json``) uses the system code page, so the file came
+    out in cp1252 and ``webvigil report`` could not read it back; ``--output`` has always written
+    UTF-8. The stream is switched before the first write, which also flushes anything pending.
+
+    Args:
+        rendered (str): The rendered report text; a trailing newline is added.
+    """
+    reconfigure = getattr(sys.stdout, "reconfigure", None)
+    if reconfigure is not None:  # a replaced stream (a test, an embedder) may not have it
+        reconfigure(encoding="utf-8")
+    sys.stdout.write(rendered + "\n")
 
 
 def main() -> None:
