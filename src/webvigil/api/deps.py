@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, HTTPException, Path, Request, status
 from sqlalchemy import Engine
 from sqlmodel import Session
 
@@ -112,3 +112,11 @@ def get_runner(request: Request) -> ScanRunner:
 
 
 RunnerDep = Annotated[ScanRunner, Depends(get_runner)]
+
+# SQLite keeps an INTEGER in 8 bytes: a larger id makes the driver raise OverflowError, which would
+# surface as a 500 (issue #160). Row ids start at 1, so anything outside this range is no scan.
+MAX_ROW_ID = 2**63 - 1
+
+# The scan id in a route path, checked before the database is asked: one definition so every route
+# that takes it refuses the same range with the same 422.
+ScanId = Annotated[int, Path(ge=1, le=MAX_ROW_ID)]

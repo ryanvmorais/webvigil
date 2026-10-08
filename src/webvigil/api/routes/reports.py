@@ -9,7 +9,7 @@ from sqlmodel import select
 
 from webvigil.api.db import Finding as FindingRow
 from webvigil.api.db import Scan, ScanStatus
-from webvigil.api.deps import CurrentUser, SessionDep
+from webvigil.api.deps import CurrentUser, ScanId, SessionDep
 from webvigil.api.mapping import rows_to_result
 from webvigil.reporting import get_reporter
 
@@ -27,7 +27,7 @@ _MEDIA_TYPE = {
 
 @router.get("/{scan_id}/report")
 def download_report(
-    scan_id: int,
+    scan_id: ScanId,
     _user: CurrentUser,
     session: SessionDep,
     report_format: str = Query(default="json", alias="format"),

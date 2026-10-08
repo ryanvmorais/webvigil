@@ -14,7 +14,7 @@ from sqlmodel import col, select
 
 from webvigil.api.db import TERMINAL_STATUSES, Scan, ScanStatus
 from webvigil.api.db import Finding as FindingRow
-from webvigil.api.deps import CurrentUser, RunnerDep, SessionDep
+from webvigil.api.deps import MAX_ROW_ID, CurrentUser, RunnerDep, ScanId, SessionDep
 from webvigil.api.schemas import FindingOut, Page, ScanCreate, ScanOut, ScanSummary
 from webvigil.core.findings import Severity
 from webvigil.core.target import Target
@@ -74,14 +74,14 @@ def list_scans(
 
 
 @router.get("/{scan_id}")
-def get_scan(scan_id: int, _user: CurrentUser, session: SessionDep) -> ScanOut:
+def get_scan(scan_id: ScanId, _user: CurrentUser, session: SessionDep) -> ScanOut:
     """One scan's full detail — metadata, options, and the detected-technology inventory."""
     return ScanOut.from_row(_load(session, scan_id))
 
 
 @router.get("/{scan_id}/findings")
 def list_findings(
-    scan_id: int,
+    scan_id: ScanId,
     _user: CurrentUser,
     session: SessionDep,
     severity: str | None = None,
@@ -113,7 +113,7 @@ def list_findings(
 
 @router.post("/{scan_id}/cancel", status_code=status.HTTP_204_NO_CONTENT)
 async def cancel_scan(
-    scan_id: int, _user: CurrentUser, session: SessionDep, runner: RunnerDep
+    scan_id: ScanId, _user: CurrentUser, session: SessionDep, runner: RunnerDep
 ) -> None:
     """Cancel a running or queued scan. 409 if it is already finished or not cancellable."""
     scan = _load(session, scan_id)
@@ -124,7 +124,7 @@ async def cancel_scan(
 
 
 @router.delete("/{scan_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_scan(scan_id: int, _user: CurrentUser, session: SessionDep) -> None:
+def delete_scan(scan_id: ScanId, _user: CurrentUser, session: SessionDep) -> None:
     """Delete a finished scan and its findings (cascade). 409 if it is still active."""
     scan = _load(session, scan_id)
     if ScanStatus(scan.status) not in TERMINAL_STATUSES:
@@ -193,6 +193,9 @@ def _decode_cursor(cursor: str) -> tuple[datetime, int]:
     try:
         raw = base64.urlsafe_b64decode(cursor.encode()).decode()
         created_at, scan_id = raw.rsplit("|", 1)
-        return datetime.fromisoformat(created_at), int(scan_id)
+        position = int(scan_id)
+        if not 1 <= position <= MAX_ROW_ID:
+            raise ValueError("cursor id out of range")
+        return datetime.fromisoformat(created_at), position
     except (binascii.Error, ValueError) as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "invalid cursor") from exc
