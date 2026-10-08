@@ -238,6 +238,13 @@ def _tech(version: str, method: DetectionMethod) -> Technology:
     )
 
 
+def test_scan_summary_title_is_one_unbroken_line() -> None:
+    """The target is not wrapped into the narrow severity table, so a URL stays copyable."""
+    result = runner.invoke(app_mod.app, _SCAN)
+    target = _StubOrchestrator.result.metadata.target
+    assert f"WebVigil — {target}" in result.stderr
+
+
 def test_scan_summary_reports_detected_libraries_and_the_advisory_source() -> None:
     """The summary counts the libraries and names OSV.dev as a source only with ``--osv-online``."""
     _StubOrchestrator.result = make_result(

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from rich.console import Console
 from rich.table import Table
+from rich.text import Text
 
 from webvigil.core.findings import ScanMode, Severity
 from webvigil.core.result import ScanResult
@@ -104,7 +105,10 @@ def summary(
             that forms were submitted. Defaults to ``False``.
     """
     meta = result.metadata
-    table = Table(title=f"WebVigil — {meta.target}", title_justify="left")
+    # The title is its own line: as the table's title it is wrapped to the table's width (about
+    # 20 columns), which cuts a URL in two.
+    _console.print(Text.assemble(("WebVigil", "bold"), f" — {meta.target}"))
+    table = Table()
     table.add_column("Severity")
     table.add_column("Count", justify="right")
     for severity in reversed(list(Severity)):
