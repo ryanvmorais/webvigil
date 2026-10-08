@@ -9,8 +9,10 @@ The lifecycle tests that need a scan pinned in RUNNING build their own app with
 
 from __future__ import annotations
 
+import base64
 import time
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
@@ -176,6 +178,35 @@ def test_missing_scan_is_404(auth_client: TestClient) -> None:
     """GET and DELETE on an unknown scan id are both 404."""
     assert auth_client.get("/api/scans/999").status_code == 404
     assert auth_client.delete("/api/scans/999").status_code == 404
+
+
+@pytest.mark.parametrize("scan_id", ["99999999999999999999999", str(2**63), "0", "-1"])
+def test_out_of_range_scan_id_is_422_on_every_route(auth_client: TestClient, scan_id: str) -> None:
+    """An id no row can have is refused with a 422 before the database sees it (issue #160).
+
+    Above 2**63 - 1 the SQLite driver raises OverflowError, which used to be a 500 with a
+    traceback in the log. ``TestClient`` re-raises a server error, so the old behaviour fails here.
+    """
+    base = f"/api/scans/{scan_id}"
+    assert auth_client.get(base).status_code == 422
+    assert auth_client.get(f"{base}/findings").status_code == 422
+    assert auth_client.get(f"{base}/report?format=json").status_code == 422
+    assert auth_client.post(f"{base}/cancel").status_code == 422
+    assert auth_client.delete(base).status_code == 422
+
+
+def test_largest_scan_id_is_still_a_404(auth_client: TestClient) -> None:
+    """The top of the range is a valid id that names no scan: 404, not 422."""
+    assert auth_client.get(f"/api/scans/{2**63 - 1}").status_code == 404
+
+
+def test_cursor_with_an_out_of_range_id_is_a_422(auth_client: TestClient) -> None:
+    """A cursor that carries an id outside the row range is an invalid cursor, not a 500."""
+    raw = f"2026-01-01T00:00:00|{2**70}"
+    cursor = base64.urlsafe_b64encode(raw.encode()).decode()
+    response = auth_client.get("/api/scans", params={"cursor": cursor})
+    assert response.status_code == 422
+    assert response.json()["detail"] == "invalid cursor"
 
 
 def test_scan_routes_need_auth(client: TestClient) -> None:
