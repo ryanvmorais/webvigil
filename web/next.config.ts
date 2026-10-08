@@ -1,5 +1,7 @@
 import type { NextConfig } from "next";
 
+import { securityHeaders } from "./src/lib/security-headers";
+
 /**
  * The dashboard never calls the API cross-origin: every `/api/*` request is proxied
  * server-side to the FastAPI service (spec 002), in development and in production alike.
@@ -22,6 +24,10 @@ const nextConfig: NextConfig = {
   output: process.env.NEXT_OUTPUT_STANDALONE ? "standalone" : undefined,
   async rewrites() {
     return [{ source: "/api/:path*", destination: `${apiProxyTarget}/api/:path*` }];
+  },
+  // Clickjacking, MIME sniffing, referrer and browser-feature headers on every route (#138).
+  async headers() {
+    return [{ source: "/:path*", headers: securityHeaders }];
   },
 };
 
