@@ -88,6 +88,9 @@ class HttpSection(_Section):
         user_agent (str): ``User-Agent`` header sent on every request.
         verify_tls (bool): Verify the target's TLS certificate. Defaults to
             ``True``.
+        max_body_bytes (int): The most of one response body that is read, after
+            decompression; the rest is dropped and the scan warns. Bounds the memory a
+            hostile or oversized response can take. Defaults to 10 MiB.
     """
 
     concurrency: int = 8
@@ -95,6 +98,7 @@ class HttpSection(_Section):
     timeout_s: float = 15.0
     user_agent: str = "WebVigil/0.1 (+https://github.com/ryanvmorais/webvigil)"
     verify_tls: bool = True
+    max_body_bytes: int = Field(default=10 * 1024 * 1024, gt=0)
 
 
 class ReportSection(_Section):
