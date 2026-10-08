@@ -211,6 +211,18 @@ async def test_robots_skip_becomes_a_warning(monkeypatch: pytest.MonkeyPatch) ->
     assert not any("robots.txt" in w for w in quiet.warnings)
 
 
+async def test_unreachable_target_becomes_a_warning(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A target that stopped answering is reported, and only then."""
+    monkeypatch.setattr(
+        orch_mod, "unreachable_warning", lambda stats: "the target stopped answering"
+    )
+    result = await Orchestrator(ScanConfig(), check_types=[PassiveOne]).run(_TARGET)
+    assert "the target stopped answering" in result.warnings
+    monkeypatch.setattr(orch_mod, "unreachable_warning", lambda stats: None)
+    quiet = await Orchestrator(ScanConfig(), check_types=[PassiveOne]).run(_TARGET)
+    assert not any("stopped answering" in w for w in quiet.warnings)
+
+
 async def test_registry_selection_filters_by_mode_and_reports_unknown_disabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

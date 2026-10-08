@@ -42,7 +42,7 @@ from webvigil.core.technology import Technology
 from webvigil.crawler.crawler import Crawler
 from webvigil.crawler.forms import Form
 from webvigil.crawler.openapi import ApiOperation, load_openapi
-from webvigil.http.client import HttpClient
+from webvigil.http.client import HttpClient, unreachable_warning
 from webvigil.http.session import Session
 
 _PROBE_FAMILIES = frozenset({"vcs", "config", "manifest", "backup", "debug", "sourcemap"})
@@ -196,6 +196,8 @@ class Orchestrator:
             )
             findings, errors = await self._run_checks(check_types, context)
             warnings.extend(context.observations.warnings)
+            if line := unreachable_warning(http.stats):
+                warnings.append(line)
             technologies = context.observations.technologies
             if session is not None:
                 warnings.extend(session.warnings())

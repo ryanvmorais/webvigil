@@ -74,12 +74,43 @@ class HttpStats:
         blocked_out_of_scope (int): Requests refused by the scope guard.
         crafted_requests (int): Requests that carried an injection payload or
             used a non-idempotent method.
+        failed (int): Requests that failed for good: every attempt ended in a
+            transport error or a timeout, so no response came back.
     """
 
     requests: int = 0
     retries: int = 0
     blocked_out_of_scope: int = 0
     crafted_requests: int = 0
+    failed: int = 0
+
+
+# A target that went down mid-scan fails every request that follows. These two floors tell that
+# apart from the odd timeout: enough failures to matter, and a large share of what was asked.
+_UNREACHABLE_MIN_FAILED = 20
+_UNREACHABLE_MIN_SHARE = 0.2
+
+
+def unreachable_warning(stats: HttpStats) -> str | None:
+    """
+    The scan warning for a target that stopped answering, or ``None`` when it kept answering.
+
+    Without it a target that crashes halfway leaves a scan that finishes "clean": every
+    later request fails quietly and the missing findings look like a secure application.
+
+    Args:
+        stats (HttpStats): The counters of the finished scan.
+
+    Returns:
+        str | None: The warning text, or ``None`` below both floors.
+    """
+    asked = stats.requests - stats.retries  # one entry per request, however often it was retried
+    if stats.failed < _UNREACHABLE_MIN_FAILED or stats.failed < asked * _UNREACHABLE_MIN_SHARE:
+        return None
+    return (
+        f"{stats.failed} of {asked} requests got no response (connection errors or timeouts): "
+        "the target may have stopped answering during the scan, so the results can be incomplete"
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -613,6 +644,7 @@ class HttpClient:
                 # server (a pre-send connect error) — never on a read timeout.
                 if idempotent or isinstance(exc, httpx.ConnectError):
                     continue
+                self.stats.failed += 1
                 raise RequestFailed(url, last_error) from exc
             if session is not None and on_target:
                 session.jar.absorb(response, handshake=handshake)
@@ -620,7 +652,8 @@ class HttpClient:
                 last_error = f"HTTP {response.status_code}"
                 continue
             return response
+        self.stats.failed += 1
         raise RequestFailed(url, last_error)
 
 
-__all__ = ["HttpClient", "HttpStats", "RedirectHop", "Response"]
+__all__ = ["HttpClient", "HttpStats", "RedirectHop", "Response", "unreachable_warning"]

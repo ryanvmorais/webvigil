@@ -16,7 +16,7 @@ from webvigil.core.config import ScanConfig
 from webvigil.core.errors import OutOfScopeError, RequestFailed
 from webvigil.core.target import Scope, Target
 from webvigil.http import client as client_mod
-from webvigil.http.client import HttpClient
+from webvigil.http.client import HttpClient, HttpStats, unreachable_warning
 
 
 @pytest.fixture(autouse=True)
@@ -68,6 +68,42 @@ async def test_retries_exhausted_raises_request_failed(httpx_mock: object) -> No
         with pytest.raises(RequestFailed):
             await http.get("https://example.com/")
     assert http.stats.retries == 2
+    assert http.stats.failed == 1  # one request that got no answer, however many attempts it took
+
+
+async def test_a_request_that_gets_an_answer_is_not_counted_as_failed(httpx_mock: object) -> None:
+    """A retried request that finally answers is a retry, not a failure."""
+    httpx_mock.add_response(status_code=503)  # type: ignore[attr-defined]
+    httpx_mock.add_response(status_code=200, text="ok")  # type: ignore[attr-defined]
+    async with _http() as http:
+        await http.get("https://example.com/")
+    assert http.stats.failed == 0
+
+
+def test_unreachable_warning_needs_both_enough_failures_and_a_large_share() -> None:
+    """The odd timeout in a big scan stays quiet; a target that went down is reported."""
+    quiet_few = HttpStats(requests=60, retries=0, failed=19)  # a third, but fewer than 20
+    quiet_share = HttpStats(requests=1000, retries=0, failed=30)  # 30, but 3 % of the scan
+    down = HttpStats(requests=300, retries=200, failed=100)  # 100 of 100 asked: all failed
+    assert unreachable_warning(quiet_few) is None
+    assert unreachable_warning(quiet_share) is None
+    warning = unreachable_warning(down)
+    assert warning is not None and "100 of 100 requests" in warning
+    assert "stopped answering" in warning
+
+
+async def test_a_target_that_went_down_ends_in_the_warning(httpx_mock: object) -> None:
+    """Real client, dead target: every request fails for good and the counters add the warning."""
+    httpx_mock.add_exception(  # type: ignore[attr-defined]
+        httpx.ConnectError("refused"), is_reusable=True
+    )
+    async with _http() as http:
+        for number in range(25):
+            with pytest.raises(RequestFailed):
+                await http.get(f"https://example.com/page-{number}")
+    assert http.stats.failed == 25
+    warning = unreachable_warning(http.stats)
+    assert warning is not None and "25 of 25 requests" in warning
 
 
 async def test_out_of_scope_get_raises_before_any_request(httpx_mock: object) -> None:
