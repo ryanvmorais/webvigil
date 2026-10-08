@@ -1,0 +1,88 @@
+# Release pipeline (GitHub Actions). Publishing is the maintainer's act (docs/releasing.md): this
+# workflow only runs when a GitHub Release is published, or when it is started by hand for a dry run.
+#   build     one `uv build`, checked the same way CI checks it; the artifact is what gets published
+#   testpypi  dry run on test.pypi.org, started by hand (workflow_dispatch); never touches pypi.org
+#   pypi      the real release on pypi.org, only from a published GitHub Release (tag vX.Y.Z)
+# PyPI Trusted Publishing (OIDC): no token is stored anywhere. The "pending publisher" and the two
+# environments below are created by the maintainer once (see docs/releasing.md).
+name: Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.12"
+
+      - name: The tag matches the version in pyproject.toml
+        if: github.event_name == 'release'
+        run: |
+          version="$(uv run --no-project python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")"
+          if [ "v${version}" != "${GITHUB_REF_NAME}" ]; then
+            echo "::error::the release tag is ${GITHUB_REF_NAME} but pyproject.toml says ${version}"
+            exit 1
+          fi
+
+      - name: Build the sdist and the wheel
+        run: uv build
+
+      - name: The package is what a release should ship
+        run: |
+          uv run --no-project python scripts/check-package.py dist
+          uvx twine check --strict dist/*
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  testpypi:
+    needs: build
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-26.04
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/project/webvigil/
+    permissions:
+      id-token: write # the OIDC token PyPI exchanges for a short-lived upload credential
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+
+  pypi:
+    needs: build
+    if: github.event_name == 'release'
+    runs-on: ubuntu-26.04
+    environment:
+      name: pypi
+      url: https://pypi.org/project/webvigil/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

@@ -14,21 +14,29 @@
 name = "webvigil"
 version = "0.0.0"
 description = "A web application vulnerability scanner for developers — safe by default, CI-friendly."
-readme = "README.md"
+# Assembled at build time (see [tool.hatch.metadata.hooks.fancy-pypi-readme]): PyPI cannot resolve
+# the README's relative images and links, so the build rewrites them to absolute GitHub URLs.
+dynamic = ["readme"]
 requires-python = ">=3.12"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Ryan Morais" }]
 keywords = ["security", "scanner", "web", "vulnerability", "dast", "appsec", "owasp"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 5 - Production/Stable",
     "Environment :: Console",
     "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
     "License :: OSI Approved :: Apache Software License",
+    "Natural Language :: English",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
     "Topic :: Security",
     "Topic :: Software Development :: Quality Assurance",
+    "Typing :: Typed",
 ]
 
 dependencies = [
@@ -38,7 +46,10 @@ dependencies = [
     "rich>=15.0.0",
     "jinja2>=3.1.6",
     "cryptography>=50.0.2",
-    "selectolax>=0.4.13",
+    # Capped below 1.0: selectolax 1.0 removed the Modest backend (`selectolax.parser`) that the crawler and
+    # the checks import, so an unpinned install (pip, pipx) would fail on start. Moving to the Lexbor backend
+    # changes how HTML is parsed and is its own piece of work; the cap is lifted when it lands.
+    "selectolax>=0.4.13,<1",
     # Version-range evaluation for the dependency-fingerprint advisory match (spec 004, ADR-7).
     "packaging>=26.3",
 ]
@@ -60,8 +71,11 @@ webvigil-web = "webvigil.api.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/ryanvmorais/webvigil"
+Documentation = "https://github.com/ryanvmorais/webvigil/tree/main/docs"
 Repository = "https://github.com/ryanvmorais/webvigil"
 Issues = "https://github.com/ryanvmorais/webvigil/issues"
+Changelog = "https://github.com/ryanvmorais/webvigil/blob/main/CHANGELOG.md"
+"Security policy" = "https://github.com/ryanvmorais/webvigil/blob/main/SECURITY.md"
 
 [dependency-groups]
 dev = [
@@ -88,8 +102,37 @@ dev = [
 
 # --- Packaging (Hatchling) ---------------------------------------------------
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-fancy-pypi-readme"]
 build-backend = "hatchling.build"
+
+# The source distribution is the engine, the CLI and the Web API, plus what a packager needs to
+# read the project. The dashboard (`web/`), the tests, the specs, the CI and the local caches live
+# in the repository only: a published package is not a copy of the repository.
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/README.md",
+    "/LICENSE",
+    "/NOTICE",
+    "/CHANGELOG.md",
+    "/SECURITY.md",
+    "/webvigil.example.toml",
+]
+
+[tool.hatch.metadata.hooks.fancy-pypi-readme]
+content-type = "text/markdown"
+
+[[tool.hatch.metadata.hooks.fancy-pypi-readme.fragments]]
+path = "README.md"
+
+# Images first (they need the raw file, not the GitHub page), then every other relative link.
+[[tool.hatch.metadata.hooks.fancy-pypi-readme.substitutions]]
+pattern = '(!\[[^\]]*\]\()(?!https?://)([^)\s]+)'
+replacement = '\1https://raw.githubusercontent.com/ryanvmorais/webvigil/main/\2'
+
+[[tool.hatch.metadata.hooks.fancy-pypi-readme.substitutions]]
+pattern = '(\]\()(?!https?://|#|mailto:)([^)\s]+)'
+replacement = '\1https://github.com/ryanvmorais/webvigil/blob/main/\2'
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/webvigil"]

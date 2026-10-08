@@ -55,6 +55,12 @@ confirmed against a per-request baseline)
 - A FastAPI service with SQLite persistence and a queued scan runner, and a Next.js dashboard for
   it.
 
+**Packaging**
+- A package for PyPI: the engine, the CLI and (with the `web` extra) the Web API, published from a
+  GitHub Release with PyPI Trusted Publishing (no stored token) after a dry run on TestPyPI. The
+  dashboard stays in the repository. See [releasing](docs/releasing.md).
+- `selectolax` is capped below 1.0: version 1.0 removed the parser the engine imports.
+
 **Quality and security of the project**
 - Strict typing, an import contract that keeps the engine independent of the CLI, the API and the
   database, 1094 tests, a CI matrix on Python 3.12 to 3.14, Lighthouse CI for the dashboard, CodeQL
