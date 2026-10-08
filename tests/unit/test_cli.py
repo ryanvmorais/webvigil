@@ -15,7 +15,9 @@ summary notes one table; every assertion they made is still made.
 
 from __future__ import annotations
 
+import io
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -544,3 +546,29 @@ def test_report_refuses_a_scan_file_from_a_newer_schema(tmp_path: Path) -> None:
     assert result.exit_code == ExitCode.OPERATIONAL
     assert "schema 99" in result.stderr and "upgrade WebVigil" in result.stderr
     assert "Traceback" not in result.stderr
+
+
+def test_a_report_goes_to_stdout_as_utf8_whatever_the_default_encoding(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A redirected stdout on Windows is cp1252; the report must still come out as UTF-8 (#150)."""
+    raw = io.BytesIO()
+    stream = io.TextIOWrapper(raw, encoding="cp1252", newline="")
+    monkeypatch.setattr(sys, "stdout", stream)
+
+    app_mod._write_stdout("scan of https://example.com — done")
+    stream.flush()
+
+    assert raw.getvalue() == "scan of https://example.com — done\n".encode()
+
+
+def test_a_replaced_stdout_without_reconfigure_still_gets_the_report(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A stream that cannot be reconfigured (a test, an embedder) receives the text unchanged."""
+    stream = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", stream)
+
+    app_mod._write_stdout("a report")
+
+    assert stream.getvalue() == "a report\n"
