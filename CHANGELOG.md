@@ -21,6 +21,8 @@ release and contains all of them.
 - A `webvigil.toml` configuration file (every key can be overridden by a flag), a scope guard,
   bounded concurrency, a request delay, a page limit and `robots.txt` handling on every scan (a warning says when it kept URLs out of the crawl, when the target stopped answering, or when the
   entry page looks like a JavaScript application the crawler cannot see into).
+  A response body is read up to `[http] max_body_bytes` (10 MiB, after decompression) and the rest is
+  dropped with a warning, so a hostile or oversized response cannot exhaust the scanner's memory.
 
 **Passive checks**
 - Security headers and technology-disclosure headers, cookie flags, TLS and HTTPS configuration,
