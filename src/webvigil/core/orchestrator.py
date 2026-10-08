@@ -41,6 +41,7 @@ from webvigil.core.target import Target
 from webvigil.core.technology import Technology
 from webvigil.crawler.crawler import Crawler
 from webvigil.crawler.forms import Form
+from webvigil.crawler.jsapp import script_app_warning
 from webvigil.crawler.openapi import ApiOperation, load_openapi
 from webvigil.http.client import HttpClient, unreachable_warning
 from webvigil.http.session import Session
@@ -143,6 +144,8 @@ class Orchestrator:
             )
             pages = tuple(await crawler.discover())
             if crawler.post_summary is not None and (line := crawler.post_summary.warning()):
+                warnings.append(line)
+            if line := script_app_warning(pages):
                 warnings.append(line)
             forms = crawler.forms
             if crawler.skipped_destructive:

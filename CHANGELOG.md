@@ -19,7 +19,8 @@ release and contains all of them.
 - Reports in JSON (canonical, with a `schema_version`), SARIF 2.1.0, HTML and Markdown;
   `--fail-on` and documented exit codes for CI.
 - A `webvigil.toml` configuration file (every key can be overridden by a flag), a scope guard,
-  bounded concurrency, a request delay, a page limit and `robots.txt` handling on every scan (a warning says when it kept URLs out of the crawl, or when the target stopped answering).
+  bounded concurrency, a request delay, a page limit and `robots.txt` handling on every scan (a warning says when it kept URLs out of the crawl, when the target stopped answering, or when the
+  entry page looks like a JavaScript application the crawler cannot see into).
 
 **Passive checks**
 - Security headers and technology-disclosure headers, cookie flags, TLS and HTTPS configuration,
