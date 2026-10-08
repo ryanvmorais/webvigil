@@ -221,6 +221,16 @@ async def test_javascript_app_becomes_a_warning(monkeypatch: pytest.MonkeyPatch)
     assert not any("JavaScript" in w for w in quiet.warnings)
 
 
+async def test_truncated_bodies_become_a_warning(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Responses cut at the body limit are reported, and only then."""
+    monkeypatch.setattr(orch_mod, "truncated_warning", lambda stats, limit: "bodies were cut")
+    result = await Orchestrator(ScanConfig(), check_types=[PassiveOne]).run(_TARGET)
+    assert "bodies were cut" in result.warnings
+    monkeypatch.setattr(orch_mod, "truncated_warning", lambda stats, limit: None)
+    quiet = await Orchestrator(ScanConfig(), check_types=[PassiveOne]).run(_TARGET)
+    assert not any("cut" in w for w in quiet.warnings)
+
+
 async def test_unreachable_target_becomes_a_warning(monkeypatch: pytest.MonkeyPatch) -> None:
     """A target that stopped answering is reported, and only then."""
     monkeypatch.setattr(

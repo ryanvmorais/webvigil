@@ -57,6 +57,9 @@ _Files = (
     dict[str, tuple[str, bytes, str]] | list[tuple[str, tuple[str | None, str | bytes, str | None]]]
 )
 
+# Marks, on an httpx response, that its body was cut at ``max_body_bytes``.
+_TRUNCATED_EXTENSION = "webvigil_truncated"
+
 # Backoff between retries; module-level so tests can shrink them.
 BACKOFF_BASE_S = 0.5
 BACKOFF_JITTER_S = 0.25
@@ -76,6 +79,8 @@ class HttpStats:
             used a non-idempotent method.
         failed (int): Requests that failed for good: every attempt ended in a
             transport error or a timeout, so no response came back.
+        truncated (int): Responses whose body was larger than ``max_body_bytes`` and was
+            read only up to it.
     """
 
     requests: int = 0
@@ -83,6 +88,7 @@ class HttpStats:
     blocked_out_of_scope: int = 0
     crafted_requests: int = 0
     failed: int = 0
+    truncated: int = 0
 
 
 # A target that went down mid-scan fails every request that follows. These two floors tell that
@@ -110,6 +116,28 @@ def unreachable_warning(stats: HttpStats) -> str | None:
     return (
         f"{stats.failed} of {asked} requests got no response (connection errors or timeouts): "
         "the target may have stopped answering during the scan, so the results can be incomplete"
+    )
+
+
+def truncated_warning(stats: HttpStats, limit: int) -> str | None:
+    """
+    The scan warning for responses that were cut at the body limit, or ``None`` when none were.
+
+    What lies past the limit is not analysed, so a scan that cut responses must say so.
+
+    Args:
+        stats (HttpStats): The counters of the finished scan.
+        limit (int): The ``max_body_bytes`` the scan ran with.
+
+    Returns:
+        str | None: The warning text, or ``None`` when no body was cut.
+    """
+    if not stats.truncated:
+        return None
+    return (
+        f"{stats.truncated} response(s) were larger than the {limit / (1024 * 1024):g} MiB read "
+        "limit and were read only up to it ([http] max_body_bytes): what lies past it was not "
+        "analysed"
     )
 
 
@@ -149,6 +177,8 @@ class Response:
             was not followed. Defaults to ``False``.
         final_location (str | None): The out-of-scope ``Location`` that was not
             followed, when applicable.
+        truncated (bool): ``True`` when the body was larger than ``max_body_bytes`` and
+            ``content`` / ``text`` hold only the first part.
     """
 
     url: str
@@ -161,6 +191,7 @@ class Response:
     history: tuple[RedirectHop, ...] = ()
     redirected_out_of_scope: bool = False
     final_location: str | None = None
+    truncated: bool = False
 
     @property
     def is_html(self) -> bool:
@@ -215,6 +246,7 @@ class HttpClient:
         self._guard = ScopeGuard(target)
         self.limiter = RateLimiter(config.http.concurrency, config.http.delay_ms)
         self.stats = HttpStats()
+        self._max_body = config.http.max_body_bytes
         self._transport = transport  # test seam: an httpx ASGITransport / MockTransport
         self._client: httpx.AsyncClient | None = None
         self._session: Session | None = None  # spec 019: set by use_session()
@@ -545,7 +577,42 @@ class HttpClient:
             history=tuple(hops),
             redirected_out_of_scope=redirected_out,
             final_location=final_location,
+            truncated=bool(raw.extensions.get(_TRUNCATED_EXTENSION, False)),
         )
+
+    async def _read_capped(self, streamed: httpx.Response) -> httpx.Response:
+        """
+        Read a streamed response body up to ``max_body_bytes`` and close the connection.
+
+        ``httpx`` would read the whole body into memory, however large: a hostile server, a
+        multi-gigabyte file reached by a probe, or a compressed body that inflates a thousandfold
+        could exhaust the scanner. The limit is on the *decompressed* size, and a cut body is
+        marked and counted so the scan can say so.
+
+        Args:
+            streamed (httpx.Response): A response obtained with ``stream=True``.
+
+        Returns:
+            httpx.Response: The same response with its (possibly cut) body loaded, as
+                ``Response.aread`` would leave it.
+        """
+        body = bytearray()
+        cut = False
+        try:
+            async for chunk in streamed.aiter_bytes():
+                room = self._max_body - len(body)
+                if len(chunk) > room:
+                    body += chunk[:room]
+                    cut = True
+                    break
+                body += chunk
+        finally:
+            await streamed.aclose()
+        streamed._content = bytes(body)  # what Response.aread() does, with the cap
+        if cut:
+            streamed.extensions[_TRUNCATED_EXTENSION] = True
+            self.stats.truncated += 1
+        return streamed
 
     async def _request_with_retry(
         self,
@@ -629,7 +696,7 @@ class HttpClient:
                         self.stats.crafted_requests += 1
                     # httpx's stubs are narrower than what it accepts at runtime
                     # (a list of pairs works for both params and a form body).
-                    response = await self._active_client.request(
+                    request = self._active_client.build_request(
                         method,
                         url,
                         params=params,  # type: ignore[arg-type]
@@ -637,6 +704,9 @@ class HttpClient:
                         content=content,
                         files=files,
                         headers=req_headers,
+                    )
+                    response = await self._read_capped(
+                        await self._active_client.send(request, stream=True)
                     )
             except (httpx.TransportError, httpx.TimeoutException) as exc:
                 last_error = f"{type(exc).__name__}: {exc}"
@@ -656,4 +726,11 @@ class HttpClient:
         raise RequestFailed(url, last_error)
 
 
-__all__ = ["HttpClient", "HttpStats", "RedirectHop", "Response", "unreachable_warning"]
+__all__ = [
+    "HttpClient",
+    "HttpStats",
+    "RedirectHop",
+    "Response",
+    "truncated_warning",
+    "unreachable_warning",
+]
