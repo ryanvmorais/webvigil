@@ -52,14 +52,15 @@ Persistence       webvigil.api.db  (SQLite via SQLModel + Alembic, web only)
   non-idempotent request is never retried on a `5xx` or read timeout. Configured `[auth]`
   cookies (spec 007) are attached to target-host requests only, and the client discards
   anything the target sets via `Set-Cookie` so a scan sends exactly what is configured.
-- `webvigil.checks.csrf` adds one passive check (spec 007): `csrf.form.no-token` flags a
+- `webvigil.checks.csrf` adds a passive check (spec 007): `csrf.form.no-token` flags a
   state-changing `POST` form with no anti-CSRF token, weighted by the session cookie's
   `SameSite`. It reads `ScanContext.forms` — the `<form>` inventory the crawler now parses
   during `discover()` and also uses to submit safe `GET` forms. Spec 017 adds its active
   counterpart: with `--confirm-csrf` a `CsrfScanner` pass (the last one the orchestrator
   runs, since it changes server state) submits each candidate form as a control and as
   cross-site-shaped replays without a valid token, and `csrf.form.token-not-enforced`
-  reports the forms the server accepted. See
+  reports the forms the server accepted. A second passive check, `csrf.form.state-change-over-get`,
+  flags a `GET` form that changes a password or names a destructive verb. See
   [authenticated-scanning.md](authenticated-scanning.md).
 - The crawler (`webvigil.crawler`) reads by default and writes only on request. With
   `--submit-post-forms` (spec 018, Active Mode) a `POST` phase runs inside

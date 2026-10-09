@@ -70,7 +70,7 @@ DVWA is the one with the clearest ground truth: one module per weakness.
 | File upload | **Found** with `--file-upload`: `upload.unrestricted`, CRITICAL and HIGH | |
 | File inclusion | **Found** once `/windows/win.ini` was added ([#117](https://github.com/ryanvmorais/webvigil/pull/117)) | Missed in the run above: see below |
 | SQL injection (blind) | **Missed** | See below |
-| CSRF | **Missed** | The module changes the password with a `GET` form; `csrf.form.no-token` covers `POST` forms |
+| CSRF | **Missed** in this run; since [#144](https://github.com/ryanvmorais/webvigil/issues/144) reported by `csrf.form.state-change-over-get` | The module changes the password with a `GET` form; `csrf.form.no-token` covers `POST` forms |
 | Weak session IDs | **Not detected** | The id is issued by a `POST` button. Cause not investigated |
 | Brute force | Out of scope, by policy | WebVigil never guesses credentials |
 | XSS (DOM), JavaScript, authorisation bypass, insecure CAPTCHA, cryptography, API | Out of scope | They need a browser or an understanding of the application's logic |
