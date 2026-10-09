@@ -91,7 +91,7 @@ Found one in someone else's system with it? Tell its owner, and follow their dis
 WebVigil was built milestone by milestone against a planned roadmap. Every entry below is
 in the code and links to its docs; each was designed as a spec first, under
 [`specs/`](specs/). The milestones are the history of the build, not published versions:
-`1.0.0` is the first release and contains all of them.
+`1.0.0` is the first release and contains `v0.1` to `v0.20`; `v0.21` and `v0.22` came with `1.1.0`.
 
 | Milestone | Focus | Status |
 |---|---|---|
@@ -115,6 +115,7 @@ in the code and links to its docs; each was designed as a spec first, under
 | `v0.19` | Active Mode: automated login (`--login-url`, `--username`, `--password-env`) — WebVigil finds the login form, submits the account once, keeps the session and logs in again when it drops; the password only ever comes from the environment or a prompt ([docs](docs/authenticated-scanning.md#automated-login----login-url-opt-in)) | shipped |
 | `v0.20` | Session-security checks: `session.id.weak` (short, low-entropy, numeric, counter, timestamp or repeated ids, plus opt-in anonymous sampling with `--sample-sessions`), `session.fixation` (the session id survives the login, confirmed with one request) and `session.logout.not-invalidated` (`--test-logout`, Active Mode). Findings name the cookie and never carry a value ([docs](docs/authenticated-scanning.md#session-security-checks)) | shipped |
 | `v0.21` | HAR import (`--har`): the target's own `GET` and `POST` requests, recorded in a browser or a proxy, seed the crawl and the injection pass of a single-page application. Reads a local file, never uses its cookies or headers, leaves out assets, other hosts and login or destructive paths ([docs](docs/har-import.md)) | shipped |
+| `v0.22` | Dashboard hardening: every page carries a nonce-based Content-Security-Policy (scripts run only with that request's nonce, no `'unsafe-inline'`) and the usual security headers, and the report preview stays sandboxed ([docs](docs/web-ui.md#security-headers)) | shipped |
 
 > The ten opt-in switches, all off by default: `--probe` (sensitive-path probing),
 > `--stored-xss`, `--file-upload`, `--confirm-csrf` and `--submit-post-forms` (all write to

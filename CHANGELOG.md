@@ -5,11 +5,17 @@ All notable changes to WebVigil are recorded here. The format follows
 [Semantic Versioning](https://semver.org/); what that promises is in
 [docs/stability.md](docs/stability.md).
 
-The `v0.1` to `v0.20` milestones in the README are the steps the project was built in, each
-designed as a spec under [`specs/`](specs/). None of them was released: `1.0.0` is the first
-release and contains all of them.
+The `v0.1` to `v0.22` milestones in the README are the steps the project was built in, each
+designed as a spec under [`specs/`](specs/). None of them was released on its own: `1.0.0` is the
+first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `v0.22` (the dashboard's Content-Security-Policy) arrived in `1.1.0`.
 
 ## [Unreleased]
+
+## [1.1.0] - 2026-10-09
+
+A minor release: new options, detector improvements and hardening, all backward compatible with
+[docs/stability.md](docs/stability.md): no exit code, existing check id or JSON report field changes.
+1528 Python tests and 202 for the dashboard.
 
 ### Added
 
@@ -283,7 +289,8 @@ confirmed against a per-request baseline)
 - A security policy with private vulnerability reporting, a code of conduct, and the
   [stability policy](docs/stability.md).
 
-[Unreleased]: https://github.com/ryanvmorais/webvigil/compare/v1.0.4...HEAD
+[Unreleased]: https://github.com/ryanvmorais/webvigil/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/ryanvmorais/webvigil/compare/v1.0.4...v1.1.0
 [1.0.4]: https://github.com/ryanvmorais/webvigil/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/ryanvmorais/webvigil/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/ryanvmorais/webvigil/compare/v1.0.1...v1.0.2
