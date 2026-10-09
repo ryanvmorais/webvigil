@@ -19,6 +19,7 @@ the in-band substitute, as ``sqli-time`` is for blind SQLi.
 from __future__ import annotations
 
 import random
+import re
 import secrets
 
 from webvigil.checks.injection import payloads
@@ -63,6 +64,17 @@ async def detect(point: InjectionPoint, baseline: Baseline, ctx: DetectCtx) -> l
     return [hit] if hit is not None else []
 
 
+def _whole_number(number: int) -> re.Pattern[str]:
+    """
+    Args:
+        number (int): A product to look for.
+
+    Returns:
+        re.Pattern[str]: A pattern for ``number`` as a whole number: no digit on either side.
+    """
+    return re.compile(rf"(?<!\d){number}(?!\d)")
+
+
 async def _echo(
     point: InjectionPoint, baseline: Baseline, ctx: DetectCtx, marker: str, a: int, b: int
 ) -> InjectionHit | None:
@@ -98,7 +110,14 @@ async def _echo(
         if marker in baseline.raw_body:
             continue  # the marker was already echoed pre-injection — not a new signal
         start = response.text.find(marker)
-        if start != -1 and str(a * b) in response.text[start : start + 200]:
+        if start == -1:
+            continue
+        # The product is what the command prints *after* the marker; the marker is random hex, so
+        # its own digits must not count (issue #177), and a number the page already shows
+        # (a year, a count) is not new either.
+        product = _whole_number(a * b)
+        after = response.text[start + len(marker) : start + len(marker) + 200]
+        if product.search(after) and not product.search(baseline.raw_body):
             return _echo_hit(point, payload, response.text, marker, Confidence.MEDIUM)
     return None
 

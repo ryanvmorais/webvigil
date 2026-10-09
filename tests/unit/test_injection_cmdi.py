@@ -147,6 +147,73 @@ async def test_windows_set_a_variant_is_a_medium_hit() -> None:
     assert hits[0].confidence is Confidence.MEDIUM
 
 
+def _fix_the_dice(monkeypatch: pytest.MonkeyPatch, token: str, a: int, b: int) -> None:
+    """
+    Make the detector's random marker and operands known (they are drawn per call).
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): The fixture that undoes the patch.
+        token (str): The hex digits ``secrets.token_hex`` returns, after the ``wv`` prefix.
+        a (int): The first operand.
+        b (int): The second operand.
+    """
+    operands = iter([a, b])
+    monkeypatch.setattr("webvigil.checks.injection.detect.cmdi.secrets.token_hex", lambda n: token)
+    monkeypatch.setattr(
+        "webvigil.checks.injection.detect.cmdi.random.randint", lambda lo, hi: next(operands)
+    )
+
+
+async def test_the_digits_of_the_marker_are_not_the_product(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A page that only echoes the payload is not a hit when the marker holds the product (#177)."""
+    _fix_the_dice(monkeypatch, "ab1924cd5e6f", 37, 52)  # 37 * 52 = 1924
+    hits = await cmdi.detect(_PLAIN, _baseline(), _ctx(_reflect, time_based_cmdi=False))
+    assert hits == []
+
+
+async def test_a_product_that_is_part_of_a_longer_number_is_not_a_hit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Only the whole number counts: ``19240`` after the marker is not ``1924``."""
+    _fix_the_dice(monkeypatch, "ab0cde5e6f01", 37, 52)
+
+    def render(value: str) -> Response:
+        win = _WIN_ARITH.search(value)
+        return _resp(f"PING\n{win.group(1)}\n19240\n" if win else "PING host")
+
+    hits = await cmdi.detect(_PLAIN, _baseline(), _ctx(render, time_based_cmdi=False))
+    assert hits == []
+
+
+async def test_a_number_the_page_already_shows_is_not_a_proof(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A product that is on the baseline page too (a year, a count) says nothing new."""
+    _fix_the_dice(monkeypatch, "ab0cde5e6f01", 45, 45)  # 2025
+    baseline = _baseline("Copyright 2025 Example")
+
+    def render(value: str) -> Response:
+        win = _WIN_ARITH.search(value)
+        return _resp(f"{win.group(1)}\nCopyright 2025 Example" if win else "PING host")
+
+    assert await cmdi.detect(_PLAIN, baseline, _ctx(render, time_based_cmdi=False)) == []
+
+
+async def test_the_windows_proof_still_holds_with_a_marker_that_has_other_digits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The product printed after the marker on the next line is still a MEDIUM hit."""
+    _fix_the_dice(monkeypatch, "ab0cde5e6f01", 37, 52)
+
+    def render(value: str) -> Response:
+        return _resp("PING host") if _ARITH.search(value) else _vuln_shell(value)
+
+    hits = await cmdi.detect(_PLAIN, _baseline(), _ctx(render, time_based_cmdi=False))
+    assert len(hits) == 1 and hits[0].confidence is Confidence.MEDIUM
+
+
 async def test_time_based_injected_delay_is_a_hit() -> None:
     """A ``sleep`` payload that scales the response time past a 0-delay control fires."""
     hits = await cmdi.detect(_POINT, _baseline(), _ctx(_blind_shell))
