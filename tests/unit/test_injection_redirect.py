@@ -121,3 +121,17 @@ async def test_same_host_redirect_is_not_a_hit() -> None:
         _POINT, _BASELINE, _ctx(lambda v: _resp(status=302, location="https://example.com/home"))
     )
     assert hits == []
+
+
+async def test_an_ipv6_target_gets_no_userinfo_payload() -> None:
+    """With a bracketed IPv6 host the ``{host}@...`` payload is not sent (issue #191)."""
+    seen: list[str] = []
+
+    async def send(point: InjectionPoint, value: str, *, time_based: bool = False) -> Response:
+        seen.append(value)
+        return _resp(status=200)
+
+    ctx = DetectCtx(send=send, delay_s=5, host="[::1]")
+    assert await redirect.detect(_POINT, _BASELINE, ctx) == []
+    assert seen
+    assert not any("@" in value and "[::1]" in value for value in seen)

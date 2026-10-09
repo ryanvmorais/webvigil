@@ -40,7 +40,9 @@ async def detect(point: InjectionPoint, baseline: Baseline, ctx: DetectCtx) -> l
             ``location`` assignment (MEDIUM), else empty.
     """
     for template in payloads.REDIRECT_PAYLOADS:
-        payload = template.replace("{host}", ctx.host)
+        payload = payloads.fill_host(template, ctx.host)
+        if payload is None:
+            continue
         response = await ctx.send(point, payload)
         if response is None:
             break

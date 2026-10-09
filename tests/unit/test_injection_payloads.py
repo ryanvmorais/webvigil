@@ -4,7 +4,9 @@ Payload tables the injection detectors share — the expression-language set (sp
 Pure data tests: no HTTP, no stubs. They pin the invariants the detectors lean on — the
 ambiguous-delimiter hints really exist in the SSTI table (so the combined detector never
 sends a form twice), every EL signature matches a hand-written error from its engine and
-none of the template-engine errors, and no probe names anything with a side effect.
+none of the template-engine errors, and no probe names anything with a side effect. The
+``{host}`` slot is filled for a named host and left out for the shapes an IPv6 literal cannot take
+(issue #191).
 """
 
 from __future__ import annotations
@@ -102,3 +104,30 @@ def test_probes_are_pure_static_calls_only() -> None:
     probes = (payloads.EL_SPEL_PROBE, payloads.EL_OGNL_PROBE, *payloads.EL_UNTERMINATED)
     for probe in probes:
         assert not any(token in probe for token in _FORBIDDEN), probe
+
+
+def test_fill_host_substitutes_a_named_host_everywhere() -> None:
+    """A host name or an IPv4 literal fills every ``{host}`` slot, userinfo shapes included."""
+    for host in ("example.com", "app", "10.0.0.5"):
+        assert payloads.fill_host("http://{host}@169.254.169.254/", host) == (
+            f"http://{host}@169.254.169.254/"
+        )
+        assert payloads.fill_host("http://169.254.169.254#@{host}/x", host) == (
+            f"http://169.254.169.254#@{host}/x"
+        )
+
+
+def test_fill_host_skips_the_userinfo_shape_for_a_bracketed_ipv6_host() -> None:
+    """``[::1]`` is not valid userinfo, so that payload is left out; the others still fill."""
+    assert payloads.fill_host("https://{host}@webvigil.invalid", "[::1]") is None
+    assert payloads.fill_host("http://169.254.169.254#@{host}/x", "[::1]") == (
+        "http://169.254.169.254#@[::1]/x"
+    )
+    assert payloads.fill_host("//webvigil.invalid", "[::1]") == "//webvigil.invalid"
+
+
+def test_every_host_payload_is_buildable_for_some_host() -> None:
+    """The slot is only ever ``{host}`` at a position ``fill_host`` knows how to treat."""
+    for table in (payloads.REDIRECT_PAYLOADS, payloads.SSRF_METADATA, payloads.SSRF_INTERNAL):
+        for template in table:
+            assert payloads.fill_host(template, "example.com") is not None

@@ -244,8 +244,10 @@ class DisclosureProbe:
             add(entry, f"{origin}/{entry.path}")
 
         _, suffixes, _ = backup_spec()
-        label = self._target.host.split(".")[0]
-        for suffix in suffixes:
+        # The first label of the host names the backups a site keeps (``example.zip``); an IPv6
+        # literal has no such label.
+        label = "" if ":" in self._target.host else self._target.host.split(".")[0]
+        for suffix in suffixes if label else ():
             add(build_backup_entry(f"{label}{suffix}", suffix), f"{origin}/{label}{suffix}")
 
         for script_url in self._referenced_scripts():

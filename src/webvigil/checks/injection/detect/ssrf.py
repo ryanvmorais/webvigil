@@ -66,7 +66,9 @@ async def detect(point: InjectionPoint, baseline: Baseline, ctx: DetectCtx) -> l
     )
     for group in groups:
         for template in group:
-            payload = template.replace("{host}", ctx.host)
+            payload = payloads.fill_host(template, ctx.host)
+            if payload is None:
+                continue
             response = await ctx.send(point, payload)
             if response is None:
                 return []  # budget reached — stop, like every spec-006 detector

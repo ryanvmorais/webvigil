@@ -42,7 +42,6 @@ release and contains all of them.
   or its submit label. Search, login, registration and logout forms are left out, and nothing is submitted.
   Confidence is `MEDIUM` at most and `SameSite=Lax` does not lower it, because a `Lax` cookie is sent when
   a cross-site link is followed. A scan that finds such a form now reports it, so `--fail-on` can see it.
-
 - The dashboard sends a `Content-Security-Policy` on every page, with a fresh nonce per request: a script
   runs only if it carries that nonce (no `'unsafe-inline'`), and the policy also limits where images, fonts,
   connections, frames, forms and `<base>` may point, and forbids framing the dashboard. Styles still allow
@@ -50,6 +49,12 @@ release and contains all of them.
   is now rendered per request instead of being prerendered, so a reverse proxy in front of the dashboard
   must not cache its HTML. Together with the security headers of 1.0.1 this closes the dashboard part of
   [#138](https://github.com/ryanvmorais/webvigil/issues/138).
+- A scan target can now be a one-label host (`http://app:8000/`, a Compose or cluster service name, an
+  intranet host) or an IPv6 literal (`http://[::1]:8000/`); both were refused with "could not determine a
+  valid host" ([#191](https://github.com/ryanvmorais/webvigil/issues/191)). `--scope subdomains` on such a
+  host behaves like `--scope host`, since there is no registrable domain to widen to, and the payloads that
+  put the target host in a URL's userinfo are not sent to an IPv6 target. A malformed bracketed host is now
+  a plain "invalid target" error instead of a traceback.
 
 ### Fixed
 

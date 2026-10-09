@@ -39,7 +39,7 @@ uv run mypy src
 uv run lint-imports      # contrato: engine não importa Typer/Rich/FastAPI/SQLModel/Alembic/pyjwt/argon2
 uv run pytest
 uv run pytest --cov       # per-file line + branch coverage of src/webvigil (the guard of issue #101)
-# A suíte inteira leva ~10 min com cobertura (1247 testes). Specs novas seguem as regras de teste
+# A suíte inteira leva ~10 min com cobertura (mais de 1500 testes). Specs novas seguem as regras de teste
 # de specs/README.md ("Testes de uma spec"): lógica em unit, integração anexa a um scan compartilhado.
 uv run webvigil scan <url>
 uv run webvigil list-checks
@@ -75,7 +75,10 @@ Camadas, de cima para baixo:
    (`webvigil.crawler`), registry de checks, modelo de `Finding`/`Severity`. O cliente lê no
    máximo `[http] max_body_bytes` de cada resposta (10 MiB, depois de descomprimir) e o scan avisa
    quantas foram cortadas; cada requisição tem um prazo total, `[http] total_timeout_s` (60 s, do
-   envio ao último byte), tratado como timeout.
+   envio ao último byte), tratado como timeout. O alvo é um host com ponto, de um rótulo só
+   (`http://app:8000/`, nome de serviço do Compose ou de cluster) ou um literal IPv4/IPv6
+   (`core/target.py::is_valid_host`); num host sem domínio registrável o `--scope subdomains` age como
+   `host`, e os payloads que põem o host em userinfo (`payloads.fill_host`) não saem para um alvo IPv6.
 3. **Checks** (`webvigil.checks`) — plugins `PASSIVE`/`ACTIVE`, registrados por decorator +
    entry points. Contrato: `Check.run(ctx: ScanContext) -> list[Finding]`. `webvigil.checks.deps`
    (spec 004) faz fingerprint passivo de libs JS do front + match com uma base Retire.js
@@ -94,7 +97,8 @@ Camadas, de cima para baixo:
    (`.git`, `.env`, backups, endpoints de debug) e alimenta seis checks probe-fed.
    Detalhes em [`docs/information-disclosure.md`](docs/information-disclosure.md).
    `webvigil.checks.injection` (spec 006): os primeiros checks `ACTIVE` — reflected XSS,
-   SQLi (error/boolean/time), path traversal, open redirect. O `Orchestrator` roda um passo
+   SQLi (error/boolean/time; o boolean semeia um campo vazio com um valor plausível e aceita uma
+   divisão de classe de status como evidência), path traversal, open redirect. O `Orchestrator` roda um passo
    `InjectionScanner` (enumera injection points a partir de query params + `<form>`s
    parseados dos corpos já baixados, baseline por ponto, detectores sob um orçamento de
    requests compartilhado); checks finos viram findings a partir de
@@ -110,7 +114,8 @@ Camadas, de cima para baixo:
    externo próprio. `injection.cmdi.os` (CRITICAL) / `injection.ssti` (HIGH) (spec 011):
    RCE server-side **in-band** — dois detectores novos na mesma passada. `cmdi` tem um
    estágio echo (quebra de shell + `echo <marcador>=$((a*b))` → produto calculado colado ao
-   marcador, ausente do baseline) e um estágio time-based (`sleep`/`ping -n`, confirmado
+   marcador, ausente do baseline; na variante Windows o produto tem de vir impresso **depois** do
+   marcador, como número inteiro) e um estágio time-based (`sleep`/`ping -n`, confirmado
    contra controle de delay 0, gate `[injection] time_based_cmdi` / `--no-time-based-cmdi`,
    default on, sub-orçamento de sleep compartilhado com `sqli-time`). `ssti` faz polyglot →
    assinatura de erro do engine, depois payloads aritméticos por engine → produto avaliado
@@ -141,9 +146,11 @@ Camadas, de cima para baixo:
    crawl e correlaciona por token. Location do finding = o injection point (fingerprint
    estável); página(s) de render vão na evidência. Detalhes em
    [`docs/active-injection.md`](docs/active-injection.md).
-   `webvigil.checks.csrf` (spec 007): um check passivo — `csrf.form.no-token` marca form
+   `webvigil.checks.csrf` (spec 007): checks passivos — `csrf.form.no-token` marca form
    `POST` state-changing sem token anti-CSRF, confiança ponderada pelo `SameSite` do cookie
-   de sessão. Lê `ScanContext.forms` (o crawler agora parseia `<form>`s durante `discover()`
+   de sessão (também vê o form `POST` que é só um botão, que o parser agora mantém no inventário), e
+   `csrf.form.state-change-over-get` (MEDIUM, CWE-352/650) marca form `GET` sem token que troca senha ou
+   leva verbo destrutivo, sem nunca submetê-lo. Lê `ScanContext.forms` (o crawler agora parseia `<form>`s durante `discover()`
    e submete forms `GET` seguros para ampliar a superfície). Scan autenticado por cookie
    estático: `--cookie "name=value"` / `[auth] cookies`, anexado só a requests do host alvo,
    nunca em relatório/log/metadata; `webvigil.crawler.safety` guarda o crawl de links
@@ -268,7 +275,11 @@ Camadas, de cima para baixo:
    caminho de login/destrutivo; arquivo ruim é `HarError` (exit 4), entrada ruim é contagem no resumo
    (`HAR import: N entries read, …`). POST só sai da fase da 018 (Active + `--submit-post-forms`). A Web API
    não expõe o campo. Detalhes em [`docs/har-import.md`](docs/har-import.md).
-4. **Reporting** (`webvigil.reporting`) — JSON (canônico), SARIF 2.1.0, HTML (Jinja2), Markdown.
+4. **Reporting** (`webvigil.reporting`) — JSON (canônico), SARIF 2.1.0, HTML (Jinja2), Markdown. Tudo que
+   veio do site escaneado é texto não confiável: o Markdown o escreve como texto puro (metacaracteres
+   escapados, evidência cercada por mais crases do que qualquer sequência interna) e só uma referência
+   `http(s)` vira link, no HTML e no dashboard (`core/urls.py::is_http_url`; o provider OSV só guarda URL
+   absoluta `http(s)`).
 5. **Persistência** (só Web, `webvigil.api.db`) — SQLite via SQLModel + Alembic; scans
    executados por um `ScanRunner` in-process (1 por vez, fila). O login tem espera crescente após 5
    falhas (`api/throttle.py`, em memória, por cliente e por usuário) e trocar a senha encerra as
@@ -276,7 +287,11 @@ Camadas, de cima para baixo:
    do throttle é limitada (10 mil chaves: a que falhou há mais tempo sai, e uma chave com mais de 128
    caracteres vira SHA-256), `LoginIn` tem teto (usuário 64, senha 256, como o setup) e um middleware
    ASGI (`api/body_limit.py`) recusa corpo acima de 1 MiB com `413`; o `scan_id` das rotas fica em
-   `1..2**63-1` (`ScanId` em `api/deps.py`, `422` fora disso).
+   `1..2**63-1` (`ScanId` em `api/deps.py`, `422` fora disso). Um `POST`/`PUT`/`PATCH`/`DELETE` com `Origin`
+   que não seja o do próprio servidor (o `Host`, ou o `X-Forwarded-Host` do proxy do dashboard) nem esteja em
+   `web.cors_origins` leva `403` (`api/origin_check.py`); sem `Origin` (curl, CLI) passa. Toda resposta de
+   relatório manda `nosniff`, e a de HTML também `Content-Security-Policy: sandbox; default-src 'none';
+   style-src 'unsafe-inline'`.
 6. **Web UI** (`web/`) — dashboard Next.js (App Router). Cliente fino da Web API: nunca fala
    com o engine, não guarda estado além do cache do TanStack Query. Tipos gerados de
    `openapi.json` (`scripts/dump-openapi.py` → `pnpm gen:api`). O servidor Next faz proxy de

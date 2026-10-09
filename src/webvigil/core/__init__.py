@@ -33,7 +33,7 @@ from webvigil.core.findings import (
     compute_fingerprint,
 )
 from webvigil.core.result import CheckError, LoginSummary, ScanMetadata, ScanResult
-from webvigil.core.target import Scope, Target, normalize_url
+from webvigil.core.target import Scope, Target, is_valid_host, normalize_url, url_host
 from webvigil.core.technology import DetectionMethod, Technology
 
 if TYPE_CHECKING:
@@ -68,7 +68,9 @@ __all__ = [
     "Technology",
     "WebVigilError",
     "compute_fingerprint",
+    "is_valid_host",
     "normalize_url",
+    "url_host",
 ]
 
 
