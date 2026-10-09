@@ -1,6 +1,6 @@
 ---
 feature: HAR import — seed the crawl and the injection points of a single-page application from recorded browser traffic
-status: draft
+status: approved
 date: 2026-10-09
 related:
   - 006-active-injection/requirements.md
@@ -82,7 +82,7 @@ The importer returns the same `ApiOperation` records the OpenAPI importer return
 - **Methods other than `GET` and `POST`.** `PUT`, `PATCH`, `DELETE`, `OPTIONS` and `HEAD` entries are
   not acted on (the injection pass fuzzes `GET` and `POST` only, spec 006), exactly as for `--openapi`.
 - **Templating path segments.** `/rest/products/42/reviews` is one literal URL; WebVigil does not guess
-  that `42` is a parameter (OQ-4).
+  that `42` is a parameter (resolved decision 4).
 - **A URL as the source, an upload, or the Web API / dashboard.** The source is a path on the machine
   that runs the scan. The Web API does not accept it (RF-12).
 - **Fuzzing the leaves of a JSON body.** A limit of spec 013 that stays.
@@ -189,7 +189,7 @@ The importer returns the same `ApiOperation` records the OpenAPI importer return
 - **Given** a recorded `POST` whose body is JSON
   **When** it is imported
   **Then** the operation carries the body's **shape** (keys and value types) for the `POST` crawl phase
-  to submit (RF-08, OQ-2), and no leaf of it is fuzzed.
+  to submit (RF-08, resolved decision 2), and no leaf of it is fuzzed.
 
 ### RF-07 — Secrets never leave the file
 
@@ -218,7 +218,7 @@ The importer returns the same `ApiOperation` records the OpenAPI importer return
 - **Given** the same scan
   **When** the crawl requests those seeds
   **Then** it does so with the credentials the scan was **configured** with (`--cookie`, `--header`,
-  `--login-url`), never with the ones in the file (OQ-1).
+  `--login-url`), never with the ones in the file (resolved decision 1).
 - **Given** a recording whose entries carried a `Cookie` or an `Authorization` header and a scan
   configured with none of `--cookie`, `--header` or `--login-url`
   **When** the file is imported
@@ -331,31 +331,21 @@ without `--har` is byte-for-byte what it was. This is a minor release (`docs/sta
 About one line of test per line of `src/` added, and the whole suite stays within the ~10 minute budget
 of `specs/README.md`.
 
-## Open questions
+## Resolved decisions
 
-These change what the design builds, so they are the user's call. Each has a recommendation.
+Settled at the requirements gate (2026-10-09), each as recommended in the draft. The design builds on
+them; they are cited by number.
 
-- **OQ-1 — Authenticated flows: routes only, or the session too?** The issue says a HAR "covers
-  authenticated flows (the user logged in while recording)". That can mean (a) the recording shows the
-  routes and parameters a logged-in user reaches, while the scan still authenticates the way it does
-  today (`--cookie`, `--header`, `--login-url`), or (b) WebVigil also lifts the `Cookie` /
-  `Authorization` of the recording and uses it. *Recommendation: (a).* (b) would send a secret that
-  came out of a file, silently, to the target; the session is probably expired by the time the scan
-  runs; and it breaks the rule that headers in the HAR are never copied. RF-08 is written for (a), with
-  a warning when the recording looks authenticated and the scan is not.
-- **OQ-2 — Recorded values: kept or replaced?** For a `GET` query and a form-encoded body, the recorded
-  value is what makes a good baseline (`?id=5` answers; `?id=wv` may not) but it can be personal data.
-  For a JSON body the same applies, and a JSON body is the usual SPA shape. *Recommendation:* keep the
-  recorded value of query and form-encoded parameters, except secret-named ones and blobs (RF-07);
-  import a JSON body as its **shape only**, with the typed placeholders `--openapi` already uses. If
-  you prefer the strictest reading, placeholders everywhere is a smaller design and a worse baseline.
-- **OQ-3 — One file or several?** A person may record the public site, the logged-in app and the admin
-  area separately. *Recommendation: one `--har` in 1.1* (merge the files with any HAR tool, or record
-  once); `[scan] har` can later accept a list without breaking a string value.
-- **OQ-4 — Templating id-like path segments?** `/rest/products/42/reviews` and `/rest/products/43/reviews`
-  are the same route, and the `42` is a place to inject. Detecting that (numeric, UUID-shaped segments
-  seen with several values) would give path-parameter points like `--openapi` has. *Recommendation:
-  leave it out of 1.1* (a heuristic that guesses wrong sends payloads into the wrong place), and revisit
-  with the benchmark repeat (issue #148).
-- **OQ-5 — Caps.** Proposed defaults: file size 64 MiB, 20,000 entries read, 150 operations (the
-  `--openapi` cap, as a separate key), 256 characters per kept string. Say if any should differ.
+1. **Routes, not the session (was OQ-1).** The importer reads the routes and parameters a logged-in
+   recording shows. It never lifts a `Cookie` or `Authorization` from the file; the scan authenticates
+   with `--cookie`, `--header` or `--login-url`, and warns when the recording looks authenticated and
+   the scan is not (RF-08).
+2. **Recorded values (was OQ-2).** The recorded value of a query or form-encoded parameter is kept as
+   the baseline, except for a secret-named parameter or a blob (RF-07). A JSON body is imported as its
+   shape only, with typed placeholders (RF-06).
+3. **One file (was OQ-3).** A single `--har` in 1.1; `[scan] har` stays a string so it can accept a
+   list later without breaking a string value.
+4. **No path templating (was OQ-4).** `/rest/products/42/reviews` is one literal URL in 1.1. Revisit
+   with the benchmark repeat (issue #148).
+5. **Caps (was OQ-5).** File 64 MiB, 20,000 entries read, 150 operations (`[scan] har_max_operations`),
+   256 characters per kept string.
