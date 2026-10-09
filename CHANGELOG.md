@@ -32,6 +32,13 @@ release and contains all of them.
   neither the server's own (its `Host`, or the dashboard proxy's `X-Forwarded-Host`) nor listed in
   `web.cors_origins` now gets a `403`. A request with no `Origin` (curl, the CLI) is unaffected, and so
   is the bundled dashboard.
+- A reference is a link only when it is an `http(s)` URL
+  ([#161](https://github.com/ryanvmorais/webvigil/issues/161)). The references of a finding became
+  `<a href>` in the HTML report and in the dashboard as they were, and the ones from the opt-in OSV
+  lookup (`--osv-online`) are copied from an advisory record, so a `javascript:` or `data:` URL in one
+  would have been a link. The OSV provider now keeps only absolute `http(s)` URLs (so the JSON, SARIF and
+  Markdown reports no longer carry anything else), and the HTML report and the dashboard check the scheme
+  again and show any other value as plain text.
 - The Markdown report no longer writes what the scanned site sent as Markdown or HTML
   ([#172](https://github.com/ryanvmorais/webvigil/issues/172)). A title with a path or a parameter name,
   the label and content of an evidence item, a description, a library name or a check error went into the

@@ -78,7 +78,10 @@ osv_online = true
 - **How results are used.** OSV advisories are **merged** with the vendored Retire.js
   match for the same detection and de-duplicated by identifier (a shared CVE / GHSA / OSV
   id), so a library covered by both sources yields one finding carrying the union of the
-  identifiers and references. OSV never replaces the offline match.
+  identifiers and references. OSV never replaces the offline match. Only `http` and `https`
+  reference URLs are kept from an OSV record: it is a third party's text, and these strings
+  become links in the HTML report and the dashboard, which check the scheme again before they
+  make a link and show anything else as plain text.
 - **On failure.** Any network error, timeout, bad status, or unparseable response is a
   scan **warning**, not an error — the scan still reports the offline results and the exit
   code is unaffected.

@@ -18,6 +18,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cweUrl } from "@/lib/format";
+import { isHttpUrl } from "@/lib/links";
 import { cn } from "@/lib/utils";
 import type { FindingOut, LocationOut } from "@/lib/api";
 
@@ -132,14 +133,18 @@ export function FindingsTable({ findings }: { findings: FindingOut[] }) {
                         <ul className="list-inside list-disc">
                           {finding.references.map((href) => (
                             <li key={href}>
-                              <a
-                                href={href}
-                                target="_blank"
-                                rel="noreferrer noopener"
-                                className="underline"
-                              >
-                                {href}
-                              </a>
+                              {isHttpUrl(href) ? (
+                                <a
+                                  href={href}
+                                  target="_blank"
+                                  rel="noreferrer noopener"
+                                  className="underline"
+                                >
+                                  {href}
+                                </a>
+                              ) : (
+                                href
+                              )}
                             </li>
                           ))}
                         </ul>

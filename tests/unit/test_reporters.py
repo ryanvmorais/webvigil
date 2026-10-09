@@ -142,6 +142,23 @@ def test_html_escapes_evidence() -> None:
     assert "x.y finding" in html
 
 
+def test_html_links_only_http_references() -> None:
+    """A reference is a link only when it is ``http(s)``; any other scheme is escaped text."""
+    finding = make_finding(
+        references=(
+            "https://example.org/ok",
+            "javascript:alert(1)",
+            'data:text/html,<script>alert("x")</script>',
+        )
+    )
+    html = get_reporter("html").render(make_result(finding))
+    assert '<a href="https://example.org/ok">https://example.org/ok</a>' in html
+    assert 'href="javascript:' not in html
+    assert 'href="data:' not in html
+    assert "javascript:alert(1)" in html  # still shown, as text
+    assert "data:text/html,&lt;script&gt;" in html
+
+
 def test_markdown_has_summary_table_and_sections() -> None:
     """The Markdown report has a severity summary table and one section per finding."""
     md = get_reporter("md").render(_result())
