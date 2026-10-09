@@ -26,6 +26,11 @@ from webvigil.core.target import Target, normalize_url
 
 _DEFAULT_ENCTYPE = "application/x-www-form-urlencoded"
 
+# A page comes from the scanned site: the forms read from one page, and the controls read from
+# one form, are bounded. A real page has a few dozen forms and a form a few hundred controls.
+MAX_FORMS_PER_PAGE = 500
+MAX_FIELDS_PER_FORM = 1_000
+
 # <input type>s (and pseudo-types) whose current value the crawler submits with a GET form.
 _SUBMIT_VALUE_TYPES = frozenset(
     {"", "text", "search", "email", "url", "tel", "number", "hidden", "date", "textarea", "select"}
@@ -115,7 +120,7 @@ def parse_forms_html(text: str, url: str, target: Target) -> list[Form]:
         list[Form]: The in-scope forms, in document order.
     """
     forms: list[Form] = []
-    for node in HTMLParser(text).css("form"):
+    for node in HTMLParser(text).css("form")[:MAX_FORMS_PER_PAGE]:
         form = _form_from_node(node, url)
         if form is not None and target.in_scope(form.action):
             forms.append(form)
@@ -263,7 +268,7 @@ def _form_from_node(node: Node, page_url: str) -> Form | None:
     enctype = (attrs.get("enctype") or "").strip().lower() or _DEFAULT_ENCTYPE
 
     fields: list[FormField] = []
-    for child in node.css("input, textarea, select"):
+    for child in node.css("input, textarea, select")[:MAX_FIELDS_PER_FORM]:
         name = (child.attributes.get("name") or "").strip()
         if not name:
             continue

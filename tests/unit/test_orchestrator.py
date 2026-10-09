@@ -56,6 +56,7 @@ class _StubCrawler:
     forms: tuple[object, ...] = ()
     skipped_destructive = 0
     skipped_by_robots = 0
+    limit_warning: str | None = None
     post_summary = None  # spec 018: the real crawler exposes the POST phase tally
 
     def __init__(self, *_args: object, **_kwargs: object) -> None: ...
@@ -209,6 +210,17 @@ async def test_robots_skip_becomes_a_warning(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setattr(_StubCrawler, "skipped_by_robots", 0)
     quiet = await Orchestrator(ScanConfig(), check_types=[PassiveOne]).run(_TARGET)
     assert not any("robots.txt" in w for w in quiet.warnings)
+
+
+async def test_a_crawl_limit_becomes_a_warning(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The one-line notice of a limit the crawl reached is surfaced, and absent when none was."""
+    line = "the site declared more than the crawl keeps (links): the rest was left out"
+    monkeypatch.setattr(_StubCrawler, "limit_warning", line)
+    result = await Orchestrator(ScanConfig(), check_types=[PassiveOne]).run(_TARGET)
+    assert line in result.warnings
+    monkeypatch.setattr(_StubCrawler, "limit_warning", None)
+    quiet = await Orchestrator(ScanConfig(), check_types=[PassiveOne]).run(_TARGET)
+    assert not any("the crawl keeps" in w for w in quiet.warnings)
 
 
 async def test_javascript_app_becomes_a_warning(monkeypatch: pytest.MonkeyPatch) -> None:

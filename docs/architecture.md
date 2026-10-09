@@ -88,7 +88,11 @@ Persistence       webvigil.api.db  (SQLite via SQLModel + Alembic, web only)
 3. The `HttpClient` opens; all requests route through its shared rate limiter (concurrency
    cap + per-host delay) and scope guard.
 4. The crawler discovers in-scope pages — `<a href>` links plus optional `sitemap.xml`
-   seeds — bounded by `max_pages` and gated by `robots.txt`.
+   seeds — bounded by `max_pages` and gated by `robots.txt`. What the site declares is read up
+   to fixed limits: 20 sitemaps and 10,000 sitemap URLs per scan, 20,000 links per page, a
+   set of seen URLs of at least 10,000 (20 per `max_pages`), 500 forms per page, 2,000 forms
+   in all and 1,000 controls per form. The pages fetched are the same as long as `max_pages`
+   is within them, and a scan warning says when one was reached.
 5. The orchestrator runs the passes whose mode or flag is on (dependency fingerprint, path
    probe, the injection, stored-XSS, envelope and upload passes), then selects registered
    checks whose `mode` is allowed and that are not in `checks.disabled`, and runs them

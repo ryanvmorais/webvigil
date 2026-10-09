@@ -147,6 +147,8 @@ class Orchestrator:
                 warnings.append(line)
             if line := script_app_warning(pages):
                 warnings.append(line)
+            if line := crawler.limit_warning:
+                warnings.append(line)
             forms = crawler.forms
             if crawler.skipped_destructive:
                 warnings.append(

@@ -49,6 +49,16 @@ from webvigil.http.client import HttpClient
 
 _SKIP_LINK_PREFIXES = ("mailto:", "tel:", "javascript:", "data:", "#")
 
+# What the crawl keeps of what the scanned site declares. The BFS fetches at most ``max_pages``
+# URLs, so a queue far past that only fills memory. The set of URLs seen is kept to the larger
+# of ``_MIN_SEEN`` and ``_SEEN_PER_PAGE`` times ``max_pages``, the links read from one page to
+# the larger of ``_MIN_LINKS_PER_PAGE`` and ``max_pages``, and the form inventory to
+# ``_MAX_FORMS``. All three are at least ``max_pages``, so the pages fetched are the same.
+_MIN_SEEN = 10_000
+_SEEN_PER_PAGE = 20
+_MIN_LINKS_PER_PAGE = 20_000
+_MAX_FORMS = 2_000
+
 _FormKey = tuple[str, str, tuple[str, ...]]
 _OpKey = tuple[str, str, str]
 
@@ -135,6 +145,10 @@ class Crawler:
         self._forms: dict[_FormKey, Form] = {}
         self._skipped_destructive = 0
         self._skipped_by_robots = 0
+        pages_cap = max(1, config.scan.max_pages)
+        self._seen_cap = max(_MIN_SEEN, _SEEN_PER_PAGE * pages_cap)
+        self._links_per_page = max(_MIN_LINKS_PER_PAGE, pages_cap)
+        self._limits_hit: set[str] = set()
         # spec 018: the POST phase runs only when asked for AND the scan is Active.
         self._post_enabled = config.scan.submit_post_forms and config.scan.mode is ScanMode.ACTIVE
         self._post_cap = config.scan.max_post_submissions
@@ -170,6 +184,21 @@ class Crawler:
                 the entry page alone, so the scan reports this instead of staying quiet.
         """
         return self._skipped_by_robots
+
+    @property
+    def limit_warning(self) -> str | None:
+        """
+        Returns:
+            str | None: The one-line scan warning for the limits the crawl reached
+                (what it keeps of the sitemaps, links and forms the site declares), or
+                ``None`` when it reached none.
+        """
+        if not self._limits_hit:
+            return None
+        return (
+            f"the site declared more than the crawl keeps ({', '.join(sorted(self._limits_hit))}): "
+            "the rest was left out"
+        )
 
     @property
     def post_summary(self) -> PostSummary | None:
@@ -490,9 +519,21 @@ class Crawler:
             seen (set[str]): Already-queued URLs, updated in place.
             queue (deque[str]): The BFS queue, appended to in place.
         """
-        candidates = [*robots.sitemaps, f"{self._target.origin}/sitemap.xml"]
+        declared = list(dict.fromkeys(robots.sitemaps))
+        if len(declared) > sitemap_mod.MAX_SITEMAPS:
+            self._limits_hit.add("sitemaps")
+        conventional = f"{self._target.origin}/sitemap.xml"
+        candidates = [*declared[: sitemap_mod.MAX_SITEMAPS]]
+        if conventional not in candidates:
+            candidates.append(conventional)
+        budget = sitemap_mod.MAX_URLS
         for sitemap_url in candidates:
-            for loc in await sitemap_mod.fetch(self._http, sitemap_url):
+            if budget <= 0:
+                self._limits_hit.add("sitemap URLs")
+                break
+            locations = await sitemap_mod.fetch(self._http, sitemap_url, limit=budget)
+            budget -= len(locations)
+            for loc in locations:
                 self._maybe_enqueue(loc, seen, queue)
 
     def _enqueue_links(self, page: Page, seen: set[str], queue: deque[str]) -> None:
@@ -506,7 +547,10 @@ class Crawler:
         """
         if not page.ok or not page.is_html:
             return
-        for href in _extract_hrefs(page.text):
+        hrefs = _extract_hrefs(page.text)
+        if len(hrefs) > self._links_per_page:
+            self._limits_hit.add("links")
+        for href in hrefs[: self._links_per_page]:
             self._maybe_enqueue(urljoin(page.url, href), seen, queue)
 
     def _maybe_enqueue(self, raw_url: str, seen: set[str], queue: deque[str]) -> None:
@@ -526,6 +570,9 @@ class Crawler:
             return
         normalized = normalize_url(raw_url)
         if normalized in seen or not self._target.in_scope(normalized):
+            return
+        if len(seen) >= self._seen_cap:
+            self._limits_hit.add("links")
             return
         if is_logout(normalized):
             seen.add(normalized)  # do not revisit it via another link either
@@ -553,6 +600,9 @@ class Crawler:
             return
         for form in parse_forms(page, self._target):
             key = (form.method, form.action, tuple(f.name for f in form.fields))
+            if key not in self._forms and len(self._forms) >= _MAX_FORMS:
+                self._limits_hit.add("forms")
+                continue
             self._forms.setdefault(key, form)
             if not self._submit_forms or form.method != "GET":
                 continue

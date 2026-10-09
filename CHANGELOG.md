@@ -11,6 +11,15 @@ release and contains all of them.
 
 ## [Unreleased]
 
+### Security
+
+- A `robots.txt`, a sitemap or a page served by the scanned site can no longer keep a scan busy for a
+  long time or make it use a lot of memory (GHSA-63j8-4f3v-r77j). The crawl read every sitemap that `robots.txt`
+  declared and kept every distinct link and form a page carried; it now reads at most 20 sitemaps and
+  10,000 sitemap URLs, 20,000 links per page, 500 forms per page and 1,000 controls per form, and keeps
+  at most 2,000 forms and a bounded set of URLs seen. The pages fetched do not change while `max_pages`
+  is within those limits, and a scan warning says when one was reached.
+
 ## [1.0.3] - 2026-10-08
 
 A patch release with one fix, in the patterns and the size limits that read what the scanned site sends.
