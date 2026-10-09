@@ -1,6 +1,6 @@
 ---
 feature: Dashboard Content-Security-Policy — a per-request nonce policy for the Next.js dashboard (issue #138, step 2)
-status: draft
+status: in progress
 date: 2026-10-09
 related:
   - 022-dashboard-csp/requirements.md
@@ -27,53 +27,58 @@ edit, and the counts again at close.
 
 ## Stage 0 — The policy as a tested pure function, and the step-1 list without its CSP
 
-- [ ] Record the baseline: Vitest test count, and the `next build` route table (nine `○`, one `ƒ`).
-  — RF-07
-- [ ] `web/src/lib/csp.ts`: a file header (what the policy protects, why styles keep `'unsafe-inline'`,
+- [x] Record the baseline: Vitest test count, and the `next build` route table (nine `○`, one `ƒ`).
+  — RF-07. **172 tests** in 30 files on the branch point; routes `○ /`, `/_not-found`, `/checks`, `/icon.svg`, `/login`, `/scans`, `/scans/new`, `/settings`, `/setup`, `ƒ /scans/[id]`.
+- [x] `web/src/lib/csp.ts`: a file header (what the policy protects, why styles keep `'unsafe-inline'`,
   ADR-4, why no `upgrade-insecure-requests`), `generateNonce()` (16 bytes from `crypto.getRandomValues`,
   base64 through `btoa`) and `buildContentSecurityPolicy(nonce, { isDev })` with the directives of the
   design's table, one per line of a list joined by `"; "`; `'unsafe-eval'`, `ws:` and `wss:` only when
   `isDev`. — RF-01, RF-02, RF-03, RF-04, RNF-01, RNF-04, ADR-2, ADR-4, ADR-6, ADR-9
-- [ ] `web/src/lib/csp.test.ts` (header: what is tested, nothing isolated since the module is pure):
+- [x] `web/src/lib/csp.test.ts` (header: what is tested, nothing isolated since the module is pure):
   each directive of the table appears exactly once with its value; the nonce is embedded once, in
   `script-src` only; `script-src` has no `'unsafe-inline'`; `'unsafe-eval'`, `ws:` and `wss:` appear only
   with `isDev`; no `upgrade-insecure-requests`; the same inputs give the same string; `generateNonce`
   returns 100 distinct values that each decode to 16 bytes. — RF-01, RF-02, RF-03, RF-04, RNF-04, RF-10
-- [ ] `web/src/lib/security-headers.ts`: remove the `Content-Security-Policy: frame-ancestors 'none'`
+- [x] `web/src/lib/security-headers.ts`: remove the `Content-Security-Policy: frame-ancestors 'none'`
   entry; rewrite the file header (the policy now lives in `csp.ts` and the proxy, not here; the four headers
   that stay, and why `frame-ancestors` is still covered: `X-Frame-Options` here, `frame-ancestors` in the
   policy). — RF-06, ADR-5
-- [ ] `web/src/lib/security-headers.test.ts`: the four headers, each once, none a
+- [x] `web/src/lib/security-headers.test.ts`: the four headers, each once, none a
   `Content-Security-Policy`; `next.config` still applies them to every route. — RF-06, RF-10, ADR-5
-- [ ] Quality gate (`pnpm lint`, `format:check`, `typecheck`, `test`, `build`). — RF-10
+- [x] Quality gate (`pnpm lint`, `format:check`, `typecheck`, `test`, `build`). — RF-10. lint / format / typecheck clean; **181 tests** (+9) in 31 files; build ok.
 
 ## Stage 1 — The proxy and dynamic rendering
 
-- [ ] `web/src/proxy.ts`: `proxy(request)` builds the policy with `isDev: process.env.NODE_ENV ===
+- [x] `web/src/proxy.ts`: `proxy(request)` builds the policy with `isDev: process.env.NODE_ENV ===
   "development"`, sets it on the forwarded request headers and on the response, and `config.matcher` as in
   the design (excludes `api`, `_next/static`, `_next/image`, `favicon.ico`, `icon.svg`, skips prefetch
   through `missing`); a file header says why the policy is built here and nowhere else, and that the nonce
   is never logged or exposed (no `x-nonce`). — RF-01, RF-03, RF-06, RF-09, RNF-03, ADR-1, ADR-5, ADR-6,
   ADR-8
-- [ ] `web/src/app/layout.tsx`: `export const dynamic = "force-dynamic"` with a comment saying why (a nonce
+- [x] `web/src/app/layout.tsx`: `export const dynamic = "force-dynamic"` with a comment saying why (a nonce
   exists only for a rendered request, so a prerendered page would ship scripts the policy refuses); the
   file header names it. — RF-07, ADR-3
-- [ ] `web/src/proxy.test.ts` (`@vitest-environment node`, for `NextRequest`; the module under test is
+- [x] `web/src/proxy.test.ts` (`@vitest-environment node`, for `NextRequest`; the module under test is
   the only unit, nothing mocked): the response carries the policy; the forwarded request headers carry the
   same policy (Next's `x-middleware-request-*` entry); two calls give two nonces; no `x-nonce` anywhere; the
   matcher source matches `/login`, `/scans/12`, `/settings` and does not match `/api/scans`,
   `/_next/static/a.js`, `/_next/image`, `/icon.svg`. — RF-01, RF-09, RNF-03, RF-10, ADR-8
-- [ ] `web/src/app/layout.test.tsx`: `dynamic === "force-dynamic"`, so that dropping the line fails a unit
+- [x] `web/src/app/layout.test.tsx`: `dynamic === "force-dynamic"`, so that dropping the line fails a unit
   test and not the browser. — RF-07, RF-10, ADR-3
-- [ ] Run `pnpm build` and read the route table: every route is `ƒ` (the not-found page and the icon
+- [x] Run `pnpm build` and read the route table: every route is `ƒ` (the not-found page and the icon
   excepted as Next lists them); fix nothing by hand, record the table in the design's implementation notes.
-  — RF-07
-- [ ] Manual, once: `pnpm dev` loads `/login`, hot-reloads an edit and shows no console message (the dev
+  — RF-07. After: `ƒ` on `/`, `/_not-found`, `/checks`, `/login`, `/scans`, `/scans/[id]`, `/scans/new`,
+  `/settings`, `/setup`; `○ /icon.svg` (a file); `ƒ Proxy (Middleware)` listed.
+- [x] Manual, once: `pnpm dev` loads `/login`, hot-reloads an edit and shows no console message (the dev
   policy with `'unsafe-eval'` and `ws:`); `pnpm build && pnpm start` serves `/login` with the header and the
-  page hydrates. — RF-02, RF-07
-- [ ] Quality gate (`pnpm lint`, `format:check`, `typecheck`, `test`, `build`, `pnpm test:e2e`): the
+  page hydrates. — RF-02, RF-07. Checked with `curl` and a Chromium script: `next start` sends one policy,
+  the nonce equals the one on every `<script>`, `/icon.svg` and a `/_next/static` file carry no policy;
+  `next dev` on `localhost` sends `'unsafe-eval'` and `ws: wss:`, logs `[HMR] connected` and
+  `[Fast Refresh] done`, no CSP message. (On `127.0.0.1` the dev socket is refused by Next's own
+  `allowedDevOrigins` check, a handshake error, not a CSP violation.)
+- [x] Quality gate (`pnpm lint`, `format:check`, `typecheck`, `test`, `build`, `pnpm test:e2e`): the
   existing e2e run must still pass as it is (`security-headers.spec.ts` loops over the shortened list, so it
-  checks the four headers and says nothing yet about the policy; Stage 2 adds that). — RF-07, RF-10
+  checks the four headers and says nothing yet about the policy; Stage 2 adds that). — RF-07, RF-10. lint / format / typecheck clean, 202 tests in 33 files (+21; `proxy.test.ts` needed `vitest.setup.ts` to skip the DOM shims when a file runs in the `node` environment), build ok, e2e 2 passed.
 
 ## Stage 2 — End to end: the browser's view
 
