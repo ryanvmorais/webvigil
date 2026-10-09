@@ -13,6 +13,12 @@ release and contains all of them.
 
 ### Fixed
 
+- `injection.cmdi.os` no longer reports command injection on an endpoint that only echoes its input
+  ([#177](https://github.com/ryanvmorais/webvigil/issues/177)). The Windows `set /a` proof looked for the
+  product of the two random operands in the text that starts at the random marker, so the digits of the
+  product could appear inside the marker by chance (about one scan parameter in a thousand). The product
+  now has to be printed after the marker, as a whole number, and not be on the baseline page already.
+
 - `injection.sqli.boolean-based` no longer misses a blind SQL injection on a form whose field ships empty,
   or whose "no such row" page is the site's own layout with a different status
   ([#143](https://github.com/ryanvmorais/webvigil/issues/143)). The OWASP DVWA module was the case: an
