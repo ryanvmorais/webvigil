@@ -98,6 +98,12 @@ _FORMS = (
     '<input type="hidden" name="csrf" value="tok123"><textarea name="body"></textarea></form>'
     '<form method="post" action="/login">'
     '<input name="username"><input type="password" name="password"></form>'
+    # issue #190: the id is chosen from a <select>, so no browser sends anything else. The insecure
+    # profile pastes it into the SQL unquoted. A "filter" action keeps the CSRF passes out of it.
+    '<form method="post" action="/filter">'
+    '<input type="hidden" name="csrf_token" value="filtertok">'
+    '<select name="uid"><option value="1">1</option><option value="2">2</option>'
+    '<option value="3">3</option></select></form>'
     # spec 008 (RF-13): a guestbook whose entries are rendered on a per-entry page reachable
     # only after a post — so the stored-XSS re-crawl must find it. It carries a CSRF token so
     # the CSRF check stays quiet; the stored-XSS pass fuzzes the `body` field.
@@ -1042,6 +1048,25 @@ def _item_hardened(request: Request) -> Response:
     return HTMLResponse("<!doctype html><div>No such item</div>", status_code=404)
 
 
+async def _filter_insecure(request: Request) -> Response:
+    uid = (await request.form()).get("uid", "1")
+    try:
+        rows = _DB.execute("SELECT name FROM items WHERE id = " + str(uid)).fetchall()
+    except sqlite3.OperationalError as exc:
+        return PlainTextResponse(f"sqlite3.OperationalError: {exc}", status_code=500)
+    if rows:
+        return HTMLResponse(f"<!doctype html><div>Item: {rows[0][0]}</div>")
+    return HTMLResponse("<!doctype html><div>No such item</div>", status_code=404)
+
+
+async def _filter_hardened(request: Request) -> Response:
+    uid = str((await request.form()).get("uid", "1"))
+    if uid not in ("1", "2", "3"):
+        return HTMLResponse("<!doctype html><div>Not found</div>", status_code=404)
+    rows = _DB.execute("SELECT name FROM items WHERE id = ?", (int(uid),)).fetchall()
+    return HTMLResponse(f"<!doctype html><div>Item: {rows[0][0]}</div>")
+
+
 def _download_hardened(request: Request) -> Response:
     name = request.query_params.get("file", "")
     if "/" in name or "\\" in name or ".." in name:
@@ -1342,6 +1367,7 @@ _INJECTION_ROUTES = {
     "insecure": (
         ("/search", _search_insecure, ["GET"]),
         ("/item", _item_insecure, ["GET"]),
+        ("/filter", _filter_insecure, ["POST"]),
         ("/download", _download_insecure, ["GET"]),
         ("/go", _go_insecure, ["GET"]),
         ("/fetch", _fetch_insecure, ["GET"]),
@@ -1393,6 +1419,7 @@ _INJECTION_ROUTES = {
     "hardened": (
         ("/search", _search_hardened, ["GET"]),
         ("/item", _item_hardened, ["GET"]),
+        ("/filter", _filter_hardened, ["POST"]),
         ("/download", _download_hardened, ["GET"]),
         ("/go", _go_hardened, ["GET"]),
         ("/fetch", _fetch_hardened, ["GET"]),

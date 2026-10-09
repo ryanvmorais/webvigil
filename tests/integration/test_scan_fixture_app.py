@@ -600,6 +600,7 @@ async def test_insecure_profile_active_finds_every_injection(scan) -> None:
     assert ("injection.xss.reflected", "q") in reported
     assert ("injection.xss.reflected", "body") in reported
     assert ("injection.sqli.error-based", "id") in reported
+    assert ("injection.sqli.error-based", "uid") in reported  # a <select> (issue #190)
     assert ("injection.sqli.boolean-based", "id") in reported
     assert ("injection.sqli.time-based", "id") in reported
     assert ("injection.traversal.path", "file") in reported

@@ -100,7 +100,8 @@ Camadas, de cima para baixo:
    SQLi (error/boolean/time; o boolean semeia um campo vazio com um valor plausível e aceita uma
    divisão de classe de status como evidência), path traversal, open redirect. O `Orchestrator` roda um passo
    `InjectionScanner` (enumera injection points a partir de query params + `<form>`s
-   parseados dos corpos já baixados, baseline por ponto, detectores sob um orçamento de
+   parseados dos corpos já baixados — campos de texto e `<select>`, este testado por último e nunca
+   alvo do stored XSS —, baseline por ponto, detectores sob um orçamento de
    requests compartilhado); checks finos viram findings a partir de
    `ctx.observations.injection_hits`. Portão `--mode active --authorized-by`; só GET/POST;
    detecção in-band (sem browser headless, sem coletor OAST). `[injection]` afina orçamento

@@ -169,8 +169,10 @@ def _stored_order(points: list[InjectionPoint]) -> list[InjectionPoint]:
 
     Returns:
         list[InjectionPoint]: Form points before query points, each group in
-            ``enumerate_points`` order (RF-04).
+            ``enumerate_points`` order (RF-04). A ``<select>`` is left out: this pass writes to
+            the target, and a marker is not one of the options the page offers (issue #190).
     """
+    points = [p for p in points if not p.select]
     forms = [p for p in points if p.source == "form"]
     queries = [p for p in points if p.source != "form"]
     return forms + queries

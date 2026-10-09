@@ -109,8 +109,16 @@ The information-disclosure probe stopped at its 150-request cap on every DVWA sc
   plus the query parameters of a link) and sends a `<select>` back with its default value, so the
   point is never fuzzed. The endpoint is injectable: an always-true condition appended to the id returns all five
   rows, an always-false one none, and a stray quote makes the database report a syntax error. A browser offers only the
-  listed options; a client can send any value, and so can the scanner. This is the cause behind both
-  rows at *medium*, and probably behind *high* (not checked there).
+  listed options; a client can send any value, and so can the scanner. This is the cause behind the
+  *error-based* miss at *medium*, and probably behind *high* (not checked there).
+  [#190](https://github.com/ryanvmorais/webvigil/issues/190) made a `<select>` an injection point (tested
+  after the other points, never written to by `--stored-xss`); a new scan of the same instance at *medium*
+  with the same options, in the same 2.0 minutes, reports `injection.sqli.error-based` on the id.
+- *SQL injection (blind) at medium.* Still missed after #190, for the reason the first run gave for *low*:
+  the true and the false condition both answer `200` and differ by one sentence ("exists" against
+  "is MISSING") on a page of several kilobytes, and the boolean detector asks the false page to fall below
+  0.90 similarity. At *low* the missing row answered `404`, which the status split catches; at *medium* it
+  does not.
 - *File upload.* *Medium* checks the declared `Content-Type` of the part and nothing else. Uploading by
   hand a file named like the scanner's `.php.jpg`, `.pHtml` and `.html` payloads with the part type
   `image/jpeg` stores all three. The scan stored nothing and reported nothing, and the cause is **not

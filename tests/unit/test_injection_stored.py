@@ -18,7 +18,7 @@ import pytest
 
 from tests.support import make_page
 from webvigil.checks.injection.models import InjectionPoint, StoredMarker
-from webvigil.checks.injection.stored import StoredXssScanner, _detect
+from webvigil.checks.injection.stored import StoredXssScanner, _detect, _stored_order
 from webvigil.core.config import ScanConfig
 from webvigil.core.context import Page
 from webvigil.core.target import Target
@@ -296,3 +296,13 @@ async def test_recrawl_page_cap_warns(httpx_mock: object) -> None:
     cfg = ScanConfig.model_validate({"scan": {"max_pages": 1}, "injection": {"stored_xss": True}})
     report = await _run(router, pages, (_GB_FORM,), httpx_mock, config=cfg)
     assert any("1-page cap" in w for w in report.warnings)
+
+
+def test_the_stored_pass_never_writes_into_a_select() -> None:
+    """A ``<select>`` point is left out of the pass that writes markers (issue #190)."""
+    text = InjectionPoint("POST", "https://example.com/a", "note", "", (), source="form")
+    select = InjectionPoint(
+        "POST", "https://example.com/a", "uid", "1", (), source="form", select=True
+    )
+    query = InjectionPoint("GET", "https://example.com/q", "q", "x", (), source="query")
+    assert _stored_order([select, query, text]) == [text, query]
