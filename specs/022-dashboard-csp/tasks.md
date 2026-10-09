@@ -82,24 +82,30 @@ edit, and the counts again at close.
 
 ## Stage 2 — End to end: the browser's view
 
-- [ ] `web/e2e/security-headers.spec.ts`: rewrite around the four headers plus the policy: `/login` has
+- [x] `web/e2e/security-headers.spec.ts`: rewrite around the four headers plus the policy: `/login` has
   exactly one `Content-Security-Policy` header (read with `headersArray`); its `script-src` nonce is the one
   on the page's inline scripts; two requests have two different nonces; the four headers are on the page
   and on a `/_next/static` asset; the asset has no `Content-Security-Policy`; the file header names the
   spec. — RF-01, RF-06, RF-09, RF-10, RNF-04
-- [ ] `web/e2e/smoke.spec.ts`: a `console` and `pageerror` listener on the page from the first
+- [x] `web/e2e/smoke.spec.ts`: a `console` and `pageerror` listener on the page from the first
   `goto` to logout, failing the test on a message that matches `/content security policy/i` or on an
   uncaught page error (a network-failure line, such as the 401 after logout, is not a violation and is left
   to Lighthouse's console-error assertion). — RF-08, ADR-7
-- [ ] `web/e2e/smoke.spec.ts`: open "Preview report" on the scan detail, wait for the `blob:` frame and
+- [x] `web/e2e/smoke.spec.ts`: open "Preview report" on the scan detail, wait for the `blob:` frame and
   assert the report heading is visible inside it and `getComputedStyle(body).fontSize` is `15px` (styled, so
   the inline `<style>` survived the inherited policy), and that the frame is still `sandbox=""`. — RF-05,
   RF-08, ADR-9
-- [ ] Mutation check, not committed: temporarily drop `frame-src blob:`, then `'unsafe-inline'` from
+- [x] Mutation check, not committed: temporarily drop `frame-src blob:`, then `'unsafe-inline'` from
   `style-src`, then the nonce from the request headers, run the e2e once each and see it fail for the right
-  reason; restore. — RF-08, ADR-7
-- [ ] Quality gate (`pnpm lint`, `format:check`, `typecheck`, `test`, `build`, `pnpm test:e2e`). The
-  e2e is fully green. — RF-08, RF-10
+  reason; restore. — RF-08, ADR-7. Results: without `frame-src blob:` the smoke test fails (the preview heading is
+  not found); without `'unsafe-inline'` in `style-src` it fails (`font-size` `16px`, expected `15px`); with
+  the policy dropped from the **forwarded request** headers it still **passes**, because Next 16.3 also
+  takes the nonce from the policy on the proxy's response, so that line is guarded by `proxy.test.ts`
+  only (kept, as the Next guide has it); with `dynamic = "auto"` it also passes, because the proxy makes
+  every route `ƒ` by itself, so the `force-dynamic` line is belt and braces guarded by `layout.test.tsx`.
+- [x] Quality gate (`pnpm lint`, `format:check`, `typecheck`, `test`, `build`, `pnpm test:e2e`). The
+  e2e is fully green. — RF-08, RF-10. lint / format / typecheck clean, e2e 4 passed (3 in
+  `security-headers.spec.ts`, 1 flow).
 
 ## Stage 3 — Documentation, Lighthouse, image, close-out
 
