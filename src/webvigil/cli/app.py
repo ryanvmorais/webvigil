@@ -240,6 +240,14 @@ def scan(
             "(a local path or an in-scope URL).",
         ),
     ] = None,
+    har: Annotated[
+        str | None,
+        typer.Option(
+            "--har",
+            help="Seed the scan from a HAR file recorded in a browser or a proxy "
+            "(a local path): its in-scope GET and POST requests, never its cookies or headers.",
+        ),
+    ] = None,
     osv_online: Annotated[
         bool | None,
         typer.Option(
@@ -286,6 +294,7 @@ def scan(
             sample_sessions=sample_sessions,
             test_logout=test_logout,
             openapi=openapi,
+            har=har,
             osv_online=osv_online,
         )
     except ConfigError as exc:
@@ -392,6 +401,7 @@ def _build_config(
     sample_sessions: bool | None,
     test_logout: bool | None,
     openapi: str | None,
+    har: str | None,
     osv_online: bool | None,
 ) -> ScanConfig:
     """
@@ -406,7 +416,7 @@ def _build_config(
         mode, scope, max_pages, delay, fail_on, authorized_by, probe,
             time_based_sqli, time_based_cmdi, stored_xss, xxe, file_upload,
             confirm_csrf, submit_post_forms, cookie, header, login_url, username,
-            password_env, logout_url, sample_sessions, test_logout, openapi, osv_online: The
+            password_env, logout_url, sample_sessions, test_logout, openapi, har, osv_online: The
             optional CLI overrides; the three ``login`` flags merge *into* the file's
             ``[auth.login]`` table (spec 019);
             ``None`` means "not passed".
@@ -429,6 +439,8 @@ def _build_config(
         scan_overrides["max_pages"] = max_pages
     if openapi is not None:
         scan_overrides["openapi"] = openapi
+    if har is not None:
+        scan_overrides["har"] = har
     if submit_post_forms is not None:
         scan_overrides["submit_post_forms"] = submit_post_forms
 

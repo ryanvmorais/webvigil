@@ -699,6 +699,24 @@ async def _api_items(request: Request) -> Response:
     return HTMLResponse(f"<!doctype html><p>created {html.escape(str(form.get('name', '')))}</p>")
 
 
+# --- spec 021: routes that only a recorded HAR names (linked from no page) ---------
+
+
+def _spa_items_insecure(request: Request) -> Response:
+    name = request.query_params.get("name", "")  # reflected unescaped
+    return HTMLResponse(f"<!doctype html><h1>Items named {name}</h1>")
+
+
+def _spa_items_hardened(request: Request) -> Response:
+    name = html.escape(request.query_params.get("name", ""))
+    return HTMLResponse(f"<!doctype html><h1>Items named {name}</h1>")
+
+
+async def _spa_notes(request: Request) -> Response:
+    await _log_post(request, "spa-note")
+    return HTMLResponse("<!doctype html><p>noted</p>")
+
+
 def _go_insecure(request: Request) -> Response:
     return RedirectResponse(request.query_params.get("next", "/"), status_code=302)
 
@@ -1343,6 +1361,8 @@ _INJECTION_ROUTES = {
         ("/rule", _rule_insecure, ["GET"]),
         ("/openapi.json", _openapi_doc, ["GET"]),
         ("/api/find", _api_find_insecure, ["GET"]),
+        ("/spa/items", _spa_items_insecure, ["GET"]),
+        ("/spa/notes", _spa_notes, ["POST"]),
         ("/api/items", _api_items, ["POST"]),
         ("/api/xml", _xml_insecure, ["POST"]),
         ("/comment", _comment_insecure, ["POST"]),
@@ -1392,6 +1412,8 @@ _INJECTION_ROUTES = {
         ("/rule", _el_hardened("Rule", "cond"), ["GET"]),
         ("/openapi.json", _openapi_doc, ["GET"]),
         ("/api/find", _api_find_hardened, ["GET"]),
+        ("/spa/items", _spa_items_hardened, ["GET"]),
+        ("/spa/notes", _spa_notes, ["POST"]),
         ("/api/items", _api_items, ["POST"]),
         ("/api/xml", _token_enforced("csrf_token", "xmltok", _xml_hardened), ["POST"]),
         ("/comment", _token_enforced("csrf", "tok123", _comment_hardened), ["POST"]),

@@ -13,6 +13,11 @@ submit_forms = true       # submit safe GET forms (search, filters) during the c
                           # (an OpenAPI 3.x / Swagger 2.0 document). Its operations seed the
                           # crawl and the injection pass. CLI: --openapi <path|url>
 # openapi_max_operations = 150  # cap on operations seeded from the import; excess is a warning
+# har = "traffic.har"     # spec 021: a local .har file recorded in a browser or a proxy. Its in-scope
+                          # GET and POST requests seed the crawl and the injection pass, for single-page
+                          # applications. Reads the file only; cookies and headers in it are never used.
+                          # CLI: --har <path>
+# har_max_operations = 150  # cap on operations seeded from the HAR; excess is a warning
 submit_post_forms = false # spec 018: ACTIVE ONLY. The crawler submits candidate POST forms and
                           # --openapi POST operations once, with benign values, and follows the
                           # answers. Writes to the target. CLI: --submit-post-forms

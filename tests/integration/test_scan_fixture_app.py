@@ -14,8 +14,8 @@ inspects a result the same one (issue #101: the suite used to run ``("insecure",
 * ``scan("insecure")`` — the passive baseline;
 * ``scan("insecure", **_ACTIVE)`` — the default Active scan, with the time-delay detectors on;
 * ``scan(profile, **_full(profile))`` — **every** switch on at once (stored XSS, XXE, file upload,
-  CSRF confirmation, POST crawl, an OpenAPI import, an automated login, session-id sampling,
-  the logout test and a bearer header),
+  CSRF confirmation, POST crawl, an OpenAPI import, a HAR import, an automated login, session-id
+  sampling, the logout test and a bearer header),
   with the time-delay detectors off (issue #58: they decide on wall-clock time). The hardened twin
   of that scan is the "reports nothing" check for every spec at once;
 * ``scan("hardened", ..., login=True, session_ttl=2)`` — the one extra scan of spec 019: the
@@ -54,6 +54,11 @@ _OPENAPI_URL = "http://demo.test/openapi.json"
 # The fixture app is plain HTTP; TLS findings are covered by the socket-based unit tests.
 _DISABLED = ["tls.https"]
 
+# spec 021: the HAR the full scan imports. Written once per session by ``_har_file``; the secret
+# strings below must never come out of any report (RF-07, RNF-05).
+_HAR_SECRETS = ("HARSECRETCOOKIE", "HARSECRETBEARER", "HARSECRETTOKEN", "HARSECRETNOTE")
+_HAR: dict[str, str] = {}
+
 # The default Active scan: the only one with the time-delay detectors on.
 _ACTIVE = {"active": True}
 _BEARER = "Authorization: Bearer wv-secret-123"
@@ -81,6 +86,7 @@ def _full(profile: str) -> dict[str, object]:
         "active": True,
         "time_based": False,
         "openapi": _OPENAPI_URL,
+        "har": _HAR["path"],
         "login": True,
         "sample_sessions": True,
         "test_logout": True,
@@ -174,6 +180,68 @@ def _assert_same_findings(first: ScanResult, second: ScanResult) -> None:
 _SCANS: dict[tuple[object, ...], tuple[ScanResult, Starlette]] = {}
 
 
+def _har_entry(
+    url: str,
+    method: str = "GET",
+    *,
+    rtype: str = "xhr",
+    headers: list[dict[str, str]] | None = None,
+    post: dict[str, object] | None = None,
+) -> dict[str, object]:
+    """
+    Args:
+        url (str): The recorded request URL.
+        method (str): The method. Defaults to ``"GET"``.
+        rtype (str): Chrome's ``_resourceType``. Defaults to ``"xhr"``.
+        headers (list[dict[str, str]] | None): Recorded request headers.
+        post (dict[str, object] | None): The ``postData`` object.
+
+    Returns:
+        dict[str, object]: A HAR entry.
+    """
+    request: dict[str, object] = {"method": method, "url": url, "headers": headers or []}
+    if post is not None:
+        request["postData"] = post
+    return {"_resourceType": rtype, "request": request, "response": {"status": 200}}
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _har_file(tmp_path_factory: pytest.TempPathFactory) -> None:
+    """
+    Write the HAR the full scan imports (spec 021), once per session, and record its path.
+
+    It names a GET route and a JSON POST route that no page links to, and carries every kind of
+    entry the importer must leave alone: a foreign host, a static asset, a ``DELETE``, a login, and
+    recorded credentials (a ``Cookie``, an ``Authorization`` header, a ``?token=``, a JSON value).
+
+    Args:
+        tmp_path_factory (pytest.TempPathFactory): pytest's session-scoped temp directory factory.
+    """
+    session_headers = [
+        {"name": "Cookie", "value": "sid=HARSECRETCOOKIE"},
+        {"name": "Authorization", "value": "Bearer HARSECRETBEARER"},
+    ]
+    entries = [
+        _har_entry("http://demo.test/spa/items?name=widget"),
+        _har_entry(
+            "http://demo.test/spa/items?name=widget&tab=1&token=HARSECRETTOKEN",
+            headers=session_headers,
+        ),
+        _har_entry(
+            "http://demo.test/spa/notes",
+            "POST",
+            post={"mimeType": "application/json", "text": json.dumps({"text": "HARSECRETNOTE"})},
+        ),
+        _har_entry("https://cdn.example.net/foreign/only-on-cdn"),
+        _har_entry("http://demo.test/static/app.js", rtype="script"),
+        _har_entry("http://demo.test/spa/items/1", "DELETE"),
+        _har_entry("http://demo.test/spa/session/login", "POST"),
+    ]
+    path = tmp_path_factory.mktemp("har") / "traffic.har"
+    path.write_text(json.dumps({"log": {"version": "1.2", "entries": entries}}), "utf-8")
+    _HAR["path"] = str(path)
+
+
 @pytest.fixture
 def scan(monkeypatch: pytest.MonkeyPatch):
     """Yield an ``async`` runner that scans the fixture app for a given profile.
@@ -181,7 +249,7 @@ def scan(monkeypatch: pytest.MonkeyPatch):
     The returned callable takes the profile name plus optional ``probe`` / ``active`` /
     ``cookies`` / ``headers`` / ``login`` / ``session_ttl`` / ``sample_sessions`` /
     ``test_logout`` / ``stored_xss`` / ``xxe`` /
-    ``file_upload`` / ``confirm_csrf`` / ``post_forms`` / ``openapi`` / ``osv_online`` /
+    ``file_upload`` / ``confirm_csrf`` / ``post_forms`` / ``openapi`` / ``har`` / ``osv_online`` /
     ``osv_up`` / ``time_based`` switches,
     assembles the :class:`ScanConfig`, points the engine's HTTP client (and, for OSV, its
     provider) at in-process transports, runs the scan **the first time that configuration is
@@ -212,6 +280,7 @@ def scan(monkeypatch: pytest.MonkeyPatch):
         confirm_csrf: bool,
         post_forms: bool,
         openapi: str | None,
+        har: str | None,
         osv_online: bool,
         osv_up: bool,
         time_based: bool,
@@ -257,6 +326,8 @@ def scan(monkeypatch: pytest.MonkeyPatch):
             }
         if openapi is not None:
             raw["scan"] = {**raw["scan"], "openapi": openapi}  # type: ignore[dict-item]
+        if har is not None:
+            raw["scan"] = {**raw["scan"], "har": har}  # type: ignore[dict-item]
         if cookies is not None or headers is not None:
             raw["auth"] = {"cookies": cookies or [], "headers": headers or []}
         if sample_sessions or test_logout:
@@ -303,6 +374,7 @@ def scan(monkeypatch: pytest.MonkeyPatch):
         confirm_csrf: bool = False,
         post_forms: bool = False,
         openapi: str | None = None,
+        har: str | None = None,
         osv_online: bool = False,
         osv_up: bool = True,
         time_based: bool = True,
@@ -322,6 +394,7 @@ def scan(monkeypatch: pytest.MonkeyPatch):
             "confirm_csrf": confirm_csrf,
             "post_forms": post_forms,
             "openapi": openapi,
+            "har": har,
             "osv_online": osv_online,
             "osv_up": osv_up,
             "time_based": time_based,
@@ -1018,7 +1091,10 @@ async def test_post_crawl_reaches_what_only_a_post_leads_to(scan) -> None:
     assert kinds["notes"] == "application/json"
     # defaults and the marker only: no payload
     for route, _, fields in posts:
-        if route == "notes":
+        if route in {
+            "notes",
+            "spa-note",
+        }:  # JSON bodies: a synthesised or recorded shape, no payload
             continue
         assert all(
             str(v) in {"supporttok", "xml", "1"} or str(v).startswith("wvcrawl")
@@ -1060,3 +1136,66 @@ async def test_hardened_profile_with_every_switch_reports_nothing(scan) -> None:
     )
     # the POST crawl ran and the answers were read
     assert {"ticket", "callback", "feedback"} <= {entry[0] for entry in _crawl_posts(scan)}
+
+
+# ---------------------------------------------------------------------------
+# HAR import (spec 021)
+# ---------------------------------------------------------------------------
+
+
+async def test_har_import_reaches_unlinked_routes_and_fuzzes_the_get_one(scan) -> None:
+    """The HAR seeds ``/spa/items`` with its recorded query and the XSS detector hits it."""
+    result = await scan("insecure", **_full("insecure"))
+    assert "GET /spa/items?name=widget" in _log(scan)
+    xss = [
+        f
+        for f in result.findings
+        if f.check_id == "injection.xss.reflected" and "/spa/items" in (f.location.url or "")
+    ]
+    assert xss and xss[0].location.param in {"name", "tab"}
+
+
+async def test_har_import_summary_and_the_entries_it_must_leave_alone(scan) -> None:
+    """The summary says what was read; the foreign host, asset, DELETE and login are never sent."""
+    result = await scan("insecure", **_full("insecure"))
+    assert (
+        "HAR import: 7 entries read, 3 operations seeded (2 GET, 1 POST); ignored: "
+        "1 out of scope, 1 static, 1 other method, 1 unsafe"
+    ) in result.warnings
+    log = _log(scan)
+    assert not any("only-on-cdn" in line or "session/login" in line for line in log)
+    assert not any(line.startswith("DELETE") or "app.js" in line for line in log)
+    assert not any("looks authenticated" in w for w in result.warnings)  # the scan has a login
+
+
+async def test_har_post_operation_is_posted_once_with_the_recorded_shape_only(scan) -> None:
+    """In the Active scan with ``--submit-post-forms`` the JSON POST goes out once, as a shape."""
+    await scan("insecure", **_full("insecure"))
+    notes = [e for e in scan.holder["app"].state.post_log if e[0] == "spa-note"]  # type: ignore[attr-defined]
+    assert notes == [("spa-note", "application/json", {"text": "wv"})]
+
+
+async def test_nothing_the_har_held_in_secret_reaches_any_report(scan) -> None:
+    """RNF-05: a cookie, a bearer, a ``?token=`` and a JSON value of the file are in no format."""
+    result = await scan("insecure", **_full("insecure"))
+    for fmt in ("json", "sarif", "html", "md"):
+        rendered = get_reporter(fmt).render(result)
+        for secret in _HAR_SECRETS:
+            assert secret not in rendered, (fmt, secret)
+    assert all(secret not in w for w in result.warnings for secret in _HAR_SECRETS)
+    assert not any(secret in line for line in _log(scan) for secret in _HAR_SECRETS)
+
+
+async def test_a_passive_scan_with_a_har_seeds_the_gets_sends_no_post_and_warns_about_the_session(
+    scan,
+) -> None:
+    """Passive: the GET seed is fetched, the POST route is never touched, and the recording that
+    looks authenticated draws the one warning (this scan has no credentials)."""
+    result = await scan("insecure", har=_HAR["path"])
+    log = _log(scan)
+    assert "GET /spa/items?name=widget" in log
+    assert not any(line.startswith("POST /spa") for line in log)
+    assert scan.holder["app"].state.post_log == []  # type: ignore[attr-defined]
+    looks = [w for w in result.warnings if "looks authenticated" in w]
+    assert len(looks) == 1 and "--login-url" in looks[0]
+    assert not any(secret in looks[0] for secret in _HAR_SECRETS)

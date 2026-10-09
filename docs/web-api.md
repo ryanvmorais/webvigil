@@ -133,6 +133,13 @@ scan — the same gate as the CLI's `--mode active --authorized-by`. The authori
 is stored on the scan and printed in every report. Only run Active Mode against systems you
 are authorized to test (see [SECURITY.md](../SECURITY.md)).
 
+## What a scan request cannot carry
+
+A scan request takes a target, a mode, a scope and a few limits. It does **not** take a path or a
+URL to read: neither `--openapi` nor `--har` (a browser recording, [`har-import.md`](har-import.md))
+is exposed, because a path in a request would be read from the server's disk by whoever sent it. A
+field a request holds that the API does not define is ignored. Scan with those options from the CLI.
+
 ## Backup
 
 The SQLite file (`database_path`) is the only stateful artefact — it holds the user, the

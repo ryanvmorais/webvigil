@@ -114,6 +114,7 @@ in the code and links to its docs; each was designed as a spec first, under
 | `v0.18` | Active Mode: opt-in `POST` crawling (`--submit-post-forms`) — the crawler submits candidate forms (urlencoded, multipart without a file) and `--openapi` `POST` operations once with benign values, reads each answer as a page, and follows what it links to ([docs](docs/authenticated-scanning.md#post-forms----submit-post-forms-opt-in)) | shipped |
 | `v0.19` | Active Mode: automated login (`--login-url`, `--username`, `--password-env`) — WebVigil finds the login form, submits the account once, keeps the session and logs in again when it drops; the password only ever comes from the environment or a prompt ([docs](docs/authenticated-scanning.md#automated-login----login-url-opt-in)) | shipped |
 | `v0.20` | Session-security checks: `session.id.weak` (short, low-entropy, numeric, counter, timestamp or repeated ids, plus opt-in anonymous sampling with `--sample-sessions`), `session.fixation` (the session id survives the login, confirmed with one request) and `session.logout.not-invalidated` (`--test-logout`, Active Mode). Findings name the cookie and never carry a value ([docs](docs/authenticated-scanning.md#session-security-checks)) | shipped |
+| `v0.21` | HAR import (`--har`): the target's own `GET` and `POST` requests, recorded in a browser or a proxy, seed the crawl and the injection pass of a single-page application. Reads a local file, never uses its cookies or headers, leaves out assets, other hosts and login or destructive paths ([docs](docs/har-import.md)) | shipped |
 
 > The ten opt-in switches, all off by default: `--probe` (sensitive-path probing),
 > `--stored-xss`, `--file-upload`, `--confirm-csrf` and `--submit-post-forms` (all write to
@@ -134,9 +135,9 @@ to reach for instead.
 
 - **JavaScript-rendered apps.** The crawler parses HTML; it runs no headless browser, so a
   SPA that builds its DOM in JS exposes almost no surface to the crawl (the scan warns when
-  the entry page looks like one). *Instead:* point
-  `--openapi` at the app's schema to seed the crawl and the injection pass directly, or
-  feed URLs collected by your own browser-based crawler.
+  the entry page looks like one). *Instead:* browse the app once with the network panel open,
+  save the traffic as a HAR file and give it with `--har` ([docs](docs/har-import.md)), or point
+  `--openapi` at the app's schema; either seeds the crawl and the injection pass directly.
 
 - **Blind / out-of-band vulnerabilities.** Blind SSRF, blind command injection, blind /
   OOB XXE, blind stored XSS with no reflected marker, and HTTP request smuggling all need
@@ -239,6 +240,7 @@ uv run webvigil scan https://your-app.example --sample-sessions                 
 WEBVIGIL_LOGIN_PASSWORD=... uv run webvigil scan https://your-app.example --mode active --authorized-by me \
   --login-url https://your-app.example/signin --username scanner@example.com --test-logout      # + logout test (ends the scan's own session)
 uv run webvigil scan https://your-app.example --openapi ./openapi.json                          # seed the scan from an API schema
+uv run webvigil scan https://your-app.example --har ./traffic.har                               # seed the scan from a browser recording (SPAs)
 uv run webvigil scan https://your-app.example --osv-online                                      # also check libraries against OSV.dev
 uv run webvigil list-checks
 uv run webvigil report report.json --format md      # re-render a saved scan, offline

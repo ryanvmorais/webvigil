@@ -106,6 +106,7 @@ _INVALID_VALUES = [
     "[auth]\nheaders = ['   : v']\n",
     "[auth]\nheaders = ['Host: evil.example']\n",  # a reserved header name
     "[scan]\nmax_post_submissions = 0\n",
+    "[scan]\nhar_max_operations = 0\n",  # spec 021
     # spec 019: the login table
     "[auth.login]\nusername = 'u'\n",  # no url
     "[auth.login]\nurl = 'http://x/login'\n",  # no username
@@ -146,11 +147,14 @@ def test_scan_and_disclosure_keys_default_and_round_trip(tmp_path: Path) -> None
     assert defaults.scan.openapi_max_operations == 150
     assert defaults.scan.submit_post_forms is False
     assert defaults.scan.max_post_submissions == 25
+    assert defaults.scan.har is None
+    assert defaults.scan.har_max_operations == 150
     path = _write(
         tmp_path,
         "[disclosure]\nprobe = true\n\n[scan]\nsubmit_forms = false\n"
         "openapi = 'openapi.json'\nopenapi_max_operations = 40\n"
-        "submit_post_forms = true\nmax_post_submissions = 3\n",
+        "submit_post_forms = true\nmax_post_submissions = 3\n"
+        "har = 'traffic.har'\nhar_max_operations = 12\n",
     )
     loaded = ScanConfig.load(path)
     assert loaded.disclosure.probe is True
@@ -159,6 +163,8 @@ def test_scan_and_disclosure_keys_default_and_round_trip(tmp_path: Path) -> None
     assert loaded.scan.openapi_max_operations == 40
     assert loaded.scan.submit_post_forms is True
     assert loaded.scan.max_post_submissions == 3
+    assert loaded.scan.har == "traffic.har"
+    assert loaded.scan.har_max_operations == 12
 
 
 def test_injection_section_defaults_and_round_trips(tmp_path: Path) -> None:

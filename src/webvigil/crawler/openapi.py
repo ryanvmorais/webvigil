@@ -22,7 +22,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote, urlencode, urlsplit
 
 from webvigil.core.errors import OpenApiError, OutOfScopeError, RequestFailed
 from webvigil.core.target import Target
@@ -110,6 +110,8 @@ class ApiOperation:
         body_json (str | None): A synthesized ``application/json`` request body,
             or ``None`` when the operation has no JSON body.
         operation_id (str): The document's ``operationId``, or ``""``.
+        source (str): Where the operation came from: ``"openapi"`` (the default) or ``"har"``
+            (spec 021). It becomes the ``source`` of the injection points.
     """
 
     method: str
@@ -120,6 +122,20 @@ class ApiOperation:
     body_fields: tuple[tuple[str, str], ...]
     body_json: str | None
     operation_id: str
+    source: str = "openapi"
+
+    @property
+    def seed_url(self) -> str:
+        """
+        Returns:
+            str: The URL the crawler ``GET``s for this operation. An OpenAPI operation seeds its
+                path only (spec 013); a HAR one keeps its recorded query, because a
+                single-page application's endpoint often answers nothing without it (spec 021,
+                ADR-2).
+        """
+        if self.source != "har" or not self.query:
+            return self.url
+        return f"{self.url}?{urlencode(self.query)}"
 
 
 async def load_openapi(
