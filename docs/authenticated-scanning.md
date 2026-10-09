@@ -175,6 +175,11 @@ in every visit. A target that issues no session cookie to an anonymous visit ear
 a finding. Severity is `HIGH` for the structural rules and a repeated or sequential series,
 `MEDIUM` for the length and entropy floors alone.
 
+The crawl only sees a cookie the target set on a page it fetched. An application that hands the id
+out from a `POST` button (the weak-session-ID module of OWASP DVWA) issues it only to that `POST`,
+so `session.id.weak` sees it only when the `POST` phase submits the form: turn on
+`--submit-post-forms` (Active Mode) to cover that case.
+
 **Session fixation** (`session.fixation`, CWE-384). The automated login already holds the cookies of
 the login page (what an attacker's pre-login visit has) and of the account. A session-looking cookie
 that is the **same** in both is a candidate: the server kept the id it gave an anonymous visitor and
@@ -251,7 +256,10 @@ still reading. It then submits, once each and in order:
 
 - every distinct candidate **form** — `POST`, `application/x-www-form-urlencoded` or
   `multipart/form-data` **without a file input**, and not a login / registration / search /
-  logout / destructive-looking form (the same filter as the CSRF confirmation);
+  logout / destructive-looking form (the same filter as the CSRF confirmation). A form that is
+  only a button (`<form method="post"><input type="submit" value="Generate"></form>`) is a form
+  too: it is submitted with an empty body, as a browser would send it, and the label of its
+  button is what the destructive filter reads;
 - every `POST` **operation** of an `--openapi` import, with the body the importer synthesised —
   JSON, form-urlencoded or none. This is the only source of a JSON body: an HTML form cannot send
   one and WebVigil runs no JavaScript. An operation that looks like authentication or a
@@ -363,8 +371,9 @@ confirmation:
 - one-time tokens or a form whose control changes the state the replay depends on (a
   "duplicate entry" error reads as a refutation);
 - multi-step forms, `multipart` and JSON bodies, and anything that is not a `POST` form;
-- a destructive verb only in a `<button>`'s text (the parser keeps named inputs, not button
-  text — a named `submit` input's value *is* read);
+- a destructive verb only in an icon or an image button (the label of a `<button>` or of a
+  `submit` / `button` input is read, named or not; an `<input type="image">` or a `<button>`
+  with no text has none);
 - a form that answers the same page whether or not it saved: that reads as confirmed;
 - a server that validates `Origin` only when it is present, and everything a real browser adds
   (`SameSite` cookie rules, `Sec-Fetch-*`).

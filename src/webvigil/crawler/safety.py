@@ -142,13 +142,13 @@ def is_destructive_form(form: Form) -> bool:
             action's path and query, a field name, or the value of a named
             ``submit`` / ``button`` input matches the destructive vocabulary.
             ``_`` and ``-`` count as word breaks (``delete_account`` matches,
-            which ``\bdelete\b`` alone would miss). A ``<button>`` element's text
-            is not parsed into :class:`Form`, so a destructive verb only there is
-            not seen — the gap is documented in ``docs/authenticated-scanning.md``.
+            which ``\bdelete\b`` alone would miss). The label of a button counts, named
+            or not, including the text of a ``<button>`` element.
     """
     parts = [_path_and_query(form.action)]
     parts += [field.name for field in form.fields]
     parts += [field.value for field in form.fields if field.type in ("submit", "button")]
+    parts += form.labels
     haystack = re.sub(r"[_-]", " ", " ".join(parts))
     return bool(_DESTRUCTIVE_RE.search(haystack) or _LOGOUT_RE.search(haystack))
 

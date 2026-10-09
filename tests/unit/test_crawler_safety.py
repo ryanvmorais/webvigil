@@ -150,6 +150,31 @@ def test_destructive_form_reads_a_named_submit_value() -> None:
 
 
 @pytest.mark.parametrize(
+    "labels, destructive",
+    [
+        (("Delete account",), True),  # a <button> element's text, no named control at all
+        (("Save", "Remove item"), True),
+        (("Log out",), True),  # the logout vocabulary counts too
+        (("Generate",), False),
+        (("Deleted items",), False),  # the word boundary holds
+    ],
+)
+def test_destructive_form_reads_the_button_labels(
+    labels: tuple[str, ...], destructive: bool
+) -> None:
+    """The visible label of a button, named or not, marks a form destructive (issue #145)."""
+    form = Form(
+        method="POST",
+        action="https://example.com/account",
+        enctype="application/x-www-form-urlencoded",
+        fields=(),
+        source_url="https://example.com/",
+        labels=labels,
+    )
+    assert is_destructive_form(form) is destructive
+
+
+@pytest.mark.parametrize(
     "action, names",
     [
         ("https://example.com/newsletter", ("email", "topic")),

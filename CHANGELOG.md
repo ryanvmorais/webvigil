@@ -13,6 +13,15 @@ release and contains all of them.
 
 ### Fixed
 
+- A `POST` form that is only a button is now part of the form inventory
+  ([#145](https://github.com/ryanvmorais/webvigil/issues/145)). The parser dropped every form with no
+  named field, so the "Generate" button of OWASP DVWA's weak-session-ID module never reached the `POST`
+  crawl and `session.id.weak` found nothing there. Such a form is now kept, with the label of its
+  buttons, and `--submit-post-forms` submits it (an empty body, as a browser sends an unnamed button).
+  The label of a button, including the text of a `<button>`, now also feeds the destructive-form filter,
+  which closes the documented gap of a "Delete" that lived only in a `<button>`. Side effect: the passive
+  `csrf.form.no-token` check now also sees a `POST` form made only of a button, and reports it when it
+  has no token.
 - `injection.sqli.boolean-based` no longer misses a blind SQL injection on a form whose field ships empty,
   or whose "no such row" page is the site's own layout with a different status
   ([#143](https://github.com/ryanvmorais/webvigil/issues/143)). The OWASP DVWA module was the case: an
