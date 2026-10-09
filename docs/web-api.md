@@ -82,6 +82,15 @@ the rest of it (a scan request is a few kilobytes), the login username and passw
 most 10,000 keys, dropping the one that failed longest ago. A reverse proxy that limits body size
 as well is still better.
 
+**Reports are served contained.** A report is built from what the scanned site sent, and
+`GET /api/scans/{id}/report?format=html&download=false` shows the HTML one inline, from the API's
+own origin. The template escapes everything, so nothing is known to be wrong; these headers are what
+would contain a mistake. Every report response carries `X-Content-Type-Options: nosniff`, and the
+HTML one also `Content-Security-Policy: sandbox; default-src 'none'; style-src 'unsafe-inline'`: the
+page gets a unique origin with no script, form or fetch, and keeps its inline `<style>`, which is
+all the self-contained report uses. The dashboard's preview does not depend on it (it renders a
+`blob:` in a sandboxed iframe).
+
 **Session secret:** if `session_secret` is unset the server generates one and stores it in
 the database (a `setting` row), so sessions survive restarts. Pin `session_secret`
 explicitly for a shared or containerised deployment. A pinned secret must be at least 32

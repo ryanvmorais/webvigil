@@ -66,6 +66,33 @@ def test_download_false_is_inline(auth_client: TestClient) -> None:
     assert response.headers["content-disposition"].startswith("inline;")
 
 
+@pytest.mark.parametrize("fmt", ["json", "sarif", "html", "md"])
+def test_every_report_is_served_with_nosniff(auth_client: TestClient, fmt: str) -> None:
+    """No report format may be read by a browser as another content type (issue #163)."""
+    scan_id = _completed_scan(auth_client)
+    response = auth_client.get(f"/api/scans/{scan_id}/report?format={fmt}")
+    assert response.headers["x-content-type-options"] == "nosniff"
+
+
+@pytest.mark.parametrize("download", ["true", "false"])
+def test_the_html_report_carries_a_sandbox_policy(auth_client: TestClient, download: str) -> None:
+    """Inline or attached, the HTML report gets a policy with no script and a unique origin."""
+    scan_id = _completed_scan(auth_client)
+    response = auth_client.get(f"/api/scans/{scan_id}/report?format=html&download={download}")
+    assert (
+        response.headers["content-security-policy"]
+        == "sandbox; default-src 'none'; style-src 'unsafe-inline'"
+    )
+
+
+@pytest.mark.parametrize("fmt", ["json", "sarif", "md"])
+def test_only_the_html_report_carries_the_policy(auth_client: TestClient, fmt: str) -> None:
+    """The policy is for the one format a browser renders as a page."""
+    scan_id = _completed_scan(auth_client)
+    response = auth_client.get(f"/api/scans/{scan_id}/report?format={fmt}")
+    assert "content-security-policy" not in response.headers
+
+
 def test_json_report_is_byte_identical_to_the_reporter(auth_client: TestClient) -> None:
     """The API's JSON report is the same document the offline reporter would produce."""
     FakeOrchestrator.result = make_result(

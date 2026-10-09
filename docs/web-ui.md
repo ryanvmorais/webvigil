@@ -66,7 +66,9 @@ built dashboard.
 
 - **The report preview still works.** It frames a `blob:` document the page builds, which does not
   carry these headers.
-- **`/api/*` is not covered.** Next only proxies it; the answer carries the API's own headers.
+- **`/api/*` is not covered.** Next only proxies it; the answer carries the API's own headers
+  (the report responses, for one, send `nosniff`, and the HTML one a sandbox policy: see
+  [web-api.md](web-api.md)).
 - **No `Strict-Transport-Security`.** It only means something over HTTPS, so whoever terminates TLS
   in front of the dashboard sets it.
 - **No script and style policy yet.** That needs a per-request nonce for Next's inline scripts and

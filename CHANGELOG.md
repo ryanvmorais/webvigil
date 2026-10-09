@@ -24,6 +24,13 @@ release and contains all of them.
 
 ### Fixed
 
+- The Web API serves every report with `X-Content-Type-Options: nosniff`, and the HTML report also with
+  `Content-Security-Policy: sandbox; default-src 'none'; style-src 'unsafe-inline'`
+  ([#163](https://github.com/ryanvmorais/webvigil/issues/163)). `GET /api/scans/{id}/report?format=html&download=false`
+  shows the report inline from the API's own origin, built from what the scanned site sent. The template
+  escapes it, so nothing was known to be wrong, but no header would have contained a mistake. The report
+  keeps rendering (it is one self-contained file with an inline `<style>`), and the dashboard's preview,
+  which frames a `blob:` in a sandboxed iframe, is not affected.
 - The Web API refuses a state-changing request from another origin
   ([#162](https://github.com/ryanvmorais/webvigil/issues/162)). `POST /api/auth/logout` and
   `POST /api/scans/{id}/cancel` change state with no body, so a page on another port of the same host

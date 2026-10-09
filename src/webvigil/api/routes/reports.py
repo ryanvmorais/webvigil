@@ -23,6 +23,13 @@ _MEDIA_TYPE = {
     "html": "text/html; charset=utf-8",
     "md": "text/markdown; charset=utf-8",
 }
+# A report is built from what the scanned site sent, and the HTML one is served inline from the
+# API's own origin. The template escapes it, so nothing is known to be wrong; these two headers are
+# what would contain a mistake (issue #163). ``nosniff`` keeps a browser from reading any report as
+# another type. The policy gives the HTML page a unique origin with no script, form or fetch, and
+# leaves it the one thing it uses: its inline ``<style>``. The dashboard's preview does not depend
+# on it (it renders a ``blob:`` in a sandboxed iframe); a report opened inline in a tab does.
+_HTML_CSP = "sandbox; default-src 'none'; style-src 'unsafe-inline'"
 
 
 @router.get("/{scan_id}/report")
@@ -48,10 +55,10 @@ def download_report(
     findings = list(session.exec(select(FindingRow).where(FindingRow.scan_id == scan_id)))
     body = get_reporter(report_format).render(rows_to_result(scan, findings))
     disposition = "attachment" if download else "inline"
-    return Response(
-        content=body,
-        media_type=_MEDIA_TYPE[report_format],
-        headers={
-            "content-disposition": (f'{disposition}; filename="webvigil-{scan_id}.{report_format}"')
-        },
-    )
+    headers = {
+        "content-disposition": f'{disposition}; filename="webvigil-{scan_id}.{report_format}"',
+        "x-content-type-options": "nosniff",
+    }
+    if report_format == "html":
+        headers["content-security-policy"] = _HTML_CSP
+    return Response(content=body, media_type=_MEDIA_TYPE[report_format], headers=headers)
