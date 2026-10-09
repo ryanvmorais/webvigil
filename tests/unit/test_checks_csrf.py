@@ -100,6 +100,21 @@ async def test_a_recognised_token_field_suppresses_the_finding(token_name: str) 
     assert await _run([_form("nickname", token_name)]) == []
 
 
+async def test_a_button_only_post_form_is_flagged() -> None:
+    """A POST form that is only a button ("Generate") changes state with no token (#145)."""
+    form = Form(
+        method="POST",
+        action="https://example.com/vulnerabilities/weak_id/",
+        enctype="application/x-www-form-urlencoded",
+        fields=(),
+        source_url="https://example.com/account",
+        labels=("Generate",),
+    )
+    findings = await _run([form])
+    assert len(findings) == 1
+    assert findings[0].evidence[1].content == "(none)"
+
+
 async def test_a_get_form_is_never_flagged() -> None:
     """Only state-changing (POST) forms are CSRF targets."""
     assert await _run([_form("q", method="GET", action="https://example.com/search")]) == []

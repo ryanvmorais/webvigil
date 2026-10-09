@@ -30,6 +30,8 @@ _DEFAULT_ENCTYPE = "application/x-www-form-urlencoded"
 # one form, are bounded. A real page has a few dozen forms and a form a few hundred controls.
 MAX_FORMS_PER_PAGE = 500
 MAX_FIELDS_PER_FORM = 1_000
+# The visible text of a button, kept to what a verb needs.
+_LABEL_MAX = 80
 
 # <input type>s (and pseudo-types) whose current value the crawler submits with a GET form.
 _SUBMIT_VALUE_TYPES = frozenset(
@@ -82,6 +84,10 @@ class Form:
             ``application/x-www-form-urlencoded``.
         fields (tuple[FormField, ...]): The named controls, in parser order.
         source_url (str): URL of the page the form was found on.
+        labels (tuple[str, ...]): The visible label of every submit / button control,
+            named or not (the ``value`` of an ``<input>``, the text of a ``<button>``).
+            Only the safety heuristics read them: a browser sends no unnamed button.
+            Defaults to empty.
     """
 
     method: str
@@ -89,6 +95,7 @@ class Form:
     enctype: str
     fields: tuple[FormField, ...]
     source_url: str
+    labels: tuple[str, ...] = ()
 
 
 def parse_forms(page: Page, target: Target) -> list[Form]:
@@ -259,7 +266,8 @@ def _form_from_node(node: Node, page_url: str) -> Form | None:
 
     Returns:
         Form | None: The resolved form, or ``None`` when it has no named
-            fields.
+            fields, unless it is a ``POST`` form with a button (a "Generate" or a
+            "Delete" button is a form too, and a state change like any other).
     """
     attrs = node.attributes
     raw_action = (attrs.get("action") or "").strip()
@@ -280,7 +288,8 @@ def _form_from_node(node: Node, page_url: str) -> Form | None:
                 checked="checked" in child.attributes,
             )
         )
-    if not fields:
+    labels = _button_labels(node)
+    if not fields and not (method == "POST" and labels):
         return None
     return Form(
         method=method,
@@ -288,7 +297,34 @@ def _form_from_node(node: Node, page_url: str) -> Form | None:
         enctype=enctype,
         fields=tuple(fields),
         source_url=page_url,
+        labels=labels,
     )
+
+
+def _button_labels(node: Node) -> tuple[str, ...]:
+    """
+    Args:
+        node (Node): The parsed ``<form>`` element.
+
+    Returns:
+        tuple[str, ...]: The label of each submit / button control, in parser order: the
+            ``value`` of an ``<input type=submit|button>``, the text of a ``<button>``
+            (a ``<button>`` with no ``type`` submits). Empty labels are left out.
+    """
+    labels: list[str] = []
+    for child in node.css("input, button")[:MAX_FIELDS_PER_FORM]:
+        kind = (child.attributes.get("type") or "").strip().lower()
+        if child.tag == "button":
+            if kind not in ("", "submit", "button"):
+                continue
+            text = (child.text(deep=True) or "").strip()
+        elif kind in ("submit", "button"):
+            text = (child.attributes.get("value") or "").strip()
+        else:
+            continue
+        if text:
+            labels.append(text[:_LABEL_MAX])
+    return tuple(labels)
 
 
 def _field_type(node: Node) -> str:

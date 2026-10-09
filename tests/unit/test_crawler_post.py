@@ -253,6 +253,20 @@ async def test_only_safe_post_forms_are_submitted_and_skips_are_counted() -> Non
     assert (crawler.post_summary.forms, crawler.post_summary.skipped) == (2, 5)
 
 
+async def test_a_button_only_form_is_submitted_and_a_destructive_one_is_not() -> None:
+    """A "Generate" button is posted with an empty body; a "Delete" button is skipped (#145)."""
+    page = (
+        '<form method="post" action="/weak_id/"><input type="submit" value="Generate"></form>'
+        '<form method="post" action="/wipe/"><button>Delete everything</button></form>'
+    )
+    http = _FakeHttp({_ROOT: page})
+    crawler, _ = await _crawl(http)
+    assert _posted(http) == ["/weak_id/"]
+    assert http.posts[0].get("content") in (None, b"", "")
+    assert crawler.post_summary is not None
+    assert (crawler.post_summary.forms, crawler.post_summary.skipped) == (1, 1)
+
+
 async def test_the_same_form_on_two_pages_is_submitted_once() -> None:
     """One submission per distinct ``(method, action, field names)``."""
     http = _FakeHttp(

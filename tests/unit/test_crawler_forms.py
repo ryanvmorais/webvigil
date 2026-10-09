@@ -86,8 +86,8 @@ def test_identical_forms_across_pages_are_deduplicated() -> None:
     assert len(forms) == 1
 
 
-def test_a_form_with_no_named_field_is_ignored() -> None:
-    """A form with only an unnamed submit button has nothing to fuzz, so it is ignored."""
+def test_a_get_form_with_no_named_field_is_ignored() -> None:
+    """A ``GET`` form with only an unnamed submit button has nothing to submit, so it is ignored."""
     assert _forms("<form><input type=submit value=go></form>") == ()
 
 
@@ -171,6 +171,68 @@ def test_submission_url_is_none_for_a_post_form() -> None:
     """``submission_url`` only builds a URL for GET forms; a POST form gets ``None``."""
     (form,) = _forms('<form action="/s" method="post"><input name="q"></form>')
     assert submission_url(form) is None
+
+
+# ---------------------------------------------------------------------------
+# Button-only POST forms and button labels (issue #145)
+# ---------------------------------------------------------------------------
+
+
+def test_a_post_form_with_only_a_button_is_kept_with_its_label() -> None:
+    """A ``POST`` form that is only a button ("Generate") is a form: it changes state."""
+    (form,) = _forms(
+        '<form method="post" action="/vulnerabilities/weak_id/">'
+        '<input type="submit" value="Generate">'
+        "</form>"
+    )
+    assert form.method == "POST"
+    assert form.action == "https://example.com/vulnerabilities/weak_id/"
+    assert form.fields == ()
+    assert form.labels == ("Generate",)
+
+
+def test_a_button_element_text_is_a_label() -> None:
+    """The text of a ``<button>`` counts, nested markup included, and a no-type one submits."""
+    (form,) = _forms(
+        '<form method="post" action="/x"><input name="id" value="5">'
+        "<button>Delete <b>all</b></button>"
+        '<button type="submit">Save</button>'
+        "</form>"
+    )
+    assert form.labels == ("Delete all", "Save")
+    assert [f.name for f in form.fields] == ["id"]  # a button adds a label, not a field
+
+
+def test_only_submitting_buttons_are_labelled() -> None:
+    """A ``reset`` button and a text input carry no label; an empty label is left out."""
+    (form,) = _forms(
+        '<form method="post" action="/x"><input name="q" value="Delete">'
+        '<button type="reset">Clear</button><input type="button" value="Go">'
+        '<input type="submit" value=""><button></button></form>'
+    )
+    assert form.labels == ("Go",)
+
+
+def test_a_label_is_cut_to_what_a_verb_needs() -> None:
+    """A very long button text is truncated, so a hostile page cannot grow the inventory."""
+    (form,) = _forms(f'<form method="post" action="/x"><button>{"a" * 500}</button></form>')
+    assert form.labels == ("a" * 80,)
+
+
+def test_a_post_form_with_an_unlabelled_button_is_ignored() -> None:
+    """A button with no text (an icon) gives nothing to name the form by: still ignored."""
+    assert _forms('<form method="post" action="/x"><button><img src="i.png"></button></form>') == ()
+
+
+def test_a_get_form_with_only_a_button_is_ignored() -> None:
+    """Only ``POST`` keeps a button-only form: a ``GET`` one submits nothing the crawler uses."""
+    assert _forms('<form method="get" action="/x"><button>Go</button></form>') == ()
+
+
+def test_a_button_only_form_posts_an_empty_body() -> None:
+    """An unnamed button is not sent by a browser, so the body of a button-only form is empty."""
+    (form,) = _forms('<form method="post" action="/x"><input type="submit" value="Go"></form>')
+    assert form_body(form, sentinel="S") == []
 
 
 # ---------------------------------------------------------------------------
