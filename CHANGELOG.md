@@ -24,6 +24,16 @@ release and contains all of them.
 
 ### Fixed
 
+- The Markdown report no longer writes what the scanned site sent as Markdown or HTML
+  ([#172](https://github.com/ryanvmorais/webvigil/issues/172)). A title with a path or a parameter name,
+  the label and content of an evidence item, a description, a library name or a check error went into the
+  file as they were, so a fence in the evidence closed the block early and markup in a title or a label
+  reached the renderer. Those values are now plain text: the Markdown and HTML metacharacters are escaped,
+  a line break cannot start a new block, and the evidence is fenced (and an inline code span delimited)
+  with a run of backticks longer than any run inside it. Code spans that a check writes itself
+  (`` `integrity` ``) are kept, so an ordinary report reads as before; the one visible change is a bare
+  `<tag>` in a remediation, which a renderer used to swallow as HTML and is now shown. The JSON, SARIF and
+  HTML reports are unchanged.
 - A `POST` form that is only a button is now part of the form inventory
   ([#145](https://github.com/ryanvmorais/webvigil/issues/145)). The parser dropped every form with no
   named field, so the "Generate" button of OWASP DVWA's weak-session-ID module never reached the `POST`
