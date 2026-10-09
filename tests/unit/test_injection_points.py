@@ -5,7 +5,8 @@ Pure functions over synthetic pages and forms — :func:`make_page` supplies the
 crawled pages, ``_form`` the parsed forms, and no HTTP is issued. The tests
 cover which parameters become points, which forms are skipped (auth,
 destructive), the max-points cap, and the name / value shape helpers that
-prioritise a point for a given detector.
+prioritise a point for a given detector. A ``<select>`` is a point of its own that sorts last
+(issue #190).
 """
 
 from __future__ import annotations
@@ -101,6 +102,48 @@ def test_form_fields_become_points_respecting_the_type_filter() -> None:
     assert all(p.method == "POST" and p.source == "form" for p in points)
     # the hidden and checkbox fields still travel in every request
     assert dict(points[0].params)["csrf"] == "tok"
+
+
+def test_a_select_is_a_point_flagged_and_sorted_after_the_text_fields() -> None:
+    """A ``<select>`` is fuzzed (a client can send any value), flagged, and tested last."""
+    form = _form(
+        FormField("uid", "select", "1"),
+        FormField("note", "text", ""),
+        FormField("csrf", "hidden", "tok"),
+        method="POST",
+        action="https://example.com/a",
+    )
+    other = _form(FormField("zzz", "text", ""), method="POST", action="https://example.com/z")
+    points, _ = enumerate_points((), (form, other), max_points=100)
+    assert [(p.param, p.select) for p in points] == [("note", False), ("zzz", False), ("uid", True)]
+    uid = points[-1]
+    assert uid.original == "1" and uid.source == "form" and uid.method == "POST"
+    assert dict(uid.params)["csrf"] == "tok"  # the other fields still travel with it
+
+
+def test_a_cap_drops_the_select_points_first() -> None:
+    """Truncated by ``max_points``, the selects go before any text-like point (issue #190)."""
+    form = _form(
+        FormField("a", "select", "1"),
+        FormField("b", "text", ""),
+        FormField("c", "text", ""),
+        method="POST",
+    )
+    points, warnings = enumerate_points((), (form,), max_points=2)
+    assert [p.param for p in points] == ["b", "c"]
+    assert warnings
+
+
+def test_radio_and_hidden_fields_are_still_not_fuzzed() -> None:
+    """Only ``<select>`` joined the fuzzed types; radio and hidden fields travel unchanged."""
+    form = _form(
+        FormField("size", "radio", "m"),
+        FormField("token", "hidden", "t"),
+        FormField("q", "text", ""),
+        method="POST",
+    )
+    points, _ = enumerate_points((), (form,), max_points=100)
+    assert [p.param for p in points] == ["q"]
 
 
 def test_authentication_and_destructive_forms_are_skipped() -> None:

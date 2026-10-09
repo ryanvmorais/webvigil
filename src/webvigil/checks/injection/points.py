@@ -18,8 +18,13 @@ from webvigil.crawler.forms import Form
 from webvigil.crawler.openapi import ApiOperation
 
 # Input types worth putting a payload in. Everything else (hidden, submit, checkbox,
-# radio, file, password, select, ...) is submitted with its discovered value but not fuzzed.
+# radio, file, password, ...) is submitted with its discovered value but not fuzzed.
 _FUZZ_TYPES = frozenset({"", "text", "search", "email", "url", "tel", "number", "textarea"})
+
+# A ``<select>`` is fuzzed too, as a point of its own (issue #190): a browser sends only a listed
+# option, a client can send anything, and a server that trusts the list is as exposed as one that
+# trusts a text box. It is tested last, so on a budget that runs out it is the first thing dropped.
+_SELECT_TYPE = "select"
 
 # A form whose action / field names match this is never fuzzed (RF-04). Best-effort — a
 # login form at /session slips through; documented in docs/active-injection.md.
@@ -260,10 +265,10 @@ def enumerate_points(
     """
     Enumerate the injection points to test.
 
-    Query parameters from every OK page, fuzzable fields of every form that is
-    not auth- or destruction-shaped, and the query / path / form-body parameters
-    of every ``--openapi`` operation (spec 013) — de-duplicated by
-    :attr:`InjectionPoint.key` (an operation parameter the crawl already found
+    Query parameters from every OK page, fuzzable fields of every form that is not auth- or
+    destruction-shaped (text-like inputs, and ``<select>`` fields, which sort last: issue #190),
+    and the query / path / form-body parameters of every ``--openapi`` operation (spec 013) —
+    de-duplicated by :attr:`InjectionPoint.key` (an operation parameter the crawl already found
     is one point), sorted, and capped at ``max_points``.
 
     Args:
@@ -295,11 +300,19 @@ def enumerate_points(
         base, query = _base_of(form.action)
         fields = tuple((f.name, f.value) for f in form.fields)
         for field in form.fields:
-            if field.type not in _FUZZ_TYPES:
+            is_select = field.type == _SELECT_TYPE
+            if field.type not in _FUZZ_TYPES and not is_select:
                 continue
             _add(
                 InjectionPoint(
-                    form.method, base, field.name, field.value, fields, query=query, source="form"
+                    form.method,
+                    base,
+                    field.name,
+                    field.value,
+                    fields,
+                    query=query,
+                    source="form",
+                    select=is_select,
                 ),
                 seen,
                 points,
@@ -309,7 +322,7 @@ def enumerate_points(
         for point in _operation_points(operation):
             _add(point, seen, points)
 
-    points.sort(key=lambda p: (p.base_url, p.param, p.method))
+    points.sort(key=lambda p: (p.select, p.base_url, p.param, p.method))
     warnings: list[str] = []
     if len(points) > max_points:
         warnings.append(

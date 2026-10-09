@@ -51,6 +51,15 @@ release and contains all of them.
   must not cache its HTML. Together with the security headers of 1.0.1 this closes the dashboard part of
   [#138](https://github.com/ryanvmorais/webvigil/issues/138).
 
+- The injection pass now fuzzes the value of a `<select>`
+  ([#190](https://github.com/ryanvmorais/webvigil/issues/190)). A browser only sends a listed option, but a
+  client can send anything, and a server that builds a query from the option is as exposed as one that
+  builds it from a text box; OWASP DVWA at the "medium" level keeps its SQL injection behind a `<select>`,
+  and both the error-based and the blind finding were missed there. A select point keeps the listed option
+  as its baseline, is tested after every other point (so on a spent budget it is the first thing dropped),
+  and is never written to by `--stored-xss`. Radio and hidden fields are still sent as they are.
+  A scan of a page with selects spends more of the same request budget.
+
 ### Fixed
 
 - The Web API serves every report with `X-Content-Type-Options: nosniff`, and the HTML report also with

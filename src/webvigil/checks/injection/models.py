@@ -34,6 +34,10 @@ class InjectionPoint:
             body parameter of an imported operation), or ``"openapi-path"`` (a path
             segment — ``base_url`` holds the ``{name}`` template). Defaults to
             ``"query"``.
+        select (bool): ``True`` for a ``<select>`` field (issue #190): its value is one of a
+            list the page offers, which a browser enforces and a client does not. Such a point is
+            tested after every other one and is never written to by the stored-XSS pass.
+            Defaults to ``False``.
     """
 
     method: str
@@ -43,6 +47,7 @@ class InjectionPoint:
     params: _Pairs
     query: _Pairs = ()
     source: str = "query"
+    select: bool = False
 
     @property
     def key(self) -> str:

@@ -53,7 +53,8 @@ When the scan is Active and at least one `injection.*` check is selected, the or
 runs one bounded `InjectionScanner` pass:
 
 1. **Enumerate injection points** — every query-string parameter on a crawled in-scope URL,
-   every fuzzable field of a crawled in-scope `<form>` (GET and POST), and — when
+   every fuzzable field of a crawled in-scope `<form>` (GET and POST; a `<select>` too, see
+   below), and — when
    `--openapi` is set (spec 013) — the query / path parameters and form-urlencoded body
    fields of every declared `GET` / `POST` operation. Forms are parsed from page bodies the
    crawler already fetched; no extra crawl requests. See
@@ -376,8 +377,15 @@ behaviour is documented, like a stored-XSS marker.
   matches `login`, `logout`, `register`, `delete`, `password`, `checkout`, `pay`,
   `transfer`, and similar in the action or field names. It is best-effort: a login form at
   `/session` with generic field names would slip through.
+- **A `<select>` is fuzzed, after the other fields.** A browser sends only a listed option, but
+  a client can send anything, and a server that builds a query from the option is as exposed as
+  one that builds it from a text box. The listed option stays the baseline, so a server that
+  checks its list answers like the baseline and nothing is reported. Select points sort after
+  every other point, so when the request budget or `max_injection_points` runs out they are the
+  first ones left untested, and the `--stored-xss` pass, which writes to the target, never puts a
+  marker in one.
 - **Hidden fields and anti-CSRF tokens are submitted with their discovered values**, never
-  fuzzed. `file` and `password` inputs are not payload-fuzzed.
+  fuzzed. `radio`, `checkbox`, `file` and `password` inputs are not payload-fuzzed either.
 
 ## Budget and tuning — `[injection]`
 
