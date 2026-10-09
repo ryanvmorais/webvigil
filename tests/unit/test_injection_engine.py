@@ -62,18 +62,19 @@ class _FakeHttp:
         return self.render(url, merged)
 
 
-def _resp(text: str = "<div>static</div>") -> Response:
+def _resp(text: str = "<div>static</div>", status: int = 200) -> Response:
     """
     Args:
         text (str): The response body. Defaults to a static, non-reflecting page.
+        status (int): The response status. Defaults to 200.
 
     Returns:
-        Response: A 200 ``text/html`` response.
+        Response: A ``text/html`` response.
     """
     return Response(
         url="https://example.com/s",
         requested_url="https://example.com/s",
-        status_code=200,
+        status_code=status,
         headers=httpx.Headers({"content-type": "text/html"}),
         text=text,
         content=text.encode(),
@@ -268,6 +269,36 @@ async def test_form_points_are_posted() -> None:
     )
     await scanner.run()
     assert seen and all(u == "https://example.com/comment" for u in seen)
+
+
+async def test_a_get_form_field_that_ships_empty_is_found_by_its_status_split() -> None:
+    """A lookup form with an empty ``id`` (issue #143): a seeded TRUE page, a 404 for FALSE."""
+    layout = "<html><body>" + "<p>layout</p>" * 300 + "{}</body></html>"
+
+    def render(url: str, p: dict[str, str]) -> Response:
+        value = p.get("id", "")
+        matches = value.startswith("1") and "'1'='2" not in value and "1=2" not in value
+        if matches:
+            return _resp(layout.format("<pre>ID: 1 First name: admin</pre>"))
+        return _resp(layout.format("<pre>ID: 1 </pre>"), status=404)
+
+    form = Form(
+        "GET",
+        "https://example.com/vulnerabilities/sqli_blind/",
+        "",
+        (FormField("id", "text", ""), FormField("Submit", "submit", "Submit")),
+        "x",
+    )
+    scanner = InjectionScanner(
+        _FakeHttp(render),  # type: ignore[arg-type]
+        _TARGET,
+        InjectionSection(),
+        (),
+        (form,),
+        {"sqli-boolean"},
+    )
+    report = await scanner.run()
+    assert [(h.kind, h.param) for h in report.hits] == [("sqli-boolean", "id")]
 
 
 # ---------------------------------------------------------------------------
