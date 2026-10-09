@@ -24,6 +24,13 @@ release and contains all of them.
 
 ### Fixed
 
+- A reference is a link only when it is an `http(s)` URL
+  ([#161](https://github.com/ryanvmorais/webvigil/issues/161)). The references of a finding became
+  `<a href>` in the HTML report and in the dashboard as they were, and the ones from the opt-in OSV
+  lookup (`--osv-online`) are copied from an advisory record, so a `javascript:` or `data:` URL in one
+  would have been a link. The OSV provider now keeps only absolute `http(s)` URLs (so the JSON, SARIF and
+  Markdown reports no longer carry anything else), and the HTML report and the dashboard check the scheme
+  again and show any other value as plain text.
 - A `POST` form that is only a button is now part of the form inventory
   ([#145](https://github.com/ryanvmorais/webvigil/issues/145)). The parser dropped every form with no
   named field, so the "Generate" button of OWASP DVWA's weak-session-ID module never reached the `POST`

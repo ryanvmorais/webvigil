@@ -295,6 +295,25 @@ def test_to_advisory_from_a_ghsa_record() -> None:
     assert "https://blog.jquery.com/2020/04/10/jquery-3-5-0/" in advisory.info_urls
 
 
+def test_to_advisory_keeps_only_http_references() -> None:
+    """A reference with another scheme, or none, is dropped; it would become a link (#161)."""
+    record = {
+        **_GHSA_RECORD,
+        "references": [
+            {"type": "WEB", "url": "javascript:alert(1)"},
+            {"type": "WEB", "url": "data:text/html,x"},
+            {"type": "WEB", "url": "/relative"},
+            {"type": "WEB", "url": "http://example.org/kept"},
+        ],
+    }
+    advisory = _to_advisory(record, npm_name="jquery", detected_version="3.4.1")
+    assert advisory is not None
+    assert advisory.info_urls == (
+        "http://example.org/kept",
+        "https://osv.dev/vulnerability/GHSA-gxr4-xjj5-5px2",
+    )
+
+
 def test_to_advisory_from_a_cve_only_record_uses_details_and_cvss() -> None:
     """A CVE-only record takes its summary from the first ``details`` sentence and its
     severity from the CVSS vector."""

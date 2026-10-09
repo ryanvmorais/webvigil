@@ -50,4 +50,28 @@ describe("FindingsTable", () => {
     );
     expect(screen.getByRole("link", { name: "https://example.org/ref" })).toBeInTheDocument();
   });
+
+  it("links an http(s) reference and shows any other scheme as plain text (#161)", async () => {
+    const user = userEvent.setup();
+    render(
+      <FindingsTable
+        findings={[
+          makeFinding({
+            fingerprint: "y",
+            references: ["https://example.org/ok", "javascript:alert(1)", "data:text/html,x"],
+          }),
+        ]}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "Expand finding" }));
+
+    expect(screen.getByRole("link", { name: "https://example.org/ok" })).toHaveAttribute(
+      "href",
+      "https://example.org/ok",
+    );
+    expect(screen.getByText("javascript:alert(1)")).toBeInTheDocument();
+    expect(screen.getByText("data:text/html,x")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "javascript:alert(1)" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "data:text/html,x" })).not.toBeInTheDocument();
+  });
 });

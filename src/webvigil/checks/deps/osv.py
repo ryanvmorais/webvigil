@@ -36,6 +36,7 @@ from webvigil.checks.deps.advisories import (
 )
 from webvigil.core.context import Detection
 from webvigil.core.findings import Severity
+from webvigil.core.urls import is_http_url
 
 _ECOSYSTEM = "npm"
 _QUERYBATCH_CAP = 1000
@@ -226,12 +227,16 @@ def _info_urls(record: Mapping[str, Any], osv_id: str) -> tuple[str, ...]:
         osv_id (str): The record id, used to build the canonical OSV URL.
 
     Returns:
-        tuple[str, ...]: The record's reference URLs plus the OSV page, de-duped.
+        tuple[str, ...]: The record's ``http(s)`` reference URLs plus the OSV page, de-duped.
+            Any other scheme is dropped here: the record is a third party's text, and these
+            strings become links in the reports and the dashboard (issue #161).
     """
     urls: list[str] = []
     for reference in record.get("references") or []:
         if isinstance(reference, Mapping) and reference.get("url"):
-            urls.append(str(reference["url"]))
+            url = str(reference["url"])
+            if is_http_url(url):
+                urls.append(url)
     urls.append(_OSV_URL.format(osv_id))
     return tuple(dict.fromkeys(urls))
 
