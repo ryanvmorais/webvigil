@@ -107,8 +107,8 @@ The information-disclosure probe stopped at its 150-request cap on every DVWA sc
 - *SQL injection, both kinds.* At *medium* the user id is a `<select>` posted by a `POST` form. WebVigil
   puts payloads only in text-like fields (`text`, `search`, `email`, `url`, `tel`, `number`, textarea,
   plus the query parameters of a link) and sends a `<select>` back with its default value, so the
-  point is never fuzzed. The endpoint is injectable: a value of `1 OR 1=1` returns all five rows,
-  `1 AND 1=2` none, and a quote makes the database report a syntax error. A browser offers only the
+  point is never fuzzed. The endpoint is injectable: an always-true condition appended to the id returns all five
+  rows, an always-false one none, and a stray quote makes the database report a syntax error. A browser offers only the
   listed options; a client can send any value, and so can the scanner. This is the cause behind both
   rows at *medium*, and probably behind *high* (not checked there).
 - *File upload.* *Medium* checks the declared `Content-Type` of the part and nothing else. Uploading by
