@@ -1,6 +1,6 @@
 ---
 feature: Dashboard Content-Security-Policy — a per-request nonce policy for the Next.js dashboard (issue #138, step 2)
-status: draft
+status: approved
 date: 2026-10-09
 related:
   - 003-web-ui/requirements.md
@@ -43,7 +43,7 @@ does not.
   possible.
 - **Styles cannot be as strict.** `sonner` (the toast library) injects a `<style>` element at runtime with
   no nonce hook, and React `style={}` props become inline `style` attributes. A `style-src` without
-  `'unsafe-inline'` would silently unstyle the toasts (OQ-1 asks whether to accept that).
+  `'unsafe-inline'` would silently unstyle the toasts (resolved decision 1 accepts that).
 - **The report preview is a `blob:` iframe** (`report-preview.tsx`, `sandbox=""`). A `blob:` document
   inherits the policy of the page that created it, and the HTML report is one self-contained file with an
   inline `<style>`. A policy that blocks inline styles, or does not allow the frame, would turn the preview
@@ -79,7 +79,7 @@ web/e2e/security-headers.spec.ts     asserts the policy and that no page of the 
 ## Non-goals
 
 - **A strict `style-src`.** Needs a toast library that accepts a nonce, or a patch; a later step
-  (OQ-1).
+  (resolved decision 1).
 - **Trusted Types, `require-trusted-types-for`**, a `report-to` / `report-uri` endpoint, and the
   experimental SRI hash policy of Next. Each is its own change.
 - **The Web API's headers.** `/api/*` is proxied by Next and carries the API's own headers; securing them
@@ -132,7 +132,7 @@ web/e2e/security-headers.spec.ts     asserts the policy and that no page of the 
 - **Given** the policy
   **When** its `style-src` is read
   **Then** it is `'self' 'unsafe-inline'`, and the reason (toast styles injected at runtime, `style`
-  attributes of React) is written next to it in the code and in `docs/web-ui.md` (OQ-1).
+  attributes of React) is written next to it in the code and in `docs/web-ui.md` (resolved decision 1).
 
 ### RF-05 — The report preview still works
 
@@ -151,8 +151,9 @@ web/e2e/security-headers.spec.ts     asserts the policy and that no page of the 
   sent them.
 - **Given** a file Next serves itself under `/_next/static`
   **When** it is requested
-  **Then** it still carries the step-1 headers (a policy on a script file has no effect, so it carries
-  none).
+  **Then** it still carries `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy` and
+  `Permissions-Policy`, and no `Content-Security-Policy`: a policy on a script file has no effect, and the
+  proxy does not run on it (RF-09).
 
 ### RF-07 — Dynamic rendering, no regression
 
@@ -207,8 +208,9 @@ measured by the Lighthouse run (the performance score is a warning, not an error
 
 ### RNF-03 — The nonce never leaves the response
 
-It is not logged, not written to a file and not exposed to client code; `x-nonce` exists on the request
-only, as Next's guide does.
+It is not logged, not written to a file and not exposed to client code. It travels in the request's
+`Content-Security-Policy` header, which is where Next reads it; no `x-nonce` header is added, because
+nothing in the dashboard reads one.
 
 ### RNF-04 — Deterministic and testable
 
@@ -221,24 +223,19 @@ No engine, API, database, OpenAPI or report change; `web/openapi.json` and the g
 untouched. The dashboard is not part of the PyPI package, so the CHANGELOG entry extends the existing
 dashboard-headers line.
 
-## Open questions
+## Resolved decisions
 
-These change what the design builds, so they are the user's call. Each has a recommendation.
+Settled at the requirements gate (2026-10-09), each as recommended in the draft. The design builds on them;
+they are cited by number.
 
-- **OQ-1 — Accept `'unsafe-inline'` for styles?** The toast library injects a `<style>` at runtime and
-  React emits `style` attributes, so a strict `style-src` would need a different toast library or a patch.
-  *Recommendation: accept it for 1.1.* Scripts are where the risk is (a style can restyle a page, not run
-  code); the trade-off is recorded and revisited if the toast library gains a nonce option.
-- **OQ-2 — Render every page dynamically from the root layout, or only some?** A nonce needs a per-request
-  render. Marking the root layout dynamic is one line and makes the rule hold for any future page;
-  per-page marking keeps unrelated pages static but is easy to forget. *Recommendation: the root layout.*
-- **OQ-3 — Enforce at once, or ship `Content-Security-Policy-Report-Only` first?** Report-only without a
-  reporting endpoint only prints console messages. The e2e flow and the Lighthouse run already visit every
-  page and fail on a console error. *Recommendation: enforce directly*, with the e2e violation check as
-  the guard (RF-08).
-- **OQ-4 — Leave out `upgrade-insecure-requests`?** It is in Next's example. For a dashboard served over
-  `http://127.0.0.1` it can break the page; behind TLS the proxy in front already redirects.
-  *Recommendation: leave it out* (RF-03).
-- **OQ-5 — Is this a 1.1.0 item?** The dashboard ships in the repository and the compose file, not in the
-  PyPI package, so no release depends on it, but a `[Unreleased]` line already exists for step 1.
-  *Recommendation: extend that line and land it before 1.1.0*, as agreed for the release order.
+1. **`'unsafe-inline'` for styles is accepted (was OQ-1).** The toast library injects a `<style>` at runtime
+   and React emits `style` attributes, so a strict `style-src` would need a different toast library or a
+   patch. Scripts are where the risk is; the trade-off is recorded and revisited if the toast library gains a
+   nonce option.
+2. **Every page renders dynamically, set once in the root layout (was OQ-2).** One line makes the rule hold
+   for any future page.
+3. **The policy is enforced at once (was OQ-3).** No `Content-Security-Policy-Report-Only` phase: the end to
+   end flow and the Lighthouse run visit every page, and the e2e violation check (RF-08) is the guard.
+4. **No `upgrade-insecure-requests` (was OQ-4).** The dashboard is served over `http://127.0.0.1` by default.
+5. **It lands before 1.1.0 (was OQ-5).** The dashboard is not in the PyPI package, so no release depends on
+   it; the CHANGELOG line of step 1 is extended.
