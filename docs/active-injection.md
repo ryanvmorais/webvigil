@@ -339,10 +339,16 @@ a few hundred inert bytes carrying a `wv<token>` marker:
   served back inline as `text/html` / `image/svg+xml` with no `Content-Disposition:
   attachment`, script runs in the site origin — **HIGH**, stored XSS via upload.
 - **extension / content-type bypass** — the same content under `wv<token>.php.jpg`,
-  `wv<token>.pHtml`, `wv<token>.html%00.jpg`, and with an `image/jpeg` part type on an
-  `.html` name.
+  `wv<token>.pHtml`, `wv<token>.html%00.jpg`, and with an `image/jpeg` part type on a plain
+  `.php` and on an `.html` name (the last two are what a form that filters only by the
+  declared part type lets through).
 - **filename path traversal** — a part named `../../wv<token>-trav.html`; if it is
   retrievable from the web root (outside every upload directory) — **HIGH**.
+
+A file the server rejects costs one request: when the answer to a payload is the answer to
+the benign baseline upload (same status, same body once the file names are masked) and the
+baseline file itself cannot be fetched back, the pass does not look for the payload's file.
+That keeps the per-form cap for the payloads that may be accepted.
 
 An upload is a finding only when the stored file is **retrieved** (from a link in the upload
 response, a conventional prefix like `/uploads/` or `/files/`, or the web root for the

@@ -67,6 +67,13 @@ release and contains all of them.
 
 ### Fixed
 
+- `--file-upload` no longer spends its per-form cap on the files a server rejects
+  ([#194](https://github.com/ryanvmorais/webvigil/issues/194)). A server that refuses a file with a plain
+  `200` page cost about thirteen look-ups per payload, and the cap ended the pass before it reached the
+  payloads that claim an image type, so OWASP DVWA at the "medium" level, which filters by the declared
+  part type only, was reported clean. A payload whose answer is the benign upload's answer, when the benign
+  file never comes back, is now skipped after its one `POST`; and the pass also sends a plain `.php` file
+  declared as `image/jpeg`.
 - The Web API serves every report with `X-Content-Type-Options: nosniff`, and the HTML report also with
   `Content-Security-Policy: sandbox; default-src 'none'; style-src 'unsafe-inline'`
   ([#163](https://github.com/ryanvmorais/webvigil/issues/163)). `GET /api/scans/{id}/report?format=html&download=false`
