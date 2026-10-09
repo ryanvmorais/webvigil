@@ -63,6 +63,19 @@ holds. Someone guessing can delay you by a few minutes, never lock you out. A us
 not exist takes the same time as a wrong password (one Argon2 check each) and gets the same
 answer, so the response does not say which usernames are real.
 
+**Another origin cannot change state.** A `POST`, `PUT`, `PATCH` or `DELETE` that carries an
+`Origin` header is refused with `403` unless the origin is this server's own or one listed in
+`cors_origins`. `SameSite=Lax` already keeps a request from another *site* from carrying the
+cookie, but a page on another port of the same host is the same site, and a `POST` with no body
+(`/api/auth/logout`, `/api/scans/{id}/cancel`) needs no preflight. "Own" is the `Host` the request
+arrived with or, behind the dashboard's proxy, its `X-Forwarded-Host`: Next sends the API's own
+`Host`, so the browser's `Origin` (the dashboard) only matches the forwarded one. A page of another
+site can set neither header. The scheme is not compared (behind a TLS-terminating proxy the API
+sees `http` while the browser says `https`), the host and the port are. A request with no `Origin`
+(curl, the CLI, another server) is not a browser form or fetch and is not checked. If you put your
+own reverse proxy in front of the API and it replaces `Host` without adding `X-Forwarded-Host`,
+list the dashboard's origin in `cors_origins`.
+
 **Request sizes are bounded.** A request body over 1 MiB is refused with `413` before the API reads
 the rest of it (a scan request is a few kilobytes), the login username and password are capped at
 64 and 256 characters like the ones `POST /api/setup` takes, and the table of failed logins keeps at
