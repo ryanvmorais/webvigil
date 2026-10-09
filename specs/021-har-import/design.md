@@ -1,6 +1,6 @@
 ---
 feature: HAR import — seed the crawl and the injection points of a single-page application from recorded browser traffic
-status: draft
+status: approved
 date: 2026-10-09
 related:
   - 021-har-import/requirements.md
