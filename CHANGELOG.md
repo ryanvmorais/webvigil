@@ -24,6 +24,14 @@ release and contains all of them.
 
 ### Fixed
 
+- The Web API refuses a state-changing request from another origin
+  ([#162](https://github.com/ryanvmorais/webvigil/issues/162)). `POST /api/auth/logout` and
+  `POST /api/scans/{id}/cancel` change state with no body, so a page on another port of the same host
+  (the same site, so the `SameSite=Lax` cookie goes with it) could send them without a preflight, and the
+  API never looked at `Origin`. A `POST`, `PUT`, `PATCH` or `DELETE` whose `Origin` is present and is
+  neither the server's own (its `Host`, or the dashboard proxy's `X-Forwarded-Host`) nor listed in
+  `web.cors_origins` now gets a `403`. A request with no `Origin` (curl, the CLI) is unaffected, and so
+  is the bundled dashboard.
 - The Markdown report no longer writes what the scanned site sent as Markdown or HTML
   ([#172](https://github.com/ryanvmorais/webvigil/issues/172)). A title with a path or a parameter name,
   the label and content of an evidence item, a description, a library name or a check error went into the
