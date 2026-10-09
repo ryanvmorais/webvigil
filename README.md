@@ -124,6 +124,11 @@ in the code and links to its docs; each was designed as a spec first, under
 > `--sample-sessions` (a few cookie-less `GET`s of the entry URL) and `--test-logout` (ends the
 > scan's own session; Active Mode only). Everything else only reads.
 
+How it fared against OWASP DVWA (three security levels), Juice Shop and WebGoat, run on the
+maintainer's own machine, is in [docs/benchmark.md](docs/benchmark.md): what it found, what it
+missed and why. It is one person's measurement, nobody independent has counted it, and no other
+scanner was run.
+
 ---
 
 ## Scope and limitations
