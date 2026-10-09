@@ -91,6 +91,12 @@ class HttpSection(_Section):
         max_body_bytes (int): The most of one response body that is read, after
             decompression; the rest is dropped and the scan warns. Bounds the memory a
             hostile or oversized response can take. Defaults to 10 MiB.
+        total_timeout_s (float): The most time one request may take, from sending it to the
+            last byte of the body, in seconds. ``timeout_s`` limits each connect, read and
+            write on its own, so a server that sends a byte every few seconds never trips it
+            and can hold a request (and a concurrency slot) open for a very long time; this
+            bounds the total. A request that passes it is handled like a timeout (retried
+            when idempotent, counted in the "no response" warning). Defaults to 60.0.
     """
 
     concurrency: int = 8
@@ -99,6 +105,7 @@ class HttpSection(_Section):
     user_agent: str = "WebVigil/0.1 (+https://github.com/ryanvmorais/webvigil)"
     verify_tls: bool = True
     max_body_bytes: int = Field(default=10 * 1024 * 1024, gt=0)
+    total_timeout_s: float = Field(default=60.0, gt=0)
 
 
 class ReportSection(_Section):

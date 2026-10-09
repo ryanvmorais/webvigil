@@ -247,6 +247,7 @@ class HttpClient:
         self.limiter = RateLimiter(config.http.concurrency, config.http.delay_ms)
         self.stats = HttpStats()
         self._max_body = config.http.max_body_bytes
+        self._total_timeout = config.http.total_timeout_s
         self._transport = transport  # test seam: an httpx ASGITransport / MockTransport
         self._client: httpx.AsyncClient | None = None
         self._session: Session | None = None  # spec 019: set by use_session()
@@ -705,9 +706,20 @@ class HttpClient:
                         files=files,
                         headers=req_headers,
                     )
-                    response = await self._read_capped(
-                        await self._active_client.send(request, stream=True)
-                    )
+                    # ``timeout_s`` limits each operation, so a server that drips one byte every
+                    # few seconds never trips it: this is the deadline for the whole exchange,
+                    # sending to last byte (issue #140). It starts after the slot is held, so
+                    # waiting for a free slot is not counted against the server.
+                    try:
+                        async with asyncio.timeout(self._total_timeout):
+                            response = await self._read_capped(
+                                await self._active_client.send(request, stream=True)
+                            )
+                    except TimeoutError as exc:
+                        raise httpx.ReadTimeout(
+                            f"no complete response within {self._total_timeout:g} s "
+                            "([http] total_timeout_s)"
+                        ) from exc
             except (httpx.TransportError, httpx.TimeoutException) as exc:
                 last_error = f"{type(exc).__name__}: {exc}"
                 # A non-idempotent request is only retried when it never reached the

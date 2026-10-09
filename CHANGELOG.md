@@ -13,6 +13,14 @@ release and contains all of them.
 
 ### Added
 
+- `[http] total_timeout_s` (default `60`), a deadline for one whole request
+  ([#140](https://github.com/ryanvmorais/webvigil/issues/140)). `timeout_s` limits each connect, read and
+  write on its own, so a server that sends one byte every few seconds never tripped it and could hold a
+  request, and a concurrency slot, open for a very long time. The deadline runs from sending the request
+  to the last byte of the body (the wait for a free slot is not counted), and a request that passes it is
+  handled like any timeout: retried when idempotent, counted in the "no response" warning, and reported as
+  a failed request. A response that honestly takes more than a minute to arrive now fails the same way;
+  raise the key for a very slow target.
 - `csrf.form.state-change-over-get` (`MEDIUM`, CWE-352 and CWE-650), a passive check for a `GET` form that
   changes state ([#144](https://github.com/ryanvmorais/webvigil/issues/144)). `csrf.form.no-token` reads
   `POST` forms only, so the CSRF module of OWASP DVWA, which changes the password with a `GET` form, went
