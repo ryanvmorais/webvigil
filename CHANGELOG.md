@@ -11,6 +11,17 @@ release and contains all of them.
 
 ## [Unreleased]
 
+### Fixed
+
+- `injection.sqli.boolean-based` no longer misses a blind SQL injection on a form whose field ships empty,
+  or whose "no such row" page is the site's own layout with a different status
+  ([#143](https://github.com/ryanvmorais/webvigil/issues/143)). The OWASP DVWA module was the case: an
+  empty `id` matches no row, so the `TRUE` and `FALSE` payloads answered the same page, and with a real
+  `id` the two pages differed by a few bytes (a `200` and a `404`). The detector now repeats the pairs on a
+  seeded value when the field is empty and the seed changes the page, and counts a status-class split as
+  the difference when the body is otherwise the same. Both are confirmed against the baseline as before; a
+  split that rests on the status alone is reported with `MEDIUM` confidence instead of `HIGH`.
+
 ## [1.0.4] - 2026-10-08
 
 A patch release with one fix, in how much of what the scanned site declares the crawl keeps.

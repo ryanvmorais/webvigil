@@ -9,15 +9,23 @@ from __future__ import annotations
 
 from webvigil.checks.injection import payloads
 from webvigil.checks.injection.detect import DetectCtx, normalize_body
-from webvigil.checks.injection.detect._diff import ratio, two_sided_split
+from webvigil.checks.injection.detect._diff import ratio, status_split, two_sided_split
 from webvigil.checks.injection.models import Baseline, InjectionHit, InjectionPoint
 from webvigil.core.findings import Confidence, Severity
+from webvigil.http.client import Response
 
 _ERROR_ID = "injection.sqli.error-based"
 _BOOLEAN_ID = "injection.sqli.boolean-based"
 _TIME_ID = "injection.sqli.time-based"
 
 _GAP = 0.90  # FALSE-vs-baseline ceiling — the page-stability guard reuses it
+
+# A form whose field ships empty gives the TRUE payload no row to match, so TRUE and FALSE
+# return the same page (issue #143). The boolean detector then seeds the field: a digit for an
+# id-looking name, and one letter otherwise (it matches a substring search on most rows).
+_SEED_ID = "1"
+_SEED_TEXT = "a"
+_ID_NAME_SUFFIXES = ("id", "num", "number")
 
 
 def _point_evidence(point: InjectionPoint) -> tuple[str, str]:
@@ -77,14 +85,136 @@ async def detect_error(
     return []
 
 
+def _seed_for(point: InjectionPoint) -> str:
+    """
+    Args:
+        point (InjectionPoint): A point whose current value is empty.
+
+    Returns:
+        str: A plausible value for the field, so the TRUE payload can match a row.
+    """
+    if point.param.lower().endswith(_ID_NAME_SUFFIXES):
+        return _SEED_ID
+    return _SEED_TEXT
+
+
+def _split(baseline: Baseline, true_r: Response, false_r: Response) -> str | None:
+    """
+    Args:
+        baseline (Baseline): The response the TRUE payload should track.
+        true_r (Response): The TRUE-payload response.
+        false_r (Response): The FALSE-payload response.
+
+    Returns:
+        str | None: ``"body"`` when the pages diverge (spec 006), ``"status"`` when they are
+            the same page in another status class (issue #143), or ``None`` for no split.
+    """
+    if two_sided_split(baseline.norm_body, true_r.text, false_r.text):
+        return "body"
+    if status_split(
+        baseline.status,
+        baseline.norm_body,
+        true_r.status_code,
+        true_r.text,
+        false_r.status_code,
+    ):
+        return "status"
+    return None
+
+
+async def _boolean_pairs(
+    point: InjectionPoint, baseline: Baseline, value: str, ctx: DetectCtx
+) -> list[InjectionHit]:
+    """
+    Run the boolean pairs on top of ``value`` and confirm a split before emitting.
+
+    Args:
+        point (InjectionPoint): The point under test.
+        baseline (Baseline): The response to ``value`` alone, the anchor for the split.
+        value (str): What the payloads are appended to: the point's own value, or a seed.
+        ctx (DetectCtx): The budget-aware send context.
+
+    Returns:
+        list[InjectionHit]: A single ``sqli-boolean`` hit, or empty.
+    """
+    for true_p, false_p in payloads.SQLI_BOOLEAN_PAIRS:
+        true_r = await ctx.send(point, value + true_p)
+        false_r = await ctx.send(point, value + false_p)
+        if true_r is None or false_r is None:
+            return []
+        kind = _split(baseline, true_r, false_r)
+        if kind is None:
+            continue
+
+        # The page must be stable between two identical requests, or the split is noise.
+        restated = await ctx.send(point, value)
+        if (
+            restated is None
+            or restated.status_code // 100 != baseline.status // 100
+            or ratio(baseline.norm_body, normalize_body(restated.text)) < _GAP
+        ):
+            return []
+
+        # Confirm: the same pair must reproduce the split.
+        true2_r = await ctx.send(point, value + true_p)
+        false2_r = await ctx.send(point, value + false_p)
+        if true2_r is None or false2_r is None:
+            return []
+        if _split(baseline, true2_r, false2_r) is None:
+            continue
+
+        evidence = [
+            _point_evidence(point),
+            ("TRUE payload", value + true_p),
+            ("FALSE payload", value + false_p),
+            (
+                "Response similarity",
+                f"TRUE {ratio(baseline.norm_body, normalize_body(true_r.text)):.2f} vs "
+                f"FALSE {ratio(baseline.norm_body, normalize_body(false_r.text)):.2f} "
+                "(baseline = 1.00)",
+            ),
+        ]
+        if kind == "status":
+            evidence.append(
+                (
+                    "Status",
+                    f"TRUE {true_r.status_code} vs FALSE {false_r.status_code} "
+                    f"(baseline {baseline.status})",
+                )
+            )
+        if value != point.original:
+            evidence.append(("Seeded value", f"{value!r} (the field is empty by default)"))
+        return [
+            InjectionHit(
+                kind="sqli-boolean",
+                check_id=_BOOLEAN_ID,
+                method=point.method,
+                url=point.base_url,
+                param=point.param,
+                severity=Severity.HIGH,
+                # Pages that only differ by status are a thinner signal than pages that differ.
+                confidence=Confidence.HIGH if kind == "body" else Confidence.MEDIUM,
+                title=f"SQL injection (boolean-based blind) via '{point.param}'",
+                payload=value + true_p,
+                evidence=tuple(evidence),
+            )
+        ]
+    return []
+
+
 async def detect_boolean(
     point: InjectionPoint, baseline: Baseline, ctx: DetectCtx
 ) -> list[InjectionHit]:
     """
     Boolean-based blind: find a pair where TRUE matches the baseline and FALSE diverges.
 
-    Guards against a noisy page: re-checks page stability, then re-runs the same
-    pair to confirm the split reproduces before emitting.
+    FALSE diverges when its body differs from the baseline's, or when it answers in another
+    status class while the body is the same page. Guards against a noisy page: re-checks page
+    stability, then re-runs the same pair to confirm the split reproduces before emitting.
+
+    A field that ships empty gives TRUE no row to match, so both payloads return the same
+    page. When the pairs find nothing on such a point, they run again on a seeded value
+    (issue #143), unless the seed leaves the page as the empty value had it.
 
     Args:
         point (InjectionPoint): The point under test.
@@ -94,52 +224,26 @@ async def detect_boolean(
     Returns:
         list[InjectionHit]: A single ``sqli-boolean`` hit, or empty.
     """
-    for true_p, false_p in payloads.SQLI_BOOLEAN_PAIRS:
-        true_r = await ctx.send(point, point.original + true_p)
-        false_r = await ctx.send(point, point.original + false_p)
-        if true_r is None or false_r is None:
-            return []
-        if not two_sided_split(baseline.norm_body, true_r.text, false_r.text):
-            continue
+    hits = await _boolean_pairs(point, baseline, point.original, ctx)
+    if hits or point.original:
+        return hits
 
-        # The page must be stable between two identical requests, or the split is noise.
-        restated = await ctx.send(point, point.original)
-        if restated is None or ratio(baseline.norm_body, normalize_body(restated.text)) < _GAP:
-            return []
-
-        # Confirm: the same pair must reproduce the split.
-        true2_r = await ctx.send(point, point.original + true_p)
-        false2_r = await ctx.send(point, point.original + false_p)
-        if true2_r is None or false2_r is None:
-            return []
-        if not two_sided_split(baseline.norm_body, true2_r.text, false2_r.text):
-            continue
-
-        return [
-            InjectionHit(
-                kind="sqli-boolean",
-                check_id=_BOOLEAN_ID,
-                method=point.method,
-                url=point.base_url,
-                param=point.param,
-                severity=Severity.HIGH,
-                confidence=Confidence.HIGH,
-                title=f"SQL injection (boolean-based blind) via '{point.param}'",
-                payload=point.original + true_p,
-                evidence=(
-                    _point_evidence(point),
-                    ("TRUE payload", point.original + true_p),
-                    ("FALSE payload", point.original + false_p),
-                    (
-                        "Response similarity",
-                        f"TRUE {ratio(baseline.norm_body, normalize_body(true_r.text)):.2f} vs "
-                        f"FALSE {ratio(baseline.norm_body, normalize_body(false_r.text)):.2f} "
-                        "(baseline = 1.00)",
-                    ),
-                ),
-            )
-        ]
-    return []
+    seed = _seed_for(point)
+    seeded = await ctx.send(point, seed)
+    if seeded is None:
+        return []
+    if seeded.status_code // 100 == baseline.status // 100 and (
+        ratio(baseline.norm_body, normalize_body(seeded.text)) >= _GAP
+    ):
+        return []  # the seed changed nothing: TRUE would have no more to match than before
+    seeded_baseline = Baseline(
+        status=seeded.status_code,
+        raw_body=seeded.text,
+        norm_body=normalize_body(seeded.text),
+        length=len(seeded.text),
+        elapsed_ms=seeded.elapsed_ms,
+    )
+    return await _boolean_pairs(point, seeded_baseline, seed, ctx)
 
 
 async def detect_time(

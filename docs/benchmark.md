@@ -103,8 +103,12 @@ Measured by hand against the same page, not guessed:
   by six bytes out of 4.4 KB (similarity 0.998). The boolean detector asks FALSE to fall to 0.90 or
   below, so a short sentence on a large page never qualifies.
 
-Two changes would close it: seed an empty field with a plausible value, and treat a status-class
-split as evidence. Both are detector work for a minor release, not a bug.
+Two changes closed it ([#143](https://github.com/ryanvmorais/webvigil/issues/143)): the detector
+seeds an empty field with a plausible value, and treats a status-class split as evidence. Both are
+confirmed against the baseline like every other active finding, and a split that rests on the
+status alone is reported with `MEDIUM` confidence. Run again against the same DVWA 2.5 at level
+*low*, the scan reports `injection.sqli.boolean-based` on the `id` parameter. The table above is the
+1.0 run and is left as it was.
 
 ## Juice Shop
 
