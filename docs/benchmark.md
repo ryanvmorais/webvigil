@@ -113,8 +113,15 @@ The information-disclosure probe stopped at its 150-request cap on every DVWA sc
   rows at *medium*, and probably behind *high* (not checked there).
 - *File upload.* *Medium* checks the declared `Content-Type` of the part and nothing else. Uploading by
   hand a file named like the scanner's `.php.jpg`, `.pHtml` and `.html` payloads with the part type
-  `image/jpeg` stores all three. The scan stored nothing and reported nothing, and the cause is **not
-  found**: the request builder sends the part type as intended, and the *low* scans found the form.
+  `image/jpeg` stores all three. The scan stored nothing and reported nothing. The request was right (the
+  bytes on the wire were captured with a pass-through proxy); the budget was not: a server that refuses a
+  file with a plain `200` page cost about thirteen look-ups per payload, and the per-form cap of 40
+  ended the pass after the three payloads sent as `application/octet-stream`, before the ones that claim an
+  image type. [#194](https://github.com/ryanvmorais/webvigil/issues/194) skips the look-up for a payload
+  whose answer is the benign upload's when the benign file never comes back, and adds a plain `.php`
+  declared as `image/jpeg`. A new `--file-upload` scan of the same instance at *medium* reports
+  `upload.unrestricted` (CRITICAL, the PHP file executed; and a second finding for the HTML one served
+  inline) in the same two minutes. *High*, which also checks the file's contents, was not re-run.
 
 At *high*, the file-inclusion weakness is found by the SSRF detector, not by `traversal.path`: *high* accepts
 only names that start with `file`, and the payload `file:///etc/passwd` returns the contents of the

@@ -16,6 +16,7 @@ documented, exactly as for ``--stored-xss`` (ADR-7).
 
 from __future__ import annotations
 
+import re
 import secrets
 from dataclasses import dataclass
 from urllib.parse import urljoin, urlsplit
@@ -198,6 +199,8 @@ class UploadScanner:
             UploadPayload("server-exec", f"{marker}.jsp", jsp, "application/octet-stream", product),
             UploadPayload("client-exec", f"{marker}.html", html, "text/html", ""),
             UploadPayload("client-exec", f"{marker}.svg", svg, "image/svg+xml", ""),
+            # The classic type-check bypass: a plain .php file whose part says it is an image.
+            UploadPayload("bypass", f"{marker}.php", php, "image/jpeg", product),
             UploadPayload("bypass", f"{marker}.php.jpg", php, "image/jpeg", product),
             UploadPayload("bypass", f"{marker}.pHtml", php, "image/jpeg", product),
             UploadPayload("bypass", f"{marker}.html%00.jpg", html, "image/jpeg", ""),
@@ -219,11 +222,17 @@ class UploadScanner:
         field = next(f.name for f in form.fields if f.type == "file")
         data = {f.name: f.value for f in form.fields if f.type != "file" and f.name}
 
+        benign = UploadPayload(
+            "baseline", f"wv{token}.txt", f"wv{token} marker".encode(), "text/plain", ""
+        )
         baseline = await self._upload(
-            form.action, field, f"wv{token}.txt", f"wv{token} marker".encode(), "text/plain", data
+            form.action, field, benign.filename, benign.content, benign.part_type, data
         )
         base_ok = baseline is not None and baseline.status_code < 400
         started = self._spent
+        # Whether the benign file can be fetched back; asked once, and only when a payload's
+        # answer is the baseline's (issue #194).
+        baseline_stored: bool | None = None
 
         hits: list[UploadHit] = []
         outcomes: set[str] = set()
@@ -237,6 +246,15 @@ class UploadScanner:
                 continue
             if base_ok and resp.status_code >= 400:
                 continue  # the endpoint rejected this type — not stored
+            if baseline is not None and _same_answer(baseline, resp, token):
+                # The server answered this upload exactly as it answered the benign one. When the
+                # benign file never came back, nothing was stored either: do not spend a dozen
+                # requests looking for it, the per-form cap is for payloads that may be accepted.
+                if baseline_stored is None:
+                    served0, _ = await self._retrieve(form.action, baseline, token, benign)
+                    baseline_stored = served0 is not None
+                if not baseline_stored:
+                    continue
             served, served_url = await self._retrieve(form.action, resp, token, payload)
             if served is None:
                 continue
@@ -530,6 +548,24 @@ class UploadScanner:
                 proof,
             ),
         )
+
+
+def _same_answer(baseline: Response, response: Response, token: str) -> bool:
+    """
+    Args:
+        baseline (Response): The answer to the benign upload.
+        response (Response): The answer to a payload upload.
+        token (str): The per-form token; the file names carry it, so it is masked.
+
+    Returns:
+        bool: ``True`` when both answers have the same status and the same body once the
+            names of the uploaded files are masked: the server did not tell the two uploads
+            apart.
+    """
+    if baseline.status_code != response.status_code:
+        return False
+    mask = re.compile(re.escape(f"wv{token}") + r"[^\s<>\"']*")
+    return mask.sub("FILE", baseline.text) == mask.sub("FILE", response.text)
 
 
 def _iter_marker_urls(body: str, marker: str) -> list[str]:
