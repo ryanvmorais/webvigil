@@ -1,6 +1,6 @@
 ---
 feature: Dashboard Content-Security-Policy — a per-request nonce policy for the Next.js dashboard (issue #138, step 2)
-status: approved
+status: done
 date: 2026-10-09
 related:
   - 022-dashboard-csp/requirements.md
@@ -296,3 +296,31 @@ one thing unit tests cannot prove (the browser's view) in Playwright on the buil
   standalone image serves `/login` with the header.
 - **Gate:** `pnpm lint`, `pnpm format:check`, `pnpm typecheck`, `pnpm test`, `pnpm build`,
   `pnpm test:e2e` at the end of each stage.
+
+## Deviations
+
+- **`vitest.setup.ts`** now skips its DOM shims when `window` is undefined, so a test file can opt into
+  the `node` environment (`proxy.test.ts` needs the real `Request` and `Headers`). Not in the module
+  layout above; no behaviour change for the jsdom files.
+- **CHANGELOG:** the step-1 line sits in the released 1.0.1 section, so the policy is a new `Added` entry
+  under `[Unreleased]` that points back to it, instead of an extension of that line.
+- **Two e2e guards the design counted on are weaker than written.** Dropping the policy from the
+  forwarded request headers, or setting `dynamic = "auto"`, does not fail the e2e: Next 16.3 also reads
+  the nonce from the policy on the proxy's response, and the proxy makes every route `ƒ` by itself. Both
+  lines stay (the Next guide has the first; the second is the declared intent, ADR-3) and are pinned by
+  `proxy.test.ts` and `layout.test.tsx`. The mutation runs that did fail the e2e: no `frame-src blob:`
+  (the preview is not found) and no inline styles (the report frame renders at 16px, not 15px).
+
+## Implementation notes
+
+- **Route table of `next build`,** before: `○` on `/`, `/_not-found`, `/checks`, `/login`, `/scans`,
+  `/scans/new`, `/settings`, `/setup`, `ƒ /scans/[id]`; after: `ƒ` on all of them, plus `ƒ Proxy
+  (Middleware)`; `/icon.svg` stays a static file.
+- **Vitest:** 172 tests in 30 files before, 202 in 33 after (`csp.test.ts`, `proxy.test.ts`,
+  `layout.test.tsx`, and the rewritten `security-headers.test.ts`).
+- **Standalone image:** built from `web/Dockerfile`, `/login` answers with one policy and all 14 of its
+  `<script>` tags carry the response's nonce; `/icon.svg` and `/_next/static/*` carry no policy.
+- **`next dev`:** on `localhost` the policy adds `'unsafe-eval'` and `ws: wss:`, the HMR socket connects
+  and Fast Refresh runs with no CSP message. On `127.0.0.1` Next's own `allowedDevOrigins` check refuses
+  the socket (a handshake error, unrelated to the policy).
+

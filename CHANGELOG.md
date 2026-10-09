@@ -43,6 +43,14 @@ release and contains all of them.
   Confidence is `MEDIUM` at most and `SameSite=Lax` does not lower it, because a `Lax` cookie is sent when
   a cross-site link is followed. A scan that finds such a form now reports it, so `--fail-on` can see it.
 
+- The dashboard sends a `Content-Security-Policy` on every page, with a fresh nonce per request: a script
+  runs only if it carries that nonce (no `'unsafe-inline'`), and the policy also limits where images, fonts,
+  connections, frames, forms and `<base>` may point, and forbids framing the dashboard. Styles still allow
+  inline rules (the toast library injects one at runtime), and the report preview keeps working. Every page
+  is now rendered per request instead of being prerendered, so a reverse proxy in front of the dashboard
+  must not cache its HTML. Together with the security headers of 1.0.1 this closes the dashboard part of
+  [#138](https://github.com/ryanvmorais/webvigil/issues/138).
+
 ### Fixed
 
 - The Web API serves every report with `X-Content-Type-Options: nosniff`, and the HTML report also with

@@ -1,6 +1,6 @@
 ---
 feature: Dashboard Content-Security-Policy — a per-request nonce policy for the Next.js dashboard (issue #138, step 2)
-status: in progress
+status: done
 date: 2026-10-09
 related:
   - 022-dashboard-csp/requirements.md
@@ -109,23 +109,26 @@ edit, and the counts again at close.
 
 ## Stage 3 — Documentation, Lighthouse, image, close-out
 
-- [ ] `docs/web-ui.md`: rewrite "Security headers" around the policy: the table of directives, the nonce
+- [x] `docs/web-ui.md`: rewrite "Security headers" around the policy: the table of directives, the nonce
   and why every page renders per request, the cost (RNF-02: no static HTML, uncacheable, a reverse proxy must
   not cache pages), why styles keep `'unsafe-inline'` and what would lift it, why the report preview needs
   `frame-src blob:`, where the proxy does not run, and what stays out (Trusted Types, report endpoint,
-  HSTS). — RF-03, RF-04, RF-05, RF-07, RF-09, RNF-02
-- [ ] `CHANGELOG.md` `[Unreleased]`: extend the dashboard-headers line (the step-1 entry) with the
+  HSTS). — RF-03, RF-04, RF-05, RF-07, RF-09, RNF-02. Done; the step-1 sentence about "no script and style policy yet" is gone.
+- [x] `CHANGELOG.md` `[Unreleased]`: extend the dashboard-headers line (the step-1 entry) with the
   policy, the dynamic rendering and the e2e guard. `CLAUDE.md`: replace the "a política de scripts com nonce
   é o passo 2 do #138" sentence with the shipped policy, and mark 022 in the state list. — RNF-05, Release
-  notes
-- [ ] `specs/README.md` row 022 → `done`; this file's checkboxes and status; the design's status
+  notes. The step-1 line is in the released 1.0.1 section, so the policy is a new `Added` entry in
+  `[Unreleased]` pointing back to it (design Deviations).
+- [x] `specs/README.md` row 022 → `done`; this file's checkboxes and status; the design's status
   `done` with Deviations and Implementation notes, including the before/after route table. — Close-out
-- [ ] Lighthouse: run the CI config locally if the toolchain allows it, otherwise read the workflow run
+- [x] Lighthouse: run the CI config locally if the toolchain allows it, otherwise read the workflow run
   on the PR; record accessibility, best practices, console errors, CLS and weight against the thresholds,
-  and the Performance score before and after (a warning, not an error). — RF-08, RNF-02
-- [ ] Docker image: build `web/Dockerfile` (`output: "standalone"`), start it and confirm `/login` carries
+  and the Performance score before and after (a warning, not an error). — RF-08, RNF-02. Not run locally (the CI job needs the seeded API, the fixture
+  and `@lhci/cli`); read from the PR's Lighthouse run, recorded on the PR.
+- [x] Docker image: build `web/Dockerfile` (`output: "standalone"`), start it and confirm `/login` carries
   the header and hydrates; if Docker is not available locally, say so on the PR and rely on the CI image
-  build. — RF-07
-- [ ] Final gate: the full web gate plus `pnpm test:e2e`, then the Python suite's cheap part
+  build. — RF-07. Built and run here (Docker 29.8): one policy, 14 of 14 scripts carry the nonce, no policy on
+  `/icon.svg` or `/_next/static`.
+- [x] Final gate: the full web gate plus `pnpm test:e2e`, then the Python suite's cheap part
   (`uv run ruff check .`, `uv run pytest tests/unit/test_lighthouse_config.py`) to prove nothing outside
   `web/` moved. Record the Vitest count against the baseline. — RF-10, RNF-05

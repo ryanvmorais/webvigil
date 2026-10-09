@@ -56,23 +56,67 @@ browser bundle, and the bundle contains no credentials or session secret.
 
 ## Security headers
 
-Every page and static file the dashboard serves carries `Content-Security-Policy:
-frame-ancestors 'none'` and `X-Frame-Options: DENY` (it cannot be framed), `X-Content-Type-Options:
-nosniff`, `Referrer-Policy: strict-origin-when-cross-origin` (a cross-origin request gets the origin,
-never the path) and a `Permissions-Policy` that grants camera, microphone, geolocation, payment and
-USB to nobody. The list is [`web/src/lib/security-headers.ts`](../web/src/lib/security-headers.ts),
-applied by `headers()` in `next.config.ts`; a unit test reads it and an e2e test checks it on the
-built dashboard.
+The dashboard renders text that came from the sites a user scanned: finding titles, evidence, URLs,
+technology names. React escapes it; the headers below are the second layer (issue
+[#138](https://github.com/ryanvmorais/webvigil/issues/138), spec 022 and the step before it).
 
-- **The report preview still works.** It frames a `blob:` document the page builds, which does not
-  carry these headers.
-- **`/api/*` is not covered.** Next only proxies it; the answer carries the API's own headers
-  (the report responses, for one, send `nosniff`, and the HTML one a sandbox policy: see
-  [web-api.md](web-api.md)).
+**Every page and static file** carries `X-Frame-Options: DENY` (it cannot be framed),
+`X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin` (a cross-origin
+request gets the origin, never the path) and a `Permissions-Policy` that grants camera, microphone,
+geolocation, payment and USB to nobody. The list is
+[`web/src/lib/security-headers.ts`](../web/src/lib/security-headers.ts), applied by `headers()` in
+`next.config.ts`.
+
+**Every page** also carries one `Content-Security-Policy` with a fresh nonce, built per request by
+[`web/src/proxy.ts`](../web/src/proxy.ts) (Next 16's name for the middleware) from the pure function in
+[`web/src/lib/csp.ts`](../web/src/lib/csp.ts):
+
+| Directive | Value | Why |
+|---|---|---|
+| `default-src` | `'self'` | everything not listed below |
+| `script-src` | `'self' 'nonce-<random>' 'strict-dynamic'` | a script runs only if it carries this request's nonce; no `'unsafe-inline'`, no host list |
+| `style-src` | `'self' 'unsafe-inline'` | see "Why styles stay open" below |
+| `img-src` | `'self' data: blob:` | the icon and the UI kit's inline SVGs |
+| `font-src` | `'self'` | no web font ships |
+| `connect-src` | `'self'` | the API is the same-origin `/api` rewrite |
+| `frame-src` | `blob:` | the report preview |
+| `object-src` | `'none'` | no plugins |
+| `base-uri` | `'self'` | an injected `<base>` cannot redirect relative URLs |
+| `form-action` | `'self'` | a hijacked form cannot post elsewhere |
+| `frame-ancestors` | `'none'` | clickjacking; the modern twin of `X-Frame-Options` |
+
+`next dev` adds `'unsafe-eval'` to `script-src` (React's debugging uses `eval`) and `ws: wss:` to
+`connect-src` (the hot-reload socket); a production build never carries them. There is no
+`upgrade-insecure-requests`: the dashboard is served over plain `http://127.0.0.1` by default and the
+directive would rewrite its own requests to `https`.
+
+- **How the nonce reaches the scripts.** The proxy draws 16 random bytes per request and puts the policy
+  on the request it forwards, where Next reads the `'nonce-…'` and stamps it on its own scripts, and on
+  the response. The nonce is not logged and no header carries it separately.
+- **Every page renders per request.** A nonce exists only for a rendered request, so the root layout
+  declares `export const dynamic = "force-dynamic"` and no page is prerendered any more (nine of the ten
+  routes were). The cost is that the HTML is never cached: a reverse proxy in front of the dashboard must
+  not cache pages, because a cached page's scripts would carry a stale nonce and be refused. The
+  dashboard is a local-first admin UI behind a login, so this is accepted; Lighthouse's performance
+  score would show a large regression as a warning.
+- **Why styles stay open.** The toast library (`sonner`) injects a `<style>` element at runtime with no
+  way to give it a nonce, and React renders `style` attributes, which a nonce cannot cover. An inline
+  style can restyle a page but cannot run code, so scripts, where the risk is, stay strict. The report
+  preview depends on it too. Lifting it needs a toast library that accepts a nonce and a report that does
+  not use inline styles.
+- **The report preview still works.** It frames a `blob:` document the page builds, in an iframe with
+  `sandbox=""` (no script, no same-origin access). A `blob:` document inherits the page's policy, hence
+  `frame-src blob:` and the inline styles above.
+- **Where the proxy does not run.** `/api/*` (Next only proxies it; the answer carries the API's own
+  headers, and the report responses send `nosniff` and a sandbox policy: see [web-api.md](web-api.md)),
+  `/_next/static`, `/_next/image`, the icon, and prefetch requests. A static file therefore has the four
+  headers above and no policy, which would do nothing on a script file.
 - **No `Strict-Transport-Security`.** It only means something over HTTPS, so whoever terminates TLS
   in front of the dashboard sets it.
-- **No script and style policy yet.** That needs a per-request nonce for Next's inline scripts and
-  is the second step of [#138](https://github.com/ryanvmorais/webvigil/issues/138).
+- **Left for later.** Trusted Types, a `report-to` endpoint and Next's experimental SRI hash policy.
+- **Tests.** `csp.test.ts` and `proxy.test.ts` pin the policy and the matcher; the e2e suite reads one
+  header with a matching nonce off the built dashboard, and the end-to-end flow (including opening the
+  report preview) fails on any CSP violation or uncaught page error.
 
 ## Scripts
 
