@@ -312,6 +312,39 @@ positive — the finding text and confidence call this out:
   (Rails-UJS, Angular);
 - the double-submit-cookie pattern with no hidden field.
 
+## State change over `GET` — `csrf.form.state-change-over-get`
+
+A passive check (`Category.CSRF`, `cwe = 352, 650`, default `MEDIUM`). `csrf.form.no-token` reads
+`POST` forms only, but an action that changes state over `GET` needs no form at all: a link, an
+image or a redirect on any page the victim opens submits it. The check flags a `GET` form that
+carries no anti-CSRF token field and has one of two **structural** signals, never a guess about a
+free-text field:
+
+- **A password change**: two `password` inputs, or one named like the new, confirmed or old
+  password (`password_new`, `password_conf`, `new_password`). A login or registration page, by its
+  action path, is not one, and neither is a lone `password` input.
+- **A destructive verb** in the action's path or query, a field name or a submit label
+  (`delete`, `remove`, `revoke`, `unsubscribe`, and the rest of the vocabulary the crawler already
+  uses to skip destructive links). `deleted-items` does not match.
+
+Search forms, `POST` forms and logout forms are never flagged. The check sends nothing: it reads
+the form inventory. The crawler never submits a form with a password field, and on an authenticated
+scan it skips a `GET` form with a destructive verb as well.
+
+Confidence is `MEDIUM` at most, because the form is recognised by its shape and WebVigil cannot
+see that the server acts on the request. It follows the session cookie's `SameSite`, but not the
+way the `POST` check does: `Lax` does **not** lower it, because the browser sends a `Lax` cookie
+on a top-level cross-site navigation, which is what a link is.
+
+| Session cookie | Confidence |
+|---|---|
+| no `SameSite` attribute, or `SameSite=Lax` | MEDIUM |
+| `SameSite=Strict` | LOW |
+| none observed | LOW |
+
+The active confirmation (`--confirm-csrf`) stays out of it: replaying a `GET` that changes a
+password would change it.
+
 ## Active CSRF confirmation — `--confirm-csrf` (opt-in)
 
 Spec [`017-csrf-confirmation`](../specs/017-csrf-confirmation/). `csrf.form.no-token` reads

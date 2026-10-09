@@ -16,6 +16,7 @@ _CHECKS = [
     ("content.mixed", "CONTENT", "passive", "MEDIUM", (319,)),
     ("content.sri.missing", "CONTENT", "passive", "MEDIUM", (353, 1104)),
     ("csrf.form.no-token", "CSRF", "passive", "MEDIUM", (352,)),
+    ("csrf.form.state-change-over-get", "CSRF", "passive", "MEDIUM", (352, 650)),
     ("csrf.form.token-not-enforced", "CSRF", "active", "MEDIUM", (352,)),
     ("deps.js.library-detected", "DEPS", "passive", "INFO", ()),
     ("deps.js.vulnerable-library", "DEPS", "passive", "MEDIUM", ()),

@@ -43,6 +43,14 @@ _AUTH_FORM_RE = re.compile(
 # meaningful CSRF target.
 _SEARCH_FORM_RE = re.compile(r"\b(?:search|query|find|filter)\b", re.I)
 
+# A login / registration page, by its action path: a password field there is a credential being
+# sent to establish a session, not one being changed inside it.
+_AUTH_ACTION_RE = re.compile(
+    r"log[\s_-]?in|sign[\s_-]?in|sign[\s_-]?up|register|/auth(?:$|/|\b)", re.I
+)
+# A password field that is half of a change: the new password, its confirmation, the old one.
+_PASSWORD_CHANGE_RE = re.compile(r"new|conf|repeat|retype|current|old", re.I)
+
 
 def _path_and_query(url: str) -> str:
     """
@@ -132,6 +140,22 @@ def is_login_url(url: str) -> bool:
     return bool(_AUTH_FORM_RE.search(urlsplit(url).path))
 
 
+def _verb_haystack(form: Form) -> str:
+    """
+    Args:
+        form (Form): The form to flatten.
+
+    Returns:
+        str: The action's path and query, the field names and the value of every named
+            ``submit`` / ``button`` input, with ``_`` and ``-`` as word breaks — what the
+            destructive vocabulary is matched on.
+    """
+    parts = [_path_and_query(form.action)]
+    parts += [field.name for field in form.fields]
+    parts += [field.value for field in form.fields if field.type in ("submit", "button")]
+    return re.sub(r"[_-]", " ", " ".join(parts))
+
+
 def is_destructive_form(form: Form) -> bool:
     """
     Args:
@@ -145,12 +169,38 @@ def is_destructive_form(form: Form) -> bool:
             which ``\bdelete\b`` alone would miss). The label of a button counts, named
             or not, including the text of a ``<button>`` element.
     """
-    parts = [_path_and_query(form.action)]
-    parts += [field.name for field in form.fields]
-    parts += [field.value for field in form.fields if field.type in ("submit", "button")]
-    parts += form.labels
-    haystack = re.sub(r"[_-]", " ", " ".join(parts))
+    # The labels are read here and not in ``_verb_haystack``: a ``GET`` form's button
+    # ("Remove filters") must not widen ``state_change_signal`` (issue #144).
+    haystack = _verb_haystack(form) + " " + re.sub(r"[_-]", " ", " ".join(form.labels))
     return bool(_DESTRUCTIVE_RE.search(haystack) or _LOGOUT_RE.search(haystack))
+
+
+def state_change_signal(form: Form) -> str | None:
+    """
+    Why a ``GET`` form looks like it changes state, for the ``csrf.form.state-change-over-get``
+    check (issue #144). Neither signal is a guess about a free-text field: both are structural.
+
+    Args:
+        form (Form): The form to classify.
+
+    Returns:
+        str | None: ``"password change"`` when the form has two ``password`` inputs, or one named
+            like the new / confirmed / old password, and its action is not a login or
+            registration page; ``"destructive verb"`` when the action's path, a field name or a
+            submit label carries a destructive verb (``delete``, ``remove``, ...); otherwise
+            ``None``. A ``POST`` form, a search form and a logout form are always ``None``
+            (a logout is a nuisance, not a state change worth the finding).
+    """
+    if form.method != "GET" or looks_like_search(form):
+        return None
+    if _DESTRUCTIVE_RE.search(_verb_haystack(form)):
+        return "destructive verb"
+    if _AUTH_ACTION_RE.search(urlsplit(form.action).path):
+        return None
+    passwords = [field for field in form.fields if field.type == "password"]
+    if len(passwords) >= 2 or any(_PASSWORD_CHANGE_RE.search(f.name) for f in passwords):
+        return "password change"
+    return None
 
 
 def is_candidate(form: Form) -> bool:
@@ -195,4 +245,5 @@ __all__ = [
     "is_logout",
     "looks_like_search",
     "looks_unsafe_operation",
+    "state_change_signal",
 ]

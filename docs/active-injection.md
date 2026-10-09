@@ -159,7 +159,8 @@ server-side injection classes that lead straight to remote code execution and ar
   newline, `${IFS}` for space-filtered contexts) plus `echo <marker>=$((a*b))`. A hit needs
   `<marker>=<a*b>` — the *evaluated* product, glued to a per-request marker, absent from the
   baseline. A reflected literal `$((a*b))` is **not** a hit. A Windows `& echo … & set /a`
-  variant is reported at MEDIUM confidence.
+  variant is reported at MEDIUM confidence: the product must be printed as a whole number
+  after the marker, and not already be on the baseline page.
 - **time** — `;sleep <d>`, `` `sleep <d>` ``, `&ping -n <d+1> 127.0.0.1`, `&timeout /t <d>`.
   Confirmed exactly like time-based SQLi: the injected request runs ≥ ~`d` s slower than a
   `sleep 0` control, and a half-delay probe scales. Gated by `[injection] time_based_cmdi`

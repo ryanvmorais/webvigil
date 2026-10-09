@@ -11,6 +11,17 @@ release and contains all of them.
 
 ## [Unreleased]
 
+### Added
+
+- `csrf.form.state-change-over-get` (`MEDIUM`, CWE-352 and CWE-650), a passive check for a `GET` form that
+  changes state ([#144](https://github.com/ryanvmorais/webvigil/issues/144)). `csrf.form.no-token` reads
+  `POST` forms only, so the CSRF module of OWASP DVWA, which changes the password with a `GET` form, went
+  unreported. The check flags a `GET` form with no anti-CSRF token field that has two password inputs (or
+  one named like the new, confirmed or old password), or a destructive verb in its action, its field names
+  or its submit label. Search, login, registration and logout forms are left out, and nothing is submitted.
+  Confidence is `MEDIUM` at most and `SameSite=Lax` does not lower it, because a `Lax` cookie is sent when
+  a cross-site link is followed. A scan that finds such a form now reports it, so `--fail-on` can see it.
+
 ### Fixed
 
 - A `POST` form that is only a button is now part of the form inventory
@@ -22,6 +33,11 @@ release and contains all of them.
   which closes the documented gap of a "Delete" that lived only in a `<button>`. Side effect: the passive
   `csrf.form.no-token` check now also sees a `POST` form made only of a button, and reports it when it
   has no token.
+- `injection.cmdi.os` no longer reports command injection on an endpoint that only echoes its input
+  ([#177](https://github.com/ryanvmorais/webvigil/issues/177)). The Windows `set /a` proof looked for the
+  product of the two random operands in the text that starts at the random marker, so the digits of the
+  product could appear inside the marker by chance (about one scan parameter in a thousand). The product
+  now has to be printed after the marker, as a whole number, and not be on the baseline page already.
 - `injection.sqli.boolean-based` no longer misses a blind SQL injection on a form whose field ships empty,
   or whose "no such row" page is the site's own layout with a different status
   ([#143](https://github.com/ryanvmorais/webvigil/issues/143)). The OWASP DVWA module was the case: an

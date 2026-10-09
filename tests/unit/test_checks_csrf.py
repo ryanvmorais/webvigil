@@ -1,5 +1,6 @@
 """
-csrf.form.no-token (spec 007 RF-08/09) and csrf.form.token-not-enforced (spec 017 RF-09/10).
+csrf.form.no-token (spec 007 RF-08/09), csrf.form.token-not-enforced (spec 017 RF-09/10) and
+csrf.form.state-change-over-get (issue #144).
 
 Forms are built by hand with ``_form`` and handed to the check via
 ``ScanContext.forms``; ``_run`` also supplies the crawl's ``Set-Cookie`` headers,
@@ -12,7 +13,11 @@ from __future__ import annotations
 import pytest
 
 from tests.support import make_context, make_page
-from webvigil.checks.csrf.checks import NoCsrfTokenCheck, TokenNotEnforcedCheck
+from webvigil.checks.csrf.checks import (
+    GetStateChangeCheck,
+    NoCsrfTokenCheck,
+    TokenNotEnforcedCheck,
+)
 from webvigil.checks.csrf.scanner import CsrfHit
 from webvigil.core.config import ScanConfig
 from webvigil.core.context import Observations
@@ -258,3 +263,105 @@ async def test_the_passive_check_is_unchanged_without_hits() -> None:
     """With no confirmation the passive finding is exactly what 007 emitted."""
     findings = await _run([_form("nickname")])
     assert len(findings) == 1 and findings[0].check_id == "csrf.form.no-token"
+
+
+# ---------------------------------------------------------------------------
+# A GET form that changes state (issue #144)
+# ---------------------------------------------------------------------------
+
+_PASSWORD_CHANGE = {"password_new": "password", "password_conf": "password", "Change": "submit"}
+
+
+async def _run_get(forms: list[Form], *, set_cookies: list[str] | None = None):
+    """
+    Args:
+        forms (list[Form]): The form inventory.
+        set_cookies (list[str] | None): Raw ``Set-Cookie`` values seen on the crawl.
+
+    Returns:
+        list: The findings ``csrf.form.state-change-over-get`` produced.
+    """
+    page = make_page(url="https://example.com/account", set_cookies=set_cookies or [])
+    return await GetStateChangeCheck().run(make_context(page, forms=forms))
+
+
+def _change_form() -> Form:
+    """
+    Returns:
+        Form: A DVWA-shaped GET password-change form.
+    """
+    return _form(
+        *_PASSWORD_CHANGE,
+        method="GET",
+        action="https://example.com/csrf/",
+        types=_PASSWORD_CHANGE,
+    )
+
+
+async def test_a_password_change_over_get_is_flagged() -> None:
+    """The DVWA module: one finding at the form action, with the reason in the evidence."""
+    (finding,) = await _run_get([_change_form()])
+    assert finding.check_id == "csrf.form.state-change-over-get"
+    assert finding.location.method == "GET"
+    assert finding.location.url == "https://example.com/csrf/"
+    evidence = {e.label: e.content for e in finding.evidence}
+    assert evidence["why"] == "password change"
+    assert evidence["fields"] == "password_new, password_conf, Change"
+    assert "password fields" in finding.description
+
+
+async def test_a_destructive_verb_over_get_is_flagged() -> None:
+    """A GET form whose action names a destructive operation."""
+    form = _form("id", method="GET", action="https://example.com/items/delete")
+    (finding,) = await _run_get([form])
+    assert {e.label: e.content for e in finding.evidence}["why"] == "destructive verb"
+
+
+async def test_a_token_field_suppresses_the_get_finding() -> None:
+    """A GET form that carries an anti-CSRF token is not reported."""
+    form = _form(
+        *_PASSWORD_CHANGE,
+        "user_token",
+        method="GET",
+        action="https://example.com/csrf/",
+        types=_PASSWORD_CHANGE,
+    )
+    assert await _run_get([form]) == []
+
+
+async def test_search_login_and_post_forms_are_not_get_findings() -> None:
+    """The other form kinds are left to their own checks, or to none."""
+    forms = [
+        _form("q", method="GET", action="https://example.com/search"),
+        _form(
+            "username",
+            "password",
+            method="GET",
+            action="https://example.com/login",
+            types={"password": "password"},
+        ),
+        _form(*_PASSWORD_CHANGE, action="https://example.com/csrf/", types=_PASSWORD_CHANGE),
+    ]
+    assert await _run_get(forms) == []
+
+
+async def test_the_get_check_does_not_touch_the_post_check() -> None:
+    """The GET form is not reported by ``csrf.form.no-token`` either: it reads POST forms only."""
+    assert await _run([_change_form()]) == []
+
+
+@pytest.mark.parametrize(
+    "set_cookies, expected",
+    [
+        (["session=abc; Path=/"], Confidence.MEDIUM),
+        (["session=abc; Path=/; SameSite=Lax"], Confidence.MEDIUM),
+        (["session=abc; Path=/; SameSite=Strict"], Confidence.LOW),
+        (["theme=dark; Path=/"], Confidence.LOW),
+    ],
+)
+async def test_get_confidence_follows_samesite_and_lax_does_not_lower_it(
+    set_cookies: list[str], expected: Confidence
+) -> None:
+    """Lax rides a top-level GET navigation, so only Strict (or no cookie evidence) is LOW."""
+    (finding,) = await _run_get([_change_form()], set_cookies=set_cookies)
+    assert finding.confidence is expected
