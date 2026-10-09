@@ -24,6 +24,14 @@ release and contains all of them.
 
 ### Fixed
 
+- The Web API refuses a state-changing request from another origin
+  ([#162](https://github.com/ryanvmorais/webvigil/issues/162)). `POST /api/auth/logout` and
+  `POST /api/scans/{id}/cancel` change state with no body, so a page on another port of the same host
+  (the same site, so the `SameSite=Lax` cookie goes with it) could send them without a preflight, and the
+  API never looked at `Origin`. A `POST`, `PUT`, `PATCH` or `DELETE` whose `Origin` is present and is
+  neither the server's own (its `Host`, or the dashboard proxy's `X-Forwarded-Host`) nor listed in
+  `web.cors_origins` now gets a `403`. A request with no `Origin` (curl, the CLI) is unaffected, and so
+  is the bundled dashboard.
 - A reference is a link only when it is an `http(s)` URL
   ([#161](https://github.com/ryanvmorais/webvigil/issues/161)). The references of a finding became
   `<a href>` in the HTML report and in the dashboard as they were, and the ones from the opt-in OSV
