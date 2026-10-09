@@ -262,8 +262,11 @@ early — does not matter here.
 The React framework the dashboard is built with. Here it is used as a **thin
 client**: `output: "standalone"` for the Docker image, a `next.config` rewrite
 that proxies `/api/*` to the FastAPI service server-side (so the browser sees one
-origin, the `SameSite=Lax` cookie works, and there is no CORS — ADR-3), and
-almost nothing else Next offers. Every page is a client component.
+origin, the `SameSite=Lax` cookie works, and there is no CORS — ADR-3), `headers()`
+for the static security headers, and a `proxy.ts` (Next 16's name for the middleware)
+that gives every page a Content-Security-Policy with a fresh nonce (spec 022) — which
+is also why every page renders per request. Almost nothing else Next offers. Every
+page is a client component.
 
 **Why not** server-rendered templates (FastAPI + Jinja2, or Django): the
 dashboard is genuinely interactive — it polls running scans, filters a findings
@@ -275,9 +278,11 @@ internet-facing.
 
 **Learn:** the App Router (`app/` directory, `page.tsx` / `layout.tsx`),
 `"use client"` (this app is all client components), `next/navigation` hooks
-(`useRouter`, `useParams`, `useSearchParams`), `next.config.ts` `rewrites()`,
-and `output: "standalone"`. You can skip Server Components, Server Actions and
-caching — they are not used.
+(`useRouter`, `useParams`, `useSearchParams`), `next.config.ts` `rewrites()` and
+`headers()`, `proxy.ts` and its `matcher` (and why a nonce forces dynamic rendering:
+`export const dynamic = "force-dynamic"` in the root layout), and `output:
+"standalone"`. You can skip Server Components, Server Actions and caching — they are
+not used.
 
 ### React 19
 

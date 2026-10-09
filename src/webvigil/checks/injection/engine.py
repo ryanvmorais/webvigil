@@ -48,7 +48,7 @@ from webvigil.checks.injection.points import (
 from webvigil.core.config import InjectionSection
 from webvigil.core.context import Page
 from webvigil.core.errors import OutOfScopeError, RequestFailed
-from webvigil.core.target import Target
+from webvigil.core.target import Target, url_host
 from webvigil.crawler.forms import Form
 from webvigil.crawler.openapi import ApiOperation
 from webvigil.http.client import HttpClient, Response
@@ -218,7 +218,7 @@ class InjectionScanner:
         self._ctx = DetectCtx(
             send=self._send,
             delay_s=config.time_based_delay_s,
-            host=target.host,
+            host=url_host(target.host),
             time_based_cmdi=config.time_based_cmdi,
             self_url=target.origin,
         )

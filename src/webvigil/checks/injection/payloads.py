@@ -21,6 +21,24 @@ import re
 SCAN_MAX = 256 * 1024
 
 
+def fill_host(template: str, host: str) -> str | None:
+    """
+    Substitute the target host into a ``{host}`` payload.
+
+    Args:
+        template (str): A payload that may carry the ``{host}`` slot.
+        host (str): The target host as it goes in a URL (an IPv6 literal is bracketed).
+
+    Returns:
+        str | None: The payload, or ``None`` when it cannot be built for this host: the
+            userinfo-confusion shapes (``{host}@...``) need a host that is valid userinfo, and a
+            bracketed IPv6 literal is not (issue #191).
+    """
+    if "{host}@" in template and ":" in host:
+        return None
+    return template.replace("{host}", host)
+
+
 def head(text: str) -> str:
     """
     Args:

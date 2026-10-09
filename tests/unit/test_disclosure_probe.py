@@ -209,3 +209,22 @@ async def test_probe_is_deterministic(httpx_mock: object) -> None:
     assert [(h.family, h.path, h.severity) for h in first.hits] == [
         (h.family, h.path, h.severity) for h in second.hits
     ]
+
+
+async def test_backup_names_come_from_a_named_host_and_not_from_an_ipv6_literal(
+    httpx_mock: object,
+) -> None:
+    """``app`` gets ``/app.<suffix>`` probes; ``[::1]`` has no label to build one from (#191)."""
+    seen: dict[str, list[str]] = {}
+    for raw in ("http://app/", "http://[::1]:8000/"):
+        router = _Router({}, default=(404, "not found", "text/html"))
+        httpx_mock.add_callback(router, is_reusable=True)  # type: ignore[attr-defined]
+        target = Target.parse(raw)
+        async with HttpClient(target, ScanConfig()) as http:
+            await DisclosureProbe(http, target, load_catalogue(), (_page(url=raw),)).run()
+        seen[raw] = router.seen
+        httpx_mock.reset()  # type: ignore[attr-defined]
+    assert any(url.startswith("http://app/app.") for url in seen["http://app/"])
+    assert seen["http://[::1]:8000/"]
+    assert all(url.startswith("http://[::1]:8000/") for url in seen["http://[::1]:8000/"])
+    assert not any("/::1" in url for url in seen["http://[::1]:8000/"])
