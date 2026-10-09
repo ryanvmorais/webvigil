@@ -36,7 +36,7 @@ test("a page has exactly one policy, and its nonce is the one on the page's scri
   expect(nonce, "a nonce in script-src").toBeTruthy();
   expect(found[0]).not.toContain("upgrade-insecure-requests");
 
-  const scripts = (await page.text()).match(/<script\b[^>]*>/g) ?? [];
+  const scripts = (await page.text()).match(/<script\b[^>]*>/gi) ?? [];
   expect(scripts.length, "scripts in /login").toBeGreaterThan(0);
   for (const tag of scripts) {
     expect(tag, "every script carries the nonce").toContain(`nonce="${nonce}"`);
