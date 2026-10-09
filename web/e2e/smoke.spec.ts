@@ -9,6 +9,15 @@ const PASSWORD = "e2e-password-1";
 const NEW_PASSWORD = "e2e-password-2";
 
 test("setup → login → scan → report → password → logout", async ({ page }) => {
+  // The Content-Security-Policy is enforced (spec 022): any page of the flow that breaks it fails
+  // the test. Only violations and uncaught errors count; a plain network line (the 401 after the
+  // logout) is not one, and Lighthouse's console-error assertion covers the pages it audits.
+  const problems: string[] = [];
+  page.on("console", (message) => {
+    if (/content security policy/i.test(message.text())) problems.push(message.text());
+  });
+  page.on("pageerror", (error) => problems.push(`uncaught: ${error.message}`));
+
   // First run: the app sends us to /setup.
   await page.goto("/");
   await expect(page).toHaveURL(/\/setup$/);
@@ -54,6 +63,19 @@ test("setup → login → scan → report → password → logout", async ({ pag
   const parsed = JSON.parse(readFileSync(path, "utf-8"));
   expect(parsed).toHaveProperty("findings");
 
+  // The inline preview (spec 022 RF-05): a sandboxed `blob:` frame that inherits the page's policy,
+  // so it renders only because of `frame-src blob:` and the policy's inline styles.
+  await page.getByRole("button", { name: "Preview report" }).click();
+  await expect(page.locator('iframe[title="HTML report preview"]')).toHaveAttribute("sandbox", "");
+  const preview = page.frameLocator('iframe[title="HTML report preview"]');
+  await expect(preview.getByRole("heading", { level: 1 })).toBeVisible();
+  // The report sets `body { font: 15px ... }`; an unstyled frame would show the browser's 16px.
+  expect(await preview.locator("body").evaluate((el) => getComputedStyle(el).fontSize)).toBe(
+    "15px",
+  );
+  await page.keyboard.press("Escape");
+  await expect(page.locator('iframe[title="HTML report preview"]')).toHaveCount(0);
+
   // The HTML report opened inline in its own tab (issue #163): it arrives with the sandbox policy
   // and nosniff, and still renders, because its inline <style> is the one thing the policy allows.
   const scanId = new URL(page.url()).pathname.split("/").pop();
@@ -89,4 +111,6 @@ test("setup → login → scan → report → password → logout", async ({ pag
     .first()
     .click();
   await expect(page).toHaveURL(/\/login$/);
+
+  expect(problems).toEqual([]);
 });
