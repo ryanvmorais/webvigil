@@ -111,7 +111,7 @@
     <details><summary>{{ item.label }}</summary><pre>{{ item.content }}</pre></details>
     {% endfor %}
     {% if f.references %}
-    <p class="kv">{% for r in f.references %}<a href="{{ r }}">{{ r }}</a>{% if not loop.last %}<br>{% endif %}{% endfor %}</p>
+    <p class="kv">{% for r in f.references %}{% if r is http_url %}<a href="{{ r }}">{{ r }}</a>{% else %}{{ r }}{% endif %}{% if not loop.last %}<br>{% endif %}{% endfor %}</p>
     {% endif %}
   </section>
   {% endfor %}
