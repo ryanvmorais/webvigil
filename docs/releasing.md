@@ -93,6 +93,10 @@ Every claim comes from the changelog entry, nothing that was not measured. A sec
 described by what the user gets, without naming an advisory that is still a draft: the advisory is
 published after the release, and only then does anything link to it.
 
+Once the advisory is published, add one line to the notes, after the bullets:
+`Security advisory: [GHSA-xxxx-xxxx-xxxx](https://github.com/ryanvmorais/webvigil/security/advisories/GHSA-xxxx-xxxx-xxxx)`.
+Write it as a Markdown link: GitHub does not link a bare `GHSA-...` id in a Release.
+
 ## What CI already guarantees
 
 The `package` job of [CI](../.github/workflows/ci.yml) builds the package on every pull request and
