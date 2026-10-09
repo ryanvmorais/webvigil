@@ -11,6 +11,11 @@ release and contains all of them.
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-10-08
+
+A patch release with one fix, in how much of what the scanned site declares the crawl keeps.
+Nothing in the CLI, the exit codes, the configuration keys, the check ids or the JSON report changes.
+
 ### Security
 
 - A `robots.txt`, a sitemap or a page served by the scanned site can no longer keep a scan busy for a
@@ -160,7 +165,8 @@ confirmed against a per-request baseline)
 - A security policy with private vulnerability reporting, a code of conduct, and the
   [stability policy](docs/stability.md).
 
-[Unreleased]: https://github.com/ryanvmorais/webvigil/compare/v1.0.3...HEAD
+[Unreleased]: https://github.com/ryanvmorais/webvigil/compare/v1.0.4...HEAD
+[1.0.4]: https://github.com/ryanvmorais/webvigil/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/ryanvmorais/webvigil/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/ryanvmorais/webvigil/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/ryanvmorais/webvigil/compare/v1.0.0...v1.0.1
