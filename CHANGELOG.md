@@ -24,6 +24,13 @@ release and contains all of them.
 
 ### Fixed
 
+- The Web API serves every report with `X-Content-Type-Options: nosniff`, and the HTML report also with
+  `Content-Security-Policy: sandbox; default-src 'none'; style-src 'unsafe-inline'`
+  ([#163](https://github.com/ryanvmorais/webvigil/issues/163)). `GET /api/scans/{id}/report?format=html&download=false`
+  shows the report inline from the API's own origin, built from what the scanned site sent. The template
+  escapes it, so nothing was known to be wrong, but no header would have contained a mistake. The report
+  keeps rendering (it is one self-contained file with an inline `<style>`), and the dashboard's preview,
+  which frames a `blob:` in a sandboxed iframe, is not affected.
 - A reference is a link only when it is an `http(s)` URL
   ([#161](https://github.com/ryanvmorais/webvigil/issues/161)). The references of a finding became
   `<a href>` in the HTML report and in the dashboard as they were, and the ones from the opt-in OSV

@@ -54,6 +54,27 @@ test("setup → login → scan → report → password → logout", async ({ pag
   const parsed = JSON.parse(readFileSync(path, "utf-8"));
   expect(parsed).toHaveProperty("findings");
 
+  // The HTML report opened inline in its own tab (issue #163): it arrives with the sandbox policy
+  // and nosniff, and still renders, because its inline <style> is the one thing the policy allows.
+  const scanId = new URL(page.url()).pathname.split("/").pop();
+  const reportTab = await page.context().newPage();
+  const violations: string[] = [];
+  reportTab.on("console", (message) => {
+    if (/content security policy/i.test(message.text())) violations.push(message.text());
+  });
+  const reportResponse = await reportTab.goto(
+    `/api/scans/${scanId}/report?format=html&download=false`,
+  );
+  expect(reportResponse?.headers()["x-content-type-options"]).toBe("nosniff");
+  expect(reportResponse?.headers()["content-security-policy"]).toBe(
+    "sandbox; default-src 'none'; style-src 'unsafe-inline'",
+  );
+  await expect(reportTab.getByRole("heading", { level: 1 })).toBeVisible();
+  // The report sets `body { font: 15px ... }`; the browser default would be 16px.
+  expect(await reportTab.evaluate(() => getComputedStyle(document.body).fontSize)).toBe("15px");
+  expect(violations).toEqual([]);
+  await reportTab.close();
+
   // Change the password.
   await page.goto("/settings");
   await page.getByLabel("Current password").fill(PASSWORD);
