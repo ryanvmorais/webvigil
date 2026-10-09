@@ -341,3 +341,41 @@ async def test_an_in_scope_url_source_is_fetched_and_parsed(httpx_mock: object) 
             "https://api.example.com/openapi.json", http=http, target=_TARGET, max_operations=150
         )
     assert ops[0].query == (("q", "wv"),)
+
+
+# ---------------------------------------------------------------------------
+# Where an operation came from (spec 021, ADR-1 and ADR-2)
+# ---------------------------------------------------------------------------
+
+
+def _op(source: str, query: tuple[tuple[str, str], ...]) -> ApiOperation:
+    """
+    Args:
+        source (str): ``"openapi"`` or ``"har"``.
+        query (tuple[tuple[str, str], ...]): The operation's query.
+
+    Returns:
+        ApiOperation: A GET operation on ``/rest/items`` with that source and query.
+    """
+    url = "https://api.example.com/rest/items"
+    return ApiOperation("GET", url, url, query, (), (), None, "", source=source)
+
+
+def test_an_openapi_operation_seeds_its_path_only() -> None:
+    """An OpenAPI operation keeps its 1.0 seed: the path, no query, whatever its parameters."""
+    assert _op("openapi", (("q", "wv"),)).seed_url == "https://api.example.com/rest/items"
+
+
+def test_a_har_operation_seeds_its_recorded_query() -> None:
+    """A HAR operation seeds ``url?query``, and the bare URL when it recorded none."""
+    assert (
+        _op("har", (("q", "a b"), ("n", "1"))).seed_url
+        == "https://api.example.com/rest/items?q=a+b&n=1"
+    )
+    assert _op("har", ()).seed_url == "https://api.example.com/rest/items"
+
+
+async def test_an_imported_openapi_operation_has_the_openapi_source(tmp_path: Path) -> None:
+    """The default ``source`` is what the OpenAPI importer produces."""
+    ops, _ = await _load(_op3(**{"/a": {"get": {}}}), tmp_path)
+    assert ops[0].source == "openapi"

@@ -1,6 +1,6 @@
 ---
 feature: HAR import — seed the crawl and the injection points of a single-page application from recorded browser traffic
-status: approved
+status: done
 date: 2026-10-09
 related:
   - 006-active-injection/requirements.md

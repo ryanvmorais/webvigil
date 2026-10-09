@@ -63,6 +63,12 @@ class ScanSection(_Section):
             013). ``None`` (the default) disables the import.
         openapi_max_operations (int): Cap on the operations seeded from the
             import; the excess is a scan warning. Defaults to 150.
+        har (str | None): A local ``.har`` file recorded in a browser or an
+            intercepting proxy; its in-scope ``GET`` / ``POST`` requests seed the
+            crawl and the injection pass like an ``--openapi`` import (spec 021).
+            ``None`` (the default) disables the import.
+        har_max_operations (int): Cap on the operations seeded from the HAR;
+            the excess is a scan warning. Defaults to 150.
     """
 
     mode: ScanMode = ScanMode.PASSIVE
@@ -74,6 +80,8 @@ class ScanSection(_Section):
     max_post_submissions: int = Field(default=25, gt=0)
     openapi: str | None = None
     openapi_max_operations: int = 150
+    har: str | None = None
+    har_max_operations: int = Field(default=150, gt=0)
 
 
 class HttpSection(_Section):
@@ -589,7 +597,8 @@ class ScanConfig(_Section):
             **sections (dict[str, Any]): Maps a section name (``scan``,
                 ``http``, ``report``, ``active``, ``auth``, ``checks``,
                 ``disclosure``, ``injection``, ``deps``, ``session``) to a dict of the
-                fields to override. ``scan`` covers spec 013's ``openapi``;
+                fields to override. ``scan`` covers spec 013's ``openapi`` and
+                spec 021's ``har``;
                 ``auth`` covers spec 013's ``headers``; ``injection`` covers
                 spec 006 tuning plus spec 008's ``stored_xss``, spec 011's
                 ``time_based_cmdi``, spec 012's ``xxe`` / ``envelope_*``, and

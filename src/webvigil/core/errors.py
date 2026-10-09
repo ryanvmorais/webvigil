@@ -82,6 +82,16 @@ class OpenApiError(WebVigilError):
     """
 
 
+class HarError(WebVigilError):
+    """
+    The ``--har`` file could not be loaded into usable operations (spec 021).
+
+    Raised for a source that is not a local file, a missing or oversized file, a file that
+    is not valid JSON, or JSON without ``log.entries``. A single entry the importer does not
+    understand, or a valid file with no usable entry, is a scan warning, not this error.
+    """
+
+
 class LoginFailedError(WebVigilError):
     """
     The automated login (spec 019) could not establish a session.

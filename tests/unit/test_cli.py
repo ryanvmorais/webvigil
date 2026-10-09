@@ -27,7 +27,7 @@ from tests.support import make_finding, make_result
 from webvigil.checks.registry import all_checks, load_plugins
 from webvigil.cli import app as app_mod
 from webvigil.cli._exit import ExitCode
-from webvigil.core.errors import LoginFailedError
+from webvigil.core.errors import HarError, LoginFailedError
 from webvigil.core.findings import ScanMode, Severity
 from webvigil.core.result import LoginSummary, ScanResult
 from webvigil.core.technology import DetectionMethod, Technology
@@ -572,3 +572,33 @@ def test_a_replaced_stdout_without_reconfigure_still_gets_the_report(
     app_mod._write_stdout("a report")
 
     assert stream.getvalue() == "a report\n"
+
+
+# ---------------------------------------------------------------------------
+# --har (spec 021, RF-01, RF-12)
+# ---------------------------------------------------------------------------
+
+
+def test_har_flag_overrides_the_config_file(tmp_path: Path) -> None:
+    """``--har`` wins over ``[scan] har``; the cap key comes from the file."""
+    cfg = tmp_path / "webvigil.toml"
+    cfg.write_text("[scan]\nhar = 'from-file.har'\nhar_max_operations = 7\n", "utf-8")
+    runner.invoke(app_mod.app, [*_SCAN, "--config", str(cfg)])
+    assert _config().scan.har == "from-file.har"  # type: ignore[attr-defined]
+    runner.invoke(app_mod.app, [*_SCAN, "--config", str(cfg), "--har", "cli.har"])
+    assert _config().scan.har == "cli.har"  # type: ignore[attr-defined]
+    assert _config().scan.har_max_operations == 7  # type: ignore[attr-defined]
+
+
+def test_an_unreadable_har_exits_with_the_operational_code(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``HarError`` is a ``WebVigilError``: a message and exit 4, no traceback."""
+
+    class _Failing(_StubOrchestrator):
+        async def run(self, url: str) -> ScanResult:
+            raise HarError("HAR file not found: nope.har")
+
+    monkeypatch.setattr(app_mod, "Orchestrator", _Failing)
+    result = runner.invoke(app_mod.app, [*_SCAN, "--har", "nope.har"])
+    assert result.exit_code == ExitCode.OPERATIONAL
+    assert "nope.har" in result.stderr
+    assert "Traceback" not in result.stderr

@@ -82,6 +82,14 @@ def test_a_shell_with_a_thin_crawl_is_warned_about() -> None:
     assert warning is not None
     assert "does not run JavaScript" in warning and "1 page(s)" in warning
     assert "--openapi" in warning
+    assert "--har <file>" in warning and "network panel" in warning  # spec 021, RF-13
+
+
+def test_the_warning_does_not_suggest_a_har_that_was_already_given() -> None:
+    """With ``--har`` in use and the crawl still thin, the sentence keeps only the API advice."""
+    warning = script_app_warning([_page(_ANGULAR)], har=True)
+    assert warning is not None
+    assert "--openapi" in warning and "--har" not in warning
 
 
 def test_a_shell_that_still_yielded_a_surface_is_not_warned_about() -> None:

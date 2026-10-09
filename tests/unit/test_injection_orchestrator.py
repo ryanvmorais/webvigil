@@ -11,7 +11,10 @@ stub when it must.
 
 from __future__ import annotations
 
+import json
 import re
+from pathlib import Path
+from typing import ClassVar
 
 import httpx
 import pytest
@@ -31,8 +34,10 @@ from webvigil.checks.injection.models import InjectionHit, StoredXssReport
 from webvigil.core import orchestrator as orch_mod
 from webvigil.core.config import ScanConfig
 from webvigil.core.context import Page
+from webvigil.core.errors import HarError
 from webvigil.core.findings import Confidence, Severity
 from webvigil.core.orchestrator import Orchestrator
+from webvigil.core.target import Target
 from webvigil.crawler.crawler import PostSummary
 from webvigil.crawler.openapi import ApiOperation
 
@@ -456,7 +461,7 @@ async def test_post_operations_reach_the_crawler_and_get_ones_stay_seeds(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """``POST`` operations go to ``post_operations``; ``GET`` ones stay ``extra_seeds`` (013)."""
-    seen: dict[str, object] = {}
+    seen: ClassVar[dict[str, object]] = {}
 
     class _Capturing(_StubCrawler):
         def __init__(self, *_a: object, **kwargs: object) -> None:
@@ -498,3 +503,137 @@ async def test_post_crawl_opt_in_without_active_mode_warns() -> None:
     config = ScanConfig.model_validate({"scan": {"submit_post_forms": True}})
     result = await Orchestrator(config, check_types=[HstsCheck]).run(_TARGET)
     assert any("POST crawling requires --mode active" in w for w in result.warnings)
+
+
+# ---------------------------------------------------------------------------
+# The HAR import (spec 021, RF-01, RF-08, RF-10, RF-11)
+# ---------------------------------------------------------------------------
+
+
+def _har_file(tmp_path: Path, *, session: bool = False) -> str:
+    """
+    Args:
+        tmp_path (Path): The pytest temp directory.
+        session (bool): Whether the recorded requests carry a ``Cookie`` header. Defaults to
+            ``False``.
+
+    Returns:
+        str: The path of a small HAR: a search GET, a form POST and a foreign-host entry.
+    """
+
+    def entry(
+        url: str, method: str = "GET", post: dict[str, object] | None = None
+    ) -> dict[str, object]:
+        request: dict[str, object] = {
+            "method": method,
+            "url": url,
+            "headers": [{"name": "Cookie", "value": "SECRETVALUE"}] if session else [],
+        }
+        if post:
+            request["postData"] = post
+        return {"request": request, "response": {"content": {"mimeType": "application/json"}}}
+
+    entries = [
+        entry("https://example.com/rest/search?q=apple"),
+        entry(
+            "https://example.com/rest/notes",
+            "POST",
+            {"mimeType": "application/x-www-form-urlencoded", "text": "text=hi"},
+        ),
+        entry("https://cdn.example.net/x"),
+    ]
+    path = tmp_path / "t.har"
+    path.write_text(json.dumps({"log": {"entries": entries}}), "utf-8")
+    return str(path)
+
+
+class _Capturing(_StubCrawler):
+    """A crawler that records what the orchestrator handed it."""
+
+    seen: ClassVar[dict[str, object]] = {}
+
+    def __init__(self, *_a: object, **kwargs: object) -> None:
+        type(self).seen = dict(kwargs)
+
+
+async def test_har_operations_seed_the_crawl_with_their_query_and_the_post_phase(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A HAR GET is seeded with its recorded query, a HAR POST is a ``post_operation``."""
+    monkeypatch.setattr(orch_mod, "Crawler", _Capturing)
+    config = ScanConfig.model_validate({"scan": {"har": _har_file(tmp_path)}})
+    result = await Orchestrator(config, check_types=[HstsCheck]).run(_TARGET)
+    seen = _Capturing.seen
+    assert seen["extra_seeds"] == ["https://example.com/rest/search?q=apple"]
+    assert [op.url for op in seen["post_operations"]] == ["https://example.com/rest/notes"]  # type: ignore[attr-defined]
+    summary = [w for w in result.warnings if w.startswith("HAR import:")]
+    assert summary == [
+        "HAR import: 3 entries read, 2 operations seeded (1 GET, 1 POST); ignored: 1 out of scope"
+    ]
+
+
+async def test_an_openapi_operation_wins_a_tie_with_the_har_and_keeps_its_path_only_seed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The same GET in both sources is the OpenAPI one: its seed has no query (spec 013)."""
+    api = ApiOperation(
+        "GET",
+        "https://example.com/rest/search",
+        "https://example.com/rest/search",
+        (("q", "wv"),),
+        (),
+        (),
+        None,
+        "search",
+    )
+
+    async def _ops(self: Orchestrator, *_a: object) -> tuple[ApiOperation, ...]:
+        return (api,)
+
+    monkeypatch.setattr(orch_mod, "Crawler", _Capturing)
+    monkeypatch.setattr(Orchestrator, "_load_openapi", _ops)
+    config = ScanConfig.model_validate({"scan": {"har": _har_file(tmp_path)}})
+    await Orchestrator(config, check_types=[HstsCheck]).run(_TARGET)
+    assert _Capturing.seen["extra_seeds"] == ["https://example.com/rest/search"]
+
+
+_LOGIN = {"url": "https://example.com/signin", "username": "u"}
+
+
+@pytest.mark.parametrize(
+    ("auth", "warns"),
+    [
+        ({}, True),
+        ({"cookies": ["s=1"]}, False),
+        ({"headers": ["Authorization: Bearer x"]}, False),
+        ({"login": _LOGIN}, False),
+    ],
+    ids=["no-credentials", "cookie", "header", "login"],
+)
+def test_an_authenticated_recording_warns_only_when_the_scan_is_not(
+    tmp_path: Path, auth: dict[str, object], warns: bool
+) -> None:
+    """RF-08: the warning names the options, never a value, and goes away with any credential."""
+    config = ScanConfig.model_validate(
+        {"scan": {"har": _har_file(tmp_path, session=True)}, "auth": auth}
+    )
+    warnings: list[str] = []
+    Orchestrator(config, check_types=[HstsCheck])._load_har(Target.parse(_TARGET), warnings)
+    looks = [w for w in warnings if "looks authenticated" in w]
+    assert bool(looks) is warns
+    assert "SECRETVALUE" not in " ".join(warnings)
+    if looks:
+        assert "--cookie" in looks[0] and "--header" in looks[0] and "--login-url" in looks[0]
+
+
+async def test_a_har_that_cannot_be_loaded_is_fatal_before_any_request(tmp_path: Path) -> None:
+    """The user asked for it explicitly: a missing file stops the scan (the crawler never ran)."""
+    config = ScanConfig.model_validate({"scan": {"har": str(tmp_path / "missing.har")}})
+    with pytest.raises(HarError, match="not found"):
+        await Orchestrator(config, check_types=[HstsCheck]).run(_TARGET)
+
+
+async def test_no_har_means_no_har_warning() -> None:
+    """Without ``[scan] har`` the import step adds nothing."""
+    result = await Orchestrator(ScanConfig(), check_types=[HstsCheck]).run(_TARGET)
+    assert not any("HAR" in w for w in result.warnings)

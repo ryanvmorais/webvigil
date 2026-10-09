@@ -1,6 +1,6 @@
 ---
 feature: HAR import — seed the crawl and the injection points of a single-page application from recorded browser traffic
-status: approved
+status: done
 date: 2026-10-09
 related:
   - 021-har-import/requirements.md
@@ -431,3 +431,50 @@ One new route, `GET /spa/items?name=` (both profiles), linked from no page: the 
 existing `/login`, the `/transfer`-style routes and the foreign-host URL of the HAR are the "must not be
 requested" cases; the fixture's request log (`post_log` of spec 018 and the access log) is where the test
 reads what arrived.
+
+## Deviations from the approved design
+
+Recorded here so the design text above stays as approved; the as-built behaviour is below.
+
+1. **The query comes from the URL only.** `request.queryString` is not read. Some exporters leave it
+   empty or differently encoded, and the URL always carries the same pairs; indexing one field fewer also
+   keeps with ADR-3. `parse_qsl(..., keep_blank_values=True, max_num_fields=100)` gives the same result
+   for Chrome, Firefox, Burp, ZAP and mitmproxy documents.
+2. **The unsafe-path rule is the union of two vocabularies.** `looks_unsafe_operation` (the `POST` phase
+   filter of spec 018) does not know `checkout`, `pay` or `order`, which RF-09 names. `_is_unsafe` therefore
+   also applies the OpenAPI importer's `_SKIP_OPERATION_RE`, the vocabulary RF-09 points to. The cost is
+   that a `GET /api/order` listing is skipped, as it is for `--openapi`.
+3. **The URL-length check follows the scheme check.** A long `data:` or `ws:` URL is "out of scope", not
+   "malformed": the design table listed the length check under "well-formed", before the scheme.
+4. **The documentation is its own file.** `docs/har-import.md` (a how-to) instead of a section of
+   `docs/api-scanning.md`, which gains a pointer. The two modes of the Diátaxis split stay apart, and
+   the HAR page has its own recording instructions and secret rules.
+5. **The `ApiOperation` fields stay positional-compatible.** `source` has a default, so the unit tests
+   that build operations positionally needed no change.
+
+## Implementation notes
+
+- **Where it landed.** `crawler/har.py` is 755 lines, most of it docstrings and the vocabulary tables;
+  the logic is `load_har`, `_read_entries`, `_parse_request`, `_is_static`, `_operation`, `_body`,
+  `_json_shape` and the secret-name rule. `ApiOperation.source` / `seed_url`, `_operation_points`, the
+  orchestrator's `_load_har`, the CLI flag and the `script_app_warning` keyword are the only edits to
+  existing code.
+- **Tests.** The suite went from 1366 to 1499 collected tests (+133). `test_crawler_har.py` is 664 lines
+  against the 755 of `har.py` (0.9); with the fixture routes, the integration harness and the wiring tests
+  the added test lines are about 1.3 times the added source lines, over the 1.0 budget of
+  `specs/README.md`. The excess is the table-driven filter, secret-name and per-tool cases, which are
+  cheap to run, and the new scenarios read the existing shared full scans, so the two slow integration tests
+  are the same ones as before (397 s and 194 s).
+- **Integration.** The HAR is written once per session by an autouse fixture and passed to the full scan
+  through `_full`, so no new full scan was added; the one extra scan is a small Passive one for the "looks
+  authenticated" warning and the "Passive sends no `POST`" rule. The new fixture routes are `GET
+  /spa/items?name=` (reflects `name` unescaped on the insecure profile) and `POST /spa/notes` (JSON, logged
+  in `post_log`); the existing check that the POST phase sends no payload now skips the HAR-shaped body
+  (`{"text": "wv"}`) as it skips the OpenAPI one. No budget of the integration config moved.
+- **Manual check** (CLI against the fixture served by uvicorn, a hand-made HAR with a `Cookie` header, a
+  JSON `POST`, a foreign host, a script and a login): Passive printed `HAR import: 5 entries read, 2
+  operations seeded (1 GET, 1 POST); ignored: 1 out of scope, 1 static, 1 unsafe` and the "looks
+  authenticated" warning, and sent no `POST`; Active with `--submit-post-forms` added `POST crawl: ... 1 API
+  operation` (the recorded JSON shape) and, with the injection budget raised past the default 650 (the
+  fixture is dense and starves it), `injection.xss.reflected` on `/spa/items` parameter `name`. The recorded
+  session value appeared in neither report. A missing `--har` file exited with code 4.

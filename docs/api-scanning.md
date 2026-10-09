@@ -66,6 +66,12 @@ form-urlencoded body, and reads the answer as a page. It writes to the target; s
   parses but declares no usable operations is a warning, and the scan continues with a
   normal crawl.
 
+## No description? Record one
+
+An application that publishes no OpenAPI document, typically a single-page application, can be
+described by a browser recording instead: see [`har-import.md`](har-import.md). The two combine, and
+an operation both know is the OpenAPI one.
+
 ## Authenticating the API scan
 
 Pair `--openapi` with `--header` for a bearer token or an API key — see
