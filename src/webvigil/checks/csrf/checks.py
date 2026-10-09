@@ -1,5 +1,6 @@
 """
-CSRF checks: ``csrf.form.no-token`` (spec 007, RF-08) and ``csrf.form.token-not-enforced`` (017).
+CSRF checks: ``csrf.form.no-token`` (spec 007, RF-08), ``csrf.form.token-not-enforced`` (017) and
+``csrf.form.state-change-over-get`` (issue #144).
 
 ``csrf.form.no-token`` — a state-changing form with no anti-CSRF token. Passive.
 Reads ``ctx.forms`` (the ``<form>``\\s the crawler parsed) and the
@@ -18,6 +19,10 @@ pattern with no form field — all read here as "no token".
 ``--confirm-csrf``) replayed each form without a valid token, and this check turns the forms
 the server accepted into findings. A form it confirms replaces the passive finding for the
 same action, so one proof is never reported twice.
+
+``csrf.form.state-change-over-get`` — a ``GET`` form that changes state (a password change, a
+destructive verb in the action). Passive. ``csrf.form.no-token`` reads ``POST`` forms only, and a
+cross-site link or image is enough to submit a ``GET`` one, so ``SameSite=Lax`` does not help.
 """
 
 from __future__ import annotations
@@ -38,6 +43,7 @@ from webvigil.core.findings import (
     ScanMode,
     Severity,
 )
+from webvigil.crawler.safety import state_change_signal
 
 _PROTECTION = {"strict": 2, "lax": 1, "none": 0}
 
@@ -163,6 +169,93 @@ class NoCsrfTokenCheck(Check):
                         EvidenceItem.of("form", evidence_form),
                         EvidenceItem.of("fields", field_names),
                         EvidenceItem.of("session cookie", _SAMESITE_NOTE[samesite]),
+                    ],
+                )
+            )
+        return findings
+
+
+_GET_DESCRIPTION = (
+    "This form changes state over GET: {why}. A GET request needs no form, so any page the "
+    "victim opens can submit it with a link, an image or a redirect, and SameSite=Lax does not "
+    "stop it because the browser still sends a Lax cookie on a top-level navigation. The "
+    "values also end up in the URL, the browser history, the server logs and the Referer "
+    "header. WebVigil reads the form's shape and does not submit it, so it cannot say the "
+    "server acts on the request."
+)
+_GET_REMEDIATION = (
+    "Make the action a POST (or PUT / DELETE) and protect it with an anti-CSRF token validated "
+    "on the server, then ask for the current password before a password change. A state change "
+    "must never be reachable by a GET."
+)
+_GET_WHY = {
+    "password change": "it has password fields for a new password and its confirmation",
+    "destructive verb": "its action or fields name a destructive operation",
+}
+# SameSite=Lax is no defence against a GET (the cookie rides a top-level navigation); only
+# Strict is. The form's shape is a heuristic, so no cookie evidence is never better than MEDIUM.
+_GET_CONFIDENCE = {
+    None: Confidence.LOW,
+    "none": Confidence.MEDIUM,
+    "lax": Confidence.MEDIUM,
+    "strict": Confidence.LOW,
+}
+_GET_SAMESITE_NOTE = {
+    None: "no session cookie observed during the crawl",
+    "none": "session cookie has no SameSite attribute — sent on cross-site requests",
+    "lax": "session cookie is SameSite=Lax — still sent when a cross-site link is followed",
+    "strict": "session cookie is SameSite=Strict — not sent on a cross-site request",
+}
+
+
+@register
+class GetStateChangeCheck(Check):
+    """
+    Flags a ``GET`` form that changes state and carries no anti-CSRF token.
+
+    A form qualifies by its shape, not by a guess about a free-text field: password fields for
+    a new password and its confirmation, or a destructive verb in the action (see
+    :func:`~webvigil.crawler.safety.state_change_signal`). Search forms and login forms never
+    qualify. Confidence follows the session cookie's ``SameSite`` (``Lax`` does not mitigate a
+    ``GET``) and is ``MEDIUM`` at most, because the form is recognised by its shape.
+    """
+
+    id = "csrf.form.state-change-over-get"
+    name = "State-changing form submitted with GET"
+    category = Category.CSRF
+    default_severity = Severity.MEDIUM
+    cwe = (352, 650)
+    references = (OWASP_CSRF, _WSTG)
+
+    async def run(self, ctx: ScanContext) -> list[Finding]:
+        """
+        Args:
+            ctx (ScanContext): The scan context; reads ``ctx.forms`` and the pages'
+                ``Set-Cookie`` headers.
+
+        Returns:
+            list[Finding]: One finding per ``GET`` form that looks state-changing.
+        """
+        samesite = _session_samesite(ctx.pages)
+        findings: list[Finding] = []
+        for form in ctx.forms:
+            signal = state_change_signal(form)
+            if signal is None or any(is_token_field(field) for field in form.fields):
+                continue
+            field_names = ", ".join(field.name for field in form.fields) or "(none)"
+            findings.append(
+                self.finding(
+                    title=f"GET form to {form.action} changes state",
+                    description=_GET_DESCRIPTION.format(why=_GET_WHY[signal]),
+                    remediation=_GET_REMEDIATION,
+                    confidence=_GET_CONFIDENCE[samesite],
+                    location=Location(url=form.action, method="GET"),
+                    dedup_key="state-change-over-get",
+                    evidence=[
+                        EvidenceItem.of("form", f"GET {form.action}  (found on {form.source_url})"),
+                        EvidenceItem.of("fields", field_names),
+                        EvidenceItem.of("why", signal),
+                        EvidenceItem.of("session cookie", _GET_SAMESITE_NOTE[samesite]),
                     ],
                 )
             )

@@ -21,6 +21,7 @@ from webvigil.crawler.safety import (
     is_logout,
     looks_like_search,
     looks_unsafe_operation,
+    state_change_signal,
 )
 
 
@@ -167,6 +168,89 @@ def test_login_url() -> None:
     assert is_login_url("https://example.com/login?next=/x") is True
     assert is_login_url("https://example.com/users/sign-in") is True
     assert is_login_url("https://example.com/panel") is False
+
+
+# ---------------------------------------------------------------------------
+# GET forms that change state (issue #144)
+# ---------------------------------------------------------------------------
+
+
+def _typed_form(action: str, *fields: tuple[str, str], method: str = "GET") -> Form:
+    """
+    Args:
+        action (str): The form action URL.
+        *fields (tuple[str, str]): ``(name, type)`` pairs, in order.
+        method (str): The form method. Defaults to ``GET``.
+
+    Returns:
+        Form: The assembled form.
+    """
+    return Form(
+        method=method,
+        action=action,
+        enctype="application/x-www-form-urlencoded",
+        fields=tuple(FormField(name=n, type=t, value="") for n, t in fields),
+        source_url="https://example.com/",
+    )
+
+
+def test_a_password_change_form_over_get_is_a_state_change() -> None:
+    """The DVWA shape: a new password and its confirmation on a GET form."""
+    form = _typed_form(
+        "https://example.com/vulnerabilities/csrf/",
+        ("password_new", "password"),
+        ("password_conf", "password"),
+        ("Change", "submit"),
+    )
+    assert state_change_signal(form) == "password change"
+
+
+def test_one_password_field_named_like_a_change_is_a_state_change() -> None:
+    """A single ``new_password`` input is half of a change; a plain ``password`` is a login."""
+    action = "https://example.com/account"
+    assert state_change_signal(_typed_form(action, ("new_password", "password"))) == (
+        "password change"
+    )
+    assert state_change_signal(_typed_form(action, ("password", "password"))) is None
+
+
+def test_a_destructive_verb_over_get_is_a_state_change() -> None:
+    """A destructive verb in the action path, a field name or a submit label."""
+    assert (
+        state_change_signal(_typed_form("https://example.com/items/delete", ("id", "text")))
+        == "destructive verb"
+    )
+    assert (
+        state_change_signal(_typed_form("https://example.com/items", ("remove_item", "text")))
+        == "destructive verb"
+    )
+
+
+@pytest.mark.parametrize(
+    "form",
+    [
+        _typed_form("https://example.com/search", ("q", "text")),
+        _typed_form("https://example.com/products", ("filter", "text")),
+        _typed_form("https://example.com/login", ("username", "text"), ("password", "password")),
+        _typed_form(
+            "https://example.com/sign-up",
+            ("password", "password"),
+            ("password_confirm", "password"),
+        ),
+        _typed_form("https://example.com/logout", ("next", "hidden")),
+        _typed_form("https://example.com/deleted-items", ("page", "text")),
+        _typed_form("https://example.com/newsletter", ("email", "text")),
+        _typed_form(
+            "https://example.com/account/password",
+            ("password_new", "password"),
+            ("password_conf", "password"),
+            method="POST",
+        ),
+    ],
+)
+def test_forms_that_do_not_change_state_over_get_are_left_alone(form: Form) -> None:
+    """Search, login, registration, logout, a near-miss word, a plain form and any POST."""
+    assert state_change_signal(form) is None
 
 
 # ---------------------------------------------------------------------------

@@ -11,6 +11,17 @@ release and contains all of them.
 
 ## [Unreleased]
 
+### Added
+
+- `csrf.form.state-change-over-get` (`MEDIUM`, CWE-352 and CWE-650), a passive check for a `GET` form that
+  changes state ([#144](https://github.com/ryanvmorais/webvigil/issues/144)). `csrf.form.no-token` reads
+  `POST` forms only, so the CSRF module of OWASP DVWA, which changes the password with a `GET` form, went
+  unreported. The check flags a `GET` form with no anti-CSRF token field that has two password inputs (or
+  one named like the new, confirmed or old password), or a destructive verb in its action, its field names
+  or its submit label. Search, login, registration and logout forms are left out, and nothing is submitted.
+  Confidence is `MEDIUM` at most and `SameSite=Lax` does not lower it, because a `Lax` cookie is sent when
+  a cross-site link is followed. A scan that finds such a form now reports it, so `--fail-on` can see it.
+
 ## [1.0.4] - 2026-10-08
 
 A patch release with one fix, in how much of what the scanned site declares the crawl keeps.
