@@ -74,7 +74,8 @@ Camadas, de cima para baixo:
    `Orchestrator`, `Target`/escopo/política, HTTP layer (`webvigil.http`), crawler leve
    (`webvigil.crawler`), registry de checks, modelo de `Finding`/`Severity`. O cliente lê no
    máximo `[http] max_body_bytes` de cada resposta (10 MiB, depois de descomprimir) e o scan avisa
-   quantas foram cortadas.
+   quantas foram cortadas; cada requisição tem um prazo total, `[http] total_timeout_s` (60 s, do
+   envio ao último byte), tratado como timeout.
 3. **Checks** (`webvigil.checks`) — plugins `PASSIVE`/`ACTIVE`, registrados por decorator +
    entry points. Contrato: `Check.run(ctx: ScanContext) -> list[Finding]`. `webvigil.checks.deps`
    (spec 004) faz fingerprint passivo de libs JS do front + match com uma base Retire.js
