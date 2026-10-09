@@ -13,6 +13,19 @@ release and contains all of them.
 
 ### Added
 
+- `--har` / `[scan] har`: seed the scan from a HAR file recorded in a browser or an intercepting proxy
+  ([#146](https://github.com/ryanvmorais/webvigil/issues/146)). The crawler runs no JavaScript, so a
+  single-page application looked like one empty page (the Juice Shop benchmark found one page and no
+  finding). Browse the application once with the network panel open, save the traffic as HAR, and the
+  target's own `GET` and `POST` requests become crawl seeds (with the query they were recorded with) and
+  injection points, the way an `--openapi` description does. Static assets, other hosts, other methods and
+  login or state-changing paths are left out, and a summary line says what was read, seeded and ignored.
+  The import reads a local file and sends nothing; a `POST` goes out only from `--submit-post-forms` in
+  Active Mode. Cookies, headers and response bodies in the file are never read, a secret-named parameter's
+  value and any value over 256 characters become a placeholder, a JSON body is kept as its shape only, and
+  a recording that looks authenticated draws a warning when the scan carries no `--cookie`, `--header` or
+  `--login-url`. `[scan] har_max_operations` (default `150`) caps the operations. The Web API does not
+  accept the option. See [docs/har-import.md](docs/har-import.md).
 - `[http] total_timeout_s` (default `60`), a deadline for one whole request
   ([#140](https://github.com/ryanvmorais/webvigil/issues/140)). `timeout_s` limits each connect, read and
   write on its own, so a server that sends one byte every few seconds never tripped it and could hold a

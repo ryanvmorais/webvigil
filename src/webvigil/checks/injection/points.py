@@ -335,7 +335,7 @@ def _add(point: InjectionPoint, seen: set[str], points: list[InjectionPoint]) ->
 
 def _operation_points(operation: ApiOperation) -> list[InjectionPoint]:
     """
-    Synthesize the injection points of one OpenAPI operation (spec 013 RF-09).
+    Synthesize the injection points of one imported operation (spec 013 RF-09, spec 021).
 
     A GET operation contributes its query parameters; a POST operation its
     form-urlencoded body fields (its query parameters ride along unfuzzed as
@@ -347,14 +347,16 @@ def _operation_points(operation: ApiOperation) -> list[InjectionPoint]:
         operation (ApiOperation): The operation to expand.
 
     Returns:
-        list[InjectionPoint]: Zero or more points, all ``source`` ``"openapi"``
-            or ``"openapi-path"``.
+        list[InjectionPoint]: Zero or more points, whose ``source`` is the operation's
+            (``"openapi"`` or ``"har"``), or ``"openapi-path"`` for a path parameter.
     """
     out: list[InjectionPoint] = []
     if operation.method == "GET":
         for name, value in operation.query:
             out.append(
-                InjectionPoint("GET", operation.url, name, value, operation.query, source="openapi")
+                InjectionPoint(
+                    "GET", operation.url, name, value, operation.query, source=operation.source
+                )
             )
     else:
         for name, value in operation.body_fields:
@@ -366,7 +368,7 @@ def _operation_points(operation: ApiOperation) -> list[InjectionPoint]:
                     value,
                     operation.body_fields,
                     query=operation.query,
-                    source="openapi",
+                    source=operation.source,
                 )
             )
     for name, value in operation.path_params:

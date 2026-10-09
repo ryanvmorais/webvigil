@@ -17,6 +17,7 @@ from tests.support import make_finding, make_result
 from webvigil.api.db import Finding as FindingRow
 from webvigil.api.db import Scan, ScanStatus
 from webvigil.api.mapping import build_scan_config, rows_to_result, store_result
+from webvigil.api.schemas import ScanCreate
 from webvigil.core.findings import ScanMode, Severity
 from webvigil.reporting import get_reporter
 
@@ -121,3 +122,19 @@ def test_build_scan_config_applies_options() -> None:
     assert config.http.delay_ms == 50
     assert config.checks.disabled == ["http.headers.hsts"]
     assert config.active is not None and config.active.authorized_by == "Jane / #1"
+
+
+def test_a_har_path_can_never_reach_the_engine_config_from_the_api() -> None:
+    """Spec 021 RF-12: the request model has no ``har`` and stored options are copied by name."""
+    created = ScanCreate.model_validate({"target": "https://example.com", "har": "/etc/hosts"})
+    assert "har" not in ScanCreate.model_fields
+    assert "har" not in created.to_options()
+    scan = Scan(
+        target="https://example.com/",
+        mode="passive",
+        scope="host",
+        status=ScanStatus.QUEUED,
+        options={"har": "/etc/hosts", "openapi": "/etc/hosts"},
+    )
+    config = build_scan_config(scan)
+    assert (config.scan.har, config.scan.openapi) == (None, None)

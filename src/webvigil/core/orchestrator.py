@@ -41,6 +41,7 @@ from webvigil.core.target import Target
 from webvigil.core.technology import Technology
 from webvigil.crawler.crawler import Crawler
 from webvigil.crawler.forms import Form
+from webvigil.crawler.har import load_har, merge_operations
 from webvigil.crawler.jsapp import script_app_warning
 from webvigil.crawler.openapi import ApiOperation, load_openapi
 from webvigil.http.client import HttpClient, truncated_warning, unreachable_warning
@@ -87,9 +88,9 @@ class Orchestrator:
         Run a full scan and return its result.
 
         Parses ``raw_target``, enforces the Active-Mode gate, loads any
-        ``--openapi`` document, crawls in scope, runs the fingerprint / OSV /
-        disclosure-probe / injection passes, fans the selected checks over a
-        shared context, dedupes, and assembles the result.
+        ``--openapi`` document and ``--har`` recording, crawls in scope, runs the
+        fingerprint / OSV / disclosure-probe / injection passes, fans the selected
+        checks over a shared context, dedupes, and assembles the result.
 
         Args:
             raw_target (str): The target as typed by the user; ``https://`` is
@@ -105,6 +106,7 @@ class Orchestrator:
                 ``authorized_by`` attestation.
             OpenApiError: If ``[scan] openapi`` is set but cannot be loaded
                 (spec 013).
+            HarError: If ``[scan] har`` is set but cannot be loaded (spec 021).
         """
         started_at = datetime.now(UTC)
         target = Target.parse(raw_target, scope=self._config.scan.scope)
@@ -134,18 +136,23 @@ class Orchestrator:
         async with HttpClient(target, self._config) as http:
             authenticator = await self._log_in(http, target, warnings)
             session = authenticator.session if authenticator is not None else None
-            operations = await self._load_openapi(http, target, warnings)
+            operations = tuple(
+                merge_operations(
+                    await self._load_openapi(http, target, warnings),
+                    self._load_har(target, warnings),
+                )
+            )
             crawler = Crawler(
                 http,
                 target,
                 self._config,
-                extra_seeds=[op.url for op in operations if op.method == "GET"],
+                extra_seeds=[op.seed_url for op in operations if op.method == "GET"],
                 post_operations=[op for op in operations if op.method == "POST"],
             )
             pages = tuple(await crawler.discover())
             if crawler.post_summary is not None and (line := crawler.post_summary.warning()):
                 warnings.append(line)
-            if line := script_app_warning(pages):
+            if line := script_app_warning(pages, har=bool(self._config.scan.har)):
                 warnings.append(line)
             if line := crawler.limit_warning:
                 warnings.append(line)
@@ -303,6 +310,42 @@ class Orchestrator:
         )
         warnings.extend(notes)
         return tuple(operations)
+
+    def _load_har(self, target: Target, warnings: list[str]) -> tuple[ApiOperation, ...]:
+        """
+        Load the ``[scan] har`` recording into seed operations, before the crawl (spec 021).
+
+        A no-op returning ``()`` when ``[scan] har`` is unset. The file is local, so nothing is
+        sent. A file that will not load is fatal (the user asked for it explicitly); a file that
+        yields no operations is a warning. One summary warning always says what was read,
+        seeded and ignored, and one more says so when the recording looks authenticated and the
+        scan carries no credentials of its own (the session in the file is never used).
+
+        Args:
+            target (Target): The normalized target.
+            warnings (list[str]): Scan-level warning list, appended to in place.
+
+        Returns:
+            tuple[ApiOperation, ...]: The imported operations, or ``()``.
+
+        Raises:
+            HarError: If the file cannot be read or is not a HAR document.
+        """
+        source = self._config.scan.har
+        if not source:
+            return ()
+        imported = load_har(
+            source, target=target, max_operations=self._config.scan.har_max_operations
+        )
+        warnings.extend(imported.warnings)
+        warnings.append(imported.summary())
+        auth = self._config.auth
+        if imported.authenticated and not (auth.cookies or auth.headers or auth.login):
+            warnings.append(
+                "the HAR recording looks authenticated, but this scan is not: give it --cookie, "
+                "--header or --login-url to reach those routes with a session"
+            )
+        return tuple(imported.operations)
 
     async def _fingerprint(
         self,

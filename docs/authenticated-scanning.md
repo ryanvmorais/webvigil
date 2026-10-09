@@ -261,9 +261,10 @@ still reading. It then submits, once each and in order:
   too: it is submitted with an empty body, as a browser would send it, and the label of its
   button is what the destructive filter reads;
 - every `POST` **operation** of an `--openapi` import, with the body the importer synthesised —
-  JSON, form-urlencoded or none. This is the only source of a JSON body: an HTML form cannot send
-  one and WebVigil runs no JavaScript. An operation that looks like authentication or a
-  state-changing action is skipped.
+  JSON, form-urlencoded or none — and every `POST` operation of a `--har` recording
+  ([`har-import.md`](har-import.md)), with the shape of the body it recorded. These are the only
+  sources of a JSON body: an HTML form cannot send one and WebVigil runs no JavaScript. An
+  operation that looks like authentication or a state-changing action is skipped.
 
 Values are the form's own **defaults** — a hidden token travels as served — and a text field
 with no default gets a benign `wvcrawl<token>` marker you can search for on the target. Never a
@@ -415,5 +416,5 @@ confirmation:
 
 - **JSON / token logins** (`POST /api/login` returning a bearer token), CAPTCHA, MFA and
   delegated (SSO) logins — the automated login handles form logins only.
-- **Parameter mining**, JSON bodies that do not come from an OpenAPI document, and forms
-  built by JavaScript — outside the in-band scanner (the `POST` crawl is opt-in, spec 018).
+- **Parameter mining**, JSON bodies that do not come from an OpenAPI document or a HAR
+  recording, and forms built by JavaScript — outside the in-band scanner (the `POST` crawl is opt-in, spec 018).

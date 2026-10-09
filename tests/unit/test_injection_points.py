@@ -34,6 +34,7 @@ def _operation(
     query: tuple[tuple[str, str], ...] = (),
     path_params: tuple[tuple[str, str], ...] = (),
     body_fields: tuple[tuple[str, str], ...] = (),
+    source: str = "openapi",
 ) -> ApiOperation:
     """
     Args:
@@ -43,6 +44,7 @@ def _operation(
         query (tuple[tuple[str, str], ...]): Query parameters.
         path_params (tuple[tuple[str, str], ...]): Path parameters.
         body_fields (tuple[tuple[str, str], ...]): Form-body fields.
+        source (str): ``"openapi"`` or ``"har"``. Defaults to ``"openapi"``.
 
     Returns:
         ApiOperation: The assembled operation.
@@ -56,6 +58,7 @@ def _operation(
         body_fields=body_fields,
         body_json=None,
         operation_id="",
+        source=source,
     )
 
 
@@ -287,3 +290,26 @@ def test_build_request_substitutes_an_openapi_path_payload() -> None:
     assert method == "GET"
     assert url == "https://example.com/api/users/..%2Fetc/posts/hello"
     assert params == [] and data is None
+
+
+def test_a_har_operation_gives_har_points() -> None:
+    """An imported operation's points carry its source: ``har`` for a GET and a POST one."""
+    get = _operation(url="https://example.com/rest/items", query=(("q", "apple"),), source="har")
+    post = _operation(
+        method="POST",
+        url="https://example.com/rest/orders",
+        body_fields=(("note", "hi"),),
+        source="har",
+    )
+    points = {p.param: p for p in enumerate_points((), (), (get, post), max_points=100)[0]}
+    assert points["q"].source == "har"
+    assert points["note"].source == "har"
+    assert points["note"].method == "POST"
+
+
+def test_a_parameter_the_crawl_and_a_har_operation_share_is_one_point() -> None:
+    """The point key ignores the source, so crawl and HAR knowing ``q`` make one point."""
+    page = make_page(url="https://example.com/rest/items?q=seen")
+    operation = _operation(url="https://example.com/rest/items", query=(("q", "wv"),), source="har")
+    points, _ = enumerate_points((page,), (), (operation,), max_points=100)
+    assert [p.source for p in points if p.param == "q"] == ["query"]

@@ -57,12 +57,14 @@ def looks_like_script_app(html: str) -> bool:
     return len(visible) < _MIN_VISIBLE_CHARS
 
 
-def script_app_warning(pages: Sequence[Page]) -> str | None:
+def script_app_warning(pages: Sequence[Page], *, har: bool = False) -> str | None:
     """
     The scan warning for a crawl that stopped at a JavaScript application's shell.
 
     Args:
         pages (Sequence[Page]): The pages the crawl discovered, entry page first.
+        har (bool): A ``--har`` recording was given, so the sentence does not suggest it again.
+            Defaults to ``False``.
 
     Returns:
         str | None: The warning text, or ``None`` when the crawl found a surface or the entry page
@@ -77,10 +79,16 @@ def script_app_warning(pages: Sequence[Page]) -> str | None:
         return None
     if not looks_like_script_app(entry.text):
         return None
+    advice = "Give it the API with --openapi <file>"
+    if not har:
+        advice += (
+            ", or browse the application with the browser's network panel open, save the "
+            "traffic as a HAR file and give it with --har <file>"
+        )
     return (
         "the entry page looks like a JavaScript application (almost no content of its own; scripts "
         f"build it): WebVigil does not run JavaScript, so it found {len(pages)} page(s) and the "
-        "results cover little of the application. Give it the API with --openapi <file>"
+        f"results cover little of the application. {advice}"
     )
 
 
