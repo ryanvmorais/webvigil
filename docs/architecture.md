@@ -101,7 +101,10 @@ Persistence       webvigil.api.db  (SQLite via SQLModel + Alembic, web only)
 6. Findings are collected, deduplicated by fingerprint, ordered deterministically, and
    returned in a `ScanResult` alongside per-check errors and warnings.
 7. A reporter renders the result (JSON is canonical; SARIF / HTML / Markdown are pure
-   functions of it, so `webvigil report` re-renders any format offline).
+   functions of it, so `webvigil report` re-renders any format offline). What the scanned
+   site sent (titles, evidence, names) is text in every format: the HTML template escapes
+   it, and the Markdown reporter escapes the Markdown and HTML metacharacters and fences the
+   evidence with a run of backticks longer than any inside it.
 
 See [writing-checks.md](writing-checks.md) for the check plugin contract,
 [web-api.md](web-api.md) for running the Web API, and [stack.md](stack.md) for
