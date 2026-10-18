@@ -50,7 +50,7 @@ test("setup → login → scan → report → password → logout", async ({ pag
 
   // The dependency fingerprint pass detected the vulnerable jQuery the fixture ships (spec 004).
   await expect(page.getByRole("heading", { name: "Detected technologies" })).toBeVisible();
-  await expect(page.getByRole("button", { name: /Vulnerable \(CVE-/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Vulnerable · \d+ advisor/ })).toBeVisible();
 
   // Download the JSON report and confirm it parses.
   await page.getByRole("button", { name: "Report", exact: true }).click();

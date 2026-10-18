@@ -70,6 +70,14 @@ beforeEach(() => {
 });
 
 describe("AuthLayout", () => {
+  it("wraps the page in the one <main> landmark (axe landmark-one-main)", async () => {
+    server.use(mockSetup({ needs_setup: false, authenticated: false }));
+    renderLayout();
+
+    expect(screen.getByRole("main")).toContainElement(screen.getByText("the page"));
+    await waitFor(() => expect(pageWrapper()).not.toHaveClass("invisible"));
+  });
+
   it("keeps the page in the DOM, hidden under a spinner, until /api/setup answers", async () => {
     let release: () => void = () => {};
     const gate = new Promise<void>((resolve) => (release = resolve));

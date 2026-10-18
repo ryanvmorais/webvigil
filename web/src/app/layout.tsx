@@ -6,6 +6,7 @@
 import type { Metadata } from "next";
 
 import { Providers } from "@/components/providers";
+import { APP_NAME } from "@/lib/page-title";
 
 import "./globals.css";
 
@@ -14,8 +15,11 @@ import "./globals.css";
 // written later cannot forget it (spec 022 RF-07, ADR-3).
 export const dynamic = "force-dynamic";
 
+// Each route sets its own title, through `pageTitle`, in a server `layout.tsx` (the pages are
+// Client Components and cannot export `metadata`), so the tab, the history and a screen
+// reader's first announcement say where the visitor is (WCAG 2.4.2). This is the fallback.
 export const metadata: Metadata = {
-  title: "WebVigil",
+  title: APP_NAME,
   description: "Dashboard for the WebVigil web vulnerability scanner",
 };
 

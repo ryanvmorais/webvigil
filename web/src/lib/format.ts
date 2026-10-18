@@ -8,6 +8,21 @@ export function reportFilename(id: number, ext: string): string {
   return `webvigil-${id}.${ext}`;
 }
 
+/**
+ * The options a scan ran with as a short phrase: "max pages: 12, delay ms: 1500", or
+ * "Defaults" when none were set. Replaces the raw JSON the detail view used to show.
+ */
+export function optionsText(options: Record<string, unknown> | null | undefined): string {
+  const entries = Object.entries(options ?? {});
+  if (entries.length === 0) return "Defaults";
+  return entries
+    .map(([key, value]) => {
+      const shown = typeof value === "object" ? JSON.stringify(value) : String(value);
+      return `${key.replaceAll("_", " ")}: ${shown}`;
+    })
+    .join(", ");
+}
+
 // Copy is English (see requirements); times are formatted in `en` for consistency.
 const LOCALE = "en";
 

@@ -1,13 +1,14 @@
 /*
  * globals.css — the web UI's only global stylesheet.
  *
- * Four concerns, in order:
+ * Five concerns, in order:
  *   1. Tailwind v4 entry + the animation utility library.
  *   2. Design tokens: the shadcn/ui "slate" palette plus a severity scale and a success colour,
  *      as bare HSL channel triples on :root (light) with a dark override.
  *   3. Theme mapping (@theme inline) + the accordion keyframes that the deleted
  *      tailwind.config.ts used to carry.
  *   4. A thin base-layer reset.
+ *   5. Reduced motion: the dialogs and menus stop animating when the OS asks.
  * Everything else is utilities in the markup; add a rule here only for what
  * utilities cannot express.
  */
@@ -185,5 +186,29 @@
       "Helvetica Neue",
       Arial,
       sans-serif;
+  }
+}
+
+/*
+ * 5. Reduced motion (WCAG 2.3.3).
+ *
+ * The dialog, dropdown and select primitives animate in and out through tw-animate-css. For a
+ * visitor who asked the OS for less motion they become instant: the duration is cut, not the
+ * animation removed, because Radix waits for `animationend` before it unmounts a closing
+ * layer. Unlayered, so it wins over every utility. The spinner is the exception: it is the
+ * only sign that a request is running, and it carries no travel across the screen.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .animate-spin {
+    animation-duration: 1s !important;
+    animation-iteration-count: infinite !important;
   }
 }

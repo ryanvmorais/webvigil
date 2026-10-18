@@ -21,7 +21,11 @@ export default function ChecksPage() {
   if (query.isLoading) return <FullPageSpinner />;
   if (query.isError) {
     return (
-      <LoadFailed message="Could not load the check catalogue." onRetry={() => query.refetch()} />
+      <LoadFailed
+        message="Could not load the check catalogue."
+        onRetry={() => query.refetch()}
+        heading="h1"
+      />
     );
   }
 
@@ -61,9 +65,7 @@ export default function ChecksPage() {
       {checks.length === 0 ? (
         <Empty title="No checks registered" />
       ) : (
-        <div className="overflow-x-auto rounded-md border">
-          <ChecksTable checks={checks} category={category} mode={mode} />
-        </div>
+        <ChecksTable checks={checks} category={category} mode={mode} />
       )}
     </div>
   );

@@ -15,8 +15,14 @@ import { keys } from "@/lib/query-keys";
 
 function ownedByGuard(queryKey?: readonly unknown[]): boolean {
   // The auth guard and the (auth) layout own the redirect for these probes (RF-05, RF-08).
+  // A 401 on the login attempt itself is a wrong password, not an expired session: sending
+  // the visitor to /login would wipe the cache, hide the form for a moment (focus lost to
+  // <body>) and drop the `?next=` the sign-in is meant to return to.
   if (!Array.isArray(queryKey)) return false;
-  return (queryKey[0] === "auth" && queryKey[1] === "me") || queryKey[0] === "setup";
+  return (
+    (queryKey[0] === "auth" && (queryKey[1] === "me" || queryKey[1] === "login")) ||
+    queryKey[0] === "setup"
+  );
 }
 
 /** Where a 401 should send the user, or `null` to leave it alone. Pure — unit-tested. */
@@ -56,7 +62,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
           onError: (error, query) => handlerRef.current(error, query.queryKey),
         }),
         mutationCache: new MutationCache({
-          onError: (error) => handlerRef.current(error),
+          onError: (error, _variables, _context, mutation) =>
+            handlerRef.current(error, mutation.options.mutationKey),
         }),
       }),
   );

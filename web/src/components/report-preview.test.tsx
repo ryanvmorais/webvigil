@@ -28,6 +28,25 @@ describe("ReportPreview", () => {
     expect(query).toMatchObject({ format: "html", download: "false" });
   });
 
+  it("announces the loading state and describes the dialog", async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.get("*/api/scans/9/report", async () => {
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        return new HttpResponse("<h1>Report</h1>", { headers: { "content-type": "text/html" } });
+      }),
+    );
+
+    render(<ReportPreview scanId={9} disabled={false} />);
+    await user.click(screen.getByRole("button", { name: /preview report/i }));
+
+    expect(screen.getByRole("status")).toHaveTextContent("Loading…");
+    expect(screen.getByRole("dialog", { name: "HTML report" })).toHaveAccessibleDescription(
+      /isolated from the rest of the page/,
+    );
+    await screen.findByTitle("HTML report preview");
+  });
+
   it("disables the trigger when there is nothing to preview", () => {
     render(<ReportPreview scanId={9} disabled />);
     expect(screen.getByRole("button", { name: /preview report/i })).toBeDisabled();

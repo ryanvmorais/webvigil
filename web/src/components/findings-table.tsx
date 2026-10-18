@@ -50,7 +50,7 @@ export function FindingsTable({ findings }: { findings: FindingOut[] }) {
   }
 
   return (
-    <Table>
+    <Table label="Findings" containerClassName="rounded-md border">
       <TableHeader>
         <TableRow>
           <TableHead className="w-8">
@@ -67,15 +67,22 @@ export function FindingsTable({ findings }: { findings: FindingOut[] }) {
         {findings.map((finding) => {
           const key = finding.fingerprint;
           const isOpen = expanded.has(key);
+          const location = locationText(finding.location);
+          const detailId = `finding-detail-${key}`;
           return (
             <Fragment key={key}>
               <TableRow>
                 <TableCell>
+                  {/* The padding grows the touch target from 16 to 44 px; the negative margin
+                      keeps the row as tall as before. The title in the name tells 28 buttons
+                      apart (a screen reader lists them by name). */}
                   <button
                     type="button"
                     onClick={() => toggle(key)}
                     aria-expanded={isOpen}
-                    aria-label={isOpen ? "Collapse finding" : "Expand finding"}
+                    aria-controls={isOpen ? detailId : undefined}
+                    aria-label={`${isOpen ? "Collapse" : "Expand"} finding: ${finding.title}`}
+                    className="focus-visible:ring-ring -m-3.5 rounded-sm p-3.5 focus-visible:ring-2 focus-visible:outline-none"
                   >
                     <ChevronRight
                       className={cn("size-4 transition-transform", isOpen && "rotate-90")}
@@ -88,18 +95,22 @@ export function FindingsTable({ findings }: { findings: FindingOut[] }) {
                 </TableCell>
                 <TableCell className="font-medium">{finding.title}</TableCell>
                 <TableCell className="font-mono text-xs">{finding.check_id}</TableCell>
-                <TableCell className="text-muted-foreground max-w-xs truncate">
-                  {locationText(finding.location)}
+                <TableCell className="text-muted-foreground max-w-xs truncate" title={location}>
+                  {location}
                 </TableCell>
                 <TableCell>
                   <ConfidenceBadge confidence={finding.confidence} />
                 </TableCell>
               </TableRow>
               {isOpen ? (
-                <TableRow>
+                <TableRow id={detailId}>
                   <TableCell colSpan={6} className="bg-muted/40">
                     <div className="space-y-3 py-2 text-sm">
                       <p>{finding.description}</p>
+                      <div>
+                        <span className="font-semibold">Location. </span>
+                        <span className="break-all">{location}</span>
+                      </div>
                       <div>
                         <span className="font-semibold">Remediation. </span>
                         {finding.remediation}

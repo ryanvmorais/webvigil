@@ -20,10 +20,12 @@ import { ReportPreview } from "@/components/report-preview";
 import { SeveritySummary } from "@/components/severity-summary";
 import { StatusBadge } from "@/components/status-badge";
 import { TechnologiesTable } from "@/components/technologies-table";
+import { useDocumentTitle } from "@/hooks/use-document-title";
 import { useFindings } from "@/hooks/use-findings";
 import { useCancelScan, useDeleteScan, useScan } from "@/hooks/use-scan";
 import { ApiError, REPORTABLE_STATUSES, TERMINAL_STATUSES, errorMessage } from "@/lib/api";
-import { absoluteTime } from "@/lib/format";
+import { absoluteTime, optionsText } from "@/lib/format";
+import { pageTitle } from "@/lib/page-title";
 import { keys } from "@/lib/query-keys";
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
@@ -35,12 +37,26 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
+/** A scan still running has not finished looking, so an empty list must not read as "clean". */
+function emptyFindingsTitle(filtered: boolean, isTerminal: boolean): string {
+  if (filtered) return "No findings match this filter";
+  return isTerminal
+    ? "This scan produced no findings"
+    : "Findings will appear here as the scan runs";
+}
+
 function ScanDetail({ id }: { id: number }) {
   const queryClient = useQueryClient();
   const search = useSearchParams();
   const scan = useScan(id);
   const status = scan.data?.status;
   const isTerminal = status !== undefined && TERMINAL_STATUSES.has(status as never);
+
+  // The route layout titles the tab "Scan"; the target is only known once the scan loads.
+  const isMissing = scan.error instanceof ApiError && scan.error.status === 404;
+  useDocumentTitle(
+    scan.data ? pageTitle(scan.data.target) : isMissing ? pageTitle("Scan not found") : undefined,
+  );
 
   const filters = {
     severity: search.get("severity") ?? undefined,
@@ -62,11 +78,13 @@ function ScanDetail({ id }: { id: number }) {
   }, [isTerminal, id, queryClient]);
 
   if (scan.isLoading) return <FullPageSpinner />;
-  if (scan.error instanceof ApiError && scan.error.status === 404) {
+  if (isMissing) {
     return <NotFound title="Scan not found" message="This scan does not exist." />;
   }
   if (scan.isError || !scan.data) {
-    return <LoadFailed message="Could not load this scan." onRetry={() => scan.refetch()} />;
+    return (
+      <LoadFailed message="Could not load this scan." onRetry={() => scan.refetch()} heading="h1" />
+    );
   }
 
   const s = scan.data;
@@ -116,7 +134,7 @@ function ScanDetail({ id }: { id: number }) {
         </div>
       </div>
 
-      <SeveritySummary counts={s.counts} />
+      <SeveritySummary counts={s.counts} inProgress={!isTerminal} />
 
       <dl className="grid gap-4 rounded-md border p-4 sm:grid-cols-3">
         <Row label="Scope" value={<span className="capitalize">{s.scope}</span>} />
@@ -126,7 +144,7 @@ function ScanDetail({ id }: { id: number }) {
         <Row label="Started" value={absoluteTime(s.started_at)} />
         <Row label="Finished" value={absoluteTime(s.finished_at)} />
         {s.authorized_by ? <Row label="Authorized by" value={s.authorized_by} /> : null}
-        <Row label="Options" value={<code className="text-xs">{JSON.stringify(s.options)}</code>} />
+        <Row label="Options" value={optionsText(s.options)} />
         {s.status === "failed" && s.error ? (
           <Row label="Error" value={<span className="text-destructive">{s.error}</span>} />
         ) : null}
@@ -143,14 +161,10 @@ function ScanDetail({ id }: { id: number }) {
           <LoadFailed message="Could not load findings." onRetry={() => findings.refetch()} />
         ) : null}
         {findings.isSuccess && findings.data.length === 0 ? (
-          <Empty
-            title={filtered ? "No findings match this filter" : "This scan produced no findings"}
-          />
+          <Empty title={emptyFindingsTitle(filtered, isTerminal)} />
         ) : null}
         {findings.data && findings.data.length > 0 ? (
-          <div className="overflow-x-auto rounded-md border">
-            <FindingsTable findings={findings.data} />
-          </div>
+          <FindingsTable findings={findings.data} />
         ) : null}
       </section>
     </div>

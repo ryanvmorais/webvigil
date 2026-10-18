@@ -44,4 +44,21 @@ describe("SeveritySummary", () => {
     render(<SeveritySummary counts={{}} />);
     expect(screen.getByText("No findings")).toBeInTheDocument();
   });
+
+  it("does not call a scan that is still running clean", () => {
+    render(<SeveritySummary counts={{}} inProgress />);
+    expect(screen.getByText("Scan in progress")).toBeInTheDocument();
+    expect(screen.queryByText("No findings")).not.toBeInTheDocument();
+  });
+
+  it("still shows the chips of a running scan that has found something", () => {
+    render(<SeveritySummary counts={{ HIGH: 1 }} inProgress />);
+    expect(screen.getByRole("listitem")).toHaveTextContent("1 high");
+  });
+
+  it("keeps each chip on one line, so a narrow column does not split '6 / medium'", () => {
+    render(<SeveritySummary counts={{ HIGH: 2, LOW: 1 }} />);
+    for (const chip of screen.getAllByRole("listitem"))
+      expect(chip).toHaveClass("whitespace-nowrap");
+  });
 });

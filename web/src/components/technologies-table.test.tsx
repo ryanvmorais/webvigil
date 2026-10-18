@@ -42,7 +42,43 @@ describe("TechnologiesTable", () => {
     expect(screen.getByRole("heading", { name: "Detected technologies" })).toBeInTheDocument();
     expect(screen.getByText("jquery")).toBeInTheDocument();
     expect(screen.getByText("unknown")).toBeInTheDocument();
-    expect(screen.getByText(/Vulnerable \(CVE-2011-4969\)/)).toBeInTheDocument();
+    expect(screen.getByText("Vulnerable · 1 advisory")).toBeInTheDocument();
+  });
+
+  it("keeps the advisory ids out of the badge and in the tooltip", () => {
+    renderWithClient(
+      <TechnologiesTable
+        items={[makeTechnology({ advisories: ["CVE-2011-4969", "CVE-2012-6708", "GHSA-xxxx"] })]}
+      />,
+    );
+    const button = screen.getByRole("button", { name: /Vulnerable/ });
+    expect(button).toHaveAttribute("title", "CVE-2011-4969, CVE-2012-6708, GHSA-xxxx");
+    expect(button).toHaveTextContent("Vulnerable · 3 advisories");
+    expect(button).not.toHaveTextContent("CVE-");
+  });
+
+  it("starts the button's name with its visible text and then says what it does", () => {
+    renderWithClient(<TechnologiesTable items={[makeTechnology({ advisories: ["a", "b"] })]} />);
+    expect(
+      screen.getByRole("button", {
+        name: "Vulnerable · 2 advisories: show findings for vulnerable libraries",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("says just Vulnerable when no advisory id is known", () => {
+    renderWithClient(<TechnologiesTable items={[makeTechnology({ advisories: [] })]} />);
+    const button = screen.getByRole("button", { name: /Vulnerable/ });
+    expect(button).not.toHaveAttribute("title");
+    expect(button).toHaveTextContent(/^Vulnerable: show findings/);
+  });
+
+  it("scrolls inside a labelled, focusable region", () => {
+    renderWithClient(<TechnologiesTable items={[makeTechnology()]} />);
+    expect(screen.getByRole("region", { name: "Detected technologies" })).toHaveAttribute(
+      "tabindex",
+      "0",
+    );
   });
 
   it("links a vulnerable row to the matching findings filter", async () => {

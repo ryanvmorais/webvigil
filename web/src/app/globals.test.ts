@@ -6,6 +6,9 @@
  * only runs against a live server. Nothing is mocked. The tokens that colour *text*
  * (severity levels, success, muted foreground) are checked in both themes on the page
  * background and on the `bg-muted/50` surface a table row takes on hover.
+ *
+ * The same text-reading approach pins the reduced-motion block: the stylesheet is the only
+ * place that rule can live, and jsdom would not apply a media query anyway.
  */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -91,5 +94,22 @@ describe.each([
 
   it.each(TEXT_TOKENS)("%s reaches 4.5:1 on the muted hover surface", (name) => {
     expect(contrast(toRgb(tokens[name]), hover)).toBeGreaterThanOrEqual(MIN_TEXT_CONTRAST);
+  });
+});
+
+describe("reduced motion", () => {
+  const block =
+    css.match(/@media \(prefers-reduced-motion: reduce\)\s*\{([\s\S]*)\}\s*$/)?.[1] ?? "";
+
+  it("cuts every animation and transition to an instant, without removing the animation", () => {
+    // Radix waits for `animationend` before unmounting a closing dialog or menu, so the
+    // animation has to still run (for 0.01 ms) rather than be `none`
+    expect(block).toMatch(/animation-duration:\s*0\.01ms\s*!important/);
+    expect(block).toMatch(/transition-duration:\s*0\.01ms\s*!important/);
+    expect(block).not.toMatch(/animation:\s*none/);
+  });
+
+  it("lets the spinner keep turning: it is the only sign that a request is running", () => {
+    expect(block).toMatch(/\.animate-spin\s*\{[^}]*animation-iteration-count:\s*infinite/);
   });
 });

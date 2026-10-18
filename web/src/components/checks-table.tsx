@@ -17,6 +17,8 @@ import { cweUrl } from "@/lib/format";
 import { SEVERITY_NAMES } from "@/lib/severity";
 import type { CheckOut } from "@/lib/api";
 
+const ARIA_SORT = { asc: "ascending", desc: "descending" } as const;
+
 function severityRank(name: string): number {
   const index = (SEVERITY_NAMES as readonly string[]).indexOf(name);
   return index === -1 ? -1 : index;
@@ -49,21 +51,25 @@ export function ChecksTable({
   }, [checks, category, mode, sortDir]);
 
   return (
-    <Table>
+    <Table label="Checks" containerClassName="rounded-md border">
       <TableHeader>
         <TableRow>
           <TableHead>ID</TableHead>
           <TableHead>Name</TableHead>
           <TableHead>Category</TableHead>
           <TableHead>Mode</TableHead>
-          <TableHead>
+          <TableHead aria-sort={sortDir ? ARIA_SORT[sortDir] : undefined}>
+            {/* The name starts with the visible text (WCAG 2.5.3), so voice control can say
+                "click Default severity"; the state follows it. */}
             <button
               type="button"
               className="flex items-center gap-1"
               onClick={() =>
                 setSortDir((prev) => (prev === "desc" ? "asc" : prev === "asc" ? null : "desc"))
               }
-              aria-label={`Sort by default severity${sortDir ? ` (${sortDir}ending)` : ""}`}
+              aria-label={
+                sortDir ? `Default severity, sorted ${ARIA_SORT[sortDir]}` : "Default severity"
+              }
             >
               Default severity
               {sortDir === "asc" ? <ArrowUp className="size-3" aria-hidden /> : null}

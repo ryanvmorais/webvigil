@@ -6,6 +6,14 @@ import { Check, ChevronRight, Circle } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
+// The highlighted item (keyboard focus or pointer) needs more than the `bg-accent` fill, which
+// is 1.10:1 against the menu in the light theme (WCAG 2.4.7 / 1.4.11 ask for 3:1). It is a
+// `ring`, not an `outline`: with `outline-none` on the item, Tailwind v4 stores the outline
+// style as `none` in a variable and a later `outline-2` never shows. Local edit of the vendored
+// file: re-apply it if `shadcn add dropdown-menu --overwrite` is ever run.
+const HIGHLIGHT_RING =
+  "data-[highlighted]:ring-2 data-[highlighted]:ring-ring data-[highlighted]:ring-inset";
+
 const DropdownMenu = DropdownMenuPrimitive.Root;
 
 const DropdownMenuTrigger = DropdownMenuPrimitive.Trigger;
@@ -28,6 +36,7 @@ const DropdownMenuSubTrigger = React.forwardRef<
     ref={ref}
     className={cn(
       "focus:bg-accent data-[state=open]:bg-accent flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none select-none [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+      HIGHLIGHT_RING,
       inset && "pl-8",
       className,
     )}
@@ -83,6 +92,7 @@ const DropdownMenuItem = React.forwardRef<
     ref={ref}
     className={cn(
       "focus:bg-accent focus:text-accent-foreground relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm transition-colors outline-none select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&>svg]:size-4 [&>svg]:shrink-0",
+      HIGHLIGHT_RING,
       inset && "pl-8",
       className,
     )}
@@ -99,6 +109,7 @@ const DropdownMenuCheckboxItem = React.forwardRef<
     ref={ref}
     className={cn(
       "focus:bg-accent focus:text-accent-foreground relative flex cursor-default items-center rounded-sm py-1.5 pr-2 pl-8 text-sm transition-colors outline-none select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+      HIGHLIGHT_RING,
       className,
     )}
     checked={checked}
@@ -122,6 +133,7 @@ const DropdownMenuRadioItem = React.forwardRef<
     ref={ref}
     className={cn(
       "focus:bg-accent focus:text-accent-foreground relative flex cursor-default items-center rounded-sm py-1.5 pr-2 pl-8 text-sm transition-colors outline-none select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+      HIGHLIGHT_RING,
       className,
     )}
     {...props}

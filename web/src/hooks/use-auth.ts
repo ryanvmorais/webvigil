@@ -68,6 +68,9 @@ export function useLogin() {
   const queryClient = useQueryClient();
   const router = useRouter();
   return useMutation({
+    // The key marks this as the login attempt, so a 401 (wrong password) is shown on the form
+    // and not treated as an expired session (see `ownedByGuard` in providers.tsx).
+    mutationKey: keys.auth.login(),
     mutationFn: api.login,
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: keys.auth.me() });
