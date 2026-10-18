@@ -2146,7 +2146,7 @@ provides-extras = ["web"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "black", specifier = ">=26.10.0" },
+    { name = "black", specifier = ">=26.10.1" },
     { name = "import-linter", specifier = ">=2.15" },
     { name = "jsonschema", specifier = ">=4.26.0" },
     { name = "mypy", specifier = ">=2.4.0" },

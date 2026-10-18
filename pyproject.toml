@@ -80,7 +80,7 @@ Changelog = "https://github.com/ryanvmorais/webvigil/blob/main/CHANGELOG.md"
 dev = [
     # Lint / format / types (see the `webvigil` command list in CLAUDE.md).
     "ruff>=0.17.0",
-    "black>=26.10.0",
+    "black>=26.10.1",
     "mypy>=2.4.0",
     # Architecture contract: `lint-imports` enforces engine purity (RNF-01 / ADR-1).
     "import-linter>=2.15",
