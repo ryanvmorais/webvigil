@@ -11,6 +11,26 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 ## [Unreleased]
 
+### Changed
+
+- The dashboard is easier to use from the keyboard, a phone and a screen reader, after an
+  accessibility and layout audit of every page in both themes. The item highlighted in a menu or a
+  list now has a visible ring (its fill alone was 1.10:1 against the menu in the light theme), and the
+  focus ring of buttons, fields and selects is 2 px. Each expand button in the findings table is named
+  after its finding, and the full location of a finding is in its detail. Each page has its own tab
+  title ("Scans | WebVigil", and the target's address on a scan). The sign-in, setup and 404 pages have
+  a main landmark. A wrong password no longer sends the keyboard focus to the top of the page, and the
+  `?next=` address survives it. A table wider than the screen is a named region that the keyboard can
+  scroll.
+- A scan that is still queued or running no longer reads "No findings" or "This scan produced no
+  findings": it says "Scan in progress" until it finishes. On a phone the scan list hides the Mode,
+  Scope and Created columns (the scan page still shows them), so the Findings column fits. A page that
+  matches no route shows a "Page not found" page with a link back to the scans instead of Next's bare
+  404, and the "Vulnerable" badge reads "Vulnerable · 11 advisories" (the ids are in its tooltip and in
+  the finding it opens). The dialogs and menus stop animating when the system asks for reduced motion.
+  Small copy changes: the scan options read "max pages: 12" instead of raw JSON, and the report button
+  says why it is disabled.
+
 ## [1.1.0] - 2026-10-09
 
 A minor release: new options, detector improvements and hardening, all backward compatible with
