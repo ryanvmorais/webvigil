@@ -11,7 +11,7 @@ import { useForm, type Resolver } from "react-hook-form";
 
 import { DisabledChecksField } from "@/components/disabled-checks-field";
 import { FieldSelect } from "@/components/field-select";
-import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/submit-button";
 import {
   Form,
   FormControl,
@@ -264,8 +264,9 @@ export function ScanForm() {
         />
 
         <p className="text-muted-foreground text-sm">
-          fail-on: <span className="font-medium">{defaults.data?.fail_on ?? "medium"}</span>{" "}
-          (informational — the API has no exit code).
+          The configured fail-on level is{" "}
+          <span className="font-medium">{defaults.data?.fail_on ?? "medium"}</span>. It sets the
+          exit code of the command line, so the dashboard only shows it.
         </p>
 
         {genericError ? (
@@ -274,9 +275,7 @@ export function ScanForm() {
           </p>
         ) : null}
 
-        <Button type="submit" disabled={createScan.isPending}>
-          Start scan
-        </Button>
+        <SubmitButton isPending={createScan.isPending}>Start scan</SubmitButton>
       </form>
     </Form>
   );

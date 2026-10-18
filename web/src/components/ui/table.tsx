@@ -2,9 +2,29 @@ import * as React from "react";
 
 import { cn } from "@/lib/utils";
 
-const Table = React.forwardRef<HTMLTableElement, React.HTMLAttributes<HTMLTableElement>>(
-  ({ className, ...props }, ref) => (
-    <div className="relative w-full overflow-auto">
+type TableProps = React.HTMLAttributes<HTMLTableElement> & {
+  /**
+   * Name of the scrolling region around the table. When set, the wrapper becomes a labelled,
+   * focusable region, so a keyboard user can scroll a table wider than the screen (a scroll
+   * container with no focusable child is unreachable otherwise).
+   */
+  label?: string;
+  /** Classes for the scrolling wrapper, e.g. the border, so no second scroller is needed. */
+  containerClassName?: string;
+};
+
+// Local edit of the vendored file (`label`, `containerClassName`): re-apply it if
+// `shadcn add table --overwrite` is ever run.
+const Table = React.forwardRef<HTMLTableElement, TableProps>(
+  ({ className, label, containerClassName, ...props }, ref) => (
+    <div
+      className={cn(
+        "relative w-full overflow-auto",
+        label && "focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none",
+        containerClassName,
+      )}
+      {...(label ? { role: "region", "aria-label": label, tabIndex: 0 } : {})}
+    >
       <table ref={ref} className={cn("w-full caption-bottom text-sm", className)} {...props} />
     </div>
   ),

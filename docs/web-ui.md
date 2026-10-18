@@ -118,6 +118,24 @@ directive would rewrite its own requests to `https`.
   header with a matching nonce off the built dashboard, and the end-to-end flow (including opening the
   report preview) fails on any CSP violation or uncaught page error.
 
+## Report preview and the keyboard
+
+The inline report preview is a `blob:` document in an `<iframe sandbox="">`
+([ADR-7](../specs/003-web-ui/design.md)). One keyboard limit comes with that, and it is kept
+on purpose:
+
+- **What happens.** When the preview opens, the focus is on its "Close" button and Esc closes
+  it. If the focus then moves into the report (Tab, or a click to scroll), Esc no longer
+  closes the dialog: key presses typed inside the frame never reach the page.
+- **Why.** An empty `sandbox` gives the frame an opaque origin, so the page cannot listen to
+  keys typed there. That is the isolation the report needs, since the report is HTML the
+  scan assembled from the target's responses.
+- **What still closes it.** The "Close" button, and a click outside the dialog.
+- **Options considered.** Taking the frame out of the Tab order (`tabIndex={-1}`) keeps Esc
+  working after Tab, but a click into the report still traps it, and the keyboard can no
+  longer scroll the report. Adding `allow-same-origin` lets the page hear Esc, but it
+  weakens the sandbox and needs a new ADR first. Neither was adopted.
+
 ## Scripts
 
 | Command (in `web/`) | What it does |

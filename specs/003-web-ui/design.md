@@ -493,7 +493,10 @@ revoked on close.
 **Why:** decision 4 with Ryan. Empty `sandbox` gives no script execution and no same-origin
 access — the report is static HTML — and no new API route is needed.
 **Trade-off:** the preview is an opaque frame (no in-app theming of the report); a blob URL
-must be lifecycle-managed.
+must be lifecycle-managed. Esc does not close the dialog once the focus is inside the frame
+(the page cannot hear keys typed in an opaque origin); the "Close" button and a click outside
+still do. Accepted, and written up in [web-ui.md](../../docs/web-ui.md) ("Report preview and
+the keyboard"). Lifting it takes `allow-same-origin`, which needs a new ADR.
 
 ### ADR-8 — Theme by `prefers-color-scheme` only, no toggle
 **Decision:** Tailwind `darkMode: "media"`; shadcn tokens defined for light and

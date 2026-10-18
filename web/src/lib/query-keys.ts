@@ -8,6 +8,7 @@ export type FindingFilters = { severity?: string; checkId?: string };
 export const keys = {
   auth: {
     me: () => ["auth", "me"] as const,
+    login: () => ["auth", "login"] as const,
   },
   setup: () => ["setup"] as const,
   health: () => ["health"] as const,

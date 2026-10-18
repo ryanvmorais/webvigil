@@ -4,7 +4,7 @@
 import { useState } from "react";
 
 import { LogoutButton } from "@/components/logout-button";
-import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/submit-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useChangePassword, useHealth } from "@/hooks/use-auth";
@@ -102,9 +102,7 @@ export default function SettingsPage() {
             </p>
           ) : null}
 
-          <Button type="submit" disabled={changePassword.isPending}>
-            Change password
-          </Button>
+          <SubmitButton isPending={changePassword.isPending}>Change password</SubmitButton>
         </form>
       </section>
 

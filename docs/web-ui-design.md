@@ -125,6 +125,24 @@ from the tokens above.
   `className` overrides a variant's classes predictably.
 - **They are vendored**, not a dependency: the source is copied into the repo and owned
   here. New ones are added with `pnpm dlx shadcn@latest add <name>` from `web/`.
+- **Four local edits survive an update only if re-applied.** Running `shadcn add <name>
+  --overwrite` would undo them; `web/src/components/ui/accessibility.test.tsx` fails if it does.
+  1. **Highlight ring** (`dropdown-menu`, `select`): the highlighted item gets
+     `ring-2 ring-ring ring-inset`. The shadcn default is a `bg-accent` fill alone, which is
+     1.10:1 against the menu in the light theme and 1.37:1 in the dark one; a keyboard user
+     could not tell which item was focused (WCAG 2.4.7, 1.4.11 ask for 3:1). It is a `ring`,
+     not an `outline`: the item carries `outline-none`, and in Tailwind v4 that stores the
+     outline style as `none` in a variable, so a later `outline-2` never shows.
+  2. **2 px focus ring** (`button`, `input`, `select` trigger): `ring-2` instead of shadcn's
+     `ring-1`, so every control shows the same, easier-to-see ring.
+  3. **44 px close button** (`dialog`): `p-3.5 -m-3.5` grows the target from 16 px to 44 px
+     and leaves the icon where it was (the WCAG 2.2 minimum is 24 px; 44 px is the touch
+     recommendation).
+  4. **Scroll region** (`table`): the `label` prop turns the wrapper into a labelled,
+     focusable `region`, and `containerClassName` puts the border on that one scroller. A
+     scroll container with no focusable child cannot be scrolled from the keyboard, and two
+     nested scrollers trap the wheel. Pass `label` to every table that can be wider than the
+     screen.
 
 ## Where a new colour has to be declared
 

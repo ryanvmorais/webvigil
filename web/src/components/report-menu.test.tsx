@@ -16,6 +16,18 @@ describe("ReportMenu", () => {
     expect(screen.getByRole("button", { name: /report/i })).toBeDisabled();
   });
 
+  it("says why it is disabled in its name, not only in a tooltip a phone never shows", () => {
+    render(<ReportMenu scanId={5} status="running" />);
+    expect(
+      screen.getByRole("button", { name: "Report: available once the scan completes" }),
+    ).toBeInTheDocument();
+  });
+
+  it("is just 'Report' once it works", () => {
+    render(<ReportMenu scanId={5} status="completed" />);
+    expect(screen.getByRole("button", { name: "Report" })).toBeEnabled();
+  });
+
   it("offers all four formats as attachment downloads", () => {
     render(<ReportMenu scanId={5} status="completed" />);
     expect(screen.getByRole("button", { name: /report/i })).toBeEnabled();

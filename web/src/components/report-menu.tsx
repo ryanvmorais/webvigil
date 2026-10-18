@@ -11,6 +11,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { REPORTABLE_STATUSES, REPORT_FORMATS, api } from "@/lib/api";
 
+const UNAVAILABLE_REASON = "Available once the scan completes";
+
 /** Download the report in any of the four formats (RF-27). Disabled until the scan can report. */
 export function ReportMenu({ scanId, status }: { scanId: number; status: string }) {
   const enabled = REPORTABLE_STATUSES.has(status as never);
@@ -22,10 +24,12 @@ export function ReportMenu({ scanId, status }: { scanId: number; status: string 
           variant="outline"
           size="sm"
           disabled={!enabled}
-          title={enabled ? undefined : "Available once the scan completes"}
+          title={enabled ? undefined : UNAVAILABLE_REASON}
         >
           <Download className="size-4" aria-hidden />
           Report
+          {/* `title` is not shown on a phone or read with the keyboard; the name carries it. */}
+          {enabled ? null : <span className="sr-only">: {UNAVAILABLE_REASON.toLowerCase()}</span>}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">

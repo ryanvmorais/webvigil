@@ -64,7 +64,9 @@ describe("ScanDetailPage", () => {
       http.get("*/api/checks", () => HttpResponse.json([])),
     );
     renderWithClient(<ScanDetailPage />);
-    await screen.findByText("Scan not found");
+    // the placeholder is the whole page, so its title is the page's h1 (axe page-has-heading-one)
+    await screen.findByRole("heading", { level: 1, name: "Scan not found" });
+    await waitFor(() => expect(document.title).toBe("Scan not found | WebVigil"));
   });
 
   it("lists findings in the order the API returns them", async () => {
@@ -130,6 +132,43 @@ describe("ScanDetailPage", () => {
     renderWithClient(<ScanDetailPage />);
     await screen.findByRole("heading", { level: 1 });
     expect(screen.queryByText("Detected technologies")).not.toBeInTheDocument();
+  });
+
+  it.each(["queued", "running"])(
+    "does not say a %s scan produced no findings: it has not finished",
+    async (status) => {
+      mockScan(makeScanOut({ id: 7, status, counts: {} }), []);
+      renderWithClient(<ScanDetailPage />);
+      await screen.findByText("Findings will appear here as the scan runs");
+      expect(screen.getByText("Scan in progress")).toBeInTheDocument();
+      expect(screen.queryByText("No findings")).not.toBeInTheDocument();
+      expect(screen.queryByText("This scan produced no findings")).not.toBeInTheDocument();
+    },
+  );
+
+  it.each(["completed", "failed", "cancelled", "interrupted"])(
+    "still says a %s scan with nothing found produced no findings",
+    async (status) => {
+      mockScan(makeScanOut({ id: 7, status, counts: {} }), []);
+      renderWithClient(<ScanDetailPage />);
+      await screen.findByText("This scan produced no findings");
+      expect(screen.getByText("No findings")).toBeInTheDocument();
+    },
+  );
+
+  it("puts the target in the tab title once the scan loads", async () => {
+    mockScan(makeScanOut({ id: 7, target: "https://acme.test/", status: "completed" }));
+    renderWithClient(<ScanDetailPage />);
+    await waitFor(() => expect(document.title).toBe("https://acme.test/ | WebVigil"));
+  });
+
+  it("shows the options as words, not as raw JSON", async () => {
+    mockScan(
+      makeScanOut({ id: 7, status: "completed", options: { max_pages: 12, delay_ms: 1500 } }),
+    );
+    renderWithClient(<ScanDetailPage />);
+    await screen.findByText("max pages: 12, delay ms: 1500");
+    expect(screen.queryByText(/\{"max_pages"/)).not.toBeInTheDocument();
   });
 
   it("distinguishes 'no match' from 'no findings'", async () => {

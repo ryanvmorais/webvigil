@@ -65,9 +65,37 @@ describe("ChecksPage", () => {
     renderWithClient(<ChecksPage />);
     await screen.findByText("CSP header");
 
-    await user.click(screen.getByRole("button", { name: /sort by default severity/i }));
+    await user.click(screen.getByRole("button", { name: "Default severity" }));
     const firstRowAfterHeader = screen.getAllByRole("row")[1];
     expect(within(firstRowAfterHeader).getByText("TLS config")).toBeInTheDocument(); // HIGH first (desc)
+  });
+
+  it("starts the sort button's name with its visible text and reports the state", async () => {
+    const user = userEvent.setup();
+    server.use(http.get("*/api/checks", () => HttpResponse.json(checks)));
+    renderWithClient(<ChecksPage />);
+    await screen.findByText("CSP header");
+    const header = screen.getByRole("columnheader", { name: "Default severity" });
+    expect(header).not.toHaveAttribute("aria-sort");
+
+    await user.click(screen.getByRole("button", { name: "Default severity" }));
+    expect(header).toHaveAttribute("aria-sort", "descending");
+    expect(
+      screen.getByRole("button", { name: "Default severity, sorted descending" }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /^Default severity/ }));
+    expect(header).toHaveAttribute("aria-sort", "ascending");
+
+    await user.click(screen.getByRole("button", { name: /^Default severity/ }));
+    expect(header).not.toHaveAttribute("aria-sort");
+  });
+
+  it("scrolls inside a labelled, focusable region", async () => {
+    server.use(http.get("*/api/checks", () => HttpResponse.json(checks)));
+    renderWithClient(<ChecksPage />);
+    await screen.findByText("CSP header");
+    expect(screen.getByRole("region", { name: "Checks" })).toHaveAttribute("tabindex", "0");
   });
 
   it("shows a retry state on failure", async () => {

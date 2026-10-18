@@ -60,6 +60,39 @@ describe("LoginPage", () => {
     },
   );
 
+  it("keeps the focus on the button while the request runs, and sends it only once", async () => {
+    // a `disabled` button hands the focus to <body>: after a wrong password a keyboard user
+    // would have to Tab in from the top of the page
+    const user = userEvent.setup();
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const requests = vi.fn();
+    server.use(
+      http.post("*/api/auth/login", async () => {
+        requests();
+        await gate;
+        return HttpResponse.json({ detail: "invalid username or password" }, { status: 401 });
+      }),
+    );
+    renderWithClient(<LoginPage />);
+    await user.type(await screen.findByLabelText("Username"), "ana");
+    await user.type(screen.getByLabelText("Password"), "wrongpass");
+
+    const button = screen.getByRole("button", { name: "Sign in" });
+    await user.click(button);
+    await waitFor(() => expect(button).toHaveAttribute("aria-disabled", "true"));
+    await user.click(button);
+
+    expect(button).not.toBeDisabled();
+    expect(button).toHaveFocus();
+    expect(requests).toHaveBeenCalledTimes(1);
+
+    release();
+    await screen.findByText("Invalid username or password.");
+    expect(button).toHaveFocus();
+    expect(button).not.toHaveAttribute("aria-disabled");
+  });
+
   it("shows one generic error, clears the password, keeps the username on 401", async () => {
     const user = userEvent.setup();
     server.use(

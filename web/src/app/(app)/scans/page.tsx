@@ -58,9 +58,7 @@ function ScanList() {
 
       {scans.length > 0 ? (
         <>
-          <div className="overflow-x-auto rounded-md border">
-            <ScanListTable scans={scans} />
-          </div>
+          <ScanListTable scans={scans} />
           {query.hasNextPage ? (
             <div className="flex justify-center">
               <Button

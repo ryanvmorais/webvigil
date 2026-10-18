@@ -45,11 +45,11 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
   const pending = !answered || redirecting;
 
   return (
-    <div className="grid min-h-screen place-items-center p-4">
+    <main className="grid min-h-screen place-items-center p-4">
       <div className="relative w-full max-w-sm">
         <div className={cn(pending && "invisible")}>{children}</div>
         {pending ? <FullPageSpinner className="absolute inset-0 min-h-0" /> : null}
       </div>
-    </div>
+    </main>
   );
 }

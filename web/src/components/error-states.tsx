@@ -36,26 +36,36 @@ export function FullPageSpinner({
   );
 }
 
+/**
+ * `heading` is the level of the title: `h1` when the placeholder is the whole page (nothing
+ * else on it names the page), `h2` when it sits under a page that already has its `h1`.
+ */
+type HeadingLevel = "h1" | "h2";
+
 function Panel({
   icon,
   title,
+  heading = "h2",
   children,
 }: {
   icon: ReactNode;
   title: string;
+  heading?: HeadingLevel;
   children?: ReactNode;
 }) {
+  const Heading = heading;
   return (
     <div className="mx-auto flex max-w-md flex-col items-center gap-3 py-16 text-center">
       <div className="text-muted-foreground" aria-hidden>
         {icon}
       </div>
-      <h2 className="text-lg font-semibold">{title}</h2>
+      <Heading className="text-lg font-semibold">{title}</Heading>
       {children}
     </div>
   );
 }
 
+/** A "not found" page: it is always the whole page, so its title is the `h1`. */
 export function NotFound({
   title = "Not found",
   message = "That page or resource does not exist.",
@@ -68,7 +78,7 @@ export function NotFound({
   backLabel?: string;
 }) {
   return (
-    <Panel icon={<SearchX className="size-8" />} title={title}>
+    <Panel icon={<SearchX className="size-8" />} title={title} heading="h1">
       <p className="text-muted-foreground text-sm">{message}</p>
       <Button asChild variant="outline">
         <Link href={backHref}>{backLabel}</Link>
@@ -80,12 +90,18 @@ export function NotFound({
 export function LoadFailed({
   message = "Could not load this page.",
   onRetry,
+  heading,
 }: {
   message?: string;
   onRetry?: () => void;
+  heading?: HeadingLevel;
 }) {
   return (
-    <Panel icon={<AlertTriangle className="size-8" />} title="Something went wrong">
+    <Panel
+      icon={<AlertTriangle className="size-8" />}
+      title="Something went wrong"
+      heading={heading}
+    >
       <p className="text-muted-foreground text-sm">{message}</p>
       {onRetry ? <Button onClick={onRetry}>Retry</Button> : null}
     </Panel>

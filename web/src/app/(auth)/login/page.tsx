@@ -12,7 +12,7 @@
 import { useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 
-import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/submit-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useLogin } from "@/hooks/use-auth";
@@ -89,9 +89,9 @@ function LoginForm() {
           </p>
         ) : null}
 
-        <Button type="submit" className="w-full" disabled={login.isPending}>
+        <SubmitButton className="w-full" isPending={login.isPending}>
           Sign in
-        </Button>
+        </SubmitButton>
       </form>
     </div>
   );
