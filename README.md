@@ -27,7 +27,7 @@ optional **web dashboard** built on top of the same engine.
 > [Semantic Versioning](docs/stability.md); what each release changed is in the [changelog](CHANGELOG.md). [Scope and limitations](#scope-and-limitations) says what
 > WebVigil deliberately does not do.
 
-![WebVigil dashboard (optional web UI) — scan detail page showing findings grouped by severity](assets/dashboard-scan-detail.png)
+![WebVigil dashboard (optional web UI) — scan detail page showing findings grouped by severity](assets/webvigil-dashboard-scan-detail-findings-by-severity.png)
 
 ## WebVigil vs. other scanners
 
