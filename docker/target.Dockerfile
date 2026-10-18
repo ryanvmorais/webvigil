@@ -2,7 +2,7 @@
 # NOT a WebVigil component — it is the fixture app from tests/, packaged to run on a port.
 #   docker compose --profile targets up target
 #   webvigil scan http://localhost:8080 --mode active --authorized-by me
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 RUN pip install --no-cache-dir "starlette>=0.37" "uvicorn>=0.30" "python-multipart>=0.0.9"
 
