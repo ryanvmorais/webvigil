@@ -30,6 +30,9 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
   the finding it opens). The dialogs and menus stop animating when the system asks for reduced motion.
   Small copy changes: the scan options read "max pages: 12" instead of raw JSON, and the report button
   says why it is disabled.
+- The container image no longer ships `pip`. The runtime never uses it, and the copy in the base image
+  vendors its own `certifi`, which image scanners flagged (GHSA-6q48-6c7w-9gw2) until the base image
+  was rebuilt.
 
 ## [1.1.0] - 2026-10-09
 

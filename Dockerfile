@@ -26,6 +26,9 @@ LABEL org.opencontainers.image.source="https://github.com/ryanvmorais/webvigil" 
 RUN useradd --create-home --uid 10001 webvigil \
     && mkdir /work /data \
     && chown webvigil:webvigil /work /data
+# The runtime never calls pip (the venv comes from the build stage), and the base image's pip vendors
+# its own certifi, which scanners flag until the base image is rebuilt. Dropping it removes both.
+RUN python -m pip uninstall -y pip
 COPY --from=build --chown=webvigil:webvigil /app/.venv /app/.venv
 ENV PATH="/app/.venv/bin:${PATH}"
 
