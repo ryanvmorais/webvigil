@@ -1,0 +1,47 @@
+# Weekly CVE audit of the dependencies (pip-audit over uv.lock).
+# It exists because CI only runs on PRs and Dependabot does not always open a fix PR:
+# a CVE published after the last PR would go unnoticed. A red run = a known
+# vulnerability in the lock; GitHub emails whoever last edited the cron.
+#
+# Audits the whole lock (runtime, extras and dev groups), without needing the project
+# to depend on pip-audit. The tool runs with the same 7-day cooldown as the other
+# dependencies.
+#
+# Actions are pinned by commit SHA, with the version in the comment: a tag can be
+# moved after publication, a SHA cannot. Dependabot (github-actions) updates the SHA
+# and the comment together.
+name: Weekly pip-audit
+
+on:
+  schedule:
+    # Monday 09:00 in Sao Paulo (UTC-3): after Sunday's Dependabot PRs.
+    - cron: "0 12 * * 1"
+  workflow_dispatch:
+
+# One run at a time; a manual dispatch mid-week does not stack with the scheduled one.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  pip-audit:
+    name: pip-audit (CVEs in uv.lock)
+    runs-on: ubuntu-26.04
+    # A normal run takes under 1 minute; the cap stops a stuck job from burning the quota.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+
+      - name: Export uv.lock to requirements
+        run: uv export --frozen --no-emit-project --no-hashes --all-groups --all-extras -o requirements-audit.txt
+
+      # --no-deps: the export already has the full, locked graph; without it pip-audit
+      # would resolve again and audit a set that is not the lock's.
+      - name: pip-audit (known CVEs)
+        run: uvx --exclude-newer "7 days" pip-audit --requirement requirements-audit.txt --no-deps --disable-pip
