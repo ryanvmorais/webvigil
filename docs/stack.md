@@ -466,7 +466,11 @@ violations.
 accessibility, best practices and SEO) against the built dashboard, mobile and desktop,
 through `@lhci/cli`. It starts the same three processes the Playwright e2e does, seeds an
 account and one finished scan with `scripts/lighthouse-seed.py`, and takes the median of
-3 runs per page. The limits live in `.github/lighthouse/*.json`.
+3 runs per page. The limits live in `.github/lighthouse/*.json`. It runs on pull requests
+that touch the web app or the API, on pushes to `main` and by hand (`workflow_dispatch`).
+Besides the category scores, `color-contrast`, `unsized-images`, `target-size` and
+`errors-in-console` each have their own `error` assertion, because the accessibility
+score would still pass with any one of them failing.
 
 **Why this:** the unit tests (jest-axe) catch what a rendered tree gets wrong in
 isolation, but nothing measures the page in a real browser: a contrast regression, a
