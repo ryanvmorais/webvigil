@@ -322,11 +322,11 @@ webvigil` gives the engine and the CLI, and `webvigil[web]` adds the Web API.
 ## Development
 
 ```bash
-uv sync
+uv sync --all-extras   # the tests and mypy need the web extra
 uv run ruff check .
 uv run black --check .
 uv run mypy src
-uv run lint-imports    # the engine must not import Typer/Rich/FastAPI/SQLModel/Uvicorn
+uv run lint-imports    # the engine must not import Typer/Rich/FastAPI/SQLModel/Alembic/PyJWT/argon2/Uvicorn
 uv run pytest
 
 # Web UI (in web/):

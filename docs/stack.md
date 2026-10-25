@@ -291,7 +291,7 @@ The UI library. Components are functions that return JSX; state is `useState` /
 
 **Learn:** function components, the hook rules, `useState` / `useEffect` /
 `useRef` / `useMemo` / `useCallback`, lifting state up, and why the new
-`eslint-plugin-react-hooks` (v6, React Compiler rules) complains about reading a
+`eslint-plugin-react-hooks` (v7, React Compiler rules) complains about reading a
 ref during render.
 
 ### TanStack Query
