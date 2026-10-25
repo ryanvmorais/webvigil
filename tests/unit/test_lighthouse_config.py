@@ -103,3 +103,14 @@ def test_no_audited_page_may_log_a_console_error(stem: str) -> None:
     ``GET /api/setup`` (``authenticated``), which answers 200 either way.
     """
     assert "errors-in-console" in _load(stem)["assert"]["assertions"]
+
+
+@pytest.mark.parametrize("stem", _STEMS)
+def test_unsized_images_is_its_own_assertion(stem: str) -> None:
+    """
+    An image without ``width``/``height`` shifts the layout once it loads.
+
+    The accessibility score would still pass with the failure, so the audit needs its own
+    assertion (same reason as ``color-contrast``).
+    """
+    assert "unsized-images" in _load(stem)["assert"]["assertions"]

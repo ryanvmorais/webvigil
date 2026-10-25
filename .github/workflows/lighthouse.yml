@@ -1,5 +1,6 @@
 # Lighthouse CI: audits the dashboard on every web change (mobile and desktop) and fails
-# when accessibility, contrast, touch targets, console errors, CLS or page weight regress.
+# when accessibility, contrast, touch targets, console errors, CLS, unsized images or
+# page weight regress.
 # The limits live in .github/lighthouse/{mobile,desktop}{,-login}.json.
 #
 # Why a workflow apart from ci.yml: Lighthouse takes minutes and varies on a shared
@@ -30,6 +31,9 @@ on:
       - "scripts/serve-fixture-app.py"
       - ".github/lighthouse/**"
       - ".github/workflows/lighthouse.yml"
+  # Manual run (Actions > Lighthouse > Run workflow): pick any branch, e.g. to measure a
+  # change the path filter above does not cover.
+  workflow_dispatch:
 
 # Cancel obsolete runs of the same ref: a new push to the PR kills the previous run.
 concurrency:
