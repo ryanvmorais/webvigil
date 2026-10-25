@@ -58,6 +58,13 @@
             "aggregationMethod": "median-run"
           }
         ],
+        "unsized-images": [
+          "error",
+          {
+            "minScore": 1,
+            "aggregationMethod": "median-run"
+          }
+        ],
         "target-size": [
           "error",
           {
