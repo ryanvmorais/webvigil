@@ -33,6 +33,9 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 - The container image no longer ships `pip`. The runtime never uses it, and the copy in the base image
   vendors its own `certifi`, which image scanners flagged (GHSA-6q48-6c7w-9gw2) until the base image
   was rebuilt.
+- The PyPI keywords add `vulnerability-scanner`, `devsecops`, `sarif` and `xss`, the terms people
+  search for when they look for a tool like this one. PyPI reads them at upload, so they take effect
+  with the next release.
 
 ## [1.1.0] - 2026-10-09
 

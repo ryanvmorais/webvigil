@@ -20,7 +20,19 @@ dynamic = ["readme"]
 requires-python = ">=3.12"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Ryan Morais" }]
-keywords = ["security", "scanner", "web", "vulnerability", "dast", "appsec", "owasp"]
+keywords = [
+    "security",
+    "scanner",
+    "web",
+    "vulnerability",
+    "vulnerability-scanner",
+    "dast",
+    "appsec",
+    "devsecops",
+    "owasp",
+    "sarif",
+    "xss",
+]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Environment :: Console",
