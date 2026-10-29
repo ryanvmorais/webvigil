@@ -78,6 +78,16 @@ describe("AuthLayout", () => {
     await waitFor(() => expect(pageWrapper()).not.toHaveClass("invisible"));
   });
 
+  it("puts the logo and the name above the page, inside the hidden wrapper", async () => {
+    server.use(mockSetup({ needs_setup: false, authenticated: false }));
+    renderLayout();
+
+    const wrapper = pageWrapper();
+    expect(wrapper).toHaveTextContent("WebVigil");
+    expect(wrapper.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
+    await waitFor(() => expect(wrapper).not.toHaveClass("invisible"));
+  });
+
   it("keeps the page in the DOM, hidden under a spinner, until /api/setup answers", async () => {
     let release: () => void = () => {};
     const gate = new Promise<void>((resolve) => (release = resolve));

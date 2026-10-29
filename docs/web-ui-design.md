@@ -15,7 +15,8 @@ the source of truth; this page maps them.
 |---|---|
 | Design tokens, theme mapping, base reset | `web/src/app/globals.css` |
 | Severity names, labels, colour classes | `web/src/lib/severity.ts` |
-| App icon (the header's shield, light and dark; Next serves it as the favicon) | `web/src/app/icon.svg` |
+| App icon (the logo, light and dark; Next serves it as the favicon) | `web/src/app/icon.svg` |
+| Logo component (the header and the sign-in pages; one path in four files, kept equal by `tests/unit/test_logo_assets.py`) | `web/src/components/logo.tsx` |
 | Vendored shadcn/ui primitives | `web/src/components/ui/` |
 | Domain components (badges, tables, forms) | `web/src/components/` |
 | Class merging helper (`cn`) | `web/src/lib/utils.ts` |

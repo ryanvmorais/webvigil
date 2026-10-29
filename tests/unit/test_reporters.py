@@ -135,6 +135,14 @@ def test_html_is_self_contained() -> None:
     assert "@import" not in html
 
 
+def test_html_header_carries_the_logo_as_inline_svg() -> None:
+    """The logo is an inline, decorative SVG before the title; no image is loaded for it."""
+    html = get_reporter("html").render(_result())
+    assert '<h1><svg class="logo"' in html
+    assert 'aria-hidden="true"' in html.split("</svg>")[0]
+    assert "<img" not in html
+
+
 def test_html_escapes_evidence() -> None:
     """Evidence text is rendered into the HTML report."""
     finding = make_finding(check_id="x.y")

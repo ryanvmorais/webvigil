@@ -11,7 +11,16 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 ## [Unreleased]
 
+### Added
+
+- A logo: a browser window with an open eye,
+  `assets/webvigil-web-vulnerability-scanner-logo.svg`, shown at the top of the README.
+
 ### Changed
+
+- The logo is also in the dashboard (the header and the sign-in pages, where the shield was), in
+  the app icon of the tab and in the header of the HTML report. In the report it is an inline SVG,
+  so the page still loads nothing.
 
 - The dashboard is easier to use from the keyboard, a phone and a screen reader, after an
   accessibility and layout audit of every page in both themes. The item highlighted in a menu or a

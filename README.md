@@ -1,4 +1,6 @@
-# WebVigil
+# <img align="bottom" alt="WebVigil logo: a browser window with an open eye" src="https://raw.githubusercontent.com/ryanvmorais/webvigil/main/assets/webvigil-web-vulnerability-scanner-logo.svg" width="35"> WebVigil
+
+<!-- The logo is an HTML <img> with an absolute URL: the PyPI rewrite in pyproject.toml covers only Markdown images. -->
 
 ![Python](https://img.shields.io/badge/Python-3.12+-3776AB?logo=python&logoColor=white)
 ![deps](https://img.shields.io/badge/deps-uv-DE5FE9)
