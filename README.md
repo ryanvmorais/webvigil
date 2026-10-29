@@ -1,5 +1,7 @@
 # <img align="bottom" alt="WebVigil logo: a browser window with an open eye" src="https://raw.githubusercontent.com/ryanvmorais/webvigil/main/assets/webvigil-web-vulnerability-scanner-logo.svg" width="35"> WebVigil
 
+**English** · [Português (Brasil)](https://github.com/ryanvmorais/webvigil/blob/main/README.pt-BR.md)
+
 <!-- The logo is an HTML <img> with an absolute URL: the PyPI rewrite in pyproject.toml covers only Markdown images. -->
 
 ![Python](https://img.shields.io/badge/Python-3.12+-3776AB?logo=python&logoColor=white)
@@ -229,6 +231,7 @@ this repository, or [OWASP Juice Shop](https://github.com/juice-shop/juice-shop)
 [DVWA](https://github.com/digininja/DVWA) on `localhost`.
 
 ```bash
+# Clone the repository
 git clone https://github.com/ryanvmorais/webvigil && cd webvigil
 
 # The test app needs the web extra

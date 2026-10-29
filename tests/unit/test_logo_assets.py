@@ -18,6 +18,7 @@ import pytest
 # Constants
 # ---------------------------------------------------------------------------
 
+
 # ``tests/unit/`` is two levels below the repository root.
 _ROOT = Path(__file__).resolve().parents[2]
 _ASSET = _ROOT / "assets" / "webvigil-web-vulnerability-scanner-logo.svg"
@@ -29,6 +30,7 @@ pytestmark = pytest.mark.skipif(
     not all(p.is_file() for p in (_ASSET, _ICON, _COMPONENT, _TEMPLATE)),
     reason="the logo files are not in this source tree",
 )
+
 
 # ---------------------------------------------------------------------------
 # Helpers
