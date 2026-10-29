@@ -15,6 +15,8 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 - A logo: a browser window with an open eye,
   `assets/webvigil-web-vulnerability-scanner-logo.svg`, shown at the top of the README.
+- The README in Brazilian Portuguese, `README.pt-BR.md`: the same sections as `README.md`, with
+  the commands unchanged. A test keeps the two in step.
 
 ### Changed
 
