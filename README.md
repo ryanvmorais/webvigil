@@ -197,17 +197,22 @@ Python 3.12 or newer. The package has the engine and the CLI; the dashboard and 
 test app live in this repository only.
 
 ```bash
-pipx install webvigil                  # or: uv tool install webvigil, or: pip install webvigil
+# Install it (or: uv tool install webvigil, or: pip install webvigil)
+pipx install webvigil
+
+# Check that it runs
 webvigil version
 
 # or, without installing Python packages:
 docker run --rm ghcr.io/ryanvmorais/webvigil scan https://your-app.example
 
 # keep a report: with --format it goes to stdout, so redirect it on the host
-docker run --rm ghcr.io/ryanvmorais/webvigil scan https://your-app.example --format html > report.html
+docker run --rm ghcr.io/ryanvmorais/webvigil scan https://your-app.example \
+  --format html > report.html
 
 # re-render a saved scan: mount the folder that holds it
-docker run --rm -v "$PWD:/work" ghcr.io/ryanvmorais/webvigil report /work/scan.json --format html > report.html
+docker run --rm -v "$PWD:/work" ghcr.io/ryanvmorais/webvigil \
+  report /work/scan.json --format html > report.html
 ```
 
 The image is built for `linux/amd64` and `linux/arm64` and carries signed build provenance and
@@ -225,33 +230,77 @@ this repository, or [OWASP Juice Shop](https://github.com/juice-shop/juice-shop)
 
 ```bash
 git clone https://github.com/ryanvmorais/webvigil && cd webvigil
-uv sync --all-extras                                 # the test app needs the web extra
-uv run python scripts/serve-fixture-app.py &        # an intentionally vulnerable app on 127.0.0.1:9100
-uv run webvigil scan http://127.0.0.1:9100 --mode active --authorized-by "trying WebVigil"   # about 2 minutes: it has slow, time-based cases
+
+# The test app needs the web extra
+uv sync --all-extras
+
+# An intentionally vulnerable app on 127.0.0.1:9100
+uv run python scripts/serve-fixture-app.py &
+
+# Scan it in Active Mode (about 2 minutes: it has slow, time-based cases)
+uv run webvigil scan http://127.0.0.1:9100 --mode active --authorized-by "trying WebVigil"
 ```
 
 Then on your own app:
 
 ```bash
+# A passive scan, the safe default
 uv run webvigil scan https://your-app.example
+
+# The same scan, written to an HTML report
 uv run webvigil scan https://your-app.example --format html --output report.html
-uv run webvigil scan https://your-app.example --probe   # also probe for exposed .git/.env/backups
-uv run webvigil scan https://your-app.example --mode active --authorized-by "you / engagement"  # injection + in-band SSRF testing
-uv run webvigil scan https://your-app.example --mode active --authorized-by me --stored-xss     # + stored XSS (writes markers)
-uv run webvigil scan https://your-app.example --mode active --authorized-by me --file-upload    # + file-upload testing (writes files)
-uv run webvigil scan https://your-app.example --mode active --authorized-by me --submit-post-forms  # + the crawler submits POST forms (writes)
-uv run webvigil scan https://your-app.example --mode active --authorized-by me --cookie "session=<paste>" --confirm-csrf  # + CSRF confirmation (submits forms)
-uv run webvigil scan https://your-app.example --cookie "session=<paste from your browser>"      # authenticated scan
-WEBVIGIL_LOGIN_PASSWORD=... uv run webvigil scan https://your-app.example --mode active --authorized-by me \
-  --login-url https://your-app.example/signin --username scanner@example.com                    # log in by itself
-uv run webvigil scan https://your-app.example --sample-sessions                                 # also judge fresh anonymous session ids (GET-only)
-WEBVIGIL_LOGIN_PASSWORD=... uv run webvigil scan https://your-app.example --mode active --authorized-by me \
-  --login-url https://your-app.example/signin --username scanner@example.com --test-logout      # + logout test (ends the scan's own session)
-uv run webvigil scan https://your-app.example --openapi ./openapi.json                          # seed the scan from an API schema
-uv run webvigil scan https://your-app.example --har ./traffic.har                               # seed the scan from a browser recording (SPAs)
-uv run webvigil scan https://your-app.example --osv-online                                      # also check libraries against OSV.dev
+
+# Also probe for exposed .git/.env/backups
+uv run webvigil scan https://your-app.example --probe
+
+# Active Mode: injection + in-band SSRF testing
+uv run webvigil scan https://your-app.example --mode active --authorized-by "you / engagement"
+
+# + stored XSS (writes markers)
+uv run webvigil scan https://your-app.example --mode active --authorized-by me --stored-xss
+
+# + file-upload testing (writes files)
+uv run webvigil scan https://your-app.example --mode active --authorized-by me --file-upload
+
+# + the crawler submits POST forms (writes)
+uv run webvigil scan https://your-app.example --mode active --authorized-by me \
+  --submit-post-forms
+
+# + CSRF confirmation (submits forms)
+uv run webvigil scan https://your-app.example --mode active --authorized-by me \
+  --cookie "session=<paste>" --confirm-csrf
+
+# An authenticated scan, with the session cookie from your browser
+uv run webvigil scan https://your-app.example --cookie "session=<paste from your browser>"
+
+# Log in by itself
+WEBVIGIL_LOGIN_PASSWORD=... uv run webvigil scan https://your-app.example \
+  --mode active --authorized-by me \
+  --login-url https://your-app.example/signin --username scanner@example.com
+
+# Also judge fresh anonymous session ids (GET-only)
+uv run webvigil scan https://your-app.example --sample-sessions
+
+# + logout test (ends the scan's own session)
+WEBVIGIL_LOGIN_PASSWORD=... uv run webvigil scan https://your-app.example \
+  --mode active --authorized-by me \
+  --login-url https://your-app.example/signin --username scanner@example.com \
+  --test-logout
+
+# Seed the scan from an API schema
+uv run webvigil scan https://your-app.example --openapi ./openapi.json
+
+# Seed the scan from a browser recording (SPAs)
+uv run webvigil scan https://your-app.example --har ./traffic.har
+
+# Also check libraries against OSV.dev
+uv run webvigil scan https://your-app.example --osv-online
+
+# List every check
 uv run webvigil list-checks
-uv run webvigil report report.json --format md      # re-render a saved scan, offline
+
+# Re-render a saved scan, offline
+uv run webvigil report report.json --format md
 ```
 
 By default the scan prints a summary to your terminal (stderr): a severity-count table
@@ -286,8 +335,11 @@ An optional FastAPI service keeps a history of scans in SQLite and runs them thr
 same engine. It is single-user and local-first.
 
 ```bash
-pip install "webvigil[web]"        # or: uv sync --all-extras
-webvigil-web serve                 # http://127.0.0.1:8000  (OpenAPI docs at /docs)
+# Install the Web API (or: uv sync --all-extras)
+pip install "webvigil[web]"
+
+# Serve it on http://127.0.0.1:8000 (OpenAPI docs at /docs)
+webvigil-web serve
 ```
 
 The database is created and migrated on first start; open `/docs` to create the account.
@@ -304,11 +356,16 @@ a settings screen. It is a thin client of the API — it never talks to the engi
 ```bash
 # API on :8000 in one shell (see above), then:
 cd web
-pnpm install
-pnpm dev                           # http://localhost:3000
 
-# or the whole stack in containers:
-docker compose up --build          # dashboard on http://localhost:3000 (published on 127.0.0.1 only)
+# Install the dependencies
+pnpm install
+
+# The dashboard on http://localhost:3000
+pnpm dev
+
+# or the whole stack in containers
+# (the dashboard on http://localhost:3000, published on 127.0.0.1 only):
+docker compose up --build
 ```
 
 The dashboard calls same-origin `/api/*`; Next proxies that to the API, so no CORS is
@@ -324,16 +381,29 @@ webvigil` gives the engine and the CLI, and `webvigil[web]` adds the Web API.
 ## Development
 
 ```bash
-uv sync --all-extras   # the tests and mypy need the web extra
+# The tests and mypy need the web extra
+uv sync --all-extras
+
+# Lint
 uv run ruff check .
+
+# Check the formatting
 uv run black --check .
+
+# Check the types
 uv run mypy src
-uv run lint-imports    # the engine must not import Typer/Rich/FastAPI/SQLModel/Alembic/PyJWT/argon2/Uvicorn
+
+# The engine must not import Typer/Rich/FastAPI/SQLModel/Alembic/PyJWT/argon2/Uvicorn
+uv run lint-imports
+
+# Run the tests
 uv run pytest
 
 # Web UI (in web/):
 pnpm install && pnpm lint && pnpm typecheck && pnpm test && pnpm build
-pnpm test:e2e         # Playwright: setup → scan → report → logout, fully offline
+
+# Playwright: setup → scan → report → logout, fully offline
+pnpm test:e2e
 ```
 
 See [docs/](docs/) for architecture, [the stack and why each piece was chosen](docs/stack.md), and a guide to writing your own checks.
