@@ -1,10 +1,11 @@
 /** The authenticated chrome: top bar with the brand, the primary nav, and the logout menu. */
 "use client";
 
-import { Menu, ShieldCheck } from "lucide-react";
+import { Menu } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import { Logo } from "@/components/logo";
 import { LogoutButton } from "@/components/logout-button";
 import { Button } from "@/components/ui/button";
 import {
@@ -33,7 +34,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <header className="border-b">
         <div className="mx-auto flex h-14 w-full max-w-[1200px] items-center gap-4 px-6">
           <Link href="/scans" className="flex items-center gap-2 font-semibold">
-            <ShieldCheck className="text-primary size-5" aria-hidden />
+            <Logo className="text-primary h-5 w-auto" />
             WebVigil
           </Link>
 

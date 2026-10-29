@@ -33,6 +33,15 @@ describe("AppShell", () => {
     expect(screen.getByRole("main")).toHaveTextContent("page body");
   });
 
+  it("shows the logo before the name, hidden from screen readers", () => {
+    pathname.value = "/scans";
+    renderShell();
+
+    const brand = screen.getByRole("link", { name: "WebVigil" });
+    expect(brand.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
+    expect(brand.firstElementChild?.tagName.toLowerCase()).toBe("svg");
+  });
+
   it("marks the active route with aria-current", () => {
     pathname.value = "/checks";
     renderShell();

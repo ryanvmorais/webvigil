@@ -4,6 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
 
 import { FullPageSpinner } from "@/components/error-states";
+import { Logo } from "@/components/logo";
 import { useSetupStatus } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
 
@@ -47,7 +48,13 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
   return (
     <main className="grid min-h-screen place-items-center p-4">
       <div className="relative w-full max-w-sm">
-        <div className={cn(pending && "invisible")}>{children}</div>
+        <div className={cn(pending && "invisible")}>
+          <p className="mb-6 flex items-center gap-2 text-lg font-semibold">
+            <Logo className="text-primary h-6 w-auto" />
+            WebVigil
+          </p>
+          {children}
+        </div>
         {pending ? <FullPageSpinner className="absolute inset-0 min-h-0" /> : null}
       </div>
     </main>
