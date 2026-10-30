@@ -3,7 +3,7 @@
 
 FROM node:26-alpine AS deps
 WORKDIR /app
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 # The Node 26 image has no corepack: install the pnpm version that `packageManager` pins.
 RUN npm install -g "pnpm@$(node -p "require('./package.json').packageManager.split('@')[1]")"
 RUN pnpm install --frozen-lockfile
