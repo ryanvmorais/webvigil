@@ -13,6 +13,8 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 ### Added
 
+- CI runs the quality gate on Windows (`windows-2025`) as well as Linux, on every Python in the
+  classifiers, so `Operating System :: OS Independent` is tested and not only declared.
 - Python 3.15 is supported: the `3.15` classifier, a `3.15` run in the CI matrix, and the Docker
   image is built on `python:3.15-slim`. The minimum stays Python 3.12.
 - A logo: a browser window with an open eye,
