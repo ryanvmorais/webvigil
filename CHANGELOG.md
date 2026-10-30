@@ -11,6 +11,12 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-30
+
+A minor release: the logo, the README in Brazilian Portuguese, a more accessible dashboard,
+Python 3.15 and the Windows CI, all backward compatible with [docs/stability.md](docs/stability.md):
+no exit code, check id or JSON report field changes. 1541 Python tests and 271 for the dashboard.
+
 ### Added
 
 - CI runs the quality gate on Windows (`windows-2025`) as well as Linux, on every Python in the
@@ -61,6 +67,12 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 - The PyPI keywords add `vulnerability-scanner`, `devsecops`, `sarif` and `xss`, the terms people
   search for when they look for a tool like this one. PyPI reads them at upload, so they take effect
   with the next release.
+
+### Security
+
+- The locked `certifi` moves to 2026.10.19, which closes an advisory rated CRITICAL. Only the
+  lockfile changed: the container image gets the new release, and an install from PyPI resolves its
+  own.
 
 ## [1.1.0] - 2026-10-09
 
@@ -340,7 +352,8 @@ confirmed against a per-request baseline)
 - A security policy with private vulnerability reporting, a code of conduct, and the
   [stability policy](docs/stability.md).
 
-[Unreleased]: https://github.com/ryanvmorais/webvigil/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/ryanvmorais/webvigil/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/ryanvmorais/webvigil/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/ryanvmorais/webvigil/compare/v1.0.4...v1.1.0
 [1.0.4]: https://github.com/ryanvmorais/webvigil/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/ryanvmorais/webvigil/compare/v1.0.2...v1.0.3
