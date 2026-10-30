@@ -66,6 +66,6 @@ a minor or patch release, except a security fix that cannot be done any other wa
 
 ## Supported platforms
 
-The test suite runs in CI on Linux with Python 3.12, 3.13, 3.14 and 3.15. WebVigil is developed and
-used on Windows as well; macOS is expected to work but is not tested in CI. A platform-specific
+The test suite runs in CI on Linux and on Windows, each with Python 3.12, 3.13, 3.14 and 3.15.
+macOS is expected to work but is not tested in CI. A platform-specific
 bug is welcome as an [issue](https://github.com/ryanvmorais/webvigil/issues).

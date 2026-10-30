@@ -1,7 +1,7 @@
 # CI pipeline (GitHub Actions). Five independent jobs, each mirroring a slice of
 # the local quality gate so that a green check means the same as a clean checkout:
-#   quality  engine/CLI on 3.12 (the floor), 3.13, 3.14 and 3.15 (the newest stable) — ruff, black, mypy,
-#            import-linter, pytest
+#   quality  engine/CLI on 3.12 (the floor), 3.13, 3.14 and 3.15 (the newest stable), on Linux and on
+#            Windows — ruff, black, mypy, import-linter, pytest
 #   web      dashboard — generated types current, lint, format, typecheck, test, build, e2e
 #   package  `uv build`: the sdist is lean, the wheel complete, the README renders on PyPI, and the
 #            wheel installs and runs in a clean environment (the release workflow ships this exact build)
@@ -20,11 +20,27 @@ permissions:
 
 jobs:
   quality:
-    runs-on: ubuntu-26.04
+    # The Linux names stay "quality (X)": the proteger-main ruleset requires them by that name. The
+    # Windows ones get a prefix and are not required.
+    name: quality (${{ matrix.label }}${{ matrix.python-version }})
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
+        # Every Python in the classifiers runs on both systems, so "OS Independent" is tested, not
+        # just declared; the floor is requires-python in pyproject.toml.
         python-version: ["3.12", "3.13", "3.14", "3.15"]
+        os: [linux, windows]
+        # Each include matches every combination of its `os` and only adds the runner and the label.
+        include:
+          - os: linux
+            runner: ubuntu-26.04
+            label: ""
+          # The one exception to the ubuntu-26.04 rule: Windows is where the paths, the line endings
+          # and the console encoding differ.
+          - os: windows
+            runner: windows-2025
+            label: "Windows, "
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
