@@ -1,14 +1,14 @@
 # WebVigil dashboard (spec 003). Multi-stage; ships the Next standalone output as non-root.
 # `docker compose up --build` builds this alongside the API service.
 
-FROM node:26-alpine AS deps
+FROM node:26-alpine@sha256:c6ad9e9c1d80f6eb607c26b4b0a132ff7a2344fad1c78ea3baa2a7d4c8de6d94 AS deps
 WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 # The Node 26 image has no corepack: install the pnpm version that `packageManager` pins.
 RUN npm install -g "pnpm@$(node -p "require('./package.json').packageManager.split('@')[1]")"
 RUN pnpm install --frozen-lockfile
 
-FROM node:26-alpine AS build
+FROM node:26-alpine@sha256:c6ad9e9c1d80f6eb607c26b4b0a132ff7a2344fad1c78ea3baa2a7d4c8de6d94 AS build
 WORKDIR /app
 COPY package.json ./
 RUN npm install -g "pnpm@$(node -p "require('./package.json').packageManager.split('@')[1]")"
@@ -21,7 +21,7 @@ ENV NEXT_OUTPUT_STANDALONE=1
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN pnpm build
 
-FROM node:26-alpine AS runner
+FROM node:26-alpine@sha256:c6ad9e9c1d80f6eb607c26b4b0a132ff7a2344fad1c78ea3baa2a7d4c8de6d94 AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
