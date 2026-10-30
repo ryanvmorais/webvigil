@@ -11,3 +11,17 @@ overrides:
   brace-expansion@2.1.4: 2.1.7
   js-yaml@4.3.1: 4.3.2
   source-map-js@1.2.1: 1.2.2
+# Wait one week (in minutes) before resolving a new release, the same cooldown as Dependabot and uv.
+minimumReleaseAge: 10080
+# The releases already in the lockfile when the policy was adopted (2026-10-30), by exact version.
+# Each one leaves the policy by itself once it is a week old; the list can then be deleted.
+minimumReleaseAgeExclude:
+  - "@asamuzakjp/css-color@7.1.9"
+  - "@asamuzakjp/dom-selector@10.0.5"
+  - "@babel/helper-string-parser@7.29.11"
+  - "@babel/parser@7.29.11"
+  - "@babel/types@7.29.11"
+  - "@napi-rs/wasm-runtime@1.2.6"
+  - "@types/node@26.6.6"
+  - baseline-browser-mapping@2.11.32
+  - ignore@7.0.14
