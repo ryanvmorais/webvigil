@@ -48,12 +48,14 @@ needs no plugins.
 `[project.optional-dependencies]` (the `web` extra) and `[dependency-groups]`
 (dev tooling).
 
-### Node 24 + pnpm — Web UI only
+### Node 26 + pnpm — Web UI only
 
 Node is the JavaScript runtime the Next.js dev server and build run on; pnpm is
-its package manager. Node 24 is the current Active LTS (Node 20 reached
-end-of-life in April 2026). pnpm is pinned by the `packageManager` field in
-`web/package.json`.
+its package manager. Node 26 is the current Active LTS (since 2026-10-28; Node 24
+moved to maintenance and Node 20 reached end-of-life in April 2026). pnpm is
+pinned by the `packageManager` field in `web/package.json`. The Node 26 image
+has no `corepack`, so `web/Dockerfile` installs that same pnpm version with
+`npm install -g`.
 
 **Why not** npm / yarn: pnpm is faster, uses a content-addressed store (one copy
 of a package on disk, hard-linked into each project), and its lockfile

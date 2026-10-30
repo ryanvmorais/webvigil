@@ -17,7 +17,7 @@ settings screen (change password, API version, log out).
 
 ## Requirements
 
-- Node 24 (see `engines` in `web/package.json`), `pnpm` (pinned by `packageManager`).
+- Node 26 (see `engines` in `web/package.json`), `pnpm` (pinned by `packageManager`).
 - The Web API reachable somewhere (`webvigil-web serve`, default `http://127.0.0.1:8000`).
 
 ## Development

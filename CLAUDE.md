@@ -24,7 +24,7 @@ Conversa com o Ryan e o arquivo de plano seguem em português.
 - **Engine/CLI:** Python 3.12+ (piso 3.12; o CI testa 3.12, 3.13, 3.14 e 3.15, a mais nova estável, e a imagem Docker usa a 3.15), `uv`, `httpx`, `pydantic` v2, `typer`+`rich`, `jinja2`,
   `cryptography`, `selectolax`.
 - **Web API (extra `web`):** `fastapi`, `uvicorn`, `sqlmodel`+`alembic` (SQLite), `argon2-cffi`, `pyjwt`.
-- **Web UI:** `web/` — Next.js 16 (App Router) + React 19 + TypeScript + Tailwind CSS v4 + shadcn/ui + TanStack Query, gerido por `pnpm` (Node 24; `engines` em `web/package.json`).
+- **Web UI:** `web/` — Next.js 16 (App Router) + React 19 + TypeScript + Tailwind CSS v4 + shadcn/ui + TanStack Query, gerido por `pnpm` (Node 26; `engines` em `web/package.json`; a imagem do Node 26 não traz o `corepack`, então o `web/Dockerfile` instala o pnpm da versão do `packageManager` com `npm install -g`).
 - **Qualidade:** `ruff` → `black` → `mypy` (strict) → `import-linter` → `pytest` (`asyncio_mode=auto`).
 
 O que cada peça faz, por que foi escolhida contra a alternativa, e o que estudar: [`docs/stack.md`](docs/stack.md).
