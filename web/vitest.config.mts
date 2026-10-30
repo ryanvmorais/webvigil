@@ -3,14 +3,14 @@
  * tsconfig, and `vitest.setup.ts` for the global test hooks. The Playwright e2e suite is
  * separate (`playwright.config.ts`).
  */
-import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   plugins: [react()],
   resolve: {
-    alias: { "@": resolve(__dirname, "./src") },
+    alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
   },
   test: {
     environment: "jsdom",
