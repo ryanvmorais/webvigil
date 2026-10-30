@@ -28,6 +28,11 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
   Lighthouse jobs, the `web/Dockerfile` images, `engines.node` and `@types/node`. The Node 26 image has
   no `corepack`, so the Dockerfile installs the pnpm version that `packageManager` pins. Nothing
   changes for the engine, the CLI or the Web API.
+- The dashboard's package manager moves from pnpm 9.15.4 to 12.15.0 (`packageManager` in
+  `web/package.json`). pnpm 12 blocks dependency install scripts until they are approved, so
+  `web/pnpm-workspace.yaml` approves the three that run one today (`esbuild`, `msw`, `unrs-resolver`),
+  and the lockfile gains a block that pins pnpm itself. Nothing changes for the engine, the CLI or
+  the Web API.
 - The logo is also in the dashboard (the header and the sign-in pages, where the shield was), in
   the app icon of the tab and in the header of the HTML report. In the report it is an inline SVG,
   so the page still loads nothing.
