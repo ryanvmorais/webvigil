@@ -24,6 +24,10 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 ### Changed
 
+- The dashboard's toolchain moves from Node 24 to Node 26 (Active LTS since 2026-10-28): the CI and
+  Lighthouse jobs, the `web/Dockerfile` images, `engines.node` and `@types/node`. The Node 26 image has
+  no `corepack`, so the Dockerfile installs the pnpm version that `packageManager` pins. Nothing
+  changes for the engine, the CLI or the Web API.
 - The logo is also in the dashboard (the header and the sign-in pages, where the shield was), in
   the app icon of the tab and in the header of the HTML report. In the report it is an inline SVG,
   so the page still loads nothing.
