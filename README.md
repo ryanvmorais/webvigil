@@ -56,6 +56,8 @@ injection and needs `--mode active` and `--authorized-by`. A switch in the last 
 something that is off until you name it ([all ten switches](#the-switches-that-are-off-by-default)).
 `webvigil list-checks` prints every check id.
 
+![The four values of the Mode column: Passive, Active, Passive then Active, and Any](assets/webvigil-web-vulnerability-scanner-modes.svg)
+
 | Area | What it finds | Mode | Switch |
 |---|---|---|---|
 | Transport and headers | Missing security headers, technology-disclosure headers, cookie flags, TLS / HTTPS configuration, CORS misconfiguration, missing Subresource Integrity, mixed content ([docs](docs/content-checks.md)) | Passive | |
