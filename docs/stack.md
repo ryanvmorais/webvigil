@@ -435,7 +435,7 @@ lives for minutes and only works from this workflow. **Why not** Docker Hub: GHC
 account and takes the workflow's own `GITHUB_TOKEN`. Hatchling is the small default backend and has
 the readme hook.
 
-**Learn:** `uv build`, [`docs/releasing.md`](releasing.md) (the one-time setup and every release),
+**Learn:** `uv build`, [`docs/releasing.md`](releasing.md) (what the workflow expects and every release),
 `scripts/check-package.py` (what CI checks about the package), what a PyPI "pending publisher" is,
 and `gh attestation verify` for the image's provenance.
 
