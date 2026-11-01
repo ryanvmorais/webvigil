@@ -54,8 +54,6 @@ Mode) acrescenta a injeção de payloads e exige `--mode active` e `--authorized
 última coluna liga algo que fica desligado até você citá-la ([as dez chaves](#as-chaves-que-vêm-desligadas)).
 `webvigil list-checks` mostra o id de cada check.
 
-![Os quatro valores da coluna Modo: Passivo, Ativo, Passivo e depois Ativo, e Qualquer](assets/webvigil-web-vulnerability-scanner-modes-pt-br.svg)
-
 | Área | O que encontra | Modo | Chave |
 |---|---|---|---|
 | Transporte e cabeçalhos | Cabeçalhos de segurança ausentes, cabeçalhos que revelam tecnologia, flags de cookie, configuração de TLS / HTTPS, má configuração de CORS, Subresource Integrity ausente, conteúdo misto ([docs](docs/content-checks.md)) | Passivo | |
