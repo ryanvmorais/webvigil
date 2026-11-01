@@ -106,7 +106,7 @@ def _table_rows(path: Path, header_start: str) -> int:
 
     Args:
         path (Path): The Markdown file.
-        header_start (str): The start of the header line, such as ``"| Milestone |"``.
+        header_start (str): The start of the header line, such as ``"| Area |"``.
 
     Returns:
         int: The rows under the header, not counting the header and its separator.
@@ -139,9 +139,15 @@ def test_both_readmes_have_the_same_comparison_rows() -> None:
 
 
 @_needs_both
-def test_both_readmes_have_the_same_milestone_rows() -> None:
-    """Every milestone of the build is in both."""
-    assert _table_rows(_PORTUGUESE, "| Marco |") == _table_rows(_ENGLISH, "| Milestone |")
+def test_both_readmes_have_the_same_check_rows() -> None:
+    """Every area of "What it checks" is in both."""
+    assert _table_rows(_PORTUGUESE, "| Área |") == _table_rows(_ENGLISH, "| Area |")
+
+
+@_needs_both
+def test_both_readmes_have_the_same_switch_rows() -> None:
+    """Every switch that is off by default is in both."""
+    assert _table_rows(_PORTUGUESE, "| Chave |") == _table_rows(_ENGLISH, "| Switch |")
 
 
 @_needs_both

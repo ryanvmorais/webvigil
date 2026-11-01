@@ -5,11 +5,17 @@ All notable changes to WebVigil are recorded here. The format follows
 [Semantic Versioning](https://semver.org/); what that promises is in
 [docs/stability.md](docs/stability.md).
 
-The `v0.1` to `v0.22` milestones in the README are the steps the project was built in, each
+The `v0.1` to `v0.22` milestones are the steps the project was built in, each
 designed as a spec under [`specs/`](specs/). None of them was released on its own: `1.0.0` is the
 first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `v0.22` (the dashboard's Content-Security-Policy) arrived in `1.1.0`.
 
 ## [Unreleased]
+
+### Changed
+
+- The README (and `README.pt-BR.md`) lists what WebVigil checks by area instead of by build
+  milestone: a table with what each area finds, whether it is passive or active, and the switch
+  that turns it on. The ten switches that are off by default are a table under "Safe by default".
 
 ## [1.2.0] - 2026-10-30
 

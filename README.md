@@ -49,6 +49,35 @@ for known-CVE template matching, or ZAP for manual, proxy-driven testing. See
 
 ---
 
+## What it checks
+
+Passive checks run by default and are safe to point at production. Active Mode adds payload
+injection and needs `--mode active` and `--authorized-by`. A switch in the last column turns on
+something that is off until you name it ([all ten switches](#the-switches-that-are-off-by-default)).
+`webvigil list-checks` prints every check id.
+
+| Area | What it finds | Mode | Switch |
+|---|---|---|---|
+| Transport and headers | Missing security headers, technology-disclosure headers, cookie flags, TLS / HTTPS configuration, CORS misconfiguration, missing Subresource Integrity, mixed content ([docs](docs/content-checks.md)) | Passive | |
+| Libraries | Client-side JavaScript libraries with known vulnerabilities, from a vendored Retire.js database, and optionally from OSV.dev ([docs](docs/dependency-fingerprinting.md)) | Passive | `--osv-online` |
+| Information disclosure | Stack traces, directory listings, a session id in a URL, a private IP in a body; exposed `.git`, `.env`, backups and debug endpoints ([docs](docs/information-disclosure.md)) | Passive | `--probe` for the exposed files |
+| Injection | Reflected XSS, SQL injection (error, boolean, time), path traversal, open redirect, OS command injection, template and expression-language injection, LDAP / XPath / SSI injection ([docs](docs/active-injection.md)) | Active | |
+| Stored XSS | Persistent XSS, found by injecting a marker and crawling again ([docs](docs/active-injection.md#stored-xss----stored-xss-opt-in)) | Active | `--stored-xss` |
+| SSRF | In-band: cloud metadata service, loopback and internal resources, `file://` ([docs](docs/active-injection.md#ssrf--cloud-metadata-loopback-file)) | Active | |
+| Request envelope | CRLF / response splitting, host-header injection, risky HTTP methods, in-band XXE ([docs](docs/active-injection.md#request-envelope-injection)) | Active | `--xxe` for XXE |
+| File upload | Unrestricted upload: a benign marker with a dangerous name or type, fetched back to prove execution, inline rendering or a path-traversal write ([docs](docs/active-injection.md#file-upload----file-upload-opt-in)) | Active | `--file-upload` |
+| CSRF | A `POST` form without a token; a `GET` form that changes state. With the switch, each form is replayed cross-site and reported only if the server accepts it ([docs](docs/authenticated-scanning.md#active-csrf-confirmation----confirm-csrf-opt-in)) | Passive, then Active | `--confirm-csrf` |
+| Sessions | Weak session ids, session fixation, a logout that does not invalidate the session. Findings name the cookie and never carry its value ([docs](docs/authenticated-scanning.md#session-security-checks)) | Passive, then Active | `--sample-sessions` `--test-logout` |
+| Logged-in scans | A scan behind a login: a cookie, a header or bearer token, or, in Active Mode, a form login WebVigil performs itself ([docs](docs/authenticated-scanning.md)) | Any | `--cookie` `--header` `--login-url` |
+| What gets scanned | The crawl and the injection pass seeded from an OpenAPI schema ([docs](docs/api-scanning.md)) or a HAR recording, for single-page apps ([docs](docs/har-import.md)); in Active Mode the crawler can also submit `POST` forms ([docs](docs/authenticated-scanning.md#post-forms----submit-post-forms-opt-in)) | Any | `--openapi` `--har` `--submit-post-forms` |
+
+How it fared against OWASP DVWA (three security levels), Juice Shop and WebGoat, run on the
+maintainer's own machine, is in [docs/benchmark.md](docs/benchmark.md): what it found, what it
+missed and why. It is one person's measurement, nobody independent has counted it, and no other
+scanner was run.
+
+---
+
 ## Safe by default
 
 WebVigil runs in **Safe Mode** by default: it only observes responses, headers, TLS
@@ -59,6 +88,23 @@ restricted to the target scope.
 
 **Active Mode** (payload injection: XSS, SQLi, SSRF, etc.) is opt-in, requires an explicit
 authorization flag, and is intended for development and staging environments only.
+
+### The switches that are off by default
+
+| Switch | What it does | Touches the target |
+|---|---|---|
+| `--probe` | Asks for sensitive paths: `.git`, `.env`, backups, debug endpoints | Reads only |
+| `--stored-xss` | Injects a marker and crawls again to find it | **Writes** |
+| `--file-upload` | Uploads a benign marker file | **Writes** |
+| `--confirm-csrf` | Submits each state-changing form, then replays it cross-site | **Writes** |
+| `--submit-post-forms` | The crawler submits `POST` forms and `--openapi` `POST` operations | **Writes** |
+| `--xxe` | Re-types `POST` bodies as XML | Sends XML bodies |
+| `--osv-online` | Looks libraries up on `api.osv.dev` | Sends library names out |
+| `--login-url` | Logs in once with the account you give (Active Mode only) | Creates a session |
+| `--sample-sessions` | A few cookie-less `GET`s of the entry URL | Reads only |
+| `--test-logout` | Ends the scan's own session (Active Mode only) | Ends a session |
+
+Everything else only reads.
 
 ---
 
@@ -87,51 +133,6 @@ finds.
 
 Found a vulnerability **in WebVigil**? Report it privately, see [SECURITY.md](SECURITY.md).
 Found one in someone else's system with it? Tell its owner, and follow their disclosure policy.
-
----
-
-## Coverage
-
-WebVigil was built milestone by milestone against a planned roadmap. Every entry below is
-in the code and links to its docs; each was designed as a spec first, under
-[`specs/`](specs/). The milestones are the history of the build, not published versions:
-`1.0.0` is the first release and contains `v0.1` to `v0.20`; `v0.21` and `v0.22` came with `1.1.0`.
-
-| Milestone | Focus | Status |
-|---|---|---|
-| `v0.1` | Security headers, technology-disclosure headers, cookie flags, TLS/HTTPS configuration, CORS misconfiguration (all passive) | shipped |
-| `v0.2` | Web API (FastAPI + SQLite, persistent scans, queued execution) | shipped |
-| `v0.3` | Web dashboard (Next.js) | shipped |
-| `v0.4` | Passive dependency fingerprinting: client-side JS libraries + known-vulnerability matching against a vendored Retire.js database ([docs](docs/dependency-fingerprinting.md)) | shipped |
-| `v0.5` | Information disclosure: stack traces and directory listings (passive), plus opt-in probing for exposed `.git`/`.env`/backups/debug endpoints ([docs](docs/information-disclosure.md)) | shipped |
-| `v0.6` | Active Mode: injection testing — reflected XSS, SQL injection (error/boolean/time; a blind injection is found even when the field ships empty or the "no such row" page differs only by status), path traversal, open redirect. A `<select>` is fuzzed too, after the text fields ([docs](docs/active-injection.md)) | shipped |
-| `v0.7` | Authenticated scanning (static cookies), CSRF detection (a `POST` form without a token, and a `GET` form that changes a password or carries a destructive verb), and form-driven crawling ([docs](docs/authenticated-scanning.md)) | shipped |
-| `v0.8` | Stored / persistent XSS: opt-in two-phase inject-then-recrawl detection ([docs](docs/active-injection.md#stored-xss----stored-xss-opt-in)) | shipped |
-| `v0.9` | In-band SSRF: cloud metadata service, loopback / internal resources, `file://` — detected from the target's own responses ([docs](docs/active-injection.md#ssrf--cloud-metadata-loopback-file)) | shipped |
-| `v0.10` | Opt-in OSV.dev online advisory lookup for dependency fingerprinting, augmenting the vendored Retire.js database ([docs](docs/dependency-fingerprinting.md#osvdev-online-provider---osv-online)) | shipped |
-| `v0.11` | Active Mode: in-band OS command injection (arithmetic echo + time-based) and server-side template injection; an endpoint that only echoes its input is not mistaken for command injection ([docs](docs/active-injection.md#command-injection--ssti)) | shipped |
-| `v0.12` | Active Mode: request-envelope injection — CRLF / response splitting, host-header injection, opt-in in-band XXE, and an HTTP-methods (TRACE / verb) check ([docs](docs/active-injection.md#request-envelope-injection)) | shipped |
-| `v0.13` | Header / bearer authentication (`--header`), OpenAPI / Swagger import to seed the crawl and the injection pass (`--openapi`), and four passive checks: missing Subresource Integrity, mixed content, session identifier in a URL, private IP in a body ([docs](docs/api-scanning.md)) | shipped |
-| `v0.14` | Active Mode: LDAP / XPath / SSI injection (in-band, error signature + differential), and opt-in unrestricted file-upload testing (`--file-upload`) — a benign marker uploaded with a dangerous name / type, then fetched back to prove execution, inline rendering, or a path-traversal write, including on a form that filters only by the declared part type ([docs](docs/active-injection.md#file-upload----file-upload-opt-in)) | shipped |
-| `v0.16` | Active Mode: in-band expression-language injection — Spring SpEL, Struts OGNL, JEXL, MVEL, Unified EL. The dialect is named from the evidence, and a pure static-call probe separates a sandboxed evaluator (HIGH) from a reachable type system (CRITICAL) ([docs](docs/active-injection.md#expression-language-injection)) | shipped |
-| `v0.17` | Active Mode: opt-in CSRF confirmation (`--confirm-csrf`) — each state-changing form is submitted as a control and as cross-site-shaped replays (foreign `Origin`, token removed or altered), and reported only when the server accepts the replay ([docs](docs/authenticated-scanning.md#active-csrf-confirmation----confirm-csrf-opt-in)) | shipped |
-| `v0.18` | Active Mode: opt-in `POST` crawling (`--submit-post-forms`) — the crawler submits candidate forms (urlencoded, multipart without a file) and `--openapi` `POST` operations once with benign values, reads each answer as a page, and follows what it links to; a form that is only a button counts ([docs](docs/authenticated-scanning.md#post-forms----submit-post-forms-opt-in)) | shipped |
-| `v0.19` | Active Mode: automated login (`--login-url`, `--username`, `--password-env`) — WebVigil finds the login form, submits the account once, keeps the session and logs in again when it drops; the password only ever comes from the environment or a prompt ([docs](docs/authenticated-scanning.md#automated-login----login-url-opt-in)) | shipped |
-| `v0.20` | Session-security checks: `session.id.weak` (short, low-entropy, numeric, counter, timestamp or repeated ids, plus opt-in anonymous sampling with `--sample-sessions`), `session.fixation` (the session id survives the login, confirmed with one request) and `session.logout.not-invalidated` (`--test-logout`, Active Mode). Findings name the cookie and never carry a value ([docs](docs/authenticated-scanning.md#session-security-checks)) | shipped |
-| `v0.21` | HAR import (`--har`): the target's own `GET` and `POST` requests, recorded in a browser or a proxy, seed the crawl and the injection pass of a single-page application. Reads a local file, never uses its cookies or headers, leaves out assets, other hosts and login or destructive paths ([docs](docs/har-import.md)) | shipped |
-| `v0.22` | Dashboard hardening: every page carries a nonce-based Content-Security-Policy (scripts run only with that request's nonce, no `'unsafe-inline'`) and the usual security headers, and the report preview stays sandboxed ([docs](docs/web-ui.md#security-headers)) | shipped |
-
-> The ten opt-in switches, all off by default: `--probe` (sensitive-path probing),
-> `--stored-xss`, `--file-upload`, `--confirm-csrf` and `--submit-post-forms` (all write to
-> the target), `--xxe` (re-types POST bodies as XML), `--osv-online` (sends library names to
-> `api.osv.dev`), `--login-url` (a real login request with the account you give it; Active Mode only),
-> `--sample-sessions` (a few cookie-less `GET`s of the entry URL) and `--test-logout` (ends the
-> scan's own session; Active Mode only). Everything else only reads.
-
-How it fared against OWASP DVWA (three security levels), Juice Shop and WebGoat, run on the
-maintainer's own machine, is in [docs/benchmark.md](docs/benchmark.md): what it found, what it
-missed and why. It is one person's measurement, nobody independent has counted it, and no other
-scanner was run.
 
 ---
 
