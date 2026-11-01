@@ -12,7 +12,7 @@ origin: conception
 
 Ordered, small, each tagged with the requirement it satisfies. The last task of every stage
 is the quality gate (`ruff → black → mypy src → lint-imports → pytest`). No `web` gate
-(Resolved decision 5 / RNF-03). Tasks are `[ ]` until done; `/spec implementar` marks them
+(Resolved decision 5 / RNF-03). Tasks are `[ ]` until done; implementing the spec marks them
 `[x]` one by one and records the pytest count on each gate line. Baseline at spec 008
 close: **536 passed**.
 

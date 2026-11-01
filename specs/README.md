@@ -1,7 +1,7 @@
 # Specs
 
 WebVigil is built with spec-driven development. Each feature is designed as a spec under
-`specs/NNN-nome/` before implementation, driven by the `/spec` skill.
+`specs/NNN-nome/` before implementation.
 
 ## Convenções
 
@@ -18,7 +18,7 @@ WebVigil is built with spec-driven development. Each feature is designed as a sp
   finalizado.)
 - **Rastreabilidade:** requisitos são `RF-NN` (funcionais) e `RNF-NN` (não-funcionais);
   cada tarefa e decisão de design cita o(s) requisito(s) que satisfaz.
-- **Idioma:** specs em inglês (regra do projeto). A conversa com o Ryan segue em português.
+- **Idioma:** specs em inglês (regra do projeto).
 
 ## Testes de uma spec
 

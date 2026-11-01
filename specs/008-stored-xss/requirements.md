@@ -492,7 +492,7 @@ surprised.
 
 ## Resolved decisions
 
-Settled with Ryan on 2026-09-07:
+Settled with the maintainer on 2026-09-07:
 
 1. **Re-fetch surface:** a **full fresh re-crawl from the seed** after Phase A, bounded by
    `max_pages` and a dedicated re-fetch cap. The stateful two-phase crawl is the core of
@@ -515,7 +515,7 @@ Settled with Ryan on 2026-09-07:
 
 ## Resolved during requirements
 
-Settled with Ryan on 2026-09-07 ("aprovado"). The design phase elaborates the mechanics;
+Settled with the maintainer on 2026-09-07. The design phase elaborates the mechanics;
 these answers are fixed.
 
 5. **Pass structure (Open question 1):** a **separate `StoredXssScanner`**, invoked by the
@@ -537,4 +537,4 @@ these answers are fixed.
 
 ## Open questions
 
-None. Ready for `/spec design`.
+None. Ready for the design phase.

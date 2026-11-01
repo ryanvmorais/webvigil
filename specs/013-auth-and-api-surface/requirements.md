@@ -374,7 +374,7 @@ roadmap row → `done`. Spec 013 moves `draft → approved → in progress → d
 
 ## Resolved during requirements
 
-Settled with Ryan on 2026-09-08 (three via `AskUserQuestion`, the rest proposed
+Settled with the maintainer on 2026-09-08 (three asked directly, the rest proposed
 for approval):
 
 1. **OpenAPI depth: endpoints + query/path parameters.** The import seeds

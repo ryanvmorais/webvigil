@@ -7,7 +7,7 @@
 #             linux/amd64 and linux/arm64 with signed build provenance. A manual run builds, tests and
 #             scans everything and pushes nothing.
 # PyPI Trusted Publishing (OIDC): no token is stored anywhere. The "pending publisher" and the two
-# environments below are created by the maintainer once (see docs/releasing.md). The image uses the
+# environments below exist on PyPI, TestPyPI and GitHub (see docs/releasing.md). The image uses the
 # workflow's own GITHUB_TOKEN to write to ghcr.io/ryanvmorais/webvigil.
 name: Release
 

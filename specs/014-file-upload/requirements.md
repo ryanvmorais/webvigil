@@ -644,7 +644,7 @@ and out-of-band upload triggers are not covered**. `README.md` coverage table,
 
 ## Resolved decisions
 
-Answered by Ryan on 2026-09-08 via `/spec` questions:
+Answered by the maintainer on 2026-09-08 in the question round:
 
 1. **Scope — file upload *and* a residual sweep, this spec.** 014 covers
    unrestricted file upload **plus** the in-band injection detectors ZAP / Wapiti
@@ -661,7 +661,7 @@ Answered by Ryan on 2026-09-08 via `/spec` questions:
    `HTTP` and spec 013's `CONTENT`; an opaque string downstream, so no API / UI /
    reporter change.
 
-Confirmed by Ryan on 2026-09-08 ("aprovado com as 6 resoluções propostas"):
+Confirmed by the maintainer on 2026-09-08 (the 6 proposed resolutions):
 
 5. **The `PUT` upload probe rides Part 1's opt-in.** Spec 012 deliberately never
    sent `PUT`. 014's `--file-upload` already writes files, so a single bounded

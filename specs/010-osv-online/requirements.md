@@ -101,7 +101,7 @@ adds no new runtime dependency (`httpx` is already an engine dependency).
   only source used when the flag is off. This spec does not remove it, shrink it, or change
   its refresh script.
 - **Replacing Retire.js when the flag is on.** OSV augments; it does not substitute. (If
-  Ryan prefers "replace" — see Open question 1.)
+  the maintainer prefers "replace" — see Open question 1.)
 - **Server-side / backend dependencies.** 004's non-goal stands: no PyPI / RubyGems / Go /
   Maven lookups, no reading the target's manifests. `OsvProvider` queries the `npm`
   ecosystem only, for the same client-side JS detections 004 already produces.
@@ -264,7 +264,7 @@ adds no new runtime dependency (`httpx` is already an engine dependency).
   timeout of RF-02.
 - Consequently there is **no** `--osv-no-cache` / cache-bypass flag — there is nothing to
   bypass. (Decision 6 named `--osv-no-cache` before decision 4 removed the cache; the
-  design records this. If Ryan later wants cross-scan caching it is a follow-up.)
+  design records this. If the maintainer later wants cross-scan caching it is a follow-up.)
 
 **RF-12 — Nothing about the target is retained**
 - The only per-scan state `OsvProvider` holds is the in-memory `(ecosystem, name, version)`
@@ -357,7 +357,7 @@ limitations). `README.md`'s coverage table, `CLAUDE.md`'s layer-3 `deps` paragra
 
 ## Resolved during requirements
 
-Settled with Ryan on 2026-09-07:
+Settled with the maintainer on 2026-09-07:
 
 1. **Augment, not replace (RF-01, RF-08).** With `--osv-online` on, OSV advisories are
    **merged** with the vendored Retire.js results — the offline database stays the floor,
@@ -385,4 +385,4 @@ Settled with Ryan on 2026-09-07:
 
 ## Open questions
 
-None. Ready for `/spec design`.
+None. Ready for the design phase.

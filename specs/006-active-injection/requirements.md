@@ -613,7 +613,7 @@ and does not test are stated explicitly, so a user is never surprised.
 
 ## Resolved decisions
 
-Settled with Ryan on 2026-09-06:
+Settled with the maintainer on 2026-09-06:
 
 1. **v0.6 vulnerability-class scope:** **four classes** — reflected XSS, SQL injection
    (error-based, boolean-based, time-based), path traversal / LFI, and open redirect. All
@@ -647,7 +647,7 @@ Settled with Ryan on 2026-09-06:
 
 ## Resolved during requirements (open questions, settled as proposed)
 
-Approved with Ryan on 2026-09-06 ("aprovado com as propostas"). The design phase elaborates
+Approved by the maintainer on 2026-09-06, with the proposed resolutions. The design phase elaborates
 the mechanics; these answers are fixed.
 
 6. **Injection-engine shape (RF-12):** the **orchestrator-owned pass** model — an
@@ -673,4 +673,4 @@ the mechanics; these answers are fixed.
 
 ## Open questions
 
-None. Ready for `/spec design`.
+None. Ready for the design phase.

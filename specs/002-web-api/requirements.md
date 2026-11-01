@@ -335,7 +335,7 @@ to active on its own and never runs a scan the user did not create.
 
 ## Resolved decisions
 
-Settled with Ryan on 2026-09-06:
+Settled with the maintainer on 2026-09-06:
 
 1. **Web CLI (RF-29):** a separate `webvigil-web` console script, declared by the `web`
    extra — the core `webvigil` CLI stays free of the web dependencies.
@@ -358,4 +358,4 @@ Settled with Ryan on 2026-09-06:
 
 ## Open questions
 
-None. Ready for `/spec design`.
+None. Ready for the design phase.

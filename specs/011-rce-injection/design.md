@@ -704,7 +704,7 @@ point gets the full `cmdi` / `ssti` set — the existing budget warning covers i
 
 ## Open questions
 
-None. Ready for `/spec tasks`.
+None. Ready for the tasks phase.
 
 ## Implementation notes
 

@@ -370,7 +370,7 @@ some. Merging also gives the richer of two descriptions for a shared CVE.
 
 **Trade-off.** A CVE covered by both sources is coalesced (identifier intersection), so the
 merge logic has to be correct and deterministic; that is the cost of `merge_advisories` and
-its tests. Ryan confirmed augment (Resolved decision 1).
+its tests. The maintainer confirmed augment (Resolved decision 1).
 
 ### ADR-2 — A new orchestrator pass, not an async provider protocol
 
@@ -391,7 +391,7 @@ existing test untouched. The check stays a pure sync transform of observations.
 The `AdvisoryProvider` seam is now "sync `match` for offline data; batch pass for online" —
 a future online provider follows the OSV pattern, not a plug into `match`. Acceptable: the
 seam's real value (the `Advisory` shape + the check not caring about the source) holds.
-Ryan confirmed the sync/pass approach (Resolved decision 3).
+The maintainer confirmed the sync/pass approach (Resolved decision 3).
 
 ### ADR-3 — `querybatch` to filter, then `/v1/query` per matched package
 
@@ -406,7 +406,7 @@ one package.
 **Why.** The common case is "a handful of libraries, none or one vulnerable". `querybatch`
 answers "which of these matter?" in a single round trip; most scans then do **zero or one**
 follow-up. Per-package `/v1/query` returns all of a package's records at once and is
-version-filtered server-side. Ryan confirmed (Resolved decision 2).
+version-filtered server-side. The maintainer confirmed (Resolved decision 2).
 
 **Trade-off.** Two endpoint shapes to model and mock instead of one. Bounded and covered by
 RNF-06.
@@ -454,7 +454,7 @@ now) degrades exactly like 004's missing-severity case, which the UI already han
 
 **Why.** Matches the per-feature convention already in the file (`[disclosure]`,
 `[injection]`), keeps the OSV knobs discoverable together, and leaves a home for a future
-provider or for surfacing 004's existing fetch cap. Ryan confirmed (Resolved decision 7).
+provider or for surfacing 004's existing fetch cap. The maintainer confirmed (Resolved decision 7).
 
 **Trade-off.** A section with one meaningful switch today. The `[injection]` section
 started the same way.
@@ -470,7 +470,7 @@ render it everywhere.
 
 **Why.** 008's precedent — a self-contained engine feature that flows through existing
 finding/inventory plumbing needs no schema change. The OSV origin is already visible in a
-finding via its `https://osv.dev/vulnerability/{id}` reference URL. Ryan confirmed
+finding via its `https://osv.dev/vulnerability/{id}` reference URL. The maintainer confirmed
 (Resolved decisions 5, and RF-14).
 
 **Trade-off.** Re-rendering a saved JSON cannot say "OSV ran" — but it never could say
@@ -485,7 +485,7 @@ disk cache, no cross-scan reuse, no bypass flag.
 
 **Why.** A disk cache brings location, TTL, invalidation, corruption, and concurrency
 questions for a feature whose whole point is *freshness*. One `querybatch` + a few
-`/v1/query` calls per scan is cheap. Ryan confirmed (Resolved decision 4); cross-scan
+`/v1/query` calls per scan is cheap. The maintainer confirmed (Resolved decision 4); cross-scan
 caching is a clean follow-up if scan volume ever makes it worth it.
 
 **Trade-off.** Every opted-in scan pays one round trip even when re-run seconds later.
@@ -559,7 +559,7 @@ transport=httpx.MockTransport(_osv_handler)))` — so no code path reaches the r
 
 ## Open questions
 
-None. Ready for `/spec tasks`.
+None. Ready for the tasks phase.
 
 ## Implementation notes
 

@@ -6,28 +6,19 @@ prepares and checks the package, and runs only when you start it. No token is st
 PyPI [Trusted Publishing](https://docs.pypi.org/trusted-publishers/) exchanges a short-lived
 OpenID Connect token from the workflow for an upload credential.
 
-## Once: set up Trusted Publishing
+## What the workflow expects
 
-1. **PyPI.** On [pypi.org](https://pypi.org/manage/account/publishing/) open *Publishing* and add a
-   **pending publisher** (the project does not exist yet, so this creates it on first upload):
+The account side is set up once by the maintainer and is not part of this repository. What
+[`release.yml`](../.github/workflows/release.yml) relies on:
 
-   | Field | Value |
-   |---|---|
-   | PyPI project name | `webvigil` |
-   | Owner | `ryanvmorais` |
-   | Repository name | `webvigil` |
-   | Workflow name | `release.yml` |
-   | Environment name | `pypi` |
-
-2. **TestPyPI.** The same on [test.pypi.org](https://test.pypi.org/manage/account/publishing/), with
-   the environment name `testpypi`.
-3. **GitHub.** *Settings → Environments*: create `pypi` and `testpypi`. On `pypi`, add yourself as a
-   **required reviewer**: the publish job then waits for your click, a second gate after the Release.
-4. **The container image needs no setup before the first release**: the workflow pushes to
-   `ghcr.io/ryanvmorais/webvigil` with its own `GITHUB_TOKEN`. The package is created **private**,
-   though. After the first push open *your profile → Packages → webvigil → Package settings* and
-   change the visibility to **Public**, or nobody else can pull it. (The image's `source` label
-   already links the package to this repository.)
+- **PyPI and TestPyPI** each have a trusted publisher for this repository, the workflow
+  `release.yml` and the environment `pypi` (PyPI) or `testpypi` (TestPyPI). For a project that
+  does not exist yet this is a *pending publisher*, which creates it on the first upload.
+- **GitHub** has the environments `pypi` and `testpypi`. `pypi` requires a reviewer, so the
+  publish job waits for an approval, a second gate after the Release.
+- **The container image** is pushed to `ghcr.io/ryanvmorais/webvigil` with the workflow's own
+  `GITHUB_TOKEN`. The package is created private on the first push and has to be made public
+  once, or nobody else can pull it. The image's `source` label links it to this repository.
 
 ## Every release
 

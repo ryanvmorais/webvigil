@@ -372,7 +372,7 @@ summary, and `specs/README.md`'s roadmap are updated; 004 moves to `in progress`
 
 ## Resolved decisions
 
-Settled with Ryan on 2026-09-06:
+Settled with the maintainer on 2026-09-06:
 
 1. **Advisory source (RF-06, RF-11):** vendor the Retire.js community database in the repo
    and match against it **offline**. An online provider (OSV.dev covers npm + PyPI without a
@@ -404,4 +404,4 @@ Settled with Ryan on 2026-09-06:
 
 ## Open questions
 
-None. Ready for `/spec design`.
+None. Ready for the design phase.

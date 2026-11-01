@@ -148,6 +148,6 @@ Baseline before 019 (clean `main` after #108): **878 passed**. At 019 close: **9
 - [x] `README.md` (feature list / flags), `CLAUDE.md` (architecture paragraph, state line,
   the 019 entry), `specs/README.md` (roadmap row to **done**), `docs/stack.md` only if a
   dependency appeared (none expected), the CLI help. — RF-14
-- [ ] `/atualizar-docs`, then the full gate one last time; record the test count delta against
+- [ ] Update the docs, then run the full gate one last time; record the test count delta against
   the 878 baseline and the suite time. Mark the three spec files `status: done`.
 - [ ] Open the PR with `Closes #52`; leave #53 for spec 020.

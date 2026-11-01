@@ -514,7 +514,7 @@ trade real findings for a marginal budget saving.
 
 ## Open questions
 
-None. Ready for `/spec tasks`.
+None. Ready for the tasks phase.
 
 ## Implementation notes
 

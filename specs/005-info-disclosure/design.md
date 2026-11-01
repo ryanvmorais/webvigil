@@ -690,7 +690,7 @@ field would flow into the JSON canonical shape and invite an API/UI follow-on. "
 is the number a user acts on; "N probed" is trivia when the catalogue is fixed and
 documented.
 **Trade-off:** RF-10's example line ("Probed N well-known paths, M exposed") is delivered as
-"M exposed" only. See Open questions — Ryan can opt into the fuller line + a tiny stats
+"M exposed" only. See Open questions — the maintainer can opt into the fuller line + a tiny stats
 field.
 
 ### ADR-8 — Source-map detection is `<script>.map` probing, no JS body parse
@@ -848,7 +848,7 @@ Resolved during implementation (2026-09-06):
 
 ## Resolved during design
 
-Confirmed with Ryan on 2026-09-06:
+Confirmed with the maintainer on 2026-09-06:
 
 1. **"N probed" in the CLI summary (ADR-7):** ship **"M exposed path(s)"** only — no new
    `ScanResult` field. The catalogue size is documented and fixed.
@@ -864,4 +864,4 @@ Confirmed with Ryan on 2026-09-06:
 
 ## Open questions
 
-None. Ready for `/spec tasks`.
+None. Ready for the tasks phase.
