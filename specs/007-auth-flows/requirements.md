@@ -54,7 +54,7 @@ form-exclusion heuristic.
 
 The original roadmap line for `007` ("scan autenticado (cookie/header/login form), teste de
 session/CSRF") is broader than what ships here. These items move to a later spec, for
-concrete reasons rather than scope-trimming — settled with Ryan on 2026-09-06:
+concrete reasons rather than scope-trimming — settled with the maintainer on 2026-09-06:
 
 - **Automated login-form flow** (detect the login form, submit credentials once, capture
   the session cookie, re-login when the session drops). This is a stateful multi-step
@@ -464,7 +464,7 @@ Per RF-16. The exact scope — cookies not login, passive CSRF not active, `GET`
 
 ## Resolved decisions
 
-Settled with Ryan on 2026-09-06:
+Settled with the maintainer on 2026-09-06:
 
 1. **Authentication mechanism for v0.7:** **static cookies only** — `--cookie "name=value"`
    (repeatable) and `[auth] cookies`. Automated login-form flow, static auth headers /
@@ -485,7 +485,7 @@ Settled with Ryan on 2026-09-06:
 
 ## Resolved during requirements (open questions, settled as proposed)
 
-Approved with Ryan on 2026-09-06 ("aprovado com as propostas"). The design phase elaborates
+Approved by the maintainer on 2026-09-06, with the proposed resolutions. The design phase elaborates
 the mechanics; these answers are fixed.
 
 5. **Form-parsing location (Open question 1):** the **crawler** parses forms from each page
@@ -511,4 +511,4 @@ the mechanics; these answers are fixed.
 
 ## Open questions
 
-None. Ready for `/spec design`.
+None. Ready for the design phase.

@@ -463,7 +463,7 @@ injection paragraph, and `specs/README.md` roadmap are updated; 011 moves
 
 ## Resolved decisions
 
-Settled with Ryan on 2026-09-08 (approved the requirements with the proposed
+Settled with the maintainer on 2026-09-08 (approved the requirements with the proposed
 resolutions unchanged):
 
 1. **One check for command injection, not two.** `injection.cmdi.os` (CRITICAL,
@@ -496,4 +496,4 @@ resolutions unchanged):
 
 ## Open questions
 
-None. Ready for `/spec design`.
+None. Ready for the design phase.

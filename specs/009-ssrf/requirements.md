@@ -367,7 +367,7 @@ roadmap updated; 009 moves to `in progress` then `done`.
 
 ## Resolved during requirements
 
-Settled with Ryan on 2026-09-07 (Ryan delegated the calls, optimising for "a professional,
+Settled with the maintainer on 2026-09-07 (the maintainer delegated the calls, optimising for "a professional,
 defensible tool that builds authority in the topic"):
 
 1. **Two checks.** `injection.ssrf.metadata` (CRITICAL — credential exposure) and
@@ -398,4 +398,4 @@ defensible tool that builds authority in the topic"):
 
 ## Open questions
 
-None. Ready for `/spec design`.
+None. Ready for the design phase.

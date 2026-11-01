@@ -937,7 +937,7 @@ default `docker compose up`. Documented in `docs/active-injection.md`.
 
 ## Open questions
 
-None. Ready for `/spec tasks`.
+None. Ready for the tasks phase.
 
 ## Implementation notes
 

@@ -390,7 +390,7 @@ toolchain and `uv` usage are untouched.
 
 ## Resolved decisions
 
-Settled with Ryan on 2026-09-06:
+Settled with the maintainer on 2026-09-06:
 
 1. **Repo layout (Open q. 1):** a plain `web/` subdirectory — no pnpm/turbo workspace
    tooling. The two stacks share nothing but the OpenAPI schema. Two lockfiles
@@ -411,4 +411,4 @@ Settled with Ryan on 2026-09-06:
 
 ## Open questions
 
-None. Ready for `/spec design`.
+None. Ready for the design phase.

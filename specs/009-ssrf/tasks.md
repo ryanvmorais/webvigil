@@ -12,8 +12,8 @@ origin: conception
 
 Ordered, small, each tagged with the requirement it satisfies. The last task of every stage
 is the quality gate (`ruff → black → mypy src → lint-imports → pytest`). No `web` gate, no
-config/CLI change (Resolved decisions 2, 5 / RNF-01). Tasks are `[ ]` until done; `/spec
-implementar` marks them `[x]` one by one and records the pytest count on each gate line.
+config/CLI change (Resolved decisions 2, 5 / RNF-01). Tasks are `[ ]` until done; implementing
+the spec marks them `[x]` one by one and records the pytest count on each gate line.
 Baseline at spec 010 close: **587 passed**.
 
 ## Stage 0 — Payloads, signatures, `is_urllike`

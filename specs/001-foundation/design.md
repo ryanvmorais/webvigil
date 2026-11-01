@@ -577,7 +577,7 @@ awkwardly typed. A schema test gives the same safety — RF-22, RNF-08.
 `asyncio.to_thread`; certificate parsed with `cryptography`.
 **Alternatives:** `sslyze`; shelling out to `openssl`/`testssl.sh`.
 **Why:** version detection + certificate checks cover the v0.1 requirement with zero new
-dependencies; deeper analysis is out of scope — RF-19, and confirmed with Ryan.
+dependencies; deeper analysis is out of scope — RF-19, and confirmed with the maintainer.
 **Trade-off:** cannot enumerate cipher suites, and TLS 1.0/1.1 can be untestable when the
 host OpenSSL disables them — reported honestly as "not tested".
 
@@ -586,7 +586,7 @@ host OpenSSL disables them — reported honestly as "not tested".
 stderr; a fixed `ExitCode` enum.
 **Alternatives:** report to stdout with summary also on stdout; `--quiet` to suppress.
 **Why:** `webvigil scan url --format sarif > r.sarif` must yield a clean file; CI branches on
-the exit code — RF-24, RF-25, confirmed with Ryan.
+the exit code — RF-24, RF-25, confirmed with the maintainer.
 **Trade-off:** users who pipe stderr to a log see banners there; documented.
 
 ### ADR-10 — Active-mode gate enforced in the Orchestrator

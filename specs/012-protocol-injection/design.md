@@ -632,7 +632,7 @@ the evidence quotes the line so a reviewer can see the call.
 
 ## Open questions
 
-None. Ready for `/spec tasks`.
+None. Ready for the tasks phase.
 
 ## Implementation notes
 

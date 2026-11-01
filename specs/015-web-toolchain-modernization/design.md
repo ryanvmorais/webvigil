@@ -297,7 +297,7 @@ then diff against a fresh shadcn CLI generation as a check.
 Hand-migrate + CLI diff.
 
 **Why.** The files carry local docstring and formatting conventions
-(`/estilo-arquivos`); a blind regenerate would revert those and could pull
+(the project's file-style conventions); a blind regenerate would revert those and could pull
 unrelated upstream changes. The only mechanical change needed is the
 `[--x]` → `(--x)` arbitrary-variable syntax. The CLI diff catches anything
 missed.
@@ -326,7 +326,7 @@ Accepted for this audience.
   preserved. This is the highest-review-attention file in the spec.
 - **`components/ui/*` (11 files)** get a mechanical syntax edit. shadcn-owned
   files, normally not hand-edited — noted in the task list so a future
-  `/estilo-arquivos` pass knows why they diverge from a bare CLI generation.
+  style pass knows why they diverge from a bare CLI generation.
 - **`eslint.config.mjs`** changes shape; the *effective* rule set does not.
 - **`.github/workflows/ci.yml`** — one value plus one input removal in the `web`
   job. The `quality` and `docker` jobs are untouched.

@@ -464,7 +464,7 @@ and need a collaborator / raw-socket control**. `README.md` coverage table,
 
 ## Resolved decisions
 
-Settled with Ryan on 2026-09-08 (approved the requirements with the proposed resolutions unchanged):
+Settled with the maintainer on 2026-09-08 (approved the requirements with the proposed resolutions unchanged):
 
 1. **All four ship in 012 (not split).** The four are one theme — the request
    envelope — and share the "re-request / re-shape, don't fuzz a value" idea for

@@ -415,7 +415,7 @@ stated explicitly so a user is never surprised by an outbound request.
 
 ## Resolved decisions
 
-Settled with Ryan on 2026-09-06:
+Settled with the maintainer on 2026-09-06:
 
 1. **Probing consent model (RF-04):** an **opt-in flag within Safe Mode**
    (`[disclosure] probe`, `--probe`), default **off**, **not** gated by
@@ -450,4 +450,4 @@ Settled with Ryan on 2026-09-06:
 
 ## Open questions
 
-None. Ready for `/spec design`.
+None. Ready for the design phase.

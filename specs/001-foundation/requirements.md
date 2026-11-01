@@ -454,7 +454,7 @@ vendored heavy dependency.
 
 ## Resolved decisions
 
-All open questions from the draft were resolved with Ryan on 2026-09-06:
+All open questions from the draft were resolved with the maintainer on 2026-09-06:
 
 1. **Header check granularity (RF-16):** one check class per header family — better
    testability and per-check `disabled` control.
@@ -473,4 +473,4 @@ All open questions from the draft were resolved with Ryan on 2026-09-06:
 
 ## Open questions
 
-None. Ready for `/spec design`.
+None. Ready for the design phase.

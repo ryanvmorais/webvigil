@@ -421,7 +421,7 @@ Every endpoint below already exists in spec 002 (`design.md` §Interfaces). This
 **Decision:** `web/` is a standalone Next.js project with its own `package.json` and
 `pnpm-lock.yaml`. No pnpm workspace, no Turborepo, no shared `node_modules`.
 **Alternatives:** a pnpm/turbo monorepo spanning both stacks.
-**Why:** decision 1 with Ryan. The Python and JS stacks share nothing but the OpenAPI
+**Why:** decision 1 with the maintainer. The Python and JS stacks share nothing but the OpenAPI
 schema (a generated file), so workspace tooling would add configuration for no reuse.
 **Trade-off:** two lockfiles and two install steps; CI runs `uv sync` and `pnpm install`
 separately.
@@ -457,7 +457,7 @@ themselves. (See Open questions — confirm dropping the dev-CORS path.)
 regenerates both and fails on any diff.
 **Alternatives:** generate at build time (network/DB-free but non-deterministic ordering
 risk); hand-write the types; a runtime client like `openapi-fetch`.
-**Why:** decision 2 with Ryan. Deterministic, reviewable diffs; `pnpm build` needs no
+**Why:** decision 2 with the maintainer. Deterministic, reviewable diffs; `pnpm build` needs no
 Python and no network (RNF-08); the wrapper stays a thin hand-rolled `fetch` (RF-03).
 **Trade-off:** a two-command regen step and a CI drift job; contributors must run
 `pnpm gen:api` after an API change.
@@ -490,7 +490,7 @@ wraps the bytes in a blob URL, and renders them in `<iframe sandbox="">`; the UR
 revoked on close.
 **Alternatives:** a dedicated Next preview route rendering the HTML; `srcdoc`;
 `dangerouslySetInnerHTML`.
-**Why:** decision 4 with Ryan. Empty `sandbox` gives no script execution and no same-origin
+**Why:** decision 4 with the maintainer. Empty `sandbox` gives no script execution and no same-origin
 access — the report is static HTML — and no new API route is needed.
 **Trade-off:** the preview is an opaque frame (no in-app theming of the report); a blob URL
 must be lifecycle-managed. Esc does not close the dialog once the focus is inside the frame
@@ -653,7 +653,7 @@ lint-imports`) still green (nothing Python changed, but it is run).
 
 None.
 
-**Resolved with Ryan (2026-09-06):** the dev-CORS path is dropped. All browser traffic
+**Resolved with the maintainer (2026-09-06):** the dev-CORS path is dropped. All browser traffic
 goes through the Next rewrite in development too (ADR-3); `web.cors_origins` stays empty and
 `docs/web-ui.md` documents the rewrite-only model (no dev-CORS mention).
 

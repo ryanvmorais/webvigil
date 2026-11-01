@@ -37,8 +37,8 @@ brings the whole `web/` toolchain current in one coordinated pass, keeping every
 existing quality gate green and the dashboard visually unchanged.
 
 The Python side of the project (engine, CLI, Web API, Alembic, `uv` graph) is
-**not** touched — its Dependabot PRs are handled independently under
-`/revisar-dependabot`.
+**not** touched — its Dependabot PRs are handled independently, as
+regular Dependabot reviews.
 
 ## Objectives
 

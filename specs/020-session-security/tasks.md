@@ -135,6 +135,6 @@ Baseline before 020 (clean `main` after #109): **967 passed**. At 020 close: **1
   (architecture paragraph, state line, the 020 entry), `specs/README.md` (roadmap row to
   **done**), `docs/stack.md` only if a dependency appeared (none expected), the CLI help. —
   RF-14
-- [ ] `/atualizar-docs`, then the full gate one last time; record the test-count delta against
+- [ ] Update the docs, then run the full gate one last time; record the test-count delta against
   the 967 baseline and the suite time. Mark the three spec files `status: done`.
 - [ ] Open the PR with `Closes #53`.

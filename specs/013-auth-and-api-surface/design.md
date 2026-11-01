@@ -624,7 +624,7 @@ passive body-inspection checks.
 
 ## Open questions
 
-None. Ready for `/spec tasks`.
+None. Ready for the tasks phase.
 
 ## Implementation notes
 

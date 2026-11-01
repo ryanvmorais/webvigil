@@ -421,7 +421,7 @@ routes must be `async def` to talk to the loop-resident runner safely.
 ### ADR-2 — One background `ScanRunner`, single execution slot
 **Decision:** exactly one scan `RUNNING`; the rest `QUEUED`, started oldest-first.
 **Alternatives:** a small worker pool; an external queue (`arq` + Redis).
-**Why:** decision with Ryan; single-user, one machine, and the engine already parallelises
+**Why:** decision with the maintainer; single-user, one machine, and the engine already parallelises
 *within* a scan. Predictable load.
 **Trade-off:** throughput of one scan at a time. A migration note to `arq` is recorded for
 when the API grows past single-user.
@@ -440,7 +440,7 @@ by the API, not the CLI.
 **Decision:** the session is a signed JWT in an httpOnly cookie; there is no session table
 and no revocation list.
 **Alternatives:** a `session` table with server-side invalidation; opaque tokens.
-**Why:** decision with Ryan; a local single-user tool. Logout clears the caller's cookie;
+**Why:** decision with the maintainer; a local single-user tool. Logout clears the caller's cookie;
 a short TTL (12h default) bounds exposure.
 **Trade-off:** a leaked cookie is valid until it expires; "log out everywhere" is not
 possible without rotating `web.session_secret`.
@@ -467,7 +467,7 @@ serves the UI (severity as a name), and the three shapes evolve independently.
 **Decision:** cancelling a `RUNNING` scan cancels its `asyncio.Task`; no cancellation hook
 is added to `Orchestrator.run`.
 **Alternatives:** a cooperative cancel token threaded through the engine.
-**Why:** decision with Ryan. `Orchestrator.run` already wraps its work in
+**Why:** decision with the maintainer. `Orchestrator.run` already wraps its work in
 `async with HttpClient(...)`, so `CancelledError` unwinds cleanly and closes the client, and
 findings are only produced at the end — a cancelled scan persists nothing partial.
 **Trade-off:** a check stuck in a long non-`await` computation would delay cancellation
@@ -477,7 +477,7 @@ findings are only produced at the end — a cancelled scan persists nothing part
 **Decision:** ship `alembic/` with an initial migration; tests and startup run
 `upgrade head`. `SQLModel.metadata.create_all` is not called anywhere.
 **Alternatives:** `create_all` now, adopt Alembic when the schema first changes.
-**Why:** decision with Ryan; the schema will change in spec 003+ and a retrofit is painful.
+**Why:** decision with the maintainer; the schema will change in spec 003+ and a retrofit is painful.
 **Trade-off:** more setup now; `env.py` needs `render_as_batch=True` for SQLite's limited
 `ALTER TABLE`.
 

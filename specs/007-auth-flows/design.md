@@ -892,7 +892,7 @@ is what `test_crawler_submits_the_get_search_form` exercises — no fixture chan
 
 ## Open questions
 
-None. Ready for `/spec tasks`.
+None. Ready for the tasks phase.
 
 ## Implementation notes
 
