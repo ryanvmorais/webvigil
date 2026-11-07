@@ -9,7 +9,7 @@ origin: conception
 # 001 — Foundation — Tasks
 
 Ordered, small tasks grouped by stage. Each references the requirement(s) it satisfies.
-The last task of every stage is a quality gate (`/qualidade-python`:
+The last task of every stage is a quality gate (the Python gate:
 `ruff → black → mypy --strict → pytest`). Work top to bottom; mark `[x]` after each.
 
 TDD where it pays: for the checks and the model, write the failing test first.

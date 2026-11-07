@@ -807,7 +807,7 @@ exposure by structure (keys present, file shape correct), not by quoting the val
 - **`list-checks`:** all eight `disclosure.*` ids listed with `DISCLOSURE` / `passive`.
 - **Packaging:** import `webvigil.checks.disclosure.catalogue` and load the catalogue from
   the installed path (not repo-relative).
-- **Gate:** `/qualidade-python` (`ruff → black → mypy → pytest`) + `uv run lint-imports`
+- **Gate:** the Python gate (`ruff → black → mypy → pytest`) + `uv run lint-imports`
   green. **No `web` gate** — nothing under `web/` changes.
 
 ## Implementation notes

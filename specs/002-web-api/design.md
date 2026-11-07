@@ -548,7 +548,7 @@ that.
 - **Config:** a `webvigil.toml` with a `[web]` section still loads under `ScanConfig.load`;
   `WebConfig` rejects an unknown `[web]` key.
 - **import-linter:** the extended contract holds (engine ✗ fastapi/sqlmodel/alembic/api).
-- **Gate:** `/qualidade-python` + `uv run lint-imports` green.
+- **Gate:** the Python gate + `uv run lint-imports` green.
 
 ## Open questions
 

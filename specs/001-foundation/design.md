@@ -655,7 +655,7 @@ in two layers (collect vs enforce).
   `typer/rich/fastapi/sqlmodel/uvicorn` (RNF-01).
 - **Packaging smoke:** `docker build` in CI; a test that `pipx run --spec . webvigil version`
   works from a clean env is optional/manual.
-- **Gate:** `/qualidade-python` (`ruff → black → mypy --strict → pytest`) green — RNF-02.
+- **Gate:** the Python gate (`ruff → black → mypy --strict → pytest`) green — RNF-02.
 
 ## Open questions
 

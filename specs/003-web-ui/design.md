@@ -646,7 +646,7 @@ check hits the dashboard on the published port and confirms `/api/health` resolv
 the rewrite. The `web` image runs as non-root off the standalone output.
 
 **Gate:** `pnpm lint && pnpm format:check && pnpm typecheck && pnpm test && pnpm build`
-green; `pnpm test:e2e` green; the project's Python gate (`/qualidade-python` + `uv run
+green; `pnpm test:e2e` green; the project's Python gate (ruff, black, mypy, pytest and `uv run
 lint-imports`) still green (nothing Python changed, but it is run).
 
 ## Open questions

@@ -710,7 +710,7 @@ then import from `webvigil.checks`, a direction that currently does not exist.
   created before the column reads back as `[]`.
 - **Web:** `TechnologiesTable` renders vulnerable + clean rows, hides when empty, no serious
   axe violations; the Playwright flow asserts the section after the fixture scan.
-- **Gate:** `/qualidade-python` + `uv run lint-imports` green; the `web` gate green
+- **Gate:** the Python gate + `uv run lint-imports` green; the `web` gate green
   (`pnpm lint / format:check / typecheck / test / build`, `api-types.ts` drift, Playwright).
 
 ## Implementation notes
