@@ -33,7 +33,8 @@ _NAME = re.compile(r"\bRyan\b")
 _PERSONAL_COMMAND = re.compile(
     r"(?<![\w/.-])/(spec|idioma|estilo-arquivos|fechar-sessao|atualizar-docs"
     r"|atualizar-dependencias|revisar-dependabot|nova-interface|stack|novo-projeto"
-    r"|preparar-release|auditar-impessoalidade)"
+    r"|preparar-release|atualizar-ferramentas|qualidade-python|limpar-branches"
+    r"|enxugar-memoria|auditoria-[a-z]+)"
     r"(?![\w-])"
 )
 
