@@ -29,6 +29,8 @@ e um **dashboard web** opcional, construído sobre o mesmo engine.
 > [versionamento semântico](docs/stability.md); o que cada versão mudou está no [changelog](CHANGELOG.md). [Escopo e limitações](#escopo-e-limitações) diz o que o
 > WebVigil deliberadamente não faz.
 
+**Site:** [webvigil.ryanmorais.com.br](https://webvigil.ryanmorais.com.br/)
+
 ![Dashboard do WebVigil (interface web opcional): página de detalhe de um scan com os achados agrupados por severidade](assets/webvigil-dashboard-scan-detail-findings-by-severity.png)
 
 ## WebVigil e outros scanners
