@@ -354,9 +354,7 @@ class Session:
         self._failures.append(message)
 
     def close(self) -> None:
-        """
-        Mark the session ended on purpose (the logout test, spec 020): no re-login follows.
-        """
+        """Mark the session ended on purpose (the logout test, spec 020): no re-login follows."""
         self.closed = True
 
     def committed(self) -> None:

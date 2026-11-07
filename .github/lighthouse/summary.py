@@ -1,4 +1,5 @@
-"""Summarise the Lighthouse CI reports as a Markdown table.
+"""
+Summarise the Lighthouse CI reports as a Markdown table.
 
 ``lighthouse.yml`` runs ``lhci`` twice per profile (the public ``/login`` page, then the
 signed-in pages) and each run writes a ``manifest.json`` plus its reports under
@@ -35,7 +36,8 @@ CATEGORIES = [
 
 
 def representative_reports(profile: str) -> list[dict]:
-    """Load the median report of every page of a profile.
+    """
+    Load the median report of every page of a profile.
 
     Lighthouse CI flags the median run of each URL in ``manifest.json``
     (``isRepresentativeRun``). The public ``/login`` run comes first, then the signed-in
@@ -60,7 +62,8 @@ def representative_reports(profile: str) -> list[dict]:
 
 
 def page(report: dict) -> str:
-    """Extract the URL path of a report (``/scans``, ``/scans/1``).
+    """
+    Extract the URL path of a report (``/scans``, ``/scans/1``).
 
     Args:
         report (dict): One Lighthouse report.
@@ -73,7 +76,8 @@ def page(report: dict) -> str:
 
 
 def table(profile: str, reports: list[dict]) -> str:
-    """Build the Markdown table of one profile.
+    """
+    Build the Markdown table of one profile.
 
     Args:
         profile (str): Profile name, used in the heading.
@@ -104,7 +108,8 @@ def table(profile: str, reports: list[dict]) -> str:
 
 
 def main(arguments: list[str]) -> int:
-    """Print the table of each requested profile that produced reports.
+    """
+    Print the table of each requested profile that produced reports.
 
     Args:
         arguments (list[str]): Profiles to summarise (``mobile``, ``desktop``); empty

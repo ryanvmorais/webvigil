@@ -166,11 +166,20 @@ extend-exclude = ["src/webvigil/api/migrations/versions"]
 
 [tool.ruff.lint]
 # pycodestyle, pyflakes, isort, pyupgrade, bugbear, flake8-simplify,
-# flake8-comprehensions, ruff-native.
-select = ["E", "F", "I", "UP", "B", "SIM", "C4", "RUF"]
+# flake8-comprehensions, ruff-native, pydocstyle (D213 by name: the Google convention turns it off).
+select = ["E", "F", "I", "UP", "B", "SIM", "C4", "RUF", "D", "D213"]
+ignore = [
+    "D1",  # missing docstrings (D100 to D107) stay out of the gate for now; drop this as each module is documented
+    "D212",  # the house style opens a docstring with a lone `"""` and the summary on the next line (D213)
+    "D205",  # the summary may be a paragraph that wraps, followed by a blank line
+]
 
 [tool.ruff.lint.isort]
 known-first-party = ["webvigil"]
+
+[tool.ruff.lint.pydocstyle]
+# Google sections (`Args:`, `Returns:`, `Raises:`), as in the docstrings.
+convention = "google"
 
 [tool.ruff.lint.flake8-bugbear]
 # FastAPI's parameter markers are designed to be called in argument defaults.

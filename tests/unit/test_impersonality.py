@@ -1,4 +1,5 @@
-"""What is versioned is written for whoever cloned the repository.
+"""
+What is versioned is written for whoever cloned the repository.
 
 No tracked file names the maintainer, except the authorship and license metadata, and the
 Claude Code guidance (``CLAUDE.md``, ``.claude/``) and the specs do not depend on commands
@@ -45,7 +46,8 @@ _PERSONAL_COMMAND = re.compile(
 
 
 def _tracked_files() -> list[str]:
-    """List the files git tracks.
+    """
+    List the files git tracks.
 
     Returns:
         list[str]: Paths relative to the repository root. Empty when there is no git
@@ -68,7 +70,8 @@ pytestmark = pytest.mark.skipif(not _TRACKED, reason="not inside a git clone")
 
 
 def _matches(paths: list[str], pattern: re.Pattern[str]) -> list[str]:
-    """Find the lines of the given files that match a pattern.
+    """
+    Find the lines of the given files that match a pattern.
 
     A file that is not UTF-8 text (an image, a font) has nothing to check and is skipped.
 

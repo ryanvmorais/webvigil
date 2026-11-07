@@ -1,6 +1,4 @@
-"""
-Content-Security-Policy check (RF-16).
-"""
+"""Content-Security-Policy check (RF-16)."""
 
 from __future__ import annotations
 

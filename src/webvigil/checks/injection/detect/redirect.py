@@ -95,13 +95,13 @@ def _honoured(response: Response) -> tuple[str | None, Confidence]:
 
 
 def _host(url: str) -> str:
-    """
+    r"""
     Args:
         url (str): A possibly-malformed redirect target (backslashes,
             scheme-relative).
 
     Returns:
-        str: Its lower-cased host, normalising ``\\`` to ``/`` and a leading
+        str: Its lower-cased host, normalising ``\`` to ``/`` and a leading
             ``//`` to ``http://``.
     """
     candidate = url.replace("\\", "/").strip()

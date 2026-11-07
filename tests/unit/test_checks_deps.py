@@ -75,8 +75,10 @@ def _det(
 
 
 async def test_vulnerable_library_finding_shape() -> None:
-    """A matched version produces a finding carrying the advisory ids, CWE, refs and remediation,
-    and records the library as vulnerable on the inventory."""
+    """
+    A matched version produces a finding carrying the advisory ids, CWE, refs and remediation,
+    and records the library as vulnerable on the inventory.
+    """
     ctx = _ctx(_det("jquery", "1.4.0"))
     findings = await VulnerableLibraryCheck().run(ctx)
 

@@ -1,6 +1,4 @@
-"""
-Revealing-headers check: server/framework version disclosure (RF-17).
-"""
+"""Revealing-headers check: server/framework version disclosure (RF-17)."""
 
 from __future__ import annotations
 

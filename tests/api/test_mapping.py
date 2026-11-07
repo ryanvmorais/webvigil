@@ -106,8 +106,10 @@ def test_missing_technologies_column_reads_as_empty(web_engine: Engine) -> None:
 
 
 def test_build_scan_config_applies_options() -> None:
-    """``build_scan_config`` maps a stored scan's mode, scope, options and authorisation back
-    into a :class:`ScanConfig`."""
+    """
+    ``build_scan_config`` maps a stored scan's mode, scope, options and authorisation back
+    into a :class:`ScanConfig`.
+    """
     scan = Scan(
         target="https://example.com/",
         mode="active",

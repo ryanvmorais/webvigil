@@ -72,8 +72,10 @@ def _stub_crawler(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 class _Base(Check):
-    """Shared base for the local test checks: a HEADERS check whose ``_finding`` builds
-    a deduplicable finding keyed by an arbitrary string."""
+    """
+    Shared base for the local test checks: a HEADERS check whose ``_finding`` builds
+    a deduplicable finding keyed by an arbitrary string.
+    """
 
     name = "test check"
     category = Category.HEADERS
@@ -260,8 +262,10 @@ async def test_unreachable_target_becomes_a_warning(monkeypatch: pytest.MonkeyPa
 async def test_registry_selection_filters_by_mode_and_reports_unknown_disabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """With no explicit check types, selection comes from the registry and an unknown
-    disabled id is surfaced as a warning."""
+    """
+    With no explicit check types, selection comes from the registry and an unknown
+    disabled id is surfaced as a warning.
+    """
     monkeypatch.setattr(orch_mod, "load_plugins", lambda: None)
     monkeypatch.setattr(orch_mod, "iter_checks", lambda *, mode, disabled: [PassiveOne])
     monkeypatch.setattr(orch_mod, "unknown_check_ids", lambda disabled: ["ghost"])

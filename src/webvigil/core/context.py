@@ -129,6 +129,8 @@ class Page:
         Args:
             url (str): The URL that failed.
             error (str): Description of the transport failure.
+            method (str, optional): The HTTP method of the failed request. Defaults to
+                ``"GET"``.
 
         Returns:
             Page: A page with ``status_code`` ``0``, an empty body, and

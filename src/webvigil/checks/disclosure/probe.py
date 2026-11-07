@@ -1,10 +1,10 @@
-"""
+r"""
 The information-disclosure probe pass (spec 005, RF-04..RF-09, ADR-1, ADR-5).
 
 Runs in the orchestrator, not as a check. Given the crawled pages and the
 shared HTTP client it: calibrates the target's "not found" response, requests a
 curated catalogue of well-known sensitive paths plus a few derived paths,
-content-validates each response, and returns :class:`ProbeHit`\\s the probe-fed
+content-validates each response, and returns :class:`ProbeHit`\s the probe-fed
 ``disclosure.*`` checks turn into findings.
 
 Only in-scope ``GET`` requests, no payloads, no state change — it is Safe

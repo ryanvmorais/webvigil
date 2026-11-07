@@ -61,7 +61,8 @@ async def test_delay_is_per_host() -> None:
 
 
 async def _acquire(limiter: RateLimiter, host: str) -> None:
-    """Take and immediately release one slot for ``host``.
+    """
+    Take and immediately release one slot for ``host``.
 
     Args:
         limiter (RateLimiter): The limiter under test.

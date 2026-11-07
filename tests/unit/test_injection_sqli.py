@@ -332,7 +332,8 @@ async def test_boolean_based_a_denied_seed_request_gives_no_hit() -> None:
 
 
 def _time_render(value: str) -> Response:
-    """A target whose response time grows one second per requested sleep-second.
+    """
+    A target whose response time grows one second per requested sleep-second.
 
     Args:
         value (str): The injected payload.

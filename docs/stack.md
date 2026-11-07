@@ -387,7 +387,8 @@ server-side field errors).
 ### Ruff, Black, Mypy
 
 The Python quality gate, run in order. **Ruff** lints (it replaces Flake8 +
-isort + pyupgrade + more) and is near-instant. **Black** formats
+isort + pyupgrade + more) and is near-instant; its `D` rules check the form of a
+docstring (a missing docstring does not fail the gate yet). **Black** formats
 (non-negotiable style, no bikeshedding). **Mypy** in `strict` mode checks types
 (`src` only — the tests are exercised by pytest).
 

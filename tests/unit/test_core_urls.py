@@ -52,6 +52,8 @@ def test_an_absolute_http_url_is_a_link(value: str) -> None:
     ],
 )
 def test_anything_else_is_not_a_link(value: str) -> None:
-    """Another scheme, a relative or scheme-relative value, a missing host or a stray control
-    or whitespace character is rejected; a malformed URL does not raise."""
+    """
+    Another scheme, a relative or scheme-relative value, a missing host or a stray control
+    or whitespace character is rejected; a malformed URL does not raise.
+    """
     assert is_http_url(value) is False

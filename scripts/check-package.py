@@ -1,4 +1,5 @@
-"""Check that the built sdist and wheel are what a release should ship.
+"""
+Check that the built sdist and wheel are what a release should ship.
 
 ``uv build`` succeeding says the package builds, not that it is the right package. This asserts
 what the release plan promises (issue #111, batch 4): the sdist carries the source and not the

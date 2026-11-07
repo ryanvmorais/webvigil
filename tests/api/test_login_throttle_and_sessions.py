@@ -150,7 +150,8 @@ def test_an_unknown_username_runs_the_same_password_check_as_a_wrong_password(
 
 
 def test_a_login_body_over_the_cap_is_refused_before_it_is_counted(client: TestClient) -> None:
-    """A huge username or password is a 422 and never reaches the throttle table.
+    """
+    A huge username or password is a 422 and never reaches the throttle table.
 
     The throttle keeps a key per failed username for 15 minutes, so an unbounded username let an
     unauthenticated client grow the process by what it sent.

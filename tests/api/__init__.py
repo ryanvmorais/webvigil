@@ -1,3 +1,1 @@
-"""
-Web API tests.
-"""
+"""Web API tests."""

@@ -1,4 +1,5 @@
-"""Consistency of the Lighthouse CI configuration with the dashboard it audits.
+"""
+Consistency of the Lighthouse CI configuration with the dashboard it audits.
 
 The audit runs only on GitHub, so a stale URL would surface as a 404 report there and
 nowhere else. These tests read the JSON configs in ``.github/lighthouse/`` and the route
@@ -24,7 +25,8 @@ _STEMS = ["mobile", "mobile-login", "desktop", "desktop-login"]
 
 
 def _load(stem: str) -> dict:
-    """Load one Lighthouse CI config.
+    """
+    Load one Lighthouse CI config.
 
     Args:
         stem (str): File name without ``.json``, e.g. ``"mobile-login"``.
@@ -36,7 +38,8 @@ def _load(stem: str) -> dict:
 
 
 def _routes() -> list[re.Pattern[str]]:
-    """Build a matcher per ``page.tsx`` of the App Router.
+    """
+    Build a matcher per ``page.tsx`` of the App Router.
 
     Route groups (``(app)``) do not appear in the URL and dynamic segments (``[id]``) match
     any single path segment.
@@ -53,7 +56,8 @@ def _routes() -> list[re.Pattern[str]]:
 
 
 def _paths(config: dict) -> list[str]:
-    """List the URL paths a config audits.
+    """
+    List the URL paths a config audits.
 
     Args:
         config (dict): A parsed ``ci`` section.

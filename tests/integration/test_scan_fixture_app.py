@@ -115,7 +115,8 @@ _OSV_JQUERY_RECORD = {
 
 
 def _osv_up(request: httpx.Request) -> httpx.Response:
-    """An OSV.dev stub that reports jquery vulnerable and serves ``_OSV_JQUERY_RECORD``.
+    """
+    An OSV.dev stub that reports jquery vulnerable and serves ``_OSV_JQUERY_RECORD``.
 
     Args:
         request (httpx.Request): The intercepted OSV.dev request.
@@ -145,7 +146,8 @@ def _osv_down(request: httpx.Request) -> httpx.Response:
 
 
 def _assert_same_findings(first: ScanResult, second: ScanResult) -> None:
-    """Assert two scans reported the same findings, and name the ones that differ if not.
+    """
+    Assert two scans reported the same findings, and name the ones that differ if not.
 
     Comparing bare fingerprints leaves a failure unreadable: the one run that flaked
     (issue #58) only showed that scan A had an extra hash. This lists the check, the
@@ -244,7 +246,8 @@ def _har_file(tmp_path_factory: pytest.TempPathFactory) -> None:
 
 @pytest.fixture
 def scan(monkeypatch: pytest.MonkeyPatch):
-    """Yield an ``async`` runner that scans the fixture app for a given profile.
+    """
+    Yield an ``async`` runner that scans the fixture app for a given profile.
 
     The returned callable takes the profile name plus optional ``probe`` / ``active`` /
     ``cookies`` / ``headers`` / ``login`` / ``session_ttl`` / ``sample_sessions`` /
@@ -1116,7 +1119,8 @@ async def test_post_crawl_reaches_what_only_a_post_leads_to(scan) -> None:
 
 
 async def test_hardened_profile_with_every_switch_reports_nothing(scan) -> None:
-    """Every hardened route validates, escapes or enforces: no finding of any spec, no error.
+    """
+    Every hardened route validates, escapes or enforces: no finding of any spec, no error.
 
     This is the single hardened check for the injection, SSRF, RCE, expression-language,
     request-envelope, upload, stored-XSS, CSRF-confirmation and POST-crawl specs; the passes
@@ -1190,8 +1194,10 @@ async def test_nothing_the_har_held_in_secret_reaches_any_report(scan) -> None:
 async def test_a_passive_scan_with_a_har_seeds_the_gets_sends_no_post_and_warns_about_the_session(
     scan,
 ) -> None:
-    """Passive: the GET seed is fetched, the POST route is never touched, and the recording that
-    looks authenticated draws the one warning (this scan has no credentials)."""
+    """
+    Passive: the GET seed is fetched, the POST route is never touched, and the recording that
+    looks authenticated draws the one warning (this scan has no credentials).
+    """
     result = await scan("insecure", har=_HAR["path"])
     log = _log(scan)
     assert "GET /spa/items?name=widget" in log

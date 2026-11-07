@@ -37,8 +37,10 @@ _TARGET = Target.parse("https://example.com/")
 
 
 class _FakeHttp:
-    """A fake HTTP client: every request's merged params + body land on ``calls``,
-    and the response comes from the ``render`` callable given at construction."""
+    """
+    A fake HTTP client: every request's merged params + body land on ``calls``,
+    and the response comes from the ``render`` callable given at construction.
+    """
 
     def __init__(self, render: Callable[[str, dict[str, str]], Response]) -> None:
         self.render = render

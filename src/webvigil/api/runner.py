@@ -1,6 +1,4 @@
-"""
-The single-slot scan runner: one background task, one scan at a time (RF-09, RF-10, RF-14).
-"""
+"""The single-slot scan runner: one background task, one scan at a time (RF-09, RF-10, RF-14)."""
 
 from __future__ import annotations
 
