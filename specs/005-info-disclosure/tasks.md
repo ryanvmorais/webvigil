@@ -9,7 +9,7 @@ origin: conception
 # 005 — Information disclosure — Tasks
 
 Ordered, small tasks grouped by stage. Each references the requirement(s) / ADR(s) it
-satisfies. The last task of every stage is a quality gate: `/qualidade-python`
+satisfies. The last task of every stage is a quality gate: the Python gate
 (`ruff → black → mypy → pytest`) **+** `uv run lint-imports`.
 
 **No `web` stage** — 005 touches nothing under `web/`, `webvigil.reporting`, or

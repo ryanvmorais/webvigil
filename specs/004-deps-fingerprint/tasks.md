@@ -11,7 +11,7 @@ origin: conception
 Ordered, small tasks grouped by stage. Each references the requirement(s) / ADR(s) it
 satisfies. The last task of every stage is a quality gate:
 
-- Python stages → `/qualidade-python` + `uv run lint-imports`.
+- Python stages → the Python gate + `uv run lint-imports`.
 - The web stage → `pnpm lint && pnpm format:check && pnpm typecheck && pnpm test && pnpm build`
   (+ `pnpm gen:api` drift check, + `pnpm test:e2e`).
 
@@ -212,4 +212,4 @@ changes are additive and traced.
   line + the finding; `webvigil report --format html/md` shows the section; `webvigil-web`
   migrate + serve, run a scan through the dashboard, confirm "Detected technologies" renders;
   `webvigil version` with a back-dated `PROVENANCE.json` shows the staleness note.
-- [x] Final full quality gate (`/qualidade-python` + `uv run lint-imports` + the web gate).
+- [x] Final full quality gate (the Python gate + `uv run lint-imports` + the web gate).

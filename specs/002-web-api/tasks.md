@@ -9,7 +9,7 @@ origin: conception
 # 002 — Web API — Tasks
 
 Ordered, small tasks grouped by stage. Each references the requirement(s) it satisfies.
-The last task of every stage is a quality gate (`/qualidade-python` +
+The last task of every stage is a quality gate (the Python gate +
 `uv run lint-imports`). Work top to bottom; mark `[x]` after each. Write failing tests
 first where it pays (mapping, runner, routes).
 
