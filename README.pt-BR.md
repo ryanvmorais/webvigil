@@ -3,15 +3,15 @@
 [English](README.md) · **Português (Brasil)**
 
 ![Python](https://img.shields.io/badge/Python-3.12+-3776AB?logo=python&logoColor=white)
-![deps](https://img.shields.io/badge/deps-uv-DE5FE9)
-[![CI](https://github.com/ryanvmorais/webvigil/actions/workflows/ci.yml/badge.svg)](https://github.com/ryanvmorais/webvigil/actions/workflows/ci.yml)
-[![PyPI](https://img.shields.io/pypi/v/webvigil)](https://pypi.org/project/webvigil/)
-[![Release](https://img.shields.io/github/v/release/ryanvmorais/webvigil)](https://github.com/ryanvmorais/webvigil/releases)
-[![Imagem](https://img.shields.io/badge/ghcr.io-webvigil-2496ED?logo=docker&logoColor=white)](https://github.com/ryanvmorais/webvigil/pkgs/container/webvigil)
-![Lint](https://img.shields.io/badge/lint-ruff-261230)
-![Formatação](https://img.shields.io/badge/estilo-black-000000)
-![Tipos](https://img.shields.io/badge/tipos-mypy%20strict-2A6DB2)
-![Licença](https://img.shields.io/badge/licença-Apache%202.0-blue)
+![deps](https://img.shields.io/badge/deps-uv-DE5FE9?logo=uv&logoColor=white)
+[![CI](https://img.shields.io/github/actions/workflow/status/ryanvmorais/webvigil/ci.yml?label=CI&logo=githubactions&logoColor=white)](https://github.com/ryanvmorais/webvigil/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/webvigil?logo=pypi&logoColor=white)](https://pypi.org/project/webvigil/)
+[![Release](https://img.shields.io/github/v/release/ryanvmorais/webvigil?logo=github&logoColor=white)](https://github.com/ryanvmorais/webvigil/releases)
+[![Image](https://img.shields.io/badge/ghcr.io-webvigil-2496ED?logo=docker&logoColor=white)](https://github.com/ryanvmorais/webvigil/pkgs/container/webvigil)
+![lint](https://img.shields.io/badge/lint-ruff-261230?logo=ruff&logoColor=white)
+![style](https://img.shields.io/badge/style-black-000000?logo=black&logoColor=white)
+![types](https://img.shields.io/badge/types-mypy%20strict-2A6DB2)
+![license](https://img.shields.io/badge/license-Apache%202.0-blue?logo=apache&logoColor=white)
 
 **O WebVigil é um scanner de vulnerabilidades em aplicações web (DAST), open source, para desenvolvedores.**
 É um engine Python e uma CLI que, por padrão, roda checks passivos e seguros para produção e, só

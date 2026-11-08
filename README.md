@@ -5,15 +5,15 @@
 <!-- The logo is an HTML <img> with an absolute URL: the PyPI rewrite in pyproject.toml covers only Markdown images. -->
 
 ![Python](https://img.shields.io/badge/Python-3.12+-3776AB?logo=python&logoColor=white)
-![deps](https://img.shields.io/badge/deps-uv-DE5FE9)
-[![CI](https://github.com/ryanvmorais/webvigil/actions/workflows/ci.yml/badge.svg)](https://github.com/ryanvmorais/webvigil/actions/workflows/ci.yml)
-[![PyPI](https://img.shields.io/pypi/v/webvigil)](https://pypi.org/project/webvigil/)
-[![Release](https://img.shields.io/github/v/release/ryanvmorais/webvigil)](https://github.com/ryanvmorais/webvigil/releases)
+![deps](https://img.shields.io/badge/deps-uv-DE5FE9?logo=uv&logoColor=white)
+[![CI](https://img.shields.io/github/actions/workflow/status/ryanvmorais/webvigil/ci.yml?label=CI&logo=githubactions&logoColor=white)](https://github.com/ryanvmorais/webvigil/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/webvigil?logo=pypi&logoColor=white)](https://pypi.org/project/webvigil/)
+[![Release](https://img.shields.io/github/v/release/ryanvmorais/webvigil?logo=github&logoColor=white)](https://github.com/ryanvmorais/webvigil/releases)
 [![Image](https://img.shields.io/badge/ghcr.io-webvigil-2496ED?logo=docker&logoColor=white)](https://github.com/ryanvmorais/webvigil/pkgs/container/webvigil)
-![Lint](https://img.shields.io/badge/lint-ruff-261230)
-![Format](https://img.shields.io/badge/style-black-000000)
-![Types](https://img.shields.io/badge/types-mypy%20strict-2A6DB2)
-![License](https://img.shields.io/badge/license-Apache%202.0-blue)
+![lint](https://img.shields.io/badge/lint-ruff-261230?logo=ruff&logoColor=white)
+![style](https://img.shields.io/badge/style-black-000000?logo=black&logoColor=white)
+![types](https://img.shields.io/badge/types-mypy%20strict-2A6DB2)
+![license](https://img.shields.io/badge/license-Apache%202.0-blue?logo=apache&logoColor=white)
 
 **WebVigil is an open-source web application vulnerability scanner (DAST) for developers.**
 A Python engine and CLI that runs passive, production-safe checks by default and, behind an
