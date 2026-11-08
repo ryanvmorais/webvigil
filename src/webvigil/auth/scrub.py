@@ -27,13 +27,13 @@ MIN_SECRET_LENGTH = 4
 
 
 def _spellings(secret: str) -> set[str]:
-    """
+    r"""
     Args:
         secret (str): A secret value.
 
     Returns:
         set[str]: The ways a target is likely to echo it: raw, JSON-escaped (with and without
-            ``\\u`` escapes for non-ASCII), percent-encoded, and form-encoded.
+            ``\u`` escapes for non-ASCII), percent-encoded, and form-encoded.
     """
     return {
         secret,

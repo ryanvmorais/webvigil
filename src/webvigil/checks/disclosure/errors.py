@@ -1,6 +1,4 @@
-"""
-Passive check: framework error pages / stack traces in already-crawled responses (RF-01).
-"""
+"""Passive check: framework error pages / stack traces in already-crawled responses (RF-01)."""
 
 from __future__ import annotations
 

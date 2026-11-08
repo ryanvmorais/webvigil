@@ -1,6 +1,4 @@
-"""
-Cookie-flag check: Secure / HttpOnly / SameSite / prefixes (RF-18).
-"""
+"""Cookie-flag check: Secure / HttpOnly / SameSite / prefixes (RF-18)."""
 
 from __future__ import annotations
 

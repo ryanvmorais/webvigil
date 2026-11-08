@@ -1,6 +1,4 @@
-"""
-Scan CRUD, the queue, and findings (RF-08..RF-17).
-"""
+"""Scan CRUD, the queue, and findings (RF-08..RF-17)."""
 
 from __future__ import annotations
 
@@ -87,8 +85,10 @@ def list_findings(
     severity: str | None = None,
     check_id: str | None = None,
 ) -> list[FindingOut]:
-    """A scan's findings, optionally filtered by ``check_id`` or a minimum ``severity``,
-    sorted severity-descending then check id / URL / sub-location."""
+    """
+    A scan's findings, optionally filtered by ``check_id`` or a minimum ``severity``,
+    sorted severity-descending then check id / URL / sub-location.
+    """
     _load(session, scan_id)
     statement = select(FindingRow).where(FindingRow.scan_id == scan_id)
     if check_id is not None:

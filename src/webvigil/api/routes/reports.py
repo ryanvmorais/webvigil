@@ -1,6 +1,4 @@
-"""
-Report download for a finished scan (RF-18).
-"""
+"""Report download for a finished scan (RF-18)."""
 
 from __future__ import annotations
 
@@ -40,8 +38,10 @@ def download_report(
     report_format: str = Query(default="json", alias="format"),
     download: bool = Query(default=True),
 ) -> Response:
-    """Render a finished scan into ``json`` / ``sarif`` / ``html`` / ``md`` from the stored
-    rows. ``download=false`` serves it inline. 409 when the scan has no results."""
+    """
+    Render a finished scan into ``json`` / ``sarif`` / ``html`` / ``md`` from the stored
+    rows. ``download=false`` serves it inline. 409 when the scan has no results.
+    """
     if report_format not in _FORMATS:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY, f"unknown format: {report_format!r}"

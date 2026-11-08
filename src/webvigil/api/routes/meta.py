@@ -1,6 +1,4 @@
-"""
-Health, the check catalogue, and scan-form defaults (RF-20, RF-21, RF-22).
-"""
+"""Health, the check catalogue, and scan-form defaults (RF-20, RF-21, RF-22)."""
 
 from __future__ import annotations
 

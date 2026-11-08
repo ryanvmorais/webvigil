@@ -374,7 +374,7 @@ def report(
     _write_or_print(get_reporter(output_format).render(result), output, output_format)
 
 
-def _build_config(
+def _build_config(  # noqa: D417 - the CLI overrides are documented as one group, on purpose
     *,
     config: Path | None,
     mode: ScanMode | None,

@@ -1,6 +1,4 @@
-"""
-Passive check: server-generated directory listings in already-crawled responses (RF-02).
-"""
+"""Passive check: server-generated directory listings in already-crawled responses (RF-02)."""
 
 from __future__ import annotations
 

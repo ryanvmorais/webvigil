@@ -1,9 +1,9 @@
-"""
+r"""
 CSRF checks: ``csrf.form.no-token`` (spec 007, RF-08), ``csrf.form.token-not-enforced`` (017) and
 ``csrf.form.state-change-over-get`` (issue #144).
 
 ``csrf.form.no-token`` — a state-changing form with no anti-CSRF token. Passive.
-Reads ``ctx.forms`` (the ``<form>``\\s the crawler parsed) and the
+Reads ``ctx.forms`` (the ``<form>``\s the crawler parsed) and the
 ``Set-Cookie`` headers of the crawled responses. Confidence is weighted by the
 session cookie's ``SameSite``: a token-less ``POST`` form behind a
 ``SameSite=Lax`` / ``Strict`` session cookie is barely exploitable (``LOW``),

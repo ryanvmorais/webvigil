@@ -39,8 +39,10 @@ _ACTIVE = [*_SCAN, "--mode", "active", "--authorized-by", "me"]
 
 
 class _StubOrchestrator:
-    """A stand-in orchestrator: ``run`` returns the class-level ``result`` and the
-    config it was constructed with is recorded on ``last_config`` for assertions."""
+    """
+    A stand-in orchestrator: ``run`` returns the class-level ``result`` and the
+    config it was constructed with is recorded on ``last_config`` for assertions.
+    """
 
     result: ScanResult = make_result(make_finding(check_id="http.headers.csp"))
     last_config: object = None

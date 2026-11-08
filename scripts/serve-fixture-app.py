@@ -1,4 +1,5 @@
-"""Serve the spec-001 Starlette fixture app as a scan target for the Web UI e2e run.
+"""
+Serve the spec-001 Starlette fixture app as a scan target for the Web UI e2e run.
 
 The Playwright suite (``web/e2e``) points a passive scan at this server. It is the same
 in-process fixture the engine's integration tests use, exposed over HTTP.

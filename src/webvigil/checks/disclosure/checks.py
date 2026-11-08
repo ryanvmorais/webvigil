@@ -1,7 +1,7 @@
-"""
+r"""
 The six probe-fed disclosure checks (RF-08, RF-10).
 
-Each reads :class:`~webvigil.checks.disclosure.probe.ProbeHit`\\s of its family
+Each reads :class:`~webvigil.checks.disclosure.probe.ProbeHit`\s of its family
 from ``ctx.observations.probe_hits`` (filled by the orchestrator's
 ``DisclosureProbe`` pass) and turns them into findings. They issue no HTTP
 themselves.

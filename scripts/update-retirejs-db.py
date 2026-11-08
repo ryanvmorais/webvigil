@@ -1,4 +1,5 @@
-"""Refresh the vendored Retire.js advisory database (spec 004, RF-21).
+"""
+Refresh the vendored Retire.js advisory database (spec 004, RF-21).
 
 This is the ONLY place in the project that reaches the Retire.js servers. The engine, the
 CLI, and the Web API read the vendored file from disk and never download anything.

@@ -128,8 +128,10 @@ def test_detect_reports_one_hit_with_a_count_for_a_multi_page_render() -> None:
 
 
 class _Guestbook:
-    """A tiny stateful target: POST /guestbook stores ``body``; /guestbook/e/<i> renders it
-    raw; GET /guestbook lists a link per stored entry. Every request is recorded on ``seen``."""
+    """
+    A tiny stateful target: POST /guestbook stores ``body``; /guestbook/e/<i> renders it
+    raw; GET /guestbook lists a link per stored entry. Every request is recorded on ``seen``.
+    """
 
     def __init__(self, pages: dict[str, str]) -> None:
         self.pages = pages

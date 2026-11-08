@@ -1,6 +1,4 @@
-"""
-HTTP Strict-Transport-Security check (RF-16).
-"""
+"""HTTP Strict-Transport-Security check (RF-16)."""
 
 from __future__ import annotations
 

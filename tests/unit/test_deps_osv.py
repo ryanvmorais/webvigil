@@ -315,8 +315,10 @@ def test_to_advisory_keeps_only_http_references() -> None:
 
 
 def test_to_advisory_from_a_cve_only_record_uses_details_and_cvss() -> None:
-    """A CVE-only record takes its summary from the first ``details`` sentence and its
-    severity from the CVSS vector."""
+    """
+    A CVE-only record takes its summary from the first ``details`` sentence and its
+    severity from the CVSS vector.
+    """
     advisory = _to_advisory(_CVE_RECORD, npm_name="jquery", detected_version="3.3.0")
     assert advisory is not None
     assert advisory.identifiers == ("CVE-2019-11358",)

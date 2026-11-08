@@ -1,6 +1,4 @@
-"""
-Human-facing terminal output — always to stderr, so stdout stays pipeable (RF-24).
-"""
+"""Human-facing terminal output — always to stderr, so stdout stays pipeable (RF-24)."""
 
 from __future__ import annotations
 

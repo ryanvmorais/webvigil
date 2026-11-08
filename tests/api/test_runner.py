@@ -30,8 +30,10 @@ from webvigil.core import orchestrator as orch_mod
 
 
 class _FakeOrchestrator:
-    """A stand-in orchestrator: ``run`` optionally waits on ``gate``, then raises
-    ``error`` or returns ``result``."""
+    """
+    A stand-in orchestrator: ``run`` optionally waits on ``gate``, then raises
+    ``error`` or returns ``result``.
+    """
 
     def __init__(
         self,
@@ -100,7 +102,8 @@ def _status(engine: Engine, scan_id: int) -> ScanStatus:
 
 
 async def _wait_for(engine: Engine, scan_id: int, status: ScanStatus, timeout: float = 3.0) -> None:
-    """Poll until scan ``scan_id`` reaches ``status``, or fail after ``timeout`` seconds.
+    """
+    Poll until scan ``scan_id`` reaches ``status``, or fail after ``timeout`` seconds.
 
     Args:
         engine (Engine): The per-test database engine.
@@ -149,7 +152,8 @@ async def test_queued_scan_runs_to_completed(web_engine: Engine, runner_factory:
 async def test_a_wake_up_during_an_empty_claim_is_not_lost(
     web_engine: Engine, runner_factory: Callable, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A scan enqueued right after the claim saw an empty queue still runs.
+    """
+    A scan enqueued right after the claim saw an empty queue still runs.
 
     The race: the dispatch loop looks at the queue and finds it empty; a scan is enqueued and
     ``wake()`` is called; only then does the loop go to sleep. The loop used to clear the event
@@ -217,7 +221,8 @@ async def test_cancel_a_running_scan(web_engine: Engine, runner_factory: Callabl
 
 
 def _widen_claim_gap(monkeypatch: pytest.MonkeyPatch, delay: float = 0.3) -> None:
-    """Hold every claim open for ``delay`` seconds after its DB commit.
+    """
+    Hold every claim open for ``delay`` seconds after its DB commit.
 
     The runner marks a scan RUNNING on a worker thread and only then, back on the event
     loop, registers it as the current scan. The sleep stretches that gap from a few

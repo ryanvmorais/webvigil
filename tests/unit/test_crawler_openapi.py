@@ -123,7 +123,7 @@ async def test_local_ref_in_a_parameter_is_resolved(tmp_path: Path) -> None:
 
 
 async def test_a_ref_cycle_does_not_hang(tmp_path: Path) -> None:
-    """A schema that ``$ref``\\s itself is broken with a placeholder, not an infinite loop."""
+    r"""A schema that ``$ref``\s itself is broken with a placeholder, not an infinite loop."""
     doc = {
         "openapi": "3.1.0",
         "components": {

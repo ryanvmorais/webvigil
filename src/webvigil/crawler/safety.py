@@ -157,7 +157,7 @@ def _verb_haystack(form: Form) -> str:
 
 
 def is_destructive_form(form: Form) -> bool:
-    """
+    r"""
     Args:
         form (Form): The form to classify.
 

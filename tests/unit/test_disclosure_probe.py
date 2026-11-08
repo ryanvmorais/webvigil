@@ -51,8 +51,10 @@ def _page(html: str = "", url: str = _SEED, ok: bool = True) -> Page:
 
 
 class _Router:
-    """An ``httpx`` callback: serves ``routes`` (URL -> ``(status, body, content_type)``),
-    everything else gets ``default``, and every requested URL is appended to ``seen``."""
+    """
+    An ``httpx`` callback: serves ``routes`` (URL -> ``(status, body, content_type)``),
+    everything else gets ``default``, and every requested URL is appended to ``seen``.
+    """
 
     def __init__(self, routes: dict[str, tuple[int, str, str]], default: tuple[int, str, str]):
         self.routes = routes

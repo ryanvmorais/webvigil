@@ -25,7 +25,8 @@ from webvigil.core.findings import Severity
 
 
 def _wait_status(client: TestClient, scan_id: int, target: str, timeout: float = 5.0) -> None:
-    """Poll scan ``scan_id`` until its status is ``target``, or fail after ``timeout`` seconds.
+    """
+    Poll scan ``scan_id`` until its status is ``target``, or fail after ``timeout`` seconds.
 
     Args:
         client (TestClient): An authenticated API client.
@@ -182,7 +183,8 @@ def test_missing_scan_is_404(auth_client: TestClient) -> None:
 
 @pytest.mark.parametrize("scan_id", ["99999999999999999999999", str(2**63), "0", "-1"])
 def test_out_of_range_scan_id_is_422_on_every_route(auth_client: TestClient, scan_id: str) -> None:
-    """An id no row can have is refused with a 422 before the database sees it (issue #160).
+    """
+    An id no row can have is refused with a 422 before the database sees it (issue #160).
 
     Above 2**63 - 1 the SQLite driver raises OverflowError, which used to be a 500 with a
     traceback in the log. ``TestClient`` re-raises a server error, so the old behaviour fails here.

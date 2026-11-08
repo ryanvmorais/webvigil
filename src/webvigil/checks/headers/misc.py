@@ -1,6 +1,4 @@
-"""
-Smaller single-header checks: frame options, sniffing, referrer, permissions, isolation.
-"""
+"""Smaller single-header checks: frame options, sniffing, referrer, permissions, isolation."""
 
 from __future__ import annotations
 
@@ -103,9 +101,7 @@ class ContentTypeOptionsCheck(Check):
 
 @register
 class ReferrerPolicyCheck(Check):
-    """
-    Flags a missing ``Referrer-Policy``, or one whose value leaks the full URL cross-origin.
-    """
+    """Flags a missing ``Referrer-Policy``, or one whose value leaks the full URL cross-origin."""
 
     id = "http.headers.referrer-policy"
     name = "Referrer-Policy missing or leaking"

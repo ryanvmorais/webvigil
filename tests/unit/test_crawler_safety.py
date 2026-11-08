@@ -79,7 +79,7 @@ def test_is_logout_leaves_ordinary_urls_alone(url: str) -> None:
     ],
 )
 def test_is_destructive_matches_state_changing_urls(url: str) -> None:
-    """delete / remove / deactivate / revoke / unsubscribe URLs are flagged destructive."""
+    """Delete / remove / deactivate / revoke / unsubscribe URLs are flagged destructive."""
     assert is_destructive(url) is True
 
 
@@ -93,7 +93,7 @@ def test_is_destructive_matches_state_changing_urls(url: str) -> None:
     ],
 )
 def test_is_destructive_respects_word_boundaries(url: str) -> None:
-    """ "deleted-items" / "undeletable" / "reset-password" must not trip the destructive check."""
+    """Names like "deleted-items" / "undeletable" / "reset-password" must not trip the check."""
     assert is_destructive(url) is False
 
 

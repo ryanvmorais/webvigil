@@ -141,7 +141,7 @@ class ApiOperation:
 async def load_openapi(
     source: str, *, http: HttpClient, target: Target, max_operations: int
 ) -> tuple[list[ApiOperation], list[str]]:
-    """
+    r"""
     Load ``source`` into acted-on operations, reconciled against the target origin.
 
     Args:
@@ -157,7 +157,7 @@ async def load_openapi(
     Returns:
         tuple[list[ApiOperation], list[str]]: The operations (stably ordered,
             capped) and any non-fatal warnings (a foreign server host, skipped
-            external ``$ref``\\s, the operation cap, an empty result).
+            external ``$ref``\s, the operation cap, an empty result).
 
     Raises:
         OpenApiError: If ``source`` cannot be read, is not JSON, or is not a

@@ -1,4 +1,5 @@
-"""Write the Web API's OpenAPI schema to ``web/openapi.json``.
+"""
+Write the Web API's OpenAPI schema to ``web/openapi.json``.
 
 The Web UI (spec 003) generates its TypeScript types from this file (``pnpm gen:api``);
 CI regenerates it and fails on any diff. Building the FastAPI app object does not run the

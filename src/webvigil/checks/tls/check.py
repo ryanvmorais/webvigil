@@ -1,6 +1,4 @@
-"""
-TLS/HTTPS check: protocol versions, certificate, redirect, and mixed content (RF-19).
-"""
+"""TLS/HTTPS check: protocol versions, certificate, redirect, and mixed content (RF-19)."""
 
 from __future__ import annotations
 

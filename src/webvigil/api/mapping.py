@@ -1,6 +1,4 @@
-"""
-Conversions between the engine models, the DB rows, and a rebuilt ``ScanResult``.
-"""
+"""Conversions between the engine models, the DB rows, and a rebuilt ``ScanResult``."""
 
 from __future__ import annotations
 

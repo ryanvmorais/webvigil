@@ -1,6 +1,4 @@
-"""
-HTML reporter: one self-contained file, no external requests (RF-23).
-"""
+"""HTML reporter: one self-contained file, no external requests (RF-23)."""
 
 from __future__ import annotations
 

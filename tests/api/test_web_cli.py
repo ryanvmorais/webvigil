@@ -25,7 +25,8 @@ runner = CliRunner()
 
 @pytest.fixture(autouse=True)
 def _config_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Write a temp ``webvigil.toml`` and point ``WEBVIGIL_CONFIG`` at it.
+    """
+    Write a temp ``webvigil.toml`` and point ``WEBVIGIL_CONFIG`` at it.
 
     Args:
         tmp_path (Path): pytest's per-test temp directory.

@@ -1,4 +1,5 @@
-"""Seed a running Web API for the Lighthouse CI run and write the session header.
+r"""
+Seed a running Web API for the Lighthouse CI run and write the session header.
 
 The dashboard sits behind a login and ``/scans/[id]`` needs a finished scan, so a bare URL
 list cannot audit it. This script, run once against a *fresh* database, creates the
@@ -12,7 +13,7 @@ The credentials are throwaway: the database lives in the runner's temp directory
 
 Usage::
 
-    python scripts/lighthouse-seed.py --api http://127.0.0.1:8100 \\
+    python scripts/lighthouse-seed.py --api http://127.0.0.1:8100 \
         --target http://127.0.0.1:9100/ --headers-out headers.json
 """
 
@@ -41,7 +42,8 @@ _TERMINAL_STATUSES = {"completed", "failed", "cancelled", "interrupted"}
 def _call(
     opener: urllib.request.OpenerDirector, method: str, url: str, body: dict[str, Any] | None = None
 ) -> Any:
-    """Send one JSON request through the cookie-aware opener.
+    """
+    Send one JSON request through the cookie-aware opener.
 
     Args:
         opener (urllib.request.OpenerDirector): Opener that stores the session cookie.
@@ -69,7 +71,8 @@ def _call(
 
 
 def seed(api: str, target: str, headers_out: Path) -> None:
-    """Create the account, sign in, run one scan and write the Lighthouse header file.
+    """
+    Create the account, sign in, run one scan and write the Lighthouse header file.
 
     Args:
         api (str): Base URL of the running Web API, with no trailing slash.
@@ -108,7 +111,8 @@ def seed(api: str, target: str, headers_out: Path) -> None:
 
 
 def main() -> int:
-    """Parse the command line and seed the API.
+    """
+    Parse the command line and seed the API.
 
     Returns:
         int: ``0`` on success; failures exit through ``SystemExit`` with a message.
