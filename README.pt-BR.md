@@ -31,7 +31,12 @@ e um **dashboard web** opcional, construído sobre o mesmo engine.
 
 **Site:** [webvigil.ryanmorais.com.br](https://webvigil.ryanmorais.com.br/)
 
-![Dashboard do WebVigil (interface web opcional): página de detalhe de um scan com os achados agrupados por severidade](assets/webvigil-dashboard-scan-detail-findings-by-severity.png)
+![WebVigil: um scan do app de teste que vem junto, no Modo Ativo: o aviso de autorização, a tabela com a contagem por severidade e uma linha colorida por achado](assets/cli-scan-demo.svg)
+
+*Uma execução real contra o app de teste que vem junto, mantida na primeira tela por `| head -40`.
+O comando é digitado para a gravação e a espera no meio é cortada (o app de teste tem casos
+lentos, por tempo, então o scan real leva cerca de um minuto e meio). A origem está em
+[`assets/cli-scan-demo.cast`](assets/cli-scan-demo.cast); reproduza com `asciinema play`.*
 
 ## WebVigil e outros scanners
 
@@ -310,14 +315,7 @@ uv run webvigil report report.json --format md
 ```
 
 Por padrão o scan imprime um resumo no terminal (stderr): uma tabela com a contagem por
-severidade e depois uma linha por achado.
-
-![Um scan do webvigil no app de teste que vem junto, no Modo Ativo: o aviso de autorização, a tabela com a contagem por severidade e uma linha colorida por achado](assets/cli-scan-demo.svg)
-
-*Uma execução real contra o app de teste que vem junto, mantida na primeira tela por `| head -40`.
-O comando é digitado para a gravação e a espera no meio é cortada (o app de teste tem casos
-lentos, por tempo, então o scan real leva cerca de um minuto e meio). A origem está em
-[`assets/cli-scan-demo.cast`](assets/cli-scan-demo.cast); reproduza com `asciinema play`.*
+severidade e depois uma linha por achado (a gravação no topo desta página).
 
 Com `--format` ele escreve o relatório no stdout (ou em `--output CAMINHO`), então dá para
 encadeá-lo com um pipe.
@@ -334,6 +332,26 @@ operacional (alvo inválido, host inalcançável, configuração) · `5` Modo At
 
 Para escanear, a partir da imagem, um alvo na sua própria máquina, acrescente `--network host`
 (Linux) ou use `host.docker.internal` como nome do host (Docker Desktop).
+
+### O relatório HTML
+
+`--format html` escreve uma página autocontida, sem script e sem arquivo externo: a contagem por
+severidade, as bibliotecas detectadas e cada achado com descrição, correção e evidência
+recolhível. Ela segue o esquema claro ou escuro do sistema, então dá para anexá-la a um chamado ou
+guardá-la como artefato de CI.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/ryanvmorais/webvigil/main/assets/webvigil-html-scan-report-findings-dark.png">
+  <img alt="Relatório HTML de um scan do WebVigil no app de teste: a contagem por severidade, o jQuery 1.7.1 detectado com suas vulnerabilidades conhecidas e os primeiros achados críticos com a correção" src="https://raw.githubusercontent.com/ryanvmorais/webvigil/main/assets/webvigil-html-scan-report-findings.png">
+</picture>
+
+*O relatório do mesmo scan em Modo Ativo de acima, na paleta clara e na escura (o topo da página;
+os achados continuam abaixo, os críticos primeiro).*
+
+```bash
+uv run webvigil scan http://127.0.0.1:9100 --mode active --authorized-by "trying WebVigil" \
+  --format html --output report.html
+```
 
 ---
 
@@ -361,6 +379,8 @@ Um dashboard em Next.js para a Web API: configuração no primeiro acesso, login
 scans, formulário de novo scan, detalhe do scan com achados filtráveis, prévia e download do
 relatório, o catálogo de checks e uma tela de configurações. É um cliente fino da API: nunca
 fala com o engine.
+
+![Dashboard do WebVigil (interface web opcional): página de detalhe de um scan com os achados agrupados por severidade](assets/webvigil-dashboard-scan-detail-findings-by-severity.png)
 
 ```bash
 # API em :8000 em outro terminal (veja acima); depois:

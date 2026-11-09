@@ -16,6 +16,9 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 - The README (and `README.pt-BR.md`) lists what WebVigil checks by area instead of by build
   milestone: a table with what each area finds, whether it is passive or active, and the switch
   that turns it on. The ten switches that are off by default are a table under "Safe by default".
+- The README (and `README.pt-BR.md`) opens with the terminal recording, whose severity table is now
+  drawn on the character grid, shows the dashboard in the "Web UI"
+  section and has a new "The HTML report" section with the report in the light and the dark palette.
 
 ## [1.2.0] - 2026-10-30
 
