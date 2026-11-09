@@ -33,7 +33,12 @@ optional **web dashboard** built on top of the same engine.
 
 **Website:** [webvigil.ryanmorais.com.br/en/](https://webvigil.ryanmorais.com.br/en/)
 
-![WebVigil dashboard (optional web UI) — scan detail page showing findings grouped by severity](assets/webvigil-dashboard-scan-detail-findings-by-severity.png)
+![WebVigil: a scan of the bundled test app in Active Mode: the authorization banner, the severity-count table and one coloured line per finding](assets/cli-scan-demo.svg)
+
+*A real run against the bundled test app, kept to its first screen by `| head -40`. The command
+is typed for the recording and the wait in the middle is cut (the test app has slow, time-based
+cases, so the real scan takes about a minute and a half). The source is
+[`assets/cli-scan-demo.cast`](assets/cli-scan-demo.cast); play it with `asciinema play`.*
 
 ## WebVigil vs. other scanners
 
@@ -310,14 +315,7 @@ uv run webvigil report report.json --format md
 ```
 
 By default the scan prints a summary to your terminal (stderr): a severity-count table
-followed by one line per finding.
-
-![A webvigil scan of the bundled test app in Active Mode: the authorization banner, the severity-count table and one coloured line per finding](assets/cli-scan-demo.svg)
-
-*A real run against the bundled test app, kept to its first screen by `| head -40`. The command
-is typed for the recording and the wait in the middle is cut (the test app has slow, time-based
-cases, so the real scan takes about a minute and a half). The source is
-[`assets/cli-scan-demo.cast`](assets/cli-scan-demo.cast); play it with `asciinema play`.*
+followed by one line per finding (the recording at the top of this page).
 
 With `--format` it writes the report to stdout (or `--output PATH`), so you can pipe it.
 
@@ -332,6 +330,26 @@ Exit codes: `0` clean · `3` findings at or above `--fail-on` · `4` operational
 
 To scan a target on your own machine from the image, add `--network host` (Linux) or use
 `host.docker.internal` as the host name (Docker Desktop).
+
+### The HTML report
+
+`--format html` writes one self-contained page, with no script and no external file: the
+severity counts, the detected libraries and every finding with its description, remediation and
+collapsible evidence. It follows the system's light or dark colour scheme, so you can attach it to
+a ticket or keep it as a CI artifact.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/ryanvmorais/webvigil/main/assets/webvigil-html-scan-report-findings-dark.png">
+  <img alt="WebVigil HTML scan report of the bundled test app: the severity counts, the detected jQuery 1.7.1 with its known vulnerabilities and the first critical findings with remediation" src="https://raw.githubusercontent.com/ryanvmorais/webvigil/main/assets/webvigil-html-scan-report-findings.png">
+</picture>
+
+*The report of the same Active Mode scan as above, in the light and the dark palette (the top of
+the page; the findings continue below, critical first).*
+
+```bash
+uv run webvigil scan http://127.0.0.1:9100 --mode active --authorized-by "trying WebVigil" \
+  --format html --output report.html
+```
 
 ---
 
@@ -358,6 +376,8 @@ See [docs/web-api.md](docs/web-api.md) for configuration, auth, and backup.
 A Next.js dashboard for the Web API: first-run setup, login, scan history, a new-scan form,
 scan detail with filterable findings, report preview and download, the check catalogue, and
 a settings screen. It is a thin client of the API — it never talks to the engine.
+
+![WebVigil dashboard (optional web UI) — scan detail page showing findings grouped by severity](assets/webvigil-dashboard-scan-detail-findings-by-severity.png)
 
 ```bash
 # API on :8000 in one shell (see above), then:
