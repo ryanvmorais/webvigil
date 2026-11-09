@@ -1,17 +1,17 @@
 # WebVigil dashboard (spec 003). Multi-stage; ships the Next standalone output as non-root.
 # `docker compose up --build` builds this alongside the API service.
 
-FROM node:26-alpine@sha256:c6ad9e9c1d80f6eb607c26b4b0a132ff7a2344fad1c78ea3baa2a7d4c8de6d94 AS deps
-WORKDIR /app
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-# The Node 26 image has no corepack: install the pnpm version that `packageManager` pins.
-RUN npm install -g "pnpm@$(node -p "require('./package.json').packageManager.split('@')[1]")"
-RUN pnpm install --frozen-lockfile
-
-FROM node:26-alpine@sha256:c6ad9e9c1d80f6eb607c26b4b0a132ff7a2344fad1c78ea3baa2a7d4c8de6d94 AS build
+FROM node:26-alpine@sha256:c6ad9e9c1d80f6eb607c26b4b0a132ff7a2344fad1c78ea3baa2a7d4c8de6d94 AS base
 WORKDIR /app
 COPY package.json ./
+# The Node 26 image has no corepack: install the pnpm version that `packageManager` pins.
 RUN npm install -g "pnpm@$(node -p "require('./package.json').packageManager.split('@')[1]")"
+
+FROM base AS deps
+COPY pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile
+
+FROM base AS build
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 # Next bakes `rewrites()` at build time (RNF-06); compose passes the API service URL.
