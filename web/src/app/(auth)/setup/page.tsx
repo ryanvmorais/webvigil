@@ -27,7 +27,7 @@ export default function SetupPage() {
   function onSubmit(event: React.FormEvent) {
     event.preventDefault();
     const next: Record<string, string> = {};
-    if (username.length < 1 || username.length > 64) next.username = "1–64 characters.";
+    if (username.length < 1 || username.length > 64) next.username = "1-64 characters.";
     if (password.length < 8) next.password = "At least 8 characters.";
     if (confirm !== password) next.confirm = "Passwords do not match.";
     setLocalError(next);

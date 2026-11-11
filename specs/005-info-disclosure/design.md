@@ -217,7 +217,7 @@ suffixes  = [".bak", ".old", ".orig", ".save", "~", ".swp", ".zip", ".tar.gz", "
 
 The target's own host label (`target.host.split(".")[0]`) is appended to `basenames` at
 run time by `DisclosureProbe`, not stored in the file. Total catalogue size is a documented
-constant (~100–130 after expansion). WebVigil adds **no** entries from user config
+constant (~100-130 after expansion). WebVigil adds **no** entries from user config
 (Resolved decision 2).
 
 `paths.toml` example entries:

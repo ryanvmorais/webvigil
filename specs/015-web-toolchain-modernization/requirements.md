@@ -241,7 +241,7 @@ regular Dependabot reviews.
 
 ### RNF-03 — bundle size does not regress
 
-- **Given** the current First Load JS (~105 kB shared, routes 106–188 kB)
+- **Given** the current First Load JS (~105 kB shared, routes 106-188 kB)
   **When** the upgraded build is measured
   **Then** the shared and per-route sizes are within roughly 10% of current, or
   the increase is explained in the design.

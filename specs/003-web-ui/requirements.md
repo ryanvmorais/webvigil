@@ -138,7 +138,7 @@ serve` on `:8000` via a rewrite plus `web.cors_origins`.
   redirected to `/login` (or the app if already authenticated).
 
 **RF-06 — Setup form**
-- **Given** `/setup`, **when** the user submits a username (1–64 chars) and a password
+- **Given** `/setup`, **when** the user submits a username (1-64 chars) and a password
   (≥ 8 chars, confirmed twice), **then** `POST /api/setup` is called; on 201 the user is
   sent to `/login` with a success notice.
 - **Given** the API returns 409 (setup already done), **then** the form shows that and links

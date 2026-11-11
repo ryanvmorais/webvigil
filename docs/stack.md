@@ -105,7 +105,7 @@ A very fast HTML parser (a binding over the C library Lexbor). Used to pull link
 backend (`selectolax.lexbor`): selectolax 1.0 removed the older Modest backend, and Lexbor follows
 the HTML5 parsing rules and returns elements in document order.
 
-**Why not** BeautifulSoup / lxml: selectolax is 5–30× faster and the parse step
+**Why not** BeautifulSoup / lxml: selectolax is 5-30× faster and the parse step
 runs on every crawled page. The API is small — CSS selectors and node text.
 
 **Learn:** `LexborHTMLParser(html)`, `.css(selector)` / `.css_first(selector)`,

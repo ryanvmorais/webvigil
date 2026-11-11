@@ -472,7 +472,7 @@ Zustand) mirroring server state.
 tool with short scans does not need push. Query's cache, invalidation, and `refetchInterval`
 cover every need.
 **Trade-off:** up to one poll interval of staleness; a burst of requests while a scan runs
-(bounded: 2–3 s, one client, stops at terminal and on tab hide).
+(bounded: 2-3 s, one client, stops at terminal and on tab hide).
 
 ### ADR-6 — `useInfiniteQuery` for the scan list
 **Decision:** the scan list is a `useInfiniteQuery` keyed by `{status}` with

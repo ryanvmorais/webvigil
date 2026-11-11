@@ -207,7 +207,7 @@ Baseline at spec 013 close: **741 passed**. At 014 close: **791 passed** (+50).
   tests, smuggling, zip-slip / image-library RCE / AV evasion). The `[injection]`
   block and detector table updated. — RNF-09
 - [x] `README.md` `v0.14` coverage row + roadmap note (links Coverage boundaries).
-  `CLAUDE.md` layer-3 paragraph + `Estado` line -> `011`–`014` concluídas, next
+  `CLAUDE.md` layer-3 paragraph + `Estado` line -> `011`-`014` concluídas, next
   `v1.0`. `specs/README.md` roadmap row -> **done**; roadmap prose updated. — RNF-09
 - [x] All three `014` spec files -> `status: done`; `design.md` "Implementation
   notes" section filled; the pytest count (**791**) recorded here and in

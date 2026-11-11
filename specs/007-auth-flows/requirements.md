@@ -15,7 +15,7 @@ origin: conception
 
 ## Context and problem
 
-Specs 001–006 shipped the engine + CLI, the Web API, the dashboard, passive dependency
+Specs 001-006 shipped the engine + CLI, the Web API, the dashboard, passive dependency
 fingerprinting, information-disclosure probing, and the first Active-Mode injection checks.
 **Every scan so far is anonymous.** The crawler starts from the seed URL, follows `<a href>`
 links, and never sends a cookie or submits a form. Whatever lives behind a login — a user

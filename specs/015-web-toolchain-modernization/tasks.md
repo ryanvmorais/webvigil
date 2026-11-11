@@ -10,7 +10,7 @@ origin: conception
 
 # 015 — Web toolchain modernization — Tasks
 
-One branch (`spec/015-web-toolchain-modernization`), one PR. Stages 1–3 are
+One branch (`spec/015-web-toolchain-modernization`), one PR. Stages 1-3 are
 applied and gated in order; Stage 4 integrates, updates docs, and retires the
 Dependabot backlog.
 
@@ -67,7 +67,7 @@ this spec; CI runs it on the PR.
       `--token` value byte-identical. **Deviation from design:** no `@utility
       container` — in v4 `@utility container` *extends* the built-in (keeps its
       stepped `max-width`s) rather than replacing it, which would letterbox content
-      between 640–1200px. Instead `app-shell.tsx`'s three `container` usages became
+      between 640-1200px. Instead `app-shell.tsx`'s three `container` usages became
       explicit `mx-auto w-full max-w-[1200px] px-6` (the exact old behaviour:
       full-width minus a 1.5rem gutter, capped at 1200px, centred). — RF-03, RF-04
 - [x] Deleted `web/tailwind.config.ts`; `components.json` `tailwind.config` → `""`. — RF-03
@@ -81,7 +81,7 @@ this spec; CI runs it on the PR.
       unresolved utility + the compiled-CSS inspection above. — RF-05, ADR-6
 - [x] `pnpm format` re-sorted classes: `prettier-plugin-tailwindcss` 0.6→0.8 + v4
       changed the canonical order, so ~24 component files got a class-order-only
-      diff (2–8 lines each, spot-checked — pure reordering, no semantic change). — RF-06
+      diff (2-8 lines each, spot-checked — pure reordering, no semantic change). — RF-06
 - [x] Visual check: built app + `next start`, screenshotted `/login` and `/setup`
       in light and OS-dark via Playwright. Both render correctly; dark mode inverts
       the primary button (light bg / dark text) exactly as the token design
@@ -89,7 +89,7 @@ this spec; CI runs it on the PR.
       full walk of every route is folded into Stage 4's manual pass. — RNF-01, RF-04
 - [x] Quality gate (Stage 2). — RF-11
       <!-- result: format:check / lint / typecheck / test (86) / build (Compiled
-      successfully; per-route First Load JS +1–2 kB vs baseline, within RNF-03) /
+      successfully; per-route First Load JS +1-2 kB vs baseline, within RNF-03) /
       test:e2e with CI=1 from clean (1 passed) all green. docker build ./web is
       CI-only. -->
 

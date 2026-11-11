@@ -67,7 +67,7 @@ webvigil.core.context      Page learns the method that produced it
 config / CLI               + [scan] submit_post_forms / --submit-post-forms, max_post_submissions
 ```
 
-Reuses what 006–017 built, unchanged: the `Form` inventory and `parse_forms`, the candidate
+Reuses what 006-017 built, unchanged: the `Form` inventory and `parse_forms`, the candidate
 and safety predicates (`is_candidate`, `is_destructive_form`, `is_auth_form`, `is_logout`),
 `ApiOperation` and its synthesised bodies, `HttpClient.request` (scope guard, rate limiter,
 `[auth]` cookies and headers, no retry of a non-idempotent request) and the Active-Mode gate.
@@ -116,7 +116,7 @@ from `webvigil.cli` / `webvigil.api` / `web/`; no new runtime dependency.
 - **Multi-step state tracking.** The crawl follows the *links and forms of each response*; it
   does not model a wizard's hidden state across steps or re-submit a form with a value chosen
   from an earlier response.
-- **Web API / dashboard changes.** Engine and CLI only, following 006–017.
+- **Web API / dashboard changes.** Engine and CLI only, following 006-017.
 
 ## Personas
 

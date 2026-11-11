@@ -385,7 +385,7 @@ the **shared baseline**; all use `_PER_POINT_REQUEST_CAP` via `budget.take()`.
 **`xss.detect`** — RF-08
 1. Send `XSS_PROBE` (plain token). If the token is not in `response.text` → return `[]`
    (nothing reflects; no point trying breakers).
-2. Send one–two `XSS_BREAKERS`. A hit needs the breaker payload's **HTML-significant
+2. Send one-two `XSS_BREAKERS`. A hit needs the breaker payload's **HTML-significant
    characters present verbatim** (`payload in response.text`, i.e. `<`, `>`, `"` came back
    unencoded — not `&lt;`, not `%3C`, not stripped) **and** `response.is_html`.
 3. `context` from where the verbatim match sits (selectolax: element text / attribute /

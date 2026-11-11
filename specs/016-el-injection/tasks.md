@@ -23,7 +23,7 @@ Baseline before 016 (clean `main`, after the spec 015 close and the Dependabot w
 followed): **812 collected**. At 016 close: **921 passed** (+109: `test_injection_el` 47,
 `test_injection_payloads` 22, `test_fixture_el` 26, and 14 added to existing files —
 points 1, engine 4, checks 1, orchestrator 3, integration 5). The two full runs are the
-numbers above, not per-stage snapshots; a full run takes about an hour on this machine.
+numbers above, not per-stage snapshots; a full run takes about an hour.
 
 ## Stage 0 — Behaviour-neutral prep: public helpers, payloads, heuristic
 

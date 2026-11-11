@@ -97,7 +97,7 @@ leaves the process.
 - **Registration, password reset, "remember me" handling, account creation.**
 - **Session-security checks** (fixation, logout invalidation, weak ids). That is issue #53,
   a spec of its own that builds on this one.
-- **Web API / dashboard changes.** Engine and CLI only, as in 006–018. Storing a password in
+- **Web API / dashboard changes.** Engine and CLI only, as in 006-018. Storing a password in
   the Web UI's database is a decision with its own risks and is not made here.
 - **A general cookie jar.** An unauthenticated scan stays as stateless as spec 007 made it;
   only a configured login turns the jar on.

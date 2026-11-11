@@ -204,8 +204,8 @@ detection — the Retire.js match still stands, no warning per name (RF-05).
 1. `database_specific.severity` (GHSA style) — `LOW→LOW`, `MODERATE`/`MEDIUM→MEDIUM`,
    `HIGH→HIGH`, `CRITICAL→CRITICAL`.
 2. else the first `severity[]` entry of type `CVSS_V3` (or `CVSS_V4`) — parse the vector,
-   compute the **base score**, band it: `0.1–3.9→LOW`, `4.0–6.9→MEDIUM`, `7.0–8.9→HIGH`,
-   `9.0–10.0→CRITICAL`. The CVSS 3.0/3.1 base formula is a ~50-line pure function
+   compute the **base score**, band it: `0.1-3.9→LOW`, `4.0-6.9→MEDIUM`, `7.0-8.9→HIGH`,
+   `9.0-10.0→CRITICAL`. The CVSS 3.0/3.1 base formula is a ~50-line pure function
    (`_cvss3_base`), deterministic, no dependency. CVSS v2 / unparseable vector → step 3.
 3. else `Severity.MEDIUM`, `severity_from_upstream = False` (matches 004's
    `_DEFAULT_SEVERITY`; the finding's `_advisory_lines` already annotates
