@@ -62,7 +62,7 @@ close: **536 passed**.
   `_npm_name(name) -> str` (map or verbatim). — RF-05
 - [x] `_cvss3_base(vector: str) -> float | None` — CVSS 3.0/3.1 base-score formula, pure,
   returns `None` on a non-v3 / malformed vector. `_band(score: float) -> Severity`
-  (`0.1–3.9 LOW`, `4.0–6.9 MEDIUM`, `7.0–8.9 HIGH`, `9.0–10.0 CRITICAL`). — RF-07, ADR-5
+  (`0.1-3.9 LOW`, `4.0-6.9 MEDIUM`, `7.0-8.9 HIGH`, `9.0-10.0 CRITICAL`). — RF-07, ADR-5
 - [x] `_severity(record) -> tuple[Severity, bool]` — `database_specific.severity` (GHSA
   band, `MODERATE→MEDIUM`) → `(mapped, True)`; else first `CVSS_V3`/`CVSS_V4` entry via
   `_cvss3_base` + `_band` → `(banded, True)`; else `(_DEFAULT_SEVERITY, False)`. — RF-07

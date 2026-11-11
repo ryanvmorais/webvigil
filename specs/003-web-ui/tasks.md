@@ -110,7 +110,7 @@ the code they cover (RNF-03). All new app code lives in `web/**`; the only files
 - [x] `app/(app)/layout.tsx`: `<AuthGuard><AppShell>{children}</AppShell></AuthGuard>`.
   `app/(auth)/layout.tsx`: centered card; authed → `/scans`; `needs_setup` and not on
   `/setup` → `/setup`; setup done and on `/setup` → `/login`. — RF-05, RF-08
-- [x] `app/(auth)/setup/page.tsx`: username (1–64) + password (≥ 8, confirmed) → `POST
+- [x] `app/(auth)/setup/page.tsx`: username (1-64) + password (≥ 8, confirmed) → `POST
   /api/setup`; 201 → `/login?setup=done`; 409 → message + link; 422 → field errors. — RF-06
 - [x] `app/(auth)/login/page.tsx` (`<Suspense>` around the form for `useSearchParams`):
   → `POST /api/auth/login`; 204 → `router.replace(next ?? "/scans")`; 401 → one generic

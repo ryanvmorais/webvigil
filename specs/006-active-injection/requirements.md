@@ -15,7 +15,7 @@ origin: conception
 
 ## Context and problem
 
-Specs 001–005 shipped the engine + CLI, the Web API, the dashboard, passive dependency
+Specs 001-005 shipped the engine + CLI, the Web API, the dashboard, passive dependency
 fingerprinting, and opt-in information-disclosure probing. **Every check so far is
 `PASSIVE`.** It reads what the target returns to ordinary requests — headers, cookies, TLS,
 CORS, crawled HTML, referenced scripts — or, with `--probe`, fetches a curated list of
@@ -658,7 +658,7 @@ the mechanics; these answers are fixed.
    ~500), `time_based_sqli` (default `true`), `max_injection_points` (default ~200),
    `time_based_delay_s` (default `5`). The only new CLI flag is
    `--time-based-sqli / --no-time-based-sqli`; everything else is config-only.
-8. **Payload routing (RF-08–RF-11):** every in-scope injection point gets reflected-XSS +
+8. **Payload routing (RF-08-RF-11):** every in-scope injection point gets reflected-XSS +
    error-based SQLi + boolean SQLi payloads. Traversal, time-based SQLi, and open-redirect
    run **heuristic-prioritised** (preferred parameter names / value shape first) and then
    fill remaining budget breadth-first.

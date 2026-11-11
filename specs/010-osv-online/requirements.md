@@ -209,8 +209,8 @@ adds no new runtime dependency (`httpx` is already an engine dependency).
   `"MEDIUM"` / `"HIGH"` / `"CRITICAL"` (GHSA style), **then** it maps to
   `Severity.LOW / MEDIUM / MEDIUM / HIGH / CRITICAL`.
 - **Given** no such string but a CVSS vector in `severity[]`, **then** the vector's base
-  score band maps to WebVigil severity (0.1–3.9 → LOW, 4.0–6.9 → MEDIUM, 7.0–8.9 → HIGH,
-  9.0–10.0 → CRITICAL).
+  score band maps to WebVigil severity (0.1-3.9 → LOW, 4.0-6.9 → MEDIUM, 7.0-8.9 → HIGH,
+  9.0-10.0 → CRITICAL).
 - **Given** neither, **then** the `Advisory` uses the same documented default as 004
   (`Severity.MEDIUM`) and `severity_from_upstream = false`, so the finding notes it — the
   existing `_advisory_lines` "[severity not supplied upstream]" annotation applies

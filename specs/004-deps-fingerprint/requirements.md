@@ -10,7 +10,7 @@ origin: conception
 
 ## Context and problem
 
-Specs 001–003 shipped the engine + CLI, the Web API, and the dashboard. Every check WebVigil
+Specs 001-003 shipped the engine + CLI, the Web API, and the dashboard. Every check WebVigil
 runs today looks at the **transport and the response envelope**: TLS, headers, cookies, CORS.
 Nothing looks at **what the page is built with**.
 

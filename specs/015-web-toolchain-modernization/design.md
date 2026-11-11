@@ -343,7 +343,7 @@ Accepted for this audience.
 | Risk | Likelihood | Mitigation |
 |---|---|---|
 | A `components/ui/*` class silently stops resolving under v4 | Medium | `pnpm build` errors on unknown utilities; shadcn CLI diff; the a11y + component test suite renders every UI primitive |
-| Turbopack build breaks `output: "standalone"` or baked `rewrites()` | Low–Medium | Covered by the `docker build ./web` job and the e2e suite; fallback is `next build --webpack` (ADR-4) |
+| Turbopack build breaks `output: "standalone"` or baked `rewrites()` | Low-Medium | Covered by the `docker build ./web` job and the e2e suite; fallback is `next build --webpack` (ADR-4) |
 | A visual regression the e2e flow does not cover (checks page, settings, empty/error states) | Low | Manual pass over those routes once, listed as a task |
 | `eslint-config-next` 16 flat-config wiring differs from expectation | Medium | Task allows keeping `FlatCompat`; lint output (zero warnings) is the gate |
 | `@next/codemod` touches route code unexpectedly | Low | Diff is reviewed task-by-task; all-client architecture (ADR-5) makes async-API codemods no-ops |

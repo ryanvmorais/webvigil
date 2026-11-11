@@ -91,7 +91,7 @@ entropy estimate**, never the value, never a prefix of it.
   reaching another's data.
 - **Logout CSRF**, and **single sign-out / back-channel logout** across applications.
 - **Logins WebVigil cannot do** (spec 019 non-goals): CAPTCHA, MFA, SSO, JSON token logins.
-- **Web API / dashboard changes.** Engine and CLI only, as in 006–019.
+- **Web API / dashboard changes.** Engine and CLI only, as in 006-019.
 
 ## Personas
 

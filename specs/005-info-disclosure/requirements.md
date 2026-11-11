@@ -14,7 +14,7 @@ origin: conception
 
 ## Context and problem
 
-Specs 001–004 shipped the engine + CLI, the Web API, the dashboard, and passive
+Specs 001-004 shipped the engine + CLI, the Web API, the dashboard, and passive
 dependency fingerprinting. Every check so far reads what the target **hands back on its
 own**: response headers, cookies, TLS, CORS, the HTML the crawler discovered, the scripts
 those pages reference. WebVigil never asks the target for anything the target did not
@@ -187,7 +187,7 @@ plumbing, because a `Finding` is a `Finding`. This is an **engine-only** spec.
 **RF-05 — Curated path catalogue**
 - **Given** a checkout, **then** the catalogue lives at a documented path under
   `src/webvigil/checks/disclosure/data/` as a versioned data file, loaded from disk, never
-  downloaded. It is **small** (target 80–150 entries) and grouped by family:
+  downloaded. It is **small** (target 80-150 entries) and grouped by family:
   - **VCS**: `.git/config`, `.git/HEAD`, `.git/index`, `.gitignore`-adjacent leaks,
     `.svn/entries`, `.svn/wc.db`, `.hg/store/00manifest.i`, `.bzr/branch/branch.conf`.
   - **env / server config**: `.env`, `.env.local`, `.env.production`, `.env.development`,
@@ -423,7 +423,7 @@ Settled with the maintainer on 2026-09-06:
    legal-attestation gate is for payload-bearing Active checks. Keeping it off by default
    preserves spec 001's "Safe Mode is nearly invisible" promise; one flag gives pentesters
    the feature.
-2. **Catalogue ambition (RF-05):** a **small curated list** (~80–150 entries) of paths that
+2. **Catalogue ambition (RF-05):** a **small curated list** (~80-150 entries) of paths that
    are sensitive *by definition*, shipped as a versioned in-repo data file, **not**
    user-extensible in this spec. Not a dirbuster-style content-discovery wordlist.
 3. **Exposed manifests (RF-08, Non-goals):** **report-only**. A

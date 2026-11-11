@@ -111,7 +111,7 @@ ser. Teste removido nomeia o que ainda guarda o comportamento.
 > **`011` a `014` eram a linha de "paridade real" com ZAP/Wapiti** no recorte que a WebVigil
 > se propõe a cobrir: as classes de injeção que um revisor notaria faltando (command
 > injection, SSTI, CRLF, host header, XXE, LDAP, XPath, SSI, upload) e a largura mínima de
-> auth/API. Todas **in-band, sem browser, sem OAST**. **`011`–`014` estão entregues** — a
+> auth/API. Todas **in-band, sem browser, sem OAST**. **`011`-`014` estão entregues** — a
 > `014` fechou a linha (LDAP / XPath / SSI injection + file upload opt-in) e varreu as
 > fronteiras de cobertura ativa. Próximo: `v1.0`. Os não-objetivos abaixo continuam valendo
 > e viram a seção "Scope and limitations" do README na `v1.0`:

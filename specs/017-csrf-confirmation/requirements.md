@@ -48,7 +48,7 @@ experiment** on one form:
   replay produced an equivalent response. A rejected replay refutes it; anything murky is
   inconclusive and never becomes a finding.
 
-**This is a different kind of Active check.** Every Active detector so far (006–016) sends
+**This is a different kind of Active check.** Every Active detector so far (006-016) sends
 a payload into a parameter and reads the response. This one **submits state-changing forms
 with their default values** — a control and one or two replays — so it can create a record,
 change a setting or send an email on the target, up to three times per form. That is the
@@ -69,7 +69,7 @@ checks.py        + TokenNotEnforcedCheck (id "csrf.form.token-not-enforced")
 config / CLI     + one opt-in switch (name in the design)
 ```
 
-Reuses what 006–014 built, unchanged: `ctx.forms` (the crawler's `<form>` inventory),
+Reuses what 006-014 built, unchanged: `ctx.forms` (the crawler's `<form>` inventory),
 `is_auth_form` / `looks_like_search` (and the destructive heuristics of
 `webvigil.crawler.safety`), the `HttpClient` (scope guard, concurrency cap, per-host delay,
 `[auth]` cookies, `request(headers=…)`), the `webvigil.invalid` sentinel host spec 012
@@ -121,7 +121,7 @@ existing plumbing. The engine imports nothing from `webvigil.cli` / `webvigil.ap
   is the operator's judgment; the finding says the server accepted it.
 - **Destructive forms.** A form that looks like it deletes, removes or disables something is
   skipped, not replayed (RF-04).
-- **Web API / dashboard changes.** Engine and CLI only, following 006–016.
+- **Web API / dashboard changes.** Engine and CLI only, following 006-016.
 
 ## Personas
 
