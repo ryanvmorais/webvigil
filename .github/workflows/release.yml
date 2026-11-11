@@ -19,11 +19,19 @@ on:
 permissions:
   contents: read
 
+# One release run at a time, never cancelled: a publish stopped halfway could leave PyPI and
+# ghcr.io out of step. A second run waits for the first to finish.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-26.04
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # No later step needs the GitHub token; it is not left on disk.
           persist-credentials: false
@@ -50,7 +58,8 @@ jobs:
           uv run --no-project python scripts/check-package.py dist
           uvx twine check --strict dist/*
 
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      - name: Upload the build
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dist
           path: dist/
@@ -60,13 +69,15 @@ jobs:
     needs: build
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-26.04
+    timeout-minutes: 10
     environment:
       name: testpypi
       url: https://test.pypi.org/project/webvigil/
     permissions:
       id-token: write # the OIDC token PyPI exchanges for a short-lived upload credential
     steps:
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      - name: Download the build
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: dist
           path: dist/
@@ -80,13 +91,15 @@ jobs:
     needs: build
     if: github.event_name == 'release'
     runs-on: ubuntu-26.04
+    timeout-minutes: 10
     environment:
       name: pypi
       url: https://pypi.org/project/webvigil/
     permissions:
       id-token: write
     steps:
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      - name: Download the build
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: dist
           path: dist/
@@ -96,6 +109,7 @@ jobs:
 
   image:
     runs-on: ubuntu-26.04
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: write # push to ghcr.io
@@ -104,7 +118,8 @@ jobs:
     env:
       IMAGE: ghcr.io/${{ github.repository }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # No later step needs the GitHub token; it is not left on disk.
           persist-credentials: false

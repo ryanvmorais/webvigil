@@ -18,12 +18,19 @@ on:
 permissions:
   contents: read
 
+# A new push to a pull request cancels its superseded run; on main every push runs to the end, so
+# each commit keeps its result.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   quality:
     # The Linux names stay "quality (X)": the proteger-main ruleset requires them by that name. The
     # Windows ones get a prefix and are not required.
     name: quality (${{ matrix.label }}${{ matrix.python-version }})
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -42,7 +49,8 @@ jobs:
             runner: windows-2025
             label: "Windows, "
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # No later step needs the GitHub token; it is not left on disk.
           persist-credentials: false
@@ -76,8 +84,10 @@ jobs:
 
   web:
     runs-on: ubuntu-26.04
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # No later step needs the GitHub token; it is not left on disk.
           persist-credentials: false
@@ -91,13 +101,15 @@ jobs:
       - name: Install Python deps (OpenAPI dump, fixture app, webvigil-web)
         run: uv sync --all-extras
 
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - name: Install pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           # Take the pnpm version from web/package.json's `packageManager` field
           # (there is no root package.json), so it stays a single source of truth.
           package_json_file: web/package.json
 
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      - name: Install Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 26
           cache: pnpm
@@ -149,8 +161,10 @@ jobs:
 
   package:
     runs-on: ubuntu-26.04
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # No later step needs the GitHub token; it is not left on disk.
           persist-credentials: false
@@ -180,8 +194,10 @@ jobs:
 
   docker:
     runs-on: ubuntu-26.04
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # No later step needs the GitHub token; it is not left on disk.
           persist-credentials: false
@@ -216,7 +232,8 @@ jobs:
     runs-on: ubuntu-26.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # No later step needs the GitHub token; it is not left on disk.
           persist-credentials: false
