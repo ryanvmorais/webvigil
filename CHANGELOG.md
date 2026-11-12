@@ -11,6 +11,12 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-11-12
+
+A patch release with one fix, in which host names the Web API answers for. Nothing in the CLI, the
+exit codes, the check ids or the JSON report changes; the Web API has one new setting,
+`allowed_hosts`.
+
 ### Security
 
 - A web page open in the browser can no longer reach a locally running `webvigil-web` dashboard or
@@ -373,7 +379,8 @@ confirmed against a per-request baseline)
 - A security policy with private vulnerability reporting, a code of conduct, and the
   [stability policy](docs/stability.md).
 
-[Unreleased]: https://github.com/ryanvmorais/webvigil/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/ryanvmorais/webvigil/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/ryanvmorais/webvigil/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/ryanvmorais/webvigil/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/ryanvmorais/webvigil/compare/v1.0.4...v1.1.0
 [1.0.4]: https://github.com/ryanvmorais/webvigil/compare/v1.0.3...v1.0.4
