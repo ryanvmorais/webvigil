@@ -275,6 +275,29 @@ async def test_a_deeply_nested_document_is_an_import_error(tmp_path: Path) -> No
         await load_openapi(str(path), http=http, target=_TARGET, max_operations=150)
 
 
+@pytest.mark.parametrize("levels", [257, 900])
+async def test_nesting_past_the_explicit_limit_is_an_import_error(
+    tmp_path: Path, levels: int
+) -> None:
+    """The limit holds below any parser recursion limit, so every Python and platform agrees."""
+    path = tmp_path / "deep.json"
+    path.write_text('{"openapi": "3.0.3", "x": ' + "[" * levels + "]" * levels + "}", "utf-8")
+    http = HttpClient(_TARGET, ScanConfig())
+    with pytest.raises(OpenApiError, match="nested too deeply"):
+        await load_openapi(str(path), http=http, target=_TARGET, max_operations=150)
+
+
+async def test_nesting_up_to_the_limit_is_read(tmp_path: Path) -> None:
+    """A document whose deepest value sits exactly at the limit still imports."""
+    inner = 256 - 2  # the document object and the "x" array are two of the levels
+    path = tmp_path / "deep.json"
+    path.write_text(
+        '{"openapi": "3.0.3", "paths": {}, "x": [' + "[" * inner + "]" * inner + "]}", "utf-8"
+    )
+    http = HttpClient(_TARGET, ScanConfig())
+    await load_openapi(str(path), http=http, target=_TARGET, max_operations=150)
+
+
 async def test_a_property_schema_that_is_not_an_object_is_tolerated(tmp_path: Path) -> None:
     """A form field whose schema is a bare string gets the placeholder instead of a crash."""
     form = {"type": "object", "properties": {"a": "not a schema", "b": {"example": "ok"}}}

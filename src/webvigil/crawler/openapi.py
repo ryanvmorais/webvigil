@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -67,6 +68,10 @@ _EXTERNAL_REF_WARNING = "OpenAPI import skipped one or more external $ref pointe
 # work.
 MAX_DOCUMENT_BYTES = 64 * 1024 * 1024
 _MAX_REF_HOPS = 32
+# How deep a document's arrays and objects may nest. The parser's own recursion limit depends on
+# the Python version and the platform's stack (Python 3.14 on Linux reads 100 000 levels), so
+# the bound is explicit; a real OpenAPI document nests a few dozen levels at most.
+_MAX_NESTING = 256
 _MAX_PARAMS_PER_OPERATION = 100
 _MAX_VALUE_CHARS = 256  # as the HAR import: a longer value becomes the placeholder
 _MAX_URL_CHARS = 8192
@@ -250,9 +255,37 @@ async def _fetch_document(source: str, *, http: HttpClient, target: Target) -> _
         raise OpenApiError(f"{source} is nested too deeply") from exc
     except ValueError as exc:
         raise OpenApiError(f"{source} is not valid JSON: {exc}") from exc
+    if _nests_deeper_than(doc, _MAX_NESTING):
+        raise OpenApiError(f"{source} is nested too deeply")
     if not isinstance(doc, dict) or not ("openapi" in doc or "swagger" in doc):
         raise OpenApiError(f"{source} is not an OpenAPI or Swagger document")
     return doc
+
+
+def _nests_deeper_than(value: Any, limit: int) -> bool:
+    """
+    Args:
+        value (Any): A parsed JSON value.
+        limit (int): The deepest nesting of arrays and objects allowed.
+
+    Returns:
+        bool: ``True`` when arrays and objects nest more than ``limit`` levels; walked with
+            an explicit stack, so the check never recurses itself.
+    """
+    stack: list[tuple[Any, int]] = [(value, 1)]
+    while stack:
+        node, depth = stack.pop()
+        children: Iterable[Any]
+        if isinstance(node, dict):
+            children = node.values()
+        elif isinstance(node, list):
+            children = node
+        else:
+            continue
+        if depth > limit:
+            return True
+        stack.extend((child, depth + 1) for child in children)
+    return False
 
 
 def _base_url(doc: _Doc, target: Target, warnings: list[str]) -> str:
