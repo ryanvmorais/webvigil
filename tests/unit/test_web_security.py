@@ -48,12 +48,14 @@ def test_verify_rejects_a_garbage_hash() -> None:
 
 def test_token_round_trip() -> None:
     """A token decodes back to its user id, stamped with the time it was issued."""
-    before = time.time()
+    # Read the bounds as the token does, through a datetime: it keeps whole microseconds, and
+    # ``time.time()`` read in the same clock tick can be a fraction of a microsecond later.
+    before = datetime.now(UTC).timestamp()
     token = create_token(42, _SECRET, ttl_hours=1)
     claims = decode_token(token, _SECRET)
     assert claims is not None
     assert claims.user_id == 42
-    assert before <= claims.issued_at <= time.time()
+    assert before <= claims.issued_at <= datetime.now(UTC).timestamp()
 
 
 def test_the_issue_time_keeps_its_fraction_of_a_second() -> None:
