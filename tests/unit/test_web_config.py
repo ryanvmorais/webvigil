@@ -120,3 +120,23 @@ def test_insecure_bind_warning_only_for_a_reachable_address_without_a_secure_coo
         message = insecure_bind_warning(plain, host)
         assert message is not None and host in message and "cookie_secure" in message, host
         assert insecure_bind_warning(secure, host) is None, host
+
+
+def test_allowed_hosts_are_normalised_and_read_from_the_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Names in lower case without a trailing dot; the env var is split on commas."""
+    assert WebConfig(allowed_hosts=[" Scanner.Example.ORG. "]).allowed_hosts == [
+        "scanner.example.org"
+    ]
+    monkeypatch.setenv("WEBVIGIL_ALLOWED_HOSTS", "api, scanner.example.org")
+    assert WebConfig.load().allowed_hosts == ["api", "scanner.example.org"]
+
+
+@pytest.mark.parametrize(
+    "entry", ["*", "", "  ", "http://a.test", "a.test:8000", "a.test/path", "[::1]", "a b"]
+)
+def test_an_allowed_hosts_entry_that_is_not_a_plain_name_is_refused(entry: str) -> None:
+    """A wildcard would undo the check; a scheme, port or path would never match a Host."""
+    with pytest.raises(ValidationError):
+        WebConfig(allowed_hosts=[entry])

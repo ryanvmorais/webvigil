@@ -12,6 +12,8 @@ services:
     command: ["serve", "--host", "0.0.0.0", "--port", "8000"]
     environment:
       WEBVIGIL_DATABASE_PATH: /data/webvigil.db
+      # The dashboard reaches the API by its service name; the API answers only for names it knows.
+      WEBVIGIL_ALLOWED_HOSTS: api
       # Pin this in production so sessions survive a rebuild:
       # WEBVIGIL_SESSION_SECRET: "<32+ characters, e.g. the output of: openssl rand -base64 48>"
       # WEBVIGIL_COOKIE_SECURE: "true"          # when served over HTTPS

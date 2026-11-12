@@ -11,6 +11,18 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 ## [Unreleased]
 
+### Security
+
+- A web page open in the browser can no longer reach a locally running `webvigil-web` dashboard or
+  API as if it were the same site (GHSA-q373-8m5q-qwww). The Web API now answers only requests
+  addressed to a host it knows: an IP address, `localhost`, the bind `host` when it is a name, or a
+  name in the new `allowed_hosts` setting (`WEBVIGIL_ALLOWED_HOSTS`), checking both `Host` and the
+  `X-Forwarded-Host` the dashboard's proxy adds; any other name gets `400`. Parallel login attempts
+  are now counted as they arrive, so a burst of them waits like a sequence would, and two first-run
+  setup requests at once create exactly one account. **If you reach the API or the dashboard by a
+  host name other than `localhost`** (a reverse proxy, a LAN name), add that name to `allowed_hosts`;
+  the Compose file already lists `api`, the name the dashboard uses.
+
 ### Changed
 
 - The README (and `README.pt-BR.md`) lists what WebVigil checks by area instead of by build

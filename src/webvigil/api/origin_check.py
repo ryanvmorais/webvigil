@@ -11,8 +11,9 @@ browser form or fetch (curl, the CLI, a server-to-server call) and is not touche
 
 "Own" is the ``Host`` the request arrived with or, behind the dashboard's proxy, the
 ``X-Forwarded-Host`` it adds: Next rewrites ``/api/*`` to the API with the API's own ``Host``, so
-the browser's ``Origin`` (the dashboard) only matches the forwarded one. A page of another site
-can set neither header, so trusting them here does not weaken the check. The scheme is not
+the browser's ``Origin`` (the dashboard) only matches the forwarded one. Both headers have already
+passed :mod:`webvigil.api.host_check`, so neither names a host the server does not know (a page
+served under a name someone else controls could otherwise set both to that name). The scheme is not
 compared (the API behind a TLS-terminating proxy sees ``http`` while the browser says ``https``);
 the host and the port are.
 

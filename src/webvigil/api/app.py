@@ -18,6 +18,7 @@ from webvigil import __version__
 from webvigil.api.body_limit import BodyLimitMiddleware
 from webvigil.api.config import WebConfig
 from webvigil.api.db import make_engine, run_alembic_upgrade
+from webvigil.api.host_check import HostCheckMiddleware
 from webvigil.api.origin_check import OriginCheckMiddleware
 from webvigil.api.routes import auth, meta, reports, scans, setup
 from webvigil.api.runner import OrchestratorFactory, ScanRunner, recover_interrupted_scans
@@ -83,9 +84,11 @@ def create_app(
     # A foreign Origin on a POST / PUT / PATCH / DELETE is refused before CORS or a route sees it
     # (issue #162); the allowed list is the one CORS opens.
     app.add_middleware(OriginCheckMiddleware, allowed_origins=cfg.cors_origins)
-    # Added last, so it is the outermost layer: an oversized body is refused before anything else
-    # (CORS included) looks at it.
+    # An oversized body is refused before anything else (CORS included) looks at it.
     app.add_middleware(BodyLimitMiddleware)
+    # Added last, so it is the outermost layer: a request addressed to a host name this server
+    # does not know is refused before anything else runs (GHSA-q373-8m5q-qwww).
+    app.add_middleware(HostCheckMiddleware, allowed_hosts=[*cfg.allowed_hosts, cfg.host])
     for router in (meta.router, setup.router, auth.router, scans.router, reports.router):
         app.include_router(router, prefix="/api")
     return app

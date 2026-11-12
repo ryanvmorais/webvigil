@@ -147,3 +147,25 @@ def test_a_huge_key_is_stored_short_and_still_counts() -> None:
     assert throttle.retry_after("user:" + "a" * 4_999_999) == 0  # another key, another count
     throttle.clear(huge)
     assert throttle.retry_after(huge) == 0
+
+
+def test_begin_attempt_counts_the_attempt_before_its_outcome() -> None:
+    """Checked and counted in one step (GHSA-q373-8m5q-qwww): the next attempt waits."""
+    clock = _Clock()
+    throttle = LoginThrottle(clock=clock)
+    for _ in range(FREE_ATTEMPTS):
+        assert throttle.begin_attempt("client:a", "user:admin") == 0
+    assert throttle.begin_attempt("client:a", "user:admin") > 0
+    throttle.clear("client:a", "user:admin")  # a success forgets the count
+    assert throttle.begin_attempt("client:a", "user:admin") == 0
+
+
+def test_a_refused_attempt_is_not_counted() -> None:
+    """Asking while the wait runs does not make the wait longer."""
+    clock = _Clock()
+    throttle = LoginThrottle(clock=clock)
+    for _ in range(FREE_ATTEMPTS):
+        throttle.begin_attempt("user:admin")
+    first = throttle.begin_attempt("user:admin")
+    for _ in range(10):
+        assert throttle.begin_attempt("user:admin") == first

@@ -1,6 +1,15 @@
-"""First-run account creation (RF-01)."""
+"""
+First-run account creation (RF-01).
+
+The route runs on a thread pool, so two setup requests can arrive together. The check that no
+account exists and the insert happen under one lock, so exactly one of them creates the account
+and the other gets ``409`` (GHSA-q373-8m5q-qwww). The server runs as one process (``serve``
+starts a single uvicorn worker), so a process-wide lock covers every request.
+"""
 
 from __future__ import annotations
+
+import threading
 
 from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import func
@@ -12,6 +21,7 @@ from webvigil.api.schemas import SetupIn, SetupStatusOut, UserOut
 from webvigil.api.security import hash_password
 
 router = APIRouter(tags=["setup"])
+_SETUP_LOCK = threading.Lock()
 
 
 def _user_count(session: SessionDep) -> int:
@@ -40,11 +50,15 @@ def setup_status(session: SessionDep, user: OptionalUser) -> SetupStatusOut:
 @router.post("/setup", status_code=status.HTTP_201_CREATED)
 def create_first_user(body: SetupIn, session: SessionDep) -> UserOut:
     """Create the single account. Unauthenticated, but 409s once an account exists."""
-    if _user_count(session) > 0:
+    if _user_count(session) > 0:  # the common answer, before paying for an Argon2 hash
         raise HTTPException(status.HTTP_409_CONFLICT, "setup has already been completed")
-    user = User(username=body.username, password_hash=hash_password(body.password))
-    session.add(user)
-    session.commit()
+    password_hash = hash_password(body.password)  # the slow part, outside the lock
+    with _SETUP_LOCK:  # checked again: another request may have created it meanwhile
+        if _user_count(session) > 0:
+            raise HTTPException(status.HTTP_409_CONFLICT, "setup has already been completed")
+        user = User(username=body.username, password_hash=password_hash)
+        session.add(user)
+        session.commit()
     session.refresh(user)
     assert user.id is not None
     return UserOut(id=user.id, username=user.username, created_at=user.created_at)

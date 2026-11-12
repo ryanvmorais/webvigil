@@ -27,7 +27,8 @@ def login(body: LoginIn, request: Request, response: Response, session: SessionD
     throttle: LoginThrottle = request.app.state.login_throttle
     client = request.client.host if request.client else "unknown"
     keys = (f"client:{client}", f"user:{body.username.lower()}")
-    wait = throttle.retry_after(*keys)
+    # Checked and counted in one step, so parallel guesses cannot all slip through one window.
+    wait = throttle.begin_attempt(*keys)
     if wait:
         raise HTTPException(
             status.HTTP_429_TOO_MANY_REQUESTS,
@@ -39,7 +40,6 @@ def login(body: LoginIn, request: Request, response: Response, session: SessionD
     stored_hash = user.password_hash if user is not None else dummy_password_hash()
     password_ok = verify_password(body.password, stored_hash)
     if user is None or not password_ok:
-        throttle.record_failure(*keys)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid username or password")
     throttle.clear(*keys)
     assert user.id is not None

@@ -42,6 +42,7 @@ The API reads the `[web]` table of `webvigil.toml` (or `--config PATH`, or
 | `cookie_secure` | `WEBVIGIL_COOKIE_SECURE` | `false` | set `true` behind HTTPS |
 | `auto_migrate` | `WEBVIGIL_AUTO_MIGRATE` | `true` | migrate on startup |
 | `cors_origins` | `WEBVIGIL_CORS_ORIGINS` | *(none)* | browser origins allowed to send the cookie; `*` is refused |
+| `allowed_hosts` | `WEBVIGIL_ALLOWED_HOSTS` | *(none)* | host names the API answers for besides IP addresses, `localhost` and a named `host`; `*` is refused — see below |
 
 ## Authentication
 
@@ -63,14 +64,23 @@ holds. Someone guessing can delay you by a few minutes, never lock you out. A us
 not exist takes the same time as a wrong password (one Argon2 check each) and gets the same
 answer, so the response does not say which usernames are real.
 
+**Only known host names are answered.** A request whose `Host`, or whose `X-Forwarded-Host` (the
+browser's `Host`, as the dashboard's proxy forwards it), names a host the server does not know gets
+`400`. Known are IP addresses, `localhost`, the bind `host` when it is a name, and the names in
+`allowed_hosts`. A browser treats a host *name* as the site, whatever address it resolves to, so a
+name someone else controls, made to resolve to your loopback address, would otherwise let their
+page talk to the API as its own origin; an IP address can only be a page's origin if that address
+served it. Behind a reverse proxy with a public name, or when the dashboard reaches the API by a
+service name (`api` in the Compose file), list that name in `allowed_hosts`.
+
 **Another origin cannot change state.** A `POST`, `PUT`, `PATCH` or `DELETE` that carries an
 `Origin` header is refused with `403` unless the origin is this server's own or one listed in
 `cors_origins`. `SameSite=Lax` already keeps a request from another *site* from carrying the
 cookie, but a page on another port of the same host is the same site, and a `POST` with no body
 (`/api/auth/logout`, `/api/scans/{id}/cancel`) needs no preflight. "Own" is the `Host` the request
 arrived with or, behind the dashboard's proxy, its `X-Forwarded-Host`: Next sends the API's own
-`Host`, so the browser's `Origin` (the dashboard) only matches the forwarded one. A page of another
-site can set neither header. The scheme is not compared (behind a TLS-terminating proxy the API
+`Host`, so the browser's `Origin` (the dashboard) only matches the forwarded one. Both headers
+have already passed the host check above, so neither can name a host the server does not know. The scheme is not compared (behind a TLS-terminating proxy the API
 sees `http` while the browser says `https`), the host and the port are. A request with no `Origin`
 (curl, the CLI, another server) is not a browser form or fetch and is not checked. If you put your
 own reverse proxy in front of the API and it replaces `Host` without adding `X-Forwarded-Host`,
@@ -114,7 +124,7 @@ only. Two things make that the right default:
 
 If you expose it on purpose (another machine, a reverse proxy), do it over HTTPS with
 `cookie_secure = true`, pin a long random `session_secret`, list `cors_origins` explicitly (a `*`
-is refused: the API sends the session cookie). `webvigil-web serve` prints a warning when it
+is refused: the API sends the session cookie) and add the public host name to `allowed_hosts`. `webvigil-web serve` prints a warning when it
 listens beyond this machine with `cookie_secure` off; `docker compose` binds every interface
 inside the container and publishes the port on `127.0.0.1` only, so the warning shows there and is
 expected. Login attempts are throttled (see Authentication), but that state is per process and

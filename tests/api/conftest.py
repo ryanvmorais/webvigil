@@ -63,12 +63,14 @@ def web_config(tmp_path: Path) -> WebConfig:
         tmp_path (Path): pytest's per-test temp directory.
 
     Returns:
-        WebConfig: A config with a fresh SQLite path and a fixed session secret.
+        WebConfig: A config with a fresh SQLite path and a fixed session secret, answering for
+            ``testserver`` (the ``Host`` that ``TestClient`` sends).
     """
     return WebConfig(
         database_path=tmp_path / "webvigil.db",
         session_secret="test-session-secret-long-enough-for-hs256",
         session_ttl_hours=12,
+        allowed_hosts=["testserver"],
     )
 
 

@@ -14,12 +14,18 @@ so the per-client key becomes one key for everybody and the per-username key doe
 The table is bounded, because its keys come from unauthenticated requests: a key is never kept
 longer than ``MAX_KEY_CHARS``, and when ``MAX_KEYS`` are held the key that failed longest ago is
 dropped to make room.
+
+The login route runs on a thread pool, so requests arrive in parallel. Every method takes one lock,
+and the route uses :meth:`LoginThrottle.begin_attempt`, which checks the wait and counts the
+attempt as a failure in the same step: a burst of parallel requests cannot all pass the check
+before the first of them is counted (GHSA-q373-8m5q-qwww). A login that succeeds clears its keys.
 """
 
 from __future__ import annotations
 
 import hashlib
 import math
+import threading
 import time
 from collections.abc import Callable
 
@@ -49,9 +55,44 @@ class LoginThrottle:
         """
         self._clock = clock
         self._failures: dict[str, tuple[int, float]] = {}
+        self._lock = threading.Lock()
+
+    def begin_attempt(self, *keys: str) -> int:
+        """
+        Check the wait and, when there is none, count this attempt as a failure, as one step.
+
+        The attempt is counted before the password is checked, so parallel attempts see each
+        other; a login that then succeeds calls :meth:`clear`.
+
+        Args:
+            *keys (str): The keys the attempt counts against (a client address, a username).
+
+        Returns:
+            int: The seconds the caller must wait (the attempt is then not counted), or ``0``
+                when it may go ahead.
+        """
+        with self._lock:
+            wait = self._retry_after(*keys)
+            if wait == 0:
+                self._record_failure(*keys)
+            return wait
 
     def retry_after(self, *keys: str) -> int:
         """
+        Args:
+            *keys (str): The keys the attempt counts against (a client address, a username).
+
+        Returns:
+            int: The seconds the caller must wait, the longest over the keys; ``0`` when it may
+                try now.
+        """
+        with self._lock:
+            return self._retry_after(*keys)
+
+    def _retry_after(self, *keys: str) -> int:
+        """
+        :meth:`retry_after` with the lock already held.
+
         Args:
             *keys (str): The keys the attempt counts against (a client address, a username).
 
@@ -74,6 +115,16 @@ class LoginThrottle:
         Args:
             *keys (str): The keys a failed attempt counts against.
         """
+        with self._lock:
+            self._record_failure(*keys)
+
+    def _record_failure(self, *keys: str) -> None:
+        """
+        :meth:`record_failure` with the lock already held.
+
+        Args:
+            *keys (str): The keys a failed attempt counts against.
+        """
         now = self._clock()
         for key in map(_bounded, keys):
             # Pop and re-insert, so the dict stays ordered by the last failure and the first
@@ -88,8 +139,9 @@ class LoginThrottle:
         Args:
             *keys (str): The keys to forget, after a successful login.
         """
-        for key in map(_bounded, keys):
-            self._failures.pop(key, None)
+        with self._lock:
+            for key in map(_bounded, keys):
+                self._failures.pop(key, None)
 
     def _forget(self, now: float) -> None:
         """

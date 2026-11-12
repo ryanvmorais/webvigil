@@ -36,6 +36,10 @@ class WebConfig(BaseModel):
             to ``True``.
         cors_origins (list[str]): Allowed CORS origins; ``*`` is refused because the
             API sends credentials. Defaults to empty (the bundled UI is same-origin).
+        allowed_hosts (list[str]): Host names the API answers for, besides IP addresses,
+            ``localhost`` and a bind host that is a name (GHSA-q373-8m5q-qwww): a reverse proxy's
+            public name, or the API's service name in Docker Compose. Names only, no scheme or
+            port; ``*`` is refused. Defaults to empty.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -48,6 +52,7 @@ class WebConfig(BaseModel):
     cookie_secure: bool = False
     auto_migrate: bool = True
     cors_origins: list[str] = []
+    allowed_hosts: list[str] = []
 
     @field_validator("session_secret")
     @classmethod
@@ -91,6 +96,36 @@ class WebConfig(BaseModel):
                 "sends credentials (the session cookie)"
             )
         return value
+
+    @field_validator("allowed_hosts")
+    @classmethod
+    def _plain_host_names(cls, value: list[str]) -> list[str]:
+        """
+        Args:
+            value (list[str]): The extra host names.
+
+        Returns:
+            list[str]: The names stripped, in lower case and without a trailing dot.
+
+        Raises:
+            ValueError: If an entry is ``*``, empty, or carries a scheme, a port, a path or a
+                space: the check compares host names only, so such an entry would never match.
+        """
+        names = []
+        for raw in value:
+            name = raw.strip().lower().rstrip(".")
+            if name == "*":
+                raise ValueError(
+                    "allowed_hosts must list host names explicitly: '*' is not allowed, because "
+                    "answering for any name is what lets a page of another site reach the API"
+                )
+            if not name or any(c in name for c in ":/ []"):
+                raise ValueError(
+                    f"allowed_hosts entries are host names without scheme or port: {raw!r} "
+                    "(IP addresses are always accepted and need no entry)"
+                )
+            names.append(name)
+        return names
 
     @classmethod
     def load(cls, path: str | Path | None = None) -> WebConfig:
@@ -139,7 +174,7 @@ def _env_overrides() -> dict[str, Any]:
     Returns:
         dict[str, Any]: The overrides, with ``port`` / ``session_ttl_hours``
             coerced to ``int``, the boolean flags parsed loosely, and
-            ``cors_origins`` split on commas.
+            ``cors_origins`` and ``allowed_hosts`` split on commas.
     """
     out: dict[str, Any] = {}
     mapping = {
@@ -151,6 +186,7 @@ def _env_overrides() -> dict[str, Any]:
         "COOKIE_SECURE": "cookie_secure",
         "AUTO_MIGRATE": "auto_migrate",
         "CORS_ORIGINS": "cors_origins",
+        "ALLOWED_HOSTS": "allowed_hosts",
     }
     for env_suffix, field in mapping.items():
         value = os.environ.get(f"{_ENV_PREFIX}{env_suffix}")
@@ -160,8 +196,8 @@ def _env_overrides() -> dict[str, Any]:
             out[field] = int(value)
         elif field in ("cookie_secure", "auto_migrate"):
             out[field] = value.strip().lower() in ("1", "true", "yes", "on")
-        elif field == "cors_origins":
-            out[field] = [origin.strip() for origin in value.split(",") if origin.strip()]
+        elif field in ("cors_origins", "allowed_hosts"):
+            out[field] = [item.strip() for item in value.split(",") if item.strip()]
         else:
             out[field] = value
     return out

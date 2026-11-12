@@ -62,13 +62,13 @@ def test_another_port_of_the_same_host_is_foreign(auth_client: TestClient) -> No
 
 def test_the_dashboards_origin_matches_the_forwarded_host(auth_client: TestClient) -> None:
     """Behind the Next proxy the Origin is the dashboard's: it matches X-Forwarded-Host."""
-    headers = {"Origin": "https://dashboard.example", "X-Forwarded-Host": "dashboard.example"}
+    headers = {"Origin": "http://localhost:3000", "X-Forwarded-Host": "localhost:3000"}
     assert auth_client.post("/api/auth/logout", headers=headers).status_code == 204
 
 
 def test_a_forwarded_host_does_not_vouch_for_another_origin(auth_client: TestClient) -> None:
     """Only the forwarded host itself is accepted, not any Origin that arrives with the header."""
-    headers = {"Origin": "https://evil.example", "X-Forwarded-Host": "dashboard.example"}
+    headers = {"Origin": "https://evil.example", "X-Forwarded-Host": "localhost:3000"}
     assert auth_client.post("/api/auth/logout", headers=headers).status_code == 403
 
 
