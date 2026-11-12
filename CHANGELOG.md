@@ -16,6 +16,9 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 - `POST /api/auth/password` is throttled like the login: after 5 wrong current passwords the
   user waits, with `429` and `Retry-After`, so a stolen session cannot guess the password without
   limit.
+- The container image installs exactly the locked dependency graph (`uv sync --locked`, which
+  fails if `uv.lock` is stale), and a new release of a dependency is locked only after it has been
+  public for a week.
 - Behind the dashboard's proxy, a failed login counts against the username only, so one
   stranger's failures no longer make every user of the dashboard wait.
 - A password change now signs out sessions issued earlier in the same second: the session token's

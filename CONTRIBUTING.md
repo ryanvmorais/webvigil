@@ -9,7 +9,9 @@ WebVigil is managed with [uv](https://docs.astral.sh/uv/). `uv sync --all-extras
 project, the `web` extra (the tests and `mypy` need it) and the `dev` dependency group, which
 pins the tooling (`ruff`, `black`, `mypy`, `import-linter`) and the test-only libraries
 (`pytest*`, `starlette`, `jsonschema`, `trustme`) — each line in `pyproject.toml` says why it
-is there.
+is there. `uv lock` only takes releases at least a week old, so a version published in the last
+seven days does not resolve yet; the CI installs with `uv sync --locked`, so commit `uv.lock`
+with any change to the dependencies.
 
 The full command list, for the engine and the web UI, is in the README's
 [Development](README.md#development) section.

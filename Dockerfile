@@ -15,7 +15,9 @@ WORKDIR /app
 # Only what the wheel build and the lockfile need — see .dockerignore.
 COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
-RUN uv sync --frozen --no-dev --no-editable ${EXTRAS}
+# --locked: the build fails if uv.lock no longer matches pyproject.toml, so the image never
+# installs a graph the CI did not test.
+RUN uv sync --locked --no-dev --no-editable ${EXTRAS}
 
 FROM python:3.15-slim@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928
 LABEL org.opencontainers.image.source="https://github.com/ryanvmorais/webvigil" \

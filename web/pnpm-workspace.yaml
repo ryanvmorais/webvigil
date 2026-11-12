@@ -10,6 +10,8 @@ overrides:
   brace-expansion@1.1.18: 1.1.21
   brace-expansion@2.1.4: 2.1.7
   js-yaml@4.3.1: 4.3.2
+  # ESLint 10 asks for minimatch 10; the patched line for GHSA-g3hv-75wg-m249 is 11.
+  minimatch@10.2.6: 11.0.4
   source-map-js@1.2.1: 1.2.2
 # Wait one week (in minutes) before resolving a new release, the same cooldown as Dependabot and uv.
 minimumReleaseAge: 10080
