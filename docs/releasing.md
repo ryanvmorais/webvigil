@@ -56,8 +56,9 @@ The account side is set up once by the maintainer and is not part of this reposi
 
 The `image` job builds the image first, runs `scripts/smoke-image.sh` and a vulnerability scan on
 it (**HIGH** or **CRITICAL** with a fix available stops the release), and only then pushes. A
-fix for a base-image flaw is a rebuild: Dependabot proposes new base images for the `Dockerfile`,
-and the next release picks them up.
+fix for a base-image flaw is a rebuild: the runtime stage applies Debian's security updates when
+the image is built, so a fix Debian has published is picked up before the official Python image
+carries it, and Dependabot proposes new base images for the `Dockerfile`.
 
 A wrong release is not undone by deleting it: PyPI never accepts the same version twice. *Yank* the
 release on pypi.org (installs that pin it still work, new installs skip it) and publish a patch.
