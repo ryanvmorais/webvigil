@@ -313,6 +313,39 @@ async def test_configured_header_is_absent_on_an_out_of_scope_request(httpx_mock
     assert "authorization" not in sent[0].headers
 
 
+async def test_credentials_never_go_down_to_http_from_an_https_target(httpx_mock: object) -> None:
+    """The ``http`` form of an ``https`` target is in scope but gets no cookie and no header."""
+    httpx_mock.add_response(status_code=200)  # type: ignore[attr-defined]
+    async with _http(cookies=["session=abc123"], headers=["Authorization: Bearer tkn"]) as http:
+        await http.get("http://example.com/")
+    sent = httpx_mock.get_requests()  # type: ignore[attr-defined]
+    assert "cookie" not in sent[0].headers
+    assert "authorization" not in sent[0].headers
+
+
+async def test_credentials_follow_the_https_upgrade_of_an_http_target(httpx_mock: object) -> None:
+    """An ``http`` target's credentials go to its ``https`` form, never to a subdomain."""
+    httpx_mock.add_response(status_code=200)  # type: ignore[attr-defined]
+    httpx_mock.add_response(status_code=200)  # type: ignore[attr-defined]
+    config = ScanConfig.model_validate({"auth": {"headers": ["Authorization: Bearer tkn"]}})
+    target = Target.parse("http://example.com", scope=Scope.SUBDOMAINS)
+    async with HttpClient(target, config) as http:
+        await http.get("https://example.com/")
+        await http.get("https://api.example.com/")
+    sent = httpx_mock.get_requests()  # type: ignore[attr-defined]
+    assert sent[0].headers["authorization"] == "Bearer tkn"
+    assert "authorization" not in sent[1].headers
+
+
+async def test_another_port_of_the_target_host_is_out_of_scope(httpx_mock: object) -> None:
+    """A link to another port of the target host is refused by the scope guard."""
+    async with _http(headers=["Authorization: Bearer tkn"]) as http:
+        with pytest.raises(OutOfScopeError):
+            await http.get("https://example.com:8443/")
+    assert http.stats.blocked_out_of_scope == 1
+    assert httpx_mock.get_requests() == []  # type: ignore[attr-defined]
+
+
 async def test_caller_header_wins_over_a_configured_auth_header(httpx_mock: object) -> None:
     """A header the caller set for the request is not overwritten by an ``[auth]`` entry."""
     httpx_mock.add_response(status_code=200)  # type: ignore[attr-defined]

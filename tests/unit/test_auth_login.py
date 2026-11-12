@@ -315,14 +315,14 @@ async def test_the_password_is_never_sent_in_clear_to_an_https_target() -> None:
     """An ``http`` login page, or a form action that downgrades, fails on an ``https`` target."""
     site = _Site()
     async with _open(site, base="https://demo.test/", url="http://demo.test/signin") as auth:
-        with pytest.raises(LoginFailedError, match="not https"):
+        with pytest.raises(LoginFailedError, match="not the target origin"):
             await auth.login()
     assert site.requests == []
 
     downgrade = _FORM.replace('action="/signin"', 'action="http://demo.test/signin"')
     site = _Site(login_page=downgrade)
     async with _open(site, base="https://demo.test/") as auth:
-        with pytest.raises(LoginFailedError, match="not https"):
+        with pytest.raises(LoginFailedError, match="not the target origin"):
             await auth.login()
     assert site.posts == []
 

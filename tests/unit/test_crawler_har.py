@@ -214,20 +214,21 @@ def test_scope_subdomains_accepts_a_sibling_host_and_host_does_not(tmp_path: Pat
 
 def test_the_url_loses_its_userinfo_and_fragment_and_keeps_a_custom_port(tmp_path: Path) -> None:
     """Credentials in a URL never become an operation, and an odd port is kept as recorded."""
-    wide = Target.parse("https://shop.example.com", scope=Scope.SUBDOMAINS)
+    wide = Target.parse("https://shop.example.com:8443", scope=Scope.SUBDOMAINS)
     result = _load(
         tmp_path,
         [
-            _entry("https://user:pw@shop.example.com/a?x=1#frag"),
+            _entry("https://user:pw@shop.example.com:8443/a?x=1#frag"),
             _entry("https://api.example.com:8443/b?y=2"),
-            _entry("https://shop.example.com:443/c?z=3"),
+            _entry("https://shop.example.com:8443/c?z=3"),
+            _entry("https://shop.example.com/d"),  # another port: another service, out of scope
         ],
         target=wide,
     )
     assert [op.url for op in result.operations] == [
         "https://api.example.com:8443/b",
-        f"{_SITE}/a",
-        f"{_SITE}/c",
+        f"{_SITE}:8443/a",
+        f"{_SITE}:8443/c",
     ]
     assert "pw" not in repr(result)
 

@@ -1,6 +1,6 @@
 """
 Target parsing, URL normalization, and scope checks — RF-01, RF-02; the one-label and IPv6 hosts
-of issue #191.
+of issue #191; the port, scheme and credential origin rules.
 
 Nothing is mocked: parsing and scope are pure.
 """
@@ -146,3 +146,73 @@ def test_scope_of_a_one_label_or_ipv6_host_is_that_host_only() -> None:
         assert not target.in_scope("http://other:8000/x")
         assert not target.in_scope("http://evil.app:8000/x")
         assert not target.in_scope("http://[::2]:8000/x")
+
+
+# ---------------------------------------------------------------------------
+# Port and scheme in scope, and the origin that carries credentials
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("target", "url", "expected"),
+    [
+        # a default-port target: its own port and the http/https pair on 80 and 443
+        ("https://example.com", "https://example.com/x", True),
+        ("https://example.com", "http://example.com/x", True),
+        ("https://example.com", "https://example.com:443/x", True),
+        ("http://example.com", "https://example.com/x", True),
+        ("https://example.com", "https://example.com:8443/x", False),
+        ("https://example.com", "http://example.com:8080/x", False),
+        ("https://example.com", "https://example.com:6379/x", False),
+        # a custom-port target: that port only, under either scheme
+        ("http://example.com:8000", "http://example.com:8000/x", True),
+        ("http://example.com:8000", "https://example.com:8000/x", True),
+        ("http://example.com:8000", "http://example.com/x", False),
+        ("http://example.com:8000", "https://example.com/x", False),
+        ("http://example.com:8000", "http://example.com:9000/x", False),
+        # a scheme other than http/https, or a malformed port, is never in scope
+        ("https://example.com", "ftp://example.com/x", False),
+        ("https://example.com", "ws://example.com/x", False),
+        ("https://example.com", "https://example.com:99999/x", False),
+        ("https://example.com", "https://example.com:abc/x", False),
+        # a bare host[:port] is read with the target's scheme
+        ("https://example.com", "example.com", True),
+        ("https://example.com", "example.com:8443", False),
+    ],
+)
+def test_scope_checks_the_port_and_the_scheme(target: str, url: str, expected: bool) -> None:
+    """Another port of the target host is another service, so it is out of scope."""
+    assert Target.parse(target).in_scope(url) is expected
+
+
+def test_subdomains_follow_the_same_port_rule() -> None:
+    """``Scope.SUBDOMAINS`` widens the host, never the port."""
+    target = Target.parse("https://example.com", scope=Scope.SUBDOMAINS)
+    assert target.in_scope("https://api.example.com/x")
+    assert target.in_scope("http://api.example.com/x")
+    assert not target.in_scope("https://api.example.com:8443/x")
+
+
+@pytest.mark.parametrize(
+    ("target", "url", "expected"),
+    [
+        ("https://example.com", "https://example.com/x", True),
+        ("https://example.com", "https://example.com:443/x", True),
+        ("https://example.com", "http://example.com/x", False),  # never down to http
+        ("https://example.com", "https://example.com:8443/x", False),
+        ("https://example.com", "https://api.example.com/x", False),
+        ("http://example.com", "http://example.com/x", True),
+        ("http://example.com", "https://example.com/x", True),  # the https upgrade
+        ("http://example.com", "https://example.com:8443/x", False),
+        ("http://example.com:8000", "http://example.com:8000/x", True),
+        ("http://example.com:8000", "https://example.com:8000/x", False),
+        ("http://example.com:8000", "https://example.com/x", False),
+        ("https://example.com", "ftp://example.com/x", False),
+        ("https://example.com", "https://example.com:abc/x", False),
+    ],
+)
+def test_credentials_go_to_the_target_origin_or_its_https_upgrade(
+    target: str, url: str, expected: bool
+) -> None:
+    """Configured credentials and the login session never reach another port, host or http."""
+    assert Target.parse(target, scope=Scope.SUBDOMAINS).carries_credentials(url) is expected

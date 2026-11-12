@@ -25,6 +25,10 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
   (`Accept-Encoding: gzip, deflate`). A body in another coding (`br`, `zstd`) is kept as it came,
   whatever else is installed next to WebVigil, and a response that lists more than three codings is
   not decoded.
+- The scope also checks the port: a URL is in scope on the target's own port and, when the
+  target uses its scheme's default port, on the `http`/`https` pair on ports 80 and 443. A link
+  to another port of the target host, or to a scheme other than `http`/`https`, is out of scope
+  and counted as such.
 
 ### Fixed
 
@@ -64,6 +68,15 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
   bounded (past 1 024 distinct values the session is given up, with a warning), and the OpenAPI
   import builds only the operations it keeps, bounds a local document to 64 MiB and reports a
   malformed one as an import error.
+- A scanned site can no longer steer the scan's requests or credentials outside the target
+  (GHSA-73j5-mxxc-x7x5). Every host name is resolved once per scan and the scanner connects to
+  the address it checked; when the target resolves to a public address, no host of the scan may
+  resolve to a loopback, private, link-local or other non-public address, and a scan warning
+  counts the requests not sent. The scope checks the port. Configured `[auth]` cookies and
+  headers, the automated login's session and its password go only to the target origin or its
+  `https` upgrade, never from an `https` target to plain `http`. Through an HTTP proxy set in the
+  environment (`HTTP_PROXY`, `HTTPS_PROXY`) the proxy resolves the names and the address check
+  does not apply.
 
 ## [1.2.1] - 2026-11-12
 

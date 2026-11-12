@@ -129,7 +129,8 @@ finds.
 - **Anything that writes, logs in or phones out is off by default**, each behind its own
   switch: `--stored-xss`, `--file-upload`, `--submit-post-forms` and `--confirm-csrf` write to
   the target; `--login-url` creates a session; `--osv-online` sends library names to OSV.dev.
-- **Always on:** a scope guard that keeps every request on the target host, a request budget,
+- **Always on:** a scope guard that keeps every request on the target host and port (and off
+  internal addresses when the target is public), a request budget,
   a concurrency cap and a delay, and `robots.txt` is honoured unless you turn it off.
 - **What WebVigil will not do:** brute-force credentials, evade a WAF or an IDS, keep access,
   take data out, or exploit beyond one bounded proof. That is not on the roadmap
@@ -198,6 +199,12 @@ to reach for instead.
   and fuzzes query / path / form-urlencoded-body parameters — not individual fields of a
   JSON request body. These are current limits, not permanent ones.
   See [API scanning](docs/api-scanning.md).
+
+- **Network boundaries.** A scan of a public target never connects to a loopback, private or
+  link-local address, even for a subdomain in scope whose DNS answers with one (split-horizon
+  DNS); each host name is resolved once per scan. Through an HTTP proxy set in the environment
+  the proxy resolves the names, so this check is the proxy's. *Instead:* scan the internal host
+  directly, as its own target.
 
 ---
 

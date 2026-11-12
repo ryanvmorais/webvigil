@@ -6,9 +6,10 @@ No component talks to ``httpx`` directly — they all go through
 apply uniformly (RF-05, RF-03, RF-04). :meth:`HttpClient.request` carries any
 HTTP method through the same machinery; :meth:`HttpClient.get` is a thin wrapper
 over it (spec 006 ADR-9). Configured ``[auth]`` cookies (spec 007) and headers
-(spec 013 — a bearer token, an API key) are attached to requests whose host is
-the target host and to no other, and never reach a report, a log line, or the
-scan metadata.
+(spec 013 — a bearer token, an API key) are attached to requests to the target
+origin (or its ``https`` upgrade) and to no other, and never reach a report, a log
+line, or the scan metadata. Every connection goes through the address guard
+(:mod:`webvigil.http.addresses`).
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ import httpx
 from webvigil.core.config import ScanConfig
 from webvigil.core.errors import RequestFailed, ScanDeadlineExceeded
 from webvigil.core.target import Target
+from webvigil.http.addresses import AddressGuard, BlockedAddressError, Resolver, install
 from webvigil.http.decoding import ACCEPT_ENCODING, BodyDecoder
 from webvigil.http.policy import RateLimiter
 from webvigil.http.scope_guard import ScopeGuard
@@ -88,6 +90,8 @@ class HttpStats:
         truncated (int): Responses whose body was larger than ``max_body_bytes`` and was
             read only up to it.
         deadline_reached (bool): Whether the scan reached ``[scan] max_duration_s``.
+        blocked_address (int): Requests not sent because their host resolved only to
+            addresses the address guard refuses.
     """
 
     requests: int = 0
@@ -97,6 +101,7 @@ class HttpStats:
     failed: int = 0
     truncated: int = 0
     deadline_reached: bool = False
+    blocked_address: int = 0
 
 
 # A target that went down mid-scan fails every request that follows. These two floors tell that
@@ -124,6 +129,25 @@ def unreachable_warning(stats: HttpStats) -> str | None:
     return (
         f"{stats.failed} of {asked} requests got no response (connection errors or timeouts): "
         "the target may have stopped answering during the scan, so the results can be incomplete"
+    )
+
+
+def blocked_address_warning(stats: HttpStats) -> str | None:
+    """
+    The scan warning for requests the address guard stopped, or ``None`` when there were none.
+
+    Args:
+        stats (HttpStats): The counters of the finished scan.
+
+    Returns:
+        str | None: The warning text, or ``None`` when every host resolved to an allowed address.
+    """
+    if not stats.blocked_address:
+        return None
+    return (
+        f"{stats.blocked_address} request(s) were not sent: a host in scope resolves only to "
+        "internal addresses (loopback, private, link-local) while the target resolves to a "
+        "public one, and the scan does not connect to internal addresses from a public target"
     )
 
 
@@ -235,6 +259,7 @@ class HttpClient:
         config: ScanConfig,
         *,
         transport: httpx.BaseTransport | httpx.AsyncBaseTransport | None = None,
+        resolver: Resolver | None = None,
     ) -> None:
         """
         Args:
@@ -245,6 +270,8 @@ class HttpClient:
             transport (httpx.BaseTransport | httpx.AsyncBaseTransport | None):
                 Test seam — an ``httpx`` ``ASGITransport`` / ``MockTransport``.
                 ``None`` in normal operation.
+            resolver (Resolver | None): Test seam — the name resolver of the address guard;
+                the system resolver when ``None``.
         """
         self._target = target
         self._config = config
@@ -252,6 +279,7 @@ class HttpClient:
         self._cookie_header = config.auth.as_header
         self._auth_headers = config.auth.header_pairs
         self._guard = ScopeGuard(target)
+        self.addresses = AddressGuard(target.host, resolver=resolver)
         self.limiter = RateLimiter(config.http.concurrency, config.http.delay_ms)
         self.stats = HttpStats()
         self._max_body = config.http.max_body_bytes
@@ -283,6 +311,8 @@ class HttpClient:
         )
         if self._max_duration > 0:
             self._deadline = asyncio.get_running_loop().time() + self._max_duration
+        if self._transport is None:
+            install(self._client._transport, self.addresses)
         return self
 
     def _remaining(self) -> float | None:
@@ -496,7 +526,7 @@ class HttpClient:
         if (
             session is not None
             and not _QUIET.get()
-            and _host_of(url) == self._target.host
+            and self._target.carries_credentials(url)
             and session.looks_dropped(response)
             and await session.recover(seen, url)
         ):
@@ -695,7 +725,7 @@ class HttpClient:
         # deterministic and authentication stays config-driven (spec 007).
         self._active_client.cookies.clear()
         req_headers = dict(headers or {})
-        on_target = _host_of(url) == self._target.host
+        on_target = self._target.carries_credentials(url)
         anonymous = _ANON.get()
         session = None if anonymous else self._session
         handshake = _HANDSHAKE.get()
@@ -773,6 +803,10 @@ class HttpClient:
                         ) from exc
             except (httpx.TransportError, httpx.TimeoutException) as exc:
                 last_error = f"{type(exc).__name__}: {exc}"
+                if isinstance(exc.__cause__, BlockedAddressError):
+                    # the resolution is pinned for the scan: a retry would be refused the same way
+                    self.stats.blocked_address += 1
+                    raise RequestFailed(url, last_error) from exc
                 # A server that used the whole total deadline once would use it again: the
                 # request is not retried, so a slow target costs one deadline per request.
                 if isinstance(exc, _TotalTimeout):
@@ -799,6 +833,7 @@ __all__ = [
     "HttpStats",
     "RedirectHop",
     "Response",
+    "blocked_address_warning",
     "truncated_warning",
     "unreachable_warning",
 ]

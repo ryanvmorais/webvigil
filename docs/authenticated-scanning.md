@@ -21,9 +21,10 @@ Or in the config file (a `--cookie` flag replaces this list entirely):
 cookies = ["session=abc123"]
 ```
 
-Each entry is `name=value`. The cookies are attached to every request whose host **is** the
-target host, and to no other — an out-of-scope asset or a redirect that leaves scope never
-receives them. Under `--scope subdomains` the cookies still go to the entry host only (a
+Each entry is `name=value`. The cookies are attached to every request to the target
+**origin** (scheme, host and port), or to its `https` form when the target is `http` on port
+80, and to no other — an out-of-scope asset, a redirect that leaves scope, another port of the
+same host, or the plain `http` form of an `https` target never receives them. Under `--scope subdomains` the cookies still go to the entry host only (a
 `name=value` string carries no `Domain`, so widening it would be a guess); scan each
 subdomain separately if you need that.
 
@@ -103,7 +104,8 @@ fields and CSRF tokens included — with the account in the username field (the 
 e-mail input above the password, unless `username_field` says otherwise); submit it **once**
 with the target's `Origin` / `Referer`; follow the in-scope redirect chain. Every `Set-Cookie`
 of every hop — the pre-login cookie, the session set on a middle hop, the last one — becomes
-the session. The session cookies go to the target host only.
+the session. The session cookies, like the password, go to the target origin only (or its
+`https` upgrade).
 
 **Verified, not assumed.** A `302` after the `POST` is also what a failed login returns on
 many apps, so the result is checked in this order, the first rule that applies deciding: a

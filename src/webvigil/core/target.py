@@ -220,6 +220,59 @@ class Target:
         origin = urlunsplit((scheme, origin_netloc, "", "", ""))
         return cls(entry_url=entry_url, host=host, origin=origin, scope=scope)
 
+    @property
+    def scheme(self) -> str:
+        """
+        Returns:
+            str: The target's scheme, ``"http"`` or ``"https"``.
+        """
+        return urlsplit(self.origin).scheme
+
+    @property
+    def port(self) -> int:
+        """
+        Returns:
+            int: The target's port, the scheme's default when the URL names none.
+        """
+        port = urlsplit(self.origin).port
+        return port if port is not None else _DEFAULT_PORTS[self.scheme]
+
+    def _endpoint(self, url: str) -> tuple[str, str, int] | None:
+        """
+        Args:
+            url (str): An absolute URL, or a bare ``host[:port]`` (read with the target's scheme).
+
+        Returns:
+            tuple[str, str, int] | None: The lower-cased scheme, host and port the URL reaches,
+                or ``None`` when it has no host, a scheme other than ``http``/``https``, or a
+                malformed port.
+        """
+        try:
+            parts = urlsplit(url if "://" in url else f"{self.scheme}://{url}")
+            host = (parts.hostname or "").lower()
+            port = parts.port
+        except ValueError:
+            return None
+        scheme = parts.scheme.lower()
+        if not host or scheme not in _ALLOWED_SCHEMES:
+            return None
+        return scheme, host, port if port is not None else _DEFAULT_PORTS[scheme]
+
+    def _port_in_scope(self, scheme: str, port: int) -> bool:
+        """
+        Args:
+            scheme (str): The URL's scheme.
+            port (int): The URL's port.
+
+        Returns:
+            bool: ``True`` for the target's own port and, when the target uses its scheme's
+                default port, for the ``http``/``https`` pair on ports 80 and 443 (a site that
+                links its other scheme). Another port is another service.
+        """
+        if port == self.port:
+            return True
+        return self.port == _DEFAULT_PORTS[self.scheme] and port == _DEFAULT_PORTS[scheme]
+
     def in_scope(self, url: str) -> bool:
         """
         Whether ``url`` may be requested under this target's scope rule.
@@ -228,12 +281,15 @@ class Target:
             url (str): An absolute URL, or a bare ``host[:port]``.
 
         Returns:
-            bool: ``True`` when the host equals the target host, or — under
-                :attr:`Scope.SUBDOMAINS` and a dotted name — shares its registrable domain.
+            bool: ``True`` when the URL is ``http``/``https``, its port passes
+                :meth:`_port_in_scope`, and its host equals the target host or, under
+                :attr:`Scope.SUBDOMAINS` and a dotted name, shares its registrable domain.
         """
-        parts = urlsplit(url if "://" in url else f"//{url}")
-        other = (parts.hostname or "").lower()
-        if not other:
+        endpoint = self._endpoint(url)
+        if endpoint is None:
+            return False
+        scheme, other, port = endpoint
+        if not self._port_in_scope(scheme, port):
             return False
         if other == self.host:
             return True
@@ -243,3 +299,25 @@ class Target:
             base = registrable_domain(self.host)
             return other == base or other.endswith(f".{base}")
         return False
+
+    def carries_credentials(self, url: str) -> bool:
+        """
+        Whether a request to ``url`` may carry the scan's credentials.
+
+        Configured ``[auth]`` cookies and headers, the session of the automated login and its
+        password go to the target origin only, or to its ``https`` upgrade. Never to another
+        port of the same host, a subdomain, or plain ``http`` when the target is ``https``.
+
+        Args:
+            url (str): An absolute URL.
+
+        Returns:
+            bool: ``True`` for the target's scheme, host and port, and for ``https`` on port 443
+                when the target is ``http`` on port 80.
+        """
+        endpoint = self._endpoint(url)
+        if endpoint is None:
+            return False
+        if endpoint == (self.scheme, self.host, self.port):
+            return True
+        return (self.scheme, self.port) == ("http", 80) and endpoint == ("https", self.host, 443)

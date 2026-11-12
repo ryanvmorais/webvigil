@@ -261,13 +261,16 @@ class Authenticator:
             what (str): What it is, for the message.
 
         Raises:
-            LoginFailedError: If ``url`` is out of scope, or the target is ``https`` and
-                ``url`` is not (the password is never sent in clear).
+            LoginFailedError: If ``url`` is out of scope, or is not the target origin nor its
+                ``https`` upgrade (the password goes to no other port, no other host, and
+                not to plain ``http`` from an ``https`` target).
         """
         if not self._target.in_scope(url):
             raise LoginFailedError(f"{what} {_safe(url)} is out of scope")
-        if urlsplit(self._target.entry_url).scheme == "https" and urlsplit(url).scheme != "https":
-            raise LoginFailedError(f"{what} {_safe(url)} is not https: the password stays home")
+        if not self._target.carries_credentials(url):
+            raise LoginFailedError(
+                f"{what} {_safe(url)} is not the target origin: the password stays home"
+            )
 
     async def _handshake(self) -> LoginResult:
         """

@@ -128,7 +128,8 @@ quanto o que ele encontra.
   própria chave: `--stored-xss`, `--file-upload`, `--submit-post-forms` e `--confirm-csrf`
   escrevem no alvo; `--login-url` cria uma sessão; `--osv-online` envia nomes de bibliotecas para
   o OSV.dev.
-- **Sempre ligado:** uma trava de escopo que mantém toda requisição no host alvo, um orçamento de
+- **Sempre ligado:** uma trava de escopo que mantém toda requisição no host e na porta do alvo (e
+  longe de endereços internos quando o alvo é público), um orçamento de
   requisições, um limite de concorrência e um intervalo, e o `robots.txt` é respeitado a menos que
   você o desligue.
 - **O que o WebVigil não faz:** força bruta de credenciais, burlar WAF ou IDS, manter acesso,
@@ -198,6 +199,12 @@ usar no lugar.
   testa parâmetros de query / path / corpo form-urlencoded, não campos individuais de um corpo de
   requisição JSON. São limites atuais, não permanentes. Veja o
   [scan de APIs](docs/api-scanning.md).
+
+- **Fronteiras de rede.** Um scan de alvo público nunca conecta em endereço de loopback, privado
+  ou link-local, nem para um subdomínio no escopo cujo DNS responda com um deles (DNS
+  split-horizon); cada nome de host é resolvido uma vez por scan. Por um proxy HTTP definido no
+  ambiente, quem resolve os nomes é o proxy, e essa conferência fica com ele. *Em vez disso:*
+  escaneie o host interno diretamente, como alvo próprio.
 
 ---
 

@@ -65,7 +65,9 @@ class TlsHttpsCheck(Check):
             )
 
         host, port = _tls_endpoint(ctx.target.origin)
-        probe = await tls_probe.probe(host, port, limiter=ctx.http.limiter)
+        probe = await tls_probe.probe(
+            host, port, limiter=ctx.http.limiter, guard=ctx.http.addresses
+        )
         if probe.reachable:
             findings.extend(self._version_findings(host, probe))
             if probe.peer_cert_der is not None:

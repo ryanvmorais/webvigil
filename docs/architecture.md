@@ -87,7 +87,9 @@ Persistence       webvigil.api.db  (SQLite via SQLModel + Alembic, web only)
 2. Enforce the Active-Mode gate: `active` mode without an `authorized_by` attestation is
    refused here, in the engine, so every caller is bound by it.
 3. The `HttpClient` opens; all requests route through its shared rate limiter (concurrency
-   cap + per-host delay) and scope guard.
+   cap + per-host delay), the scope guard (host, port and scheme) and the address guard
+   (`http/addresses.py`: each name resolved once per scan, the connection made to the checked
+   address, no internal address when the target is public).
 4. The crawler discovers in-scope pages — `<a href>` links plus optional `sitemap.xml`
    seeds — bounded by `max_pages` and gated by `robots.txt`. What the site declares is read up
    to fixed limits: 20 sitemaps and 10,000 sitemap URLs per scan, 20,000 links per page, a

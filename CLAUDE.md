@@ -82,6 +82,10 @@ Camadas, de cima para baixo:
    (`http://app:8000/`, nome de serviço do Compose ou de cluster) ou um literal IPv4/IPv6
    (`core/target.py::is_valid_host`); num host sem domínio registrável o `--scope subdomains` age como
    `host`, e os payloads que põem o host em userinfo (`payloads.fill_host`) não saem para um alvo IPv6.
+   O escopo confere também a porta (a do alvo, mais o par 80/443 se o alvo usa a padrão) e as
+   credenciais só vão à origem do alvo ou ao upgrade `https` (`Target.carries_credentials`). Cada
+   nome resolve uma vez por scan e a conexão vai ao IP conferido (`http/addresses.py`, instalado no
+   transporte do `httpx` para não perder o proxy do ambiente); alvo público não chega a IP interno.
 3. **Checks** (`webvigil.checks`) — plugins `PASSIVE`/`ACTIVE`, registrados por decorator +
    entry points. Contrato: `Check.run(ctx: ScanContext) -> list[Finding]`. O detalhe de cada
    check e dos passos do `Orchestrator` (fingerprint e Retire.js, OSV online, injeção ativa,

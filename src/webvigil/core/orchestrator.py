@@ -44,7 +44,12 @@ from webvigil.crawler.forms import Form
 from webvigil.crawler.har import load_har, merge_operations
 from webvigil.crawler.jsapp import script_app_warning
 from webvigil.crawler.openapi import ApiOperation, load_openapi
-from webvigil.http.client import HttpClient, truncated_warning, unreachable_warning
+from webvigil.http.client import (
+    HttpClient,
+    blocked_address_warning,
+    truncated_warning,
+    unreachable_warning,
+)
 from webvigil.http.session import Session
 
 _PROBE_FAMILIES = frozenset({"vcs", "config", "manifest", "backup", "debug", "sourcemap"})
@@ -218,6 +223,8 @@ class Orchestrator:
                     f"({self._config.scan.max_duration_s:g} s) and sent no request after it: "
                     "the report covers what was found until then"
                 )
+            if line := blocked_address_warning(http.stats):
+                warnings.append(line)
             technologies = context.observations.technologies
             if session is not None:
                 warnings.extend(session.warnings())
