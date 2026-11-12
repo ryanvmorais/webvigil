@@ -4,7 +4,7 @@
 #   [project]                        metadata + engine/CLI runtime dependencies
 #   [project.optional-dependencies]  web    the Web API extra (uv sync --extra web)
 #   [dependency-groups] dev          lint / type / test tooling (installed by default)
-#   [tool.*]                         config for ruff, black, mypy, import-linter, pytest
+#   [tool.*]                         config for uv, ruff, black, mypy, import-linter, pytest
 #
 # Exact versions of the whole graph (direct + transitive) are pinned in uv.lock
 # (`uv lock`); the lines below are lower-bound floors only.
@@ -155,6 +155,13 @@ artifacts = [
     "src/webvigil/checks/deps/data/*.json",
     "src/webvigil/checks/disclosure/data/*.toml",
 ]
+
+# --- Resolution (uv) ---------------------------------------------------------
+# `uv lock` only takes a release that has been public for a week: the same cooldown as Dependabot
+# and pnpm (`minimumReleaseAge`), so a hijacked release is usually pulled before it reaches the
+# lock. A security fix younger than that is let in for its one package with `exclude-newer-package`.
+[tool.uv]
+exclude-newer = "7 days"
 
 # --- Lint (ruff: replaces flake8 + isort, reads pyproject natively) ----------
 [tool.ruff]

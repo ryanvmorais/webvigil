@@ -62,7 +62,8 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies
-        run: uv sync --all-extras
+        # --locked: fail if uv.lock no longer matches pyproject.toml, instead of re-resolving.
+        run: uv sync --locked --all-extras
 
       - name: Show Python version
         run: uv run python -c "import sys; print(sys.version)"
@@ -99,7 +100,8 @@ jobs:
           enable-cache: true
 
       - name: Install Python deps (OpenAPI dump, fixture app, webvigil-web)
-        run: uv sync --all-extras
+        # --locked: fail if uv.lock no longer matches pyproject.toml, instead of re-resolving.
+        run: uv sync --locked --all-extras
 
       - name: Install pnpm
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0

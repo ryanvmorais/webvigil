@@ -37,7 +37,10 @@ type hints (`X | None`, `list[str]`, `Protocol`), dataclass-style modelling.
 
 The Python package manager and virtual-env tool (from Astral, the Ruff people).
 Replaces `pip` + `pip-tools` + `virtualenv` + `pipx`. `uv sync` installs the
-locked graph; `uv run` executes inside the env; `uv lock` resolves.
+locked graph; `uv run` executes inside the env; `uv lock` resolves, taking only
+releases at least a week old (`[tool.uv] exclude-newer = "7 days"`). The CI and
+the Docker image install with `uv sync --locked`, which fails when `uv.lock` no
+longer matches `pyproject.toml`.
 
 **Why not** Poetry / PDM / plain pip: uv is an order of magnitude faster, uses
 the standard `pyproject.toml` (PEP 621) with a real lockfile (`uv.lock`), and
