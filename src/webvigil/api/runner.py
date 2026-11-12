@@ -19,6 +19,13 @@ logger = logging.getLogger("webvigil.api")
 # The two outcomes of a cancel request.
 type CancelOutcome = Literal["cancelled", "not_cancellable"]
 
+# What a crashed scan records. The exception itself goes to the log only: its text can carry
+# paths, SQL or library internals that the dashboard has no reason to show.
+INTERNAL_ERROR = "internal error"
+# How long the loop rests after an unexpected error before it looks at the queue again, so a
+# database that keeps failing does not turn the loop into a busy spin.
+_RETRY_AFTER_ERROR_S = 1.0
+
 
 class _OrchestratorLike(Protocol):
     """The one method the runner needs from an orchestrator — a test seam."""
@@ -75,6 +82,10 @@ class ScanRunner:
         # loop resumes; without this, ``cancel`` and ``stop`` could run in between and
         # miss a scan that is already RUNNING in the DB (issue #89).
         self._dispatch = asyncio.Lock()
+        # Set, under the dispatch lock, once the current scan's result is in and being stored.
+        # From then on the scan finishes as COMPLETED: a cancel is refused and ``stop`` waits, so
+        # a cancel can no longer race the write and leave a CANCELLED scan with findings.
+        self._storing = False
         self._stopped = False
 
     async def start(self) -> None:
@@ -83,11 +94,16 @@ class ScanRunner:
         self._loop_task = asyncio.create_task(self._loop())
 
     async def stop(self) -> None:
-        """Signal the loop to stop, cancel any running scan, and await the loop task."""
+        """
+        Signal the loop to stop, cancel any running scan, and await the loop task.
+
+        A scan whose result is already being stored is not cancelled: the loop waits for the
+        write to finish, so the scan ends COMPLETED.
+        """
         self._stopped = True
         self._event.set()
         async with self._dispatch:  # a claim in flight registers its scan first
-            if self._current is not None:
+            if self._current is not None and not self._storing:
                 self._current[1].cancel()
         if self._loop_task is not None:
             await self._loop_task
@@ -123,12 +139,14 @@ class ScanRunner:
         Returns:
             CancelOutcome: ``"cancelled"`` when the running task was cancelled
                 or a queued row was moved to ``CANCELLED``; ``"not_cancellable"``
-                when the scan is neither.
+                when the scan is neither, or its result is already being stored.
         """
         # Under the dispatch lock, so a scan the loop is claiming right now is either still
         # QUEUED (cancelled below) or already registered as the current one, never in between.
         async with self._dispatch:
             if self._current is not None and self._current[0] == scan_id:
+                if self._storing:
+                    return "not_cancellable"
                 self._current[1].cancel()
                 return "cancelled"
             if await asyncio.to_thread(self._cancel_queued, scan_id):
@@ -142,7 +160,9 @@ class ScanRunner:
         The dispatch loop: claim the next queued scan, run it, repeat; sleep when idle.
 
         A running scan cancelled mid-flight is marked ``CANCELLED``. Runs until
-        :meth:`stop` sets the flag and wakes it.
+        :meth:`stop` sets the flag and wakes it. An unexpected error (the database failing a
+        claim or a status write) is logged and the loop carries on after a short rest: one
+        bad moment must not leave every later scan QUEUED until a restart.
         """
         while not self._should_stop():
             # Clear BEFORE looking at the queue: a ``wake()`` that lands while the claim is
@@ -150,7 +170,12 @@ class ScanRunner:
             # to the ``wait()`` below. Clearing after the claim erased it and left that scan
             # QUEUED until the next scan was created.
             self._event.clear()
-            started = await self._start_next()
+            try:
+                started = await self._start_next()
+            except Exception:
+                logger.exception("could not claim the next queued scan")
+                await asyncio.sleep(_RETRY_AFTER_ERROR_S)
+                continue
             if started is None:
                 if self._should_stop():
                     return
@@ -160,9 +185,15 @@ class ScanRunner:
             try:
                 await task
             except asyncio.CancelledError:
-                await asyncio.to_thread(self._mark_cancelled, scan_id)
+                try:
+                    await asyncio.to_thread(self._mark_cancelled, scan_id)
+                except Exception:
+                    logger.exception("could not mark scan %s cancelled", scan_id)
+            except Exception:
+                logger.exception("scan %s ended with an unexpected error", scan_id)
             finally:
                 self._current = None
+                self._storing = False
 
     async def _start_next(self) -> tuple[int, asyncio.Task[None]] | None:
         """
@@ -189,29 +220,35 @@ class ScanRunner:
         """
         Execute one scan: load its config, run the orchestrator, store or fail.
 
-        A :class:`~webvigil.core.errors.WebVigilError` becomes a ``FAILED`` row
-        with its message; any other exception is logged and becomes a
-        ``FAILED`` row with a generic message; ``CancelledError`` propagates to
-        the loop.
+        A :class:`~webvigil.core.errors.WebVigilError` (a bad stored config included) becomes a
+        ``FAILED`` row with its message; any other exception, in loading, running or storing, is
+        logged and becomes a ``FAILED`` row with :data:`INTERNAL_ERROR`; ``CancelledError``
+        propagates to the loop until the result is in, after which nothing cancels the write.
 
         Args:
             scan_id (int): The scan to run.
         """
-        target, config = await asyncio.to_thread(self._load_config, scan_id)
         try:
+            target, config = await asyncio.to_thread(self._load_config, scan_id)
             result = await self._make_orchestrator(config).run(target)
         except asyncio.CancelledError:
             raise
         except WebVigilError as exc:
             await asyncio.to_thread(self._terminate, scan_id, ScanStatus.FAILED, str(exc))
             return
-        except Exception as exc:
+        except Exception:
             logger.exception("scan %s crashed", scan_id)
-            await asyncio.to_thread(
-                self._terminate, scan_id, ScanStatus.FAILED, f"internal error: {exc!r}"
-            )
+            await asyncio.to_thread(self._terminate, scan_id, ScanStatus.FAILED, INTERNAL_ERROR)
             return
-        await asyncio.to_thread(self._store, scan_id, result)
+        # A cancel that holds the lock right now still wins (this ``async with`` raises it); once
+        # the flag is set, the scan finishes as stored.
+        async with self._dispatch:
+            self._storing = True
+        try:
+            await asyncio.to_thread(self._store, scan_id, result)
+        except Exception:
+            logger.exception("storing the result of scan %s failed", scan_id)
+            await asyncio.to_thread(self._terminate, scan_id, ScanStatus.FAILED, INTERNAL_ERROR)
 
     # -- DB helpers (each opens its own short-lived session) -------------------
 

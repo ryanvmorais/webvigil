@@ -11,6 +11,25 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 ## [Unreleased]
 
+### Fixed
+
+- The Web API's scan runner keeps going after an unexpected error (a database failure while
+  claiming, loading or storing a scan): the scan is `failed` and the next one runs, instead of
+  every later scan staying `queued` until a restart.
+- Cancelling a scan while its result is being written no longer races the write: the cancel gets
+  `409` and the scan ends `completed`, never `cancelled` with findings.
+
+### Security
+
+- The Web API's SQLite database, which holds the password hash and the session signing secret, is
+  created readable by its owner only (`0600`), and an existing one, with its `-wal` and `-shm`
+  files, is set to `0600` when the server starts.
+- Every option of `POST /api/scans` has a ceiling (`max_pages` 10 000, `delay_ms` 60 000, the
+  target 2 048 characters, `authorized_by` 256, `disabled_checks` 200 ids of 128 characters), and
+  the queue holds at most 100 scans (`429` beyond that).
+- A scan that crashes records `internal error` instead of the exception text, which stays in the
+  server log.
+
 ## [1.2.1] - 2026-11-12
 
 A patch release with one fix, in which host names the Web API answers for. Nothing in the CLI, the

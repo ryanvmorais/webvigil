@@ -162,6 +162,8 @@ export interface paths {
         /**
          * Create Scan
          * @description Queue a scan and wake the runner. Returns the new scan row (status ``queued``).
+         *
+         *     429 when ``MAX_QUEUED_SCANS`` are already waiting.
          */
         post: operations["create_scan_api_scans_post"];
         delete?: never;
@@ -412,18 +414,20 @@ export interface components {
          * @description New-scan request body.
          *
          *     Attributes:
-         *         target (str): The URL to scan; validated with
+         *         target (str): The URL to scan, at most ``TARGET_MAX_CHARS``; validated with
          *             :meth:`~webvigil.core.target.Target.parse`.
          *         mode (ScanMode): Passive (default) or Active.
          *         scope (Scope): Crawl breadth. Defaults to
          *             :attr:`~webvigil.core.target.Scope.HOST`.
-         *         max_pages (int | None): Crawler page cap; must be > 0 when given.
-         *         delay_ms (int | None): Delay between requests; must be >= 0 when given.
+         *         max_pages (int | None): Crawler page cap; 1 to ``MAX_PAGES_LIMIT`` when given.
+         *         delay_ms (int | None): Delay between requests; 0 to ``DELAY_MS_LIMIT`` when given.
          *         follow_robots (bool | None): Honour ``robots.txt``.
-         *         authorized_by (str | None): Required for an Active scan.
+         *         authorized_by (str | None): Required for an Active scan; at most
+         *             ``AUTHORIZED_BY_MAX_CHARS``.
          *         fail_on (FailOn | None): Recorded on the scan for later report exit
          *             codes.
-         *         disabled_checks (list[str]): Check ids to skip. Defaults to empty.
+         *         disabled_checks (list[str]): Check ids to skip, at most ``DISABLED_CHECKS_MAX_ITEMS`` of
+         *             at most ``CHECK_ID_MAX_CHARS`` each. Defaults to empty.
          */
         ScanCreate: {
             /** Authorized By */

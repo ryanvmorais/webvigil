@@ -308,11 +308,12 @@
         "type": "object"
       },
       "ScanCreate": {
-        "description": "New-scan request body.\n\nAttributes:\n    target (str): The URL to scan; validated with\n        :meth:`~webvigil.core.target.Target.parse`.\n    mode (ScanMode): Passive (default) or Active.\n    scope (Scope): Crawl breadth. Defaults to\n        :attr:`~webvigil.core.target.Scope.HOST`.\n    max_pages (int | None): Crawler page cap; must be > 0 when given.\n    delay_ms (int | None): Delay between requests; must be >= 0 when given.\n    follow_robots (bool | None): Honour ``robots.txt``.\n    authorized_by (str | None): Required for an Active scan.\n    fail_on (FailOn | None): Recorded on the scan for later report exit\n        codes.\n    disabled_checks (list[str]): Check ids to skip. Defaults to empty.",
+        "description": "New-scan request body.\n\nAttributes:\n    target (str): The URL to scan, at most ``TARGET_MAX_CHARS``; validated with\n        :meth:`~webvigil.core.target.Target.parse`.\n    mode (ScanMode): Passive (default) or Active.\n    scope (Scope): Crawl breadth. Defaults to\n        :attr:`~webvigil.core.target.Scope.HOST`.\n    max_pages (int | None): Crawler page cap; 1 to ``MAX_PAGES_LIMIT`` when given.\n    delay_ms (int | None): Delay between requests; 0 to ``DELAY_MS_LIMIT`` when given.\n    follow_robots (bool | None): Honour ``robots.txt``.\n    authorized_by (str | None): Required for an Active scan; at most\n        ``AUTHORIZED_BY_MAX_CHARS``.\n    fail_on (FailOn | None): Recorded on the scan for later report exit\n        codes.\n    disabled_checks (list[str]): Check ids to skip, at most ``DISABLED_CHECKS_MAX_ITEMS`` of\n        at most ``CHECK_ID_MAX_CHARS`` each. Defaults to empty.",
         "properties": {
           "authorized_by": {
             "anyOf": [
               {
+                "maxLength": 256,
                 "type": "string"
               },
               {
@@ -324,6 +325,7 @@
           "delay_ms": {
             "anyOf": [
               {
+                "maximum": 60000.0,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -336,8 +338,10 @@
           "disabled_checks": {
             "default": [],
             "items": {
+              "maxLength": 128,
               "type": "string"
             },
+            "maxItems": 200,
             "title": "Disabled Checks",
             "type": "array"
           },
@@ -366,6 +370,7 @@
             "anyOf": [
               {
                 "exclusiveMinimum": 0.0,
+                "maximum": 10000.0,
                 "type": "integer"
               },
               {
@@ -383,6 +388,7 @@
             "default": "host"
           },
           "target": {
+            "maxLength": 2048,
             "title": "Target",
             "type": "string"
           }
@@ -1085,7 +1091,7 @@
         ]
       },
       "post": {
-        "description": "Queue a scan and wake the runner. Returns the new scan row (status ``queued``).",
+        "description": "Queue a scan and wake the runner. Returns the new scan row (status ``queued``).\n\n429 when ``MAX_QUEUED_SCANS`` are already waiting.",
         "operationId": "create_scan_api_scans_post",
         "requestBody": {
           "content": {

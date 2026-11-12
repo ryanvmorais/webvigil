@@ -14,13 +14,14 @@ import time
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from tests.api.conftest import ADMIN, BlockingOrchestrator, FakeOrchestrator
 from tests.support import make_finding, make_result
 from webvigil.api.app import create_app
 from webvigil.api.config import WebConfig
 from webvigil.api.db import Scan, ScanStatus
+from webvigil.api.routes.scans import MAX_QUEUED_SCANS
 from webvigil.core.findings import Severity
 
 
@@ -52,6 +53,45 @@ def _wait_status(client: TestClient, scan_id: int, target: str, timeout: float =
 def test_create_validates_the_target(auth_client: TestClient) -> None:
     """A non-HTTP(S) target is rejected at creation with a 422."""
     assert auth_client.post("/api/scans", json={"target": "ftp://nope"}).status_code == 422
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {"max_pages": 10_001},
+        {"delay_ms": 60_001},
+        {"target": "https://example.com/" + "a" * 2048},
+        {"authorized_by": "x" * 257},
+        {"disabled_checks": [f"check.{n}" for n in range(201)]},
+        {"disabled_checks": ["c" * 129]},
+    ],
+)
+def test_create_refuses_options_over_their_ceiling(
+    auth_client: TestClient, extra: dict[str, object]
+) -> None:
+    """Every option is bounded, so one request cannot ask for an endless crawl or a huge row."""
+    body = {"target": "https://example.com/", **extra}
+    assert auth_client.post("/api/scans", json=body).status_code == 422
+
+
+def test_create_accepts_options_at_their_ceiling(auth_client: TestClient) -> None:
+    """The ceilings themselves are allowed."""
+    body = {"target": "https://example.com/", "max_pages": 10_000, "delay_ms": 60_000}
+    assert auth_client.post("/api/scans", json=body).status_code == 201
+
+
+def test_create_refuses_a_scan_when_the_queue_is_full(auth_client: TestClient) -> None:
+    """With ``MAX_QUEUED_SCANS`` waiting, a new scan is a 429 and nothing is added."""
+    engine = auth_client.app.state.engine  # type: ignore[attr-defined]  # app is typed as ASGIApp
+    with Session(engine) as session:
+        for _ in range(MAX_QUEUED_SCANS):
+            session.add(Scan(target="https://example.com/", mode="passive", scope="host"))
+        session.commit()
+
+    refused = auth_client.post("/api/scans", json={"target": "https://example.com/"})
+    assert refused.status_code == 429
+    with Session(engine) as session:
+        assert len(session.exec(select(Scan)).all()) == MAX_QUEUED_SCANS
 
 
 def test_create_active_requires_authorization(auth_client: TestClient) -> None:

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import threading
 import time
 from collections.abc import AsyncIterator, Callable
 
@@ -22,9 +23,10 @@ from sqlmodel import Session, select
 
 from tests.fixtures.app import make_app
 from tests.support import make_finding, make_result
+from webvigil.api import runner as runner_mod
 from webvigil.api.db import Finding as FindingRow
 from webvigil.api.db import Scan, ScanStatus
-from webvigil.api.runner import ScanRunner, recover_interrupted_scans
+from webvigil.api.runner import INTERNAL_ERROR, ScanRunner, recover_interrupted_scans
 from webvigil.core import InvalidTargetError, ScanConfig, ScanResult
 from webvigil.core import orchestrator as orch_mod
 
@@ -330,3 +332,167 @@ async def test_runner_drives_the_real_engine(
     with Session(web_engine) as session:
         findings = session.exec(select(FindingRow).where(FindingRow.scan_id == scan_id)).all()
     assert {f.check_id for f in findings} >= {"http.headers.csp", "http.cookies.flags"}
+
+
+# ---------------------------------------------------------------------------
+# Unexpected errors: recorded generically, and the loop carries on
+# ---------------------------------------------------------------------------
+
+
+def _error(engine: Engine, scan_id: int) -> str | None:
+    """
+    Read the error a scan row recorded.
+
+    Args:
+        engine (Engine): The per-test database engine.
+        scan_id (int): The scan row id.
+
+    Returns:
+        str | None: The error recorded on the scan.
+    """
+    with Session(engine) as session:
+        scan = session.get(Scan, scan_id)
+        assert scan is not None
+        return scan.error
+
+
+async def test_a_crash_records_a_generic_error(
+    web_engine: Engine, runner_factory: Callable
+) -> None:
+    """The exception text stays in the log; the scan row says only ``internal error``."""
+    orch = _FakeOrchestrator(error=RuntimeError("/srv/private/path leaked"))
+    runner = await runner_factory(orchestrator_factory=_factory(orch))
+    scan_id = _new_scan(web_engine)
+    runner.wake()
+
+    await _wait_for(web_engine, scan_id, ScanStatus.FAILED)
+    assert _error(web_engine, scan_id) == INTERNAL_ERROR
+
+
+async def test_a_config_that_cannot_be_loaded_fails_the_scan_not_the_loop(
+    web_engine: Engine, runner_factory: Callable, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A row the runner cannot turn into a config is FAILED, and the next scan still runs."""
+    real_load = ScanRunner._load_config
+    broken: set[int] = set()
+
+    def load(self: ScanRunner, scan_id: int) -> tuple[str, ScanConfig]:
+        if scan_id in broken:
+            raise RuntimeError("unreadable options")
+        return real_load(self, scan_id)
+
+    monkeypatch.setattr(ScanRunner, "_load_config", load)
+    runner = await runner_factory(orchestrator_factory=_factory(_FakeOrchestrator()))
+    first = _new_scan(web_engine)
+    broken.add(first)
+    second = _new_scan(web_engine)
+    runner.wake()
+
+    await _wait_for(web_engine, first, ScanStatus.FAILED)
+    assert _error(web_engine, first) == INTERNAL_ERROR
+    await _wait_for(web_engine, second, ScanStatus.COMPLETED)
+
+
+async def test_a_failed_claim_does_not_stop_the_loop(
+    web_engine: Engine, runner_factory: Callable, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The database failing one claim used to end the loop and leave every later scan QUEUED."""
+    monkeypatch.setattr(runner_mod, "_RETRY_AFTER_ERROR_S", 0.01)
+    real_claim = ScanRunner._claim_next_queued
+    failures = {"left": 1}
+
+    def claim(self: ScanRunner) -> int | None:
+        if failures["left"]:
+            failures["left"] -= 1
+            raise RuntimeError("database is locked")
+        return real_claim(self)
+
+    monkeypatch.setattr(ScanRunner, "_claim_next_queued", claim)
+    scan_id = _new_scan(web_engine)
+    await runner_factory(orchestrator_factory=_factory(_FakeOrchestrator()))
+
+    await _wait_for(web_engine, scan_id, ScanStatus.COMPLETED)
+
+
+async def test_a_failed_store_fails_the_scan_and_the_next_one_runs(
+    web_engine: Engine, runner_factory: Callable, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A write that fails leaves the scan FAILED, not RUNNING forever."""
+    real_store = ScanRunner._store
+    failures = {"left": 1}
+
+    def store(self: ScanRunner, scan_id: int, result: ScanResult) -> None:
+        if failures["left"]:
+            failures["left"] -= 1
+            raise RuntimeError("disk full")
+        real_store(self, scan_id, result)
+
+    monkeypatch.setattr(ScanRunner, "_store", store)
+    runner = await runner_factory(orchestrator_factory=_factory(_FakeOrchestrator()))
+    first = _new_scan(web_engine)
+    second = _new_scan(web_engine)
+    runner.wake()
+
+    await _wait_for(web_engine, first, ScanStatus.FAILED)
+    assert _error(web_engine, first) == INTERNAL_ERROR
+    await _wait_for(web_engine, second, ScanStatus.COMPLETED)
+
+
+# ---------------------------------------------------------------------------
+# A cancel or a stop while the result is being stored
+# ---------------------------------------------------------------------------
+
+
+def _slow_store(monkeypatch: pytest.MonkeyPatch, delay: float = 0.3) -> threading.Event:
+    """
+    Hold every store open for ``delay`` seconds before it writes.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): Patches ``ScanRunner._store``.
+        delay (float): Seconds the worker thread sleeps before writing.
+
+    Returns:
+        threading.Event: Set when a store has started, so the test acts inside the write.
+    """
+    real_store = ScanRunner._store
+    started = threading.Event()
+
+    def store(self: ScanRunner, scan_id: int, result: ScanResult) -> None:
+        started.set()
+        time.sleep(delay)
+        real_store(self, scan_id, result)
+
+    monkeypatch.setattr(ScanRunner, "_store", store)
+    return started
+
+
+async def test_a_cancel_during_the_store_is_refused(
+    web_engine: Engine, runner_factory: Callable, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The result is in: the scan ends COMPLETED with its findings, never CANCELLED with them."""
+    storing = _slow_store(monkeypatch)
+    orch = _FakeOrchestrator(result=make_result(make_finding()))
+    runner = await runner_factory(orchestrator_factory=_factory(orch))
+    scan_id = _new_scan(web_engine)
+    runner.wake()
+    assert await asyncio.to_thread(storing.wait, 3.0)
+
+    assert await runner.cancel(scan_id) == "not_cancellable"
+    await _wait_for(web_engine, scan_id, ScanStatus.COMPLETED)
+    with Session(web_engine) as session:
+        findings = session.exec(select(FindingRow).where(FindingRow.scan_id == scan_id)).all()
+    assert len(findings) == 1
+
+
+async def test_a_stop_during_the_store_lets_the_write_finish(
+    web_engine: Engine, runner_factory: Callable, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``stop()`` waits for the write instead of cancelling a scan whose result is in."""
+    storing = _slow_store(monkeypatch)
+    runner = await runner_factory(orchestrator_factory=_factory(_FakeOrchestrator()))
+    scan_id = _new_scan(web_engine)
+    runner.wake()
+    assert await asyncio.to_thread(storing.wait, 3.0)
+
+    await runner.stop()
+    assert _status(web_engine, scan_id) == ScanStatus.COMPLETED

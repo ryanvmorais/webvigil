@@ -6,6 +6,7 @@ This module is API-only. The engine never imports it.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -19,6 +20,12 @@ from sqlmodel import Field, Session, SQLModel, create_engine
 from webvigil.api.config import WebConfig
 
 _MIGRATIONS_DIR = Path(__file__).parent / "migrations"
+# The database holds the password hash, the session signing secret and every scan's findings:
+# only the account that runs the server may read it. SQLite gives the -wal and -shm files it
+# creates the same mode as the database file.
+_PRIVATE_FILE_MODE = 0o600
+_PRIVATE_DIR_MODE = 0o700
+_SQLITE_SIDE_FILES = ("-wal", "-shm", "-journal")
 
 
 def utcnow() -> datetime:
@@ -191,6 +198,28 @@ class Setting(SQLModel, table=True):
     value: str
 
 
+def secure_database_files(path: Path) -> None:
+    """
+    Create the database file readable by its owner only, and tighten the files already there.
+
+    A new database is created empty with mode ``0600`` (its parent directory, when created here,
+    with ``0700``) before SQLite opens it, so it is never readable by others, not even for a
+    moment. An existing database, and the ``-wal``, ``-shm`` and ``-journal`` files beside it, are
+    set to ``0600``, which fixes one created by an earlier version under the default umask. On
+    Windows ``chmod`` only toggles the read-only flag, and the file keeps the folder's ACL.
+
+    Args:
+        path (Path): The SQLite database file.
+    """
+    if not path.parent.exists():
+        path.parent.mkdir(mode=_PRIVATE_DIR_MODE, parents=True, exist_ok=True)
+    if not path.exists():
+        os.close(os.open(path, os.O_CREAT | os.O_WRONLY, _PRIVATE_FILE_MODE))
+    for candidate in (path, *(path.with_name(path.name + side) for side in _SQLITE_SIDE_FILES)):
+        if candidate.exists():
+            candidate.chmod(_PRIVATE_FILE_MODE)
+
+
 def make_engine(config: WebConfig) -> Engine:
     """
     Create the SQLite engine, enabling WAL and foreign-key enforcement per connection.
@@ -203,8 +232,7 @@ def make_engine(config: WebConfig) -> Engine:
         Engine: The configured SQLAlchemy engine.
     """
     path = config.database_path
-    if path.parent and not path.parent.exists():
-        path.parent.mkdir(parents=True, exist_ok=True)
+    secure_database_files(path)
     engine = create_engine(
         f"sqlite:///{path}",
         connect_args={"check_same_thread": False},
@@ -246,9 +274,12 @@ def run_alembic_upgrade(config: WebConfig) -> None:
     """
     Run ``alembic upgrade head`` against the configured database.
 
+    The migration may be what creates the database, so the file is created private first.
+
     Args:
         config (WebConfig): Supplies ``database_path``.
     """
+    secure_database_files(config.database_path)
     from alembic import command
     from alembic.config import Config as AlembicConfig
 

@@ -8,7 +8,7 @@ responses, several with a ``from_row`` converter off the DB models.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -20,6 +20,16 @@ from webvigil.core.target import Scope, Target
 
 # Type alias (PEP 695) for the closed set of ``fail_on`` values.
 type FailOn = Literal["none", "info", "low", "medium", "high", "critical"]
+
+# Ceilings on a new scan's options. Every option is stored on the row and drives the runner, so
+# none is left unbounded: far above any real scan, low enough that one request cannot ask for a
+# crawl that never ends, a delay of days, or a row of megabytes.
+MAX_PAGES_LIMIT = 10_000
+DELAY_MS_LIMIT = 60_000
+TARGET_MAX_CHARS = 2048
+AUTHORIZED_BY_MAX_CHARS = 256
+DISABLED_CHECKS_MAX_ITEMS = 200
+CHECK_ID_MAX_CHARS = 128
 
 
 class UserOut(BaseModel):
@@ -101,29 +111,33 @@ class ScanCreate(BaseModel):
     New-scan request body.
 
     Attributes:
-        target (str): The URL to scan; validated with
+        target (str): The URL to scan, at most ``TARGET_MAX_CHARS``; validated with
             :meth:`~webvigil.core.target.Target.parse`.
         mode (ScanMode): Passive (default) or Active.
         scope (Scope): Crawl breadth. Defaults to
             :attr:`~webvigil.core.target.Scope.HOST`.
-        max_pages (int | None): Crawler page cap; must be > 0 when given.
-        delay_ms (int | None): Delay between requests; must be >= 0 when given.
+        max_pages (int | None): Crawler page cap; 1 to ``MAX_PAGES_LIMIT`` when given.
+        delay_ms (int | None): Delay between requests; 0 to ``DELAY_MS_LIMIT`` when given.
         follow_robots (bool | None): Honour ``robots.txt``.
-        authorized_by (str | None): Required for an Active scan.
+        authorized_by (str | None): Required for an Active scan; at most
+            ``AUTHORIZED_BY_MAX_CHARS``.
         fail_on (FailOn | None): Recorded on the scan for later report exit
             codes.
-        disabled_checks (list[str]): Check ids to skip. Defaults to empty.
+        disabled_checks (list[str]): Check ids to skip, at most ``DISABLED_CHECKS_MAX_ITEMS`` of
+            at most ``CHECK_ID_MAX_CHARS`` each. Defaults to empty.
     """
 
-    target: str
+    target: str = Field(max_length=TARGET_MAX_CHARS)
     mode: ScanMode = ScanMode.PASSIVE
     scope: Scope = Scope.HOST
-    max_pages: int | None = Field(default=None, gt=0)
-    delay_ms: int | None = Field(default=None, ge=0)
+    max_pages: int | None = Field(default=None, gt=0, le=MAX_PAGES_LIMIT)
+    delay_ms: int | None = Field(default=None, ge=0, le=DELAY_MS_LIMIT)
     follow_robots: bool | None = None
-    authorized_by: str | None = None
+    authorized_by: str | None = Field(default=None, max_length=AUTHORIZED_BY_MAX_CHARS)
     fail_on: FailOn | None = None
-    disabled_checks: list[str] = []
+    disabled_checks: list[Annotated[str, Field(max_length=CHECK_ID_MAX_CHARS)]] = Field(
+        default=[], max_length=DISABLED_CHECKS_MAX_ITEMS
+    )
 
     @model_validator(mode="after")
     def _check(self) -> ScanCreate:
