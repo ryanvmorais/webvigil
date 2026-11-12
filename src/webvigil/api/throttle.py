@@ -8,8 +8,10 @@ attacker can delay the owner by a few minutes at most, never lock them out.
 
 State lives in memory, per process: a restart forgets it, which is acceptable for a
 single-user, local-first service. Behind a reverse proxy every request has the proxy's address,
-so the per-client key becomes one key for everybody and the per-username key does the work;
-``X-Forwarded-For`` is not trusted because the client controls it.
+so the per-client key would be one key for everybody: a request the dashboard's proxy forwarded
+counts against the username only (``routes/auth.py``). ``X-Forwarded-For`` is not trusted as an
+address because the client controls it. The password change re-checks the current password under
+its own per-user key.
 
 The table is bounded, because its keys come from unauthenticated requests: a key is never kept
 longer than ``MAX_KEY_CHARS``, and when ``MAX_KEYS`` are held the key that failed longest ago is

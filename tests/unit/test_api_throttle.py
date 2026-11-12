@@ -112,7 +112,7 @@ def test_credentials_changed_at_reads_a_zoneless_timestamp_as_utc() -> None:
     aware = User(
         username="admin", password_hash="x", updated_at=datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
     )
-    expected = int(datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC).timestamp())
+    expected = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC).timestamp()
     assert credentials_changed_at(naive) == expected
     assert credentials_changed_at(aware) == expected
 

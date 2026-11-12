@@ -910,7 +910,7 @@
     },
     "/api/auth/password": {
       "post": {
-        "description": "Change the password after re-checking the current one. 403 if it is wrong.\n\nEvery other session is signed out; this one gets a fresh cookie and stays signed in.",
+        "description": "Change the password after re-checking the current one. 403 if it is wrong, 429 after too many.\n\nThe re-check is throttled like a login: a stolen session must not become an unlimited oracle\nfor the current password. Every other session is signed out; this one gets a fresh cookie and\nstays signed in.",
         "operationId": "change_password_api_auth_password_post",
         "requestBody": {
           "content": {

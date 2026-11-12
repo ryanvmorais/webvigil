@@ -75,6 +75,24 @@ def test_reset_password_updates_the_hash(_config_env: Path) -> None:
         assert not verify_password("old-password", user.password_hash)
 
 
+def test_reset_password_refuses_a_password_the_api_would_refuse(_config_env: Path) -> None:
+    """A reset follows the API's policy: a seven-character password is refused, the hash kept."""
+    config = WebConfig.load()
+    run_alembic_upgrade(config)
+    engine = make_engine(config)
+    with Session(engine) as session:
+        session.add(User(username="admin", password_hash=hash_password("old-password")))
+        session.commit()
+
+    result = runner.invoke(cli.app, ["reset-password"], input="short12\nshort12\n")
+    assert result.exit_code == 1
+    assert "8 to 256 characters" in result.output
+
+    with Session(engine) as session:
+        user = session.exec(select(User).where(User.username == "admin")).one()
+        assert verify_password("old-password", user.password_hash)
+
+
 def test_reset_password_without_a_user_errors(_config_env: Path) -> None:
     """``reset-password`` with no matching user exits non-zero with a clear message."""
     result = runner.invoke(cli.app, ["reset-password"], input="x\nx\n")

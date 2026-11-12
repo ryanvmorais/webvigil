@@ -15,6 +15,7 @@ from sqlmodel import Session, select
 
 from webvigil.api.config import WebConfig, insecure_bind_warning
 from webvigil.api.db import User, make_engine, run_alembic_upgrade, utcnow
+from webvigil.api.schemas import PASSWORD_MAX_CHARS, PASSWORD_MIN_CHARS
 from webvigil.api.security import hash_password
 from webvigil.core.errors import ConfigError
 
@@ -103,6 +104,15 @@ def reset_password(
             typer.echo("no user found — complete first-run setup in the browser first", err=True)
             raise typer.Exit(1)
         new_password = typer.prompt("New password", hide_input=True, confirmation_prompt=True)
+        # The same policy as setup and the password change, so a reset cannot set a password the
+        # dashboard would have refused.
+        if not PASSWORD_MIN_CHARS <= len(new_password) <= PASSWORD_MAX_CHARS:
+            typer.echo(
+                f"error: the password must be {PASSWORD_MIN_CHARS} to {PASSWORD_MAX_CHARS} "
+                "characters long",
+                err=True,
+            )
+            raise typer.Exit(1)
         user.password_hash = hash_password(new_password)
         user.updated_at = utcnow()
         session.add(user)

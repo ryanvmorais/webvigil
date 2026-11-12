@@ -75,9 +75,11 @@ export interface paths {
         put?: never;
         /**
          * Change Password
-         * @description Change the password after re-checking the current one. 403 if it is wrong.
+         * @description Change the password after re-checking the current one. 403 if it is wrong, 429 after too many.
          *
-         *     Every other session is signed out; this one gets a fresh cookie and stays signed in.
+         *     The re-check is throttled like a login: a stolen session must not become an unlimited oracle
+         *     for the current password. Every other session is signed out; this one gets a fresh cookie and
+         *     stays signed in.
          */
         post: operations["change_password_api_auth_password_post"];
         delete?: never;
