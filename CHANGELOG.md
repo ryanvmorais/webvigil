@@ -11,6 +11,16 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-11-12
+
+A minor release with two security fixes for what a scanned site can make a scan do
+(GHSA-2qw3-xm7x-r7cg and GHSA-73j5-mxxc-x7x5) and a round of hardening of the Web API. It is
+backward compatible with [docs/stability.md](docs/stability.md): no exit code, check id or JSON
+report field changes. One setting is new, `[scan] max_duration_s` (`--max-duration`), and three
+behaviours change on purpose, listed under Changed: the scope also checks the port, response
+bodies are decoded by WebVigil (`gzip` and `deflate` only), and a request that uses up its total
+deadline is not retried.
+
 ### Added
 
 - `[scan] max_duration_s` (`--max-duration` on the CLI): the most a whole scan may take, 4 hours by
@@ -449,7 +459,8 @@ confirmed against a per-request baseline)
 - A security policy with private vulnerability reporting, a code of conduct, and the
   [stability policy](docs/stability.md).
 
-[Unreleased]: https://github.com/ryanvmorais/webvigil/compare/v1.2.1...HEAD
+[Unreleased]: https://github.com/ryanvmorais/webvigil/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/ryanvmorais/webvigil/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/ryanvmorais/webvigil/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/ryanvmorais/webvigil/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/ryanvmorais/webvigil/compare/v1.0.4...v1.1.0
