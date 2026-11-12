@@ -11,6 +11,19 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 ## [Unreleased]
 
+### Security
+
+- `POST /api/auth/password` is throttled like the login: after 5 wrong current passwords the
+  user waits, with `429` and `Retry-After`, so a stolen session cannot guess the password without
+  limit.
+- Behind the dashboard's proxy, a failed login counts against the username only, so one
+  stranger's failures no longer make every user of the dashboard wait.
+- A password change now signs out sessions issued earlier in the same second: the session token's
+  issue time keeps its fraction of a second.
+- A session token without an expiry, an issue time or a subject is refused.
+- `webvigil-web reset-password` enforces the same password policy as the Web API (8 to 256
+  characters).
+
 ## [1.2.1] - 2026-11-12
 
 A patch release with one fix, in which host names the Web API answers for. Nothing in the CLI, the
