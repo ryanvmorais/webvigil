@@ -67,7 +67,7 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
   256 MiB allowance (a page past it keeps its first 256 KiB), the automated login's cookie jar is
   bounded (past 1 024 distinct values the session is given up, with a warning), and the OpenAPI
   import builds only the operations it keeps, bounds a local document to 64 MiB and reports a
-  malformed one as an import error.
+  malformed one, or one whose arrays and objects nest past 256 levels, as an import error.
 - A scanned site can no longer steer the scan's requests or credentials outside the target
   (GHSA-73j5-mxxc-x7x5). Every host name is resolved once per scan and the scanner connects to
   the address it checked; when the target resolves to a public address, no host of the scan may
