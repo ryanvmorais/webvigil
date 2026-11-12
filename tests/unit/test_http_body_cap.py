@@ -10,6 +10,7 @@ compressed body that inflates a thousandfold can exhaust the scanner. All reques
 from __future__ import annotations
 
 import gzip
+import zlib
 from collections.abc import AsyncIterator
 
 import httpx
@@ -140,3 +141,101 @@ def test_the_limit_must_be_positive() -> None:
     """``max_body_bytes = 0`` would read nothing at all: it is a configuration error."""
     with pytest.raises(ValueError):
         ScanConfig.model_validate({"http": {"max_body_bytes": 0}})
+
+
+# --- bounded decoding (security audit 2026-11): the limit holds at every stage ---------------
+
+
+def _coded_response(raw: bytes, coding: str) -> httpx.Response:
+    """
+    Args:
+        raw (bytes): The body as sent on the wire.
+        coding (str): The ``Content-Encoding`` header value.
+
+    Returns:
+        httpx.Response: A streamed response with that header, served in 4 KiB chunks.
+    """
+    return httpx.Response(200, headers={"content-encoding": coding}, stream=_Chunks(raw))
+
+
+async def test_a_body_coded_twice_is_bounded_while_it_is_decoded(httpx_mock: object) -> None:
+    """Two gzip layers inflate stage by stage within the limit, not a whole stage at once."""
+    import tracemalloc
+
+    inner = gzip.compress(bytes(50_000_000))  # 50 MB of zeros, about 50 KB compressed
+    httpx_mock.add_callback(  # type: ignore[attr-defined]
+        lambda request: _coded_response(gzip.compress(inner), "gzip, gzip")
+    )
+    async with _client(limit=100_000) as http:
+        tracemalloc.start()
+        try:
+            response = await http.get(_URL)
+            _current, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+    assert len(response.content) == 100_000
+    assert response.truncated
+    assert peak < 5_000_000  # a few decompression steps, never the 50 MB the body expands to
+
+
+async def test_a_body_coded_twice_within_the_limit_decodes_whole(httpx_mock: object) -> None:
+    """A legitimate double coding still yields the plain body."""
+    payload = b"two layers, still readable"
+    httpx_mock.add_callback(  # type: ignore[attr-defined]
+        lambda request: _coded_response(gzip.compress(gzip.compress(payload)), "gzip, gzip")
+    )
+    async with _client() as http:
+        response = await http.get(_URL)
+    assert response.content == payload
+    assert not response.truncated
+
+
+@pytest.mark.parametrize("wbits", [zlib.MAX_WBITS, -zlib.MAX_WBITS])
+async def test_deflate_decodes_wrapped_or_raw(httpx_mock: object, wbits: int) -> None:
+    """``deflate`` accepts zlib-wrapped data and raw deflate, as ``httpx`` does."""
+    packer = zlib.compressobj(wbits=wbits)
+    raw = packer.compress(b"deflated body") + packer.flush()
+    httpx_mock.add_callback(lambda request: _coded_response(raw, "deflate"))  # type: ignore[attr-defined]
+    async with _client() as http:
+        response = await http.get(_URL)
+    assert response.content == b"deflated body"
+
+
+async def test_an_unknown_coding_is_left_as_is(httpx_mock: object) -> None:
+    """A coding the scanner does not decode is skipped, whatever library is installed."""
+    httpx_mock.add_callback(lambda request: _coded_response(b"opaque", "br"))  # type: ignore[attr-defined]
+    async with _client() as http:
+        response = await http.get(_URL)
+    assert response.content == b"opaque"
+
+
+async def test_too_many_codings_are_not_decoded(httpx_mock: object) -> None:
+    """A chain longer than any real server sends is not decoded at all, and the body is marked."""
+    raw = b"x"
+    for _ in range(4):
+        raw = gzip.compress(raw)
+    httpx_mock.add_callback(  # type: ignore[attr-defined]
+        lambda request: _coded_response(raw, "gzip, gzip, gzip, gzip")
+    )
+    async with _client() as http:
+        response = await http.get(_URL)
+    assert response.content == b""
+    assert response.truncated
+
+
+async def test_data_after_the_compressed_stream_is_ignored(httpx_mock: object) -> None:
+    """Bytes after the end of the gzip stream are dropped, not kept or decoded."""
+    raw = gzip.compress(b"body") + bytes(200_000)
+    httpx_mock.add_callback(lambda request: _coded_response(raw, "gzip"))  # type: ignore[attr-defined]
+    async with _client(limit=10_000_000) as http:
+        response = await http.get(_URL)
+    assert response.content == b"body"
+
+
+async def test_the_client_asks_only_for_what_it_decodes(httpx_mock: object) -> None:
+    """``Accept-Encoding`` names the codings the bounded decoder handles, no others."""
+    httpx_mock.add_response(content=b"ok")  # type: ignore[attr-defined]
+    async with _client() as http:
+        await http.get(_URL)
+    sent = httpx_mock.get_requests()[0]  # type: ignore[attr-defined]
+    assert sent.headers["accept-encoding"] == "gzip, deflate"

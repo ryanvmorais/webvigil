@@ -174,3 +174,49 @@ def test_the_same_secure_cookie_over_https_is_accepted() -> None:
     jar.absorb(_response("https://demo.test/signin", "sid=one; Path=/; Secure"), handshake=True)
     jar.commit()
     assert jar.pairs_for("https://demo.test/", handshake=False) == [("sid", "one")]
+
+
+# ---------------------------------------------------------------------------
+# What the target can make the jar hold (security audit 2026-11)
+# ---------------------------------------------------------------------------
+
+
+def test_a_held_name_keeps_a_bounded_number_of_path_variants() -> None:
+    """Rotations under many paths do not grow the live jar past the per-name limit."""
+    jar = SessionJar("demo.test")
+    _committed(jar, _URL, "sid=one; Path=/")
+    for i in range(200):
+        jar.absorb(_response(_URL, f"sid=v{i}; Path=/p{i}"), handshake=False)
+    assert sum(1 for _ in jar._live.jar) <= 4
+
+
+def test_a_handshake_keeps_a_bounded_number_of_cookies() -> None:
+    """A login response that sets hundreds of cookies leaves at most the jar limit pending."""
+    jar = SessionJar("demo.test")
+    jar.begin()
+    jar.absorb(_response(_URL, *(f"c{i}=x{i}; Path=/" for i in range(300))), handshake=True)
+    jar.commit()
+    assert len(jar.names) <= 64
+
+
+def test_endless_rotation_gives_the_session_up() -> None:
+    """Past the scrub limit the jar stops sending the session, so no unscrubbed value leaves."""
+    jar = SessionJar("demo.test")
+    _committed(jar, _URL, "sid=first; Path=/")
+    for i in range(1_100):
+        jar.absorb(_response(_URL, f"sid=value{i}; Path=/"), handshake=False)
+    assert jar.overflowed
+    assert jar.pairs_for(_URL, handshake=False) == []
+    assert len(jar.values) <= 1_026
+    _committed(jar, _URL, "sid=again; Path=/")  # a re-login does not bring it back
+    assert jar.pairs_for(_URL, handshake=False) == []
+
+
+def test_ordinary_rotation_keeps_the_session() -> None:
+    """A few rotations are the normal case: the newest value is sent, nothing is given up."""
+    jar = SessionJar("demo.test")
+    _committed(jar, _URL, "sid=one; Path=/")
+    for i in range(10):
+        jar.absorb(_response(_URL, f"sid=r{i}; Path=/"), handshake=False)
+    assert not jar.overflowed
+    assert jar.pairs_for(_URL, handshake=False) == [("sid", "r9")]

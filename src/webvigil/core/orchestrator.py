@@ -212,6 +212,12 @@ class Orchestrator:
                 warnings.append(line)
             if line := truncated_warning(http.stats, self._config.http.max_body_bytes):
                 warnings.append(line)
+            if http.stats.deadline_reached:
+                warnings.append(
+                    f"the scan reached [scan] max_duration_s "
+                    f"({self._config.scan.max_duration_s:g} s) and sent no request after it: "
+                    "the report covers what was found until then"
+                )
             technologies = context.observations.technologies
             if session is not None:
                 warnings.extend(session.warnings())

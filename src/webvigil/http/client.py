@@ -25,8 +25,9 @@ from urllib.parse import urljoin, urlsplit
 import httpx
 
 from webvigil.core.config import ScanConfig
-from webvigil.core.errors import RequestFailed
+from webvigil.core.errors import RequestFailed, ScanDeadlineExceeded
 from webvigil.core.target import Target
+from webvigil.http.decoding import ACCEPT_ENCODING, BodyDecoder
 from webvigil.http.policy import RateLimiter
 from webvigil.http.scope_guard import ScopeGuard
 from webvigil.http.session import Session
@@ -48,6 +49,11 @@ _QUIET: contextvars.ContextVar[bool] = contextvars.ContextVar("webvigil_quiet", 
 # spec 020: inside ``HttpClient.anonymous()`` a request carries only the headers its caller
 # passes - no static ``[auth]`` cookie or header, no session jar.
 _ANON: contextvars.ContextVar[bool] = contextvars.ContextVar("webvigil_anon", default=False)
+
+
+class _TotalTimeout(httpx.ReadTimeout):
+    """A request that used up ``[http] total_timeout_s``: failed for good, never retried."""
+
 
 _Params = dict[str, str] | list[tuple[str, str]]
 # Multipart parts: field name -> (filename, content, content type) (spec 014 upload), or a
@@ -81,6 +87,7 @@ class HttpStats:
             transport error or a timeout, so no response came back.
         truncated (int): Responses whose body was larger than ``max_body_bytes`` and was
             read only up to it.
+        deadline_reached (bool): Whether the scan reached ``[scan] max_duration_s``.
     """
 
     requests: int = 0
@@ -89,6 +96,7 @@ class HttpStats:
     crafted_requests: int = 0
     failed: int = 0
     truncated: int = 0
+    deadline_reached: bool = False
 
 
 # A target that went down mid-scan fails every request that follows. These two floors tell that
@@ -248,6 +256,8 @@ class HttpClient:
         self.stats = HttpStats()
         self._max_body = config.http.max_body_bytes
         self._total_timeout = config.http.total_timeout_s
+        self._max_duration = config.scan.max_duration_s
+        self._deadline: float | None = None  # loop time; set when the client opens
         self._transport = transport  # test seam: an httpx ASGITransport / MockTransport
         self._client: httpx.AsyncClient | None = None
         self._session: Session | None = None  # spec 019: set by use_session()
@@ -264,10 +274,39 @@ class HttpClient:
             follow_redirects=False,
             verify=self._config.http.verify_tls,
             timeout=self._config.http.timeout_s,
-            headers={"user-agent": self._config.http.user_agent},
+            # only the codings BodyDecoder decodes within the body limit
+            headers={
+                "user-agent": self._config.http.user_agent,
+                "accept-encoding": ACCEPT_ENCODING,
+            },
             transport=self._transport,  # type: ignore[arg-type]
         )
+        if self._max_duration > 0:
+            self._deadline = asyncio.get_running_loop().time() + self._max_duration
         return self
+
+    def _remaining(self) -> float | None:
+        """
+        Returns:
+            float | None: Seconds left before ``[scan] max_duration_s``, or ``None`` with no
+                limit.
+        """
+        if self._deadline is None:
+            return None
+        return self._deadline - asyncio.get_running_loop().time()
+
+    def _check_deadline(self, url: str) -> None:
+        """
+        Args:
+            url (str): The request about to be sent.
+
+        Raises:
+            ScanDeadlineExceeded: When the scan is past ``[scan] max_duration_s``.
+        """
+        remaining = self._remaining()
+        if remaining is not None and remaining <= 0:
+            self.stats.deadline_reached = True
+            raise ScanDeadlineExceeded(url, "the scan reached [scan] max_duration_s")
 
     async def __aexit__(
         self,
@@ -597,20 +636,19 @@ class HttpClient:
             httpx.Response: The same response with its (possibly cut) body loaded, as
                 ``Response.aread`` would leave it.
         """
-        body = bytearray()
-        cut = False
+        decoder = BodyDecoder(
+            streamed.headers.get_list("content-encoding", split_commas=True), self._max_body
+        )
         try:
-            async for chunk in streamed.aiter_bytes():
-                room = self._max_body - len(body)
-                if len(chunk) > room:
-                    body += chunk[:room]
-                    cut = True
+            async for chunk in streamed.aiter_raw():
+                if decoder.feed(chunk):
                     break
-                body += chunk
+            else:
+                decoder.finish()
         finally:
             await streamed.aclose()
-        streamed._content = bytes(body)  # what Response.aread() does, with the cap
-        if cut:
+        streamed._content = decoder.body  # what Response.aread() does, with the cap
+        if decoder.cut:
             streamed.extensions[_TRUNCATED_EXTENSION] = True
             self.stats.truncated += 1
         return streamed
@@ -690,8 +728,10 @@ class HttpClient:
                 await asyncio.sleep(
                     BACKOFF_BASE_S * (2**attempt) + random.uniform(0, BACKOFF_JITTER_S)
                 )
+            self._check_deadline(url)
             try:
                 async with self.limiter.slot(_host_of(url)):
+                    self._check_deadline(url)  # the wait for a slot may have used it up
                     self.stats.requests += 1
                     if crafted or not idempotent:
                         self.stats.crafted_requests += 1
@@ -710,18 +750,34 @@ class HttpClient:
                     # few seconds never trips it: this is the deadline for the whole exchange,
                     # sending to last byte (issue #140). It starts after the slot is held, so
                     # waiting for a free slot is not counted against the server.
+                    # The scan deadline, when nearer, bounds the exchange too.
+                    limit = self._total_timeout
+                    remaining = self._remaining()
+                    by_deadline = remaining is not None and remaining < limit
+                    if remaining is not None and by_deadline:
+                        limit = remaining
                     try:
-                        async with asyncio.timeout(self._total_timeout):
+                        async with asyncio.timeout(limit):
                             response = await self._read_capped(
                                 await self._active_client.send(request, stream=True)
                             )
                     except TimeoutError as exc:
-                        raise httpx.ReadTimeout(
+                        if by_deadline:
+                            self.stats.deadline_reached = True
+                            raise ScanDeadlineExceeded(
+                                url, "the scan reached [scan] max_duration_s"
+                            ) from exc
+                        raise _TotalTimeout(
                             f"no complete response within {self._total_timeout:g} s "
                             "([http] total_timeout_s)"
                         ) from exc
             except (httpx.TransportError, httpx.TimeoutException) as exc:
                 last_error = f"{type(exc).__name__}: {exc}"
+                # A server that used the whole total deadline once would use it again: the
+                # request is not retried, so a slow target costs one deadline per request.
+                if isinstance(exc, _TotalTimeout):
+                    self.stats.failed += 1
+                    raise RequestFailed(url, last_error) from exc
                 # A non-idempotent request is only retried when it never reached the
                 # server (a pre-send connect error) — never on a read timeout.
                 if idempotent or isinstance(exc, httpx.ConnectError):

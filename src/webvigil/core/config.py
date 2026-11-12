@@ -69,6 +69,9 @@ class ScanSection(_Section):
             ``None`` (the default) disables the import.
         har_max_operations (int): Cap on the operations seeded from the HAR;
             the excess is a scan warning. Defaults to 150.
+        max_duration_s (float): The most time a whole scan may take, in seconds. Past it no
+            request is sent any more, every pass ends with what it has, and the report says
+            so. ``0`` means no limit. Defaults to 14400 (4 hours).
     """
 
     mode: ScanMode = ScanMode.PASSIVE
@@ -82,6 +85,7 @@ class ScanSection(_Section):
     openapi_max_operations: int = 150
     har: str | None = None
     har_max_operations: int = Field(default=150, gt=0)
+    max_duration_s: float = Field(default=14_400.0, ge=0)
 
 
 class HttpSection(_Section):
@@ -103,8 +107,8 @@ class HttpSection(_Section):
             last byte of the body, in seconds. ``timeout_s`` limits each connect, read and
             write on its own, so a server that sends a byte every few seconds never trips it
             and can hold a request (and a concurrency slot) open for a very long time; this
-            bounds the total. A request that passes it is handled like a timeout (retried
-            when idempotent, counted in the "no response" warning). Defaults to 60.0.
+            bounds the total. A request that passes it is not retried and is counted in the
+            "no response" warning. Defaults to 60.0.
     """
 
     concurrency: int = 8

@@ -61,6 +61,23 @@ _MAX_DOC_UNITS = 1_000_000
 
 _EXTERNAL_REF_WARNING = "OpenAPI import skipped one or more external $ref pointers"
 
+# Bounds on what one document can make the import build. A local file is read up to the HAR
+# import's size; a ``$ref`` chain, the parameters of one operation, one synthesized value and one
+# filled-in URL are bounded, so a small document cannot expand into a large amount of memory or
+# work.
+MAX_DOCUMENT_BYTES = 64 * 1024 * 1024
+_MAX_REF_HOPS = 32
+_MAX_PARAMS_PER_OPERATION = 100
+_MAX_VALUE_CHARS = 256  # as the HAR import: a longer value becomes the placeholder
+_MAX_URL_CHARS = 8192
+_PARAMS_WARNING = (
+    f"OpenAPI import kept the first {_MAX_PARAMS_PER_OPERATION} parameters of an operation"
+)
+_URL_WARNING = (
+    f"OpenAPI import skipped one or more operations whose URL would exceed {_MAX_URL_CHARS} "
+    "characters"
+)
+
 
 @dataclass(slots=True)
 class _Budget:
@@ -167,22 +184,21 @@ async def load_openapi(
     doc = await _fetch_document(source, http=http, target=target)
     base = _base_url(doc, target, warnings)
 
-    operations: list[ApiOperation] = []
-    doc_budget = _Budget(_MAX_DOC_UNITS)
-    paths = doc.get("paths")
-    if isinstance(paths, dict):
-        for raw_path, raw_item in paths.items():
-            item = _resolve(raw_item, doc, warnings)
-            if not isinstance(item, dict):
-                continue
-            operations.extend(_operations_for(str(raw_path), item, doc, base, warnings, doc_budget))
-
-    operations.sort(key=lambda operation: (operation.url_template, operation.method))
-    if len(operations) > max_operations:
+    # Pick the operations first and build only those: the parameters and bodies of an
+    # operation past the cap are never expanded.
+    candidates = _candidates(doc, base, warnings)
+    candidates.sort(key=lambda candidate: (candidate.template, candidate.method))
+    if len(candidates) > max_operations:
         warnings.append(
-            f"OpenAPI import seeded the first {max_operations} of {len(operations)} operations"
+            f"OpenAPI import seeded the first {max_operations} of {len(candidates)} operations"
         )
-        operations = operations[:max_operations]
+        candidates = candidates[:max_operations]
+    doc_budget = _Budget(_MAX_DOC_UNITS)
+    operations: list[ApiOperation] = []
+    for candidate in candidates:
+        operation = _build(candidate, doc, warnings, doc_budget)
+        if operation is not None:
+            operations.append(operation)
     if not operations:
         warnings.append("OpenAPI document declared no usable GET or POST operations")
     return operations, warnings
@@ -219,10 +235,19 @@ async def _fetch_document(source: str, *, http: HttpClient, target: Target) -> _
         path = Path(source)
         if not path.is_file():
             raise OpenApiError(f"OpenAPI file not found: {source}")
-        text = path.read_text("utf-8")
+        try:
+            if path.stat().st_size > MAX_DOCUMENT_BYTES:
+                raise OpenApiError(
+                    f"{source} is larger than {MAX_DOCUMENT_BYTES // (1024 * 1024)} MiB"
+                )
+            text = path.read_text("utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            raise OpenApiError(f"could not read {source}: {exc}") from exc
 
     try:
         doc = json.loads(text)
+    except RecursionError as exc:
+        raise OpenApiError(f"{source} is nested too deeply") from exc
     except ValueError as exc:
         raise OpenApiError(f"{source} is not valid JSON: {exc}") from exc
     if not isinstance(doc, dict) or not ("openapi" in doc or "swagger" in doc):
@@ -265,60 +290,116 @@ def _base_url(doc: _Doc, target: Target, warnings: list[str]) -> str:
     return f"{target.origin}/{path}".rstrip("/") if path else target.origin
 
 
-def _operations_for(
-    path: str, item: _Doc, root: _Doc, base: str, warnings: list[str], doc_budget: _Budget
-) -> list[ApiOperation]:
+@dataclass(frozen=True, slots=True)
+class _Candidate:
     """
-    Build the acted-on operations declared by one path-item object.
+    One acted-on ``(path, method)`` of the document, before its parameters are expanded.
+
+    Attributes:
+        template (str): The absolute URL template (``base`` joined with the path).
+        method (str): ``"GET"`` or ``"POST"``.
+        shared (list[Any]): The path item's ``parameters`` list.
+        op (_Doc): The operation object.
+    """
+
+    template: str
+    method: str
+    shared: list[Any]
+    op: _Doc
+
+
+def _candidates(doc: _Doc, base: str, warnings: list[str]) -> list[_Candidate]:
+    """
+    List the acted-on operations of the document without expanding any of them.
 
     Args:
-        path (str): The path template, e.g. ``"/users/{id}"``.
-        item (_Doc): The resolved path-item object.
-        root (_Doc): The whole document, for ``$ref`` resolution.
+        doc (_Doc): The parsed document.
         base (str): The base URL from :func:`_base_url`.
+        warnings (list[str]): Scan-level warning list, appended to in place.
+
+    Returns:
+        list[_Candidate]: One per acted-on ``(path, method)``, in document order; a login /
+            destructive operation is left out.
+    """
+    out: list[_Candidate] = []
+    paths = doc.get("paths")
+    if not isinstance(paths, dict):
+        return out
+    for raw_path, raw_item in paths.items():
+        item = _resolve(raw_item, doc, warnings)
+        if not isinstance(item, dict):
+            continue
+        path = str(raw_path)
+        shared = item.get("parameters", [])
+        shared_list = shared if isinstance(shared, list) else []
+        for method in _ACTED_ON_METHODS:
+            op = item.get(method)
+            if not isinstance(op, dict):
+                continue
+            if _SKIP_OPERATION_RE.search(f"{path} {_operation_id(op)}"):
+                continue
+            template = f"{base}/{path.lstrip('/')}"
+            out.append(_Candidate(template, method.upper(), shared_list, op))
+    return out
+
+
+def _operation_id(op: _Doc) -> str:
+    """
+    Args:
+        op (_Doc): An operation object.
+
+    Returns:
+        str: Its ``operationId`` when that is a string, else ``""``.
+    """
+    operation_id = op.get("operationId")
+    return operation_id if isinstance(operation_id, str) else ""
+
+
+def _build(
+    candidate: _Candidate, root: _Doc, warnings: list[str], doc_budget: _Budget
+) -> ApiOperation | None:
+    """
+    Expand one chosen operation: its parameters, its body and its filled-in URL.
+
+    Args:
+        candidate (_Candidate): The operation to build.
+        root (_Doc): The whole document, for ``$ref`` resolution.
         warnings (list[str]): Scan-level warning list, appended to in place.
         doc_budget (_Budget): The size allowance the whole document's bodies share.
 
     Returns:
-        list[ApiOperation]: Zero or more operations; a login / destructive
-            operation is dropped.
+        ApiOperation | None: The operation, or ``None`` when its URL would be too long.
     """
-    shared = item.get("parameters", [])
-    shared_list = shared if isinstance(shared, list) else []
-    operations: list[ApiOperation] = []
-    for method in _ACTED_ON_METHODS:
-        op = item.get(method)
-        if not isinstance(op, dict):
-            continue
-        operation_id = str(op.get("operationId") or "")
-        if _SKIP_OPERATION_RE.search(f"{path} {operation_id}"):
-            continue
-
-        own = op.get("parameters", [])
-        raw_params = shared_list + (own if isinstance(own, list) else [])
-        params: list[_Doc] = []
-        for raw_param in raw_params:
-            resolved = _resolve(raw_param, root, warnings)
-            if isinstance(resolved, dict):
-                params.append(resolved)
-        query = _param_values(params, "query")
-        path_params = _param_values(params, "path")
-        body_fields, body_json = _body(op, params, root, warnings, doc_budget)
-
-        template = f"{base}/{path.lstrip('/')}"
-        operations.append(
-            ApiOperation(
-                method=method.upper(),
-                url=_fill_path(template, path_params),
-                url_template=template,
-                query=query,
-                path_params=path_params,
-                body_fields=body_fields,
-                body_json=body_json,
-                operation_id=operation_id,
-            )
-        )
-    return operations
+    op = candidate.op
+    own = op.get("parameters", [])
+    raw_params = candidate.shared + (own if isinstance(own, list) else [])
+    if len(raw_params) > _MAX_PARAMS_PER_OPERATION:
+        raw_params = raw_params[:_MAX_PARAMS_PER_OPERATION]
+        if _PARAMS_WARNING not in warnings:
+            warnings.append(_PARAMS_WARNING)
+    params: list[_Doc] = []
+    for raw_param in raw_params:
+        resolved = _resolve(raw_param, root, warnings)
+        if isinstance(resolved, dict):
+            params.append(resolved)
+    query = _param_values(params, "query")
+    path_params = _param_values(params, "path")
+    url = _fill_path(candidate.template, path_params)
+    if url is None:
+        if _URL_WARNING not in warnings:
+            warnings.append(_URL_WARNING)
+        return None
+    body_fields, body_json = _body(op, params, root, warnings, doc_budget)
+    return ApiOperation(
+        method=candidate.method,
+        url=url,
+        url_template=candidate.template,
+        query=query,
+        path_params=path_params,
+        body_fields=body_fields,
+        body_json=body_json,
+        operation_id=_operation_id(op),
+    )
 
 
 def _param_values(params: list[_Doc], location: str) -> tuple[tuple[str, str], ...]:
@@ -420,7 +501,7 @@ def _form_fields(schema: Any, root: _Doc, warnings: list[str]) -> tuple[tuple[st
     )
 
 
-def _synth_value(node: _Doc) -> str:
+def _synth_value(node: Any) -> str:
     """
     Pick a deterministic string value for a parameter or a scalar schema.
 
@@ -428,11 +509,13 @@ def _synth_value(node: _Doc) -> str:
     then the first ``enum`` entry, then a type-based placeholder (RF-07).
 
     Args:
-        node (_Doc): A parameter object or a schema object.
+        node (Any): A parameter object or a schema object; anything else gets the placeholder.
 
     Returns:
         str: The synthesized value.
     """
+    if not isinstance(node, dict):
+        return "wv"
     for key in ("example", "default"):
         if key in node:
             return _stringify(node[key])
@@ -500,7 +583,10 @@ def _synth_object(
         return out
     if schema.get("type") == "array":
         return [_synth_object(schema.get("items", {}), root, warnings, budget, _depth + 1)]
-    return _scalar(schema)
+    value = _scalar(schema)
+    if isinstance(value, str) and not budget.take(len(value)):
+        return "wv"
+    return value
 
 
 def _scalar(schema: _Doc) -> Any:
@@ -513,10 +599,10 @@ def _scalar(schema: _Doc) -> Any:
             else a typed placeholder (``1``, ``True``, or ``"wv"``).
     """
     for key in ("example", "default"):
-        if key in schema:
+        if key in schema and _plain(schema[key]):
             return schema[key]
     enum = schema.get("enum")
-    if isinstance(enum, list) and enum:
+    if isinstance(enum, list) and enum and _plain(enum[0]):
         return enum[0]
     kind = schema.get("type")
     if kind in ("integer", "number"):
@@ -524,6 +610,20 @@ def _scalar(schema: _Doc) -> Any:
     if kind == "boolean":
         return True
     return "wv"
+
+
+def _plain(value: Any) -> bool:
+    """
+    Args:
+        value (Any): An ``example`` / ``default`` / ``enum`` value from the document.
+
+    Returns:
+        bool: ``True`` for a scalar a body may carry as is: not a container, and not a string
+            over ``_MAX_VALUE_CHARS`` characters.
+    """
+    if isinstance(value, (list, dict)):
+        return False
+    return not (isinstance(value, str) and len(value) > _MAX_VALUE_CHARS)
 
 
 def _stringify(value: Any) -> str:
@@ -539,7 +639,8 @@ def _stringify(value: Any) -> str:
         return "true" if value else "false"
     if value is None or isinstance(value, (list, dict)):
         return "wv"
-    return str(value)
+    text = str(value)
+    return "wv" if len(text) > _MAX_VALUE_CHARS else text
 
 
 def _resolve(
@@ -559,7 +660,11 @@ def _resolve(
         Any: The dereferenced node, or ``{}`` for an external ``$ref`` or a
             cycle.
     """
+    hops = 0
     while isinstance(node, dict) and "$ref" in node:
+        hops += 1
+        if hops > _MAX_REF_HOPS:
+            return {}
         ref = node["$ref"]
         if not isinstance(ref, str) or not ref.startswith("#/"):
             if _EXTERNAL_REF_WARNING not in warnings:
@@ -591,18 +696,26 @@ def _deref(ref: str, root: _Doc) -> Any:
     return node
 
 
-def _fill_path(template: str, path_params: tuple[tuple[str, str], ...]) -> str:
+def _fill_path(template: str, path_params: tuple[tuple[str, str], ...]) -> str | None:
     """
     Args:
         template (str): A URL with ``{name}`` path segments.
         path_params (tuple[tuple[str, str], ...]): ``(name, value)`` pairs.
 
     Returns:
-        str: ``template`` with each ``{name}`` replaced by its URL-encoded value.
+        str | None: ``template`` with each ``{name}`` replaced by its URL-encoded value, or
+            ``None`` when the result would pass ``_MAX_URL_CHARS``.
     """
     url = template
+    if len(url) > _MAX_URL_CHARS:
+        return None
     for name, value in path_params:
-        url = url.replace("{" + name + "}", quote(value, safe=""))
+        placeholder = "{" + name + "}"
+        encoded = quote(value, safe="")
+        grown = len(url) + url.count(placeholder) * (len(encoded) - len(placeholder))
+        if grown > _MAX_URL_CHARS:
+            return None
+        url = url.replace(placeholder, encoded)
     return url
 
 

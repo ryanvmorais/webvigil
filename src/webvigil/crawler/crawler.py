@@ -20,7 +20,10 @@ records it creates stay on the target.
 
 from __future__ import annotations
 
+import asyncio
+import dataclasses
 import secrets
+import sys
 from collections import deque
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
@@ -58,6 +61,13 @@ _MIN_SEEN = 10_000
 _SEEN_PER_PAGE = 20
 _MIN_LINKS_PER_PAGE = 20_000
 _MAX_FORMS = 2_000
+# The text of the pages the crawl keeps lives for the whole scan. Each body is bounded by
+# ``[http] max_body_bytes``, but not their sum, so the pages share an allowance of memory
+# (``sys.getsizeof`` of the text, which counts the 1, 2 or 4 bytes a character takes). Once it
+# is spent, a page keeps the first ``_HEAD_CHARS`` characters, the window the body signatures
+# read anyway.
+_MAX_RETAINED_TEXT_BYTES = 256 * 1024 * 1024
+_HEAD_CHARS = 256 * 1024
 
 _FormKey = tuple[str, str, tuple[str, ...]]
 _OpKey = tuple[str, str, str]
@@ -149,6 +159,7 @@ class Crawler:
         self._seen_cap = max(_MIN_SEEN, _SEEN_PER_PAGE * pages_cap)
         self._links_per_page = max(_MIN_LINKS_PER_PAGE, pages_cap)
         self._limits_hit: set[str] = set()
+        self._retained_text = 0
         # spec 018: the POST phase runs only when asked for AND the scan is Active.
         self._post_enabled = config.scan.submit_post_forms and config.scan.mode is ScanMode.ACTIVE
         self._post_cap = config.scan.max_post_submissions
@@ -264,6 +275,7 @@ class Crawler:
             url = queue.popleft()
             if self._config.scan.follow_robots and not robots.can_fetch(self._user_agent, url):
                 self._skipped_by_robots += 1
+                await asyncio.sleep(0)  # the rule check is CPU work: let other tasks run
                 continue
             page = await self._fetch(url)
             pages.append(page)
@@ -417,7 +429,7 @@ class Crawler:
                 )
         except (RequestFailed, OutOfScopeError) as exc:
             return Page.failed(form.action, str(exc), method="POST")
-        return Page.from_response(response, method="POST")
+        return self._keep(Page.from_response(response, method="POST"))
 
     async def _submit_operation(self, op: ApiOperation) -> Page:
         """
@@ -446,7 +458,7 @@ class Crawler:
             )
         except (RequestFailed, OutOfScopeError) as exc:
             return Page.failed(op.url, str(exc), method="POST")
-        return Page.from_response(response, method="POST")
+        return self._keep(Page.from_response(response, method="POST"))
 
     async def recrawl(
         self,
@@ -505,7 +517,25 @@ class Crawler:
             response = await self._http.get(url)
         except (RequestFailed, OutOfScopeError) as exc:
             return Page.failed(url, str(exc))
-        return Page.from_response(response)
+        return self._keep(Page.from_response(response))
+
+    def _keep(self, page: Page) -> Page:
+        """
+        Charge ``page``'s text to the crawl's memory allowance, cutting it once that is spent.
+
+        Args:
+            page (Page): A page just built from a response.
+
+        Returns:
+            Page: The same page, or a copy with only the first ``_HEAD_CHARS`` characters.
+        """
+        size = sys.getsizeof(page.text)
+        if self._retained_text + size > _MAX_RETAINED_TEXT_BYTES and len(page.text) > _HEAD_CHARS:
+            page = dataclasses.replace(page, text=page.text[:_HEAD_CHARS])
+            size = sys.getsizeof(page.text)
+            self._limits_hit.add("page text")
+        self._retained_text += size
+        return page
 
     async def _enqueue_sitemaps(
         self, robots: robots_mod.Robots, seen: set[str], queue: deque[str]

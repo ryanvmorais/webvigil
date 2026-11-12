@@ -72,6 +72,13 @@ def scan(
     ] = None,
     output: Annotated[Path | None, typer.Option("--output", help="Write the report here.")] = None,
     max_pages: Annotated[int | None, typer.Option(help="Crawler page-count limit.")] = None,
+    max_duration: Annotated[
+        float | None,
+        typer.Option(
+            help="Most seconds the whole scan may take (default 14400, 4 hours; 0: no limit).",
+            show_default=False,
+        ),
+    ] = None,
     delay: Annotated[int | None, typer.Option(help="Delay between requests (ms).")] = None,
     authorized_by: Annotated[
         str | None, typer.Option(help="Authorization attestation, required for --mode active.")
@@ -273,6 +280,7 @@ def scan(
             mode=mode,
             scope=scope,
             max_pages=max_pages,
+            max_duration=max_duration,
             delay=delay,
             fail_on=fail_on,
             verify_tls=verify_tls,
@@ -380,6 +388,7 @@ def _build_config(  # noqa: D417 - the CLI overrides are documented as one group
     mode: ScanMode | None,
     scope: Scope | None,
     max_pages: int | None,
+    max_duration: float | None,
     delay: int | None,
     fail_on: str | None,
     verify_tls: bool,
@@ -413,7 +422,7 @@ def _build_config(  # noqa: D417 - the CLI overrides are documented as one group
 
     Args:
         config (Path | None): Path to a ``webvigil.toml``, or ``None``.
-        mode, scope, max_pages, delay, fail_on, authorized_by, probe,
+        mode, scope, max_pages, max_duration, delay, fail_on, authorized_by, probe,
             time_based_sqli, time_based_cmdi, stored_xss, xxe, file_upload,
             confirm_csrf, submit_post_forms, cookie, header, login_url, username,
             password_env, logout_url, sample_sessions, test_logout, openapi, har, osv_online: The
@@ -437,6 +446,8 @@ def _build_config(  # noqa: D417 - the CLI overrides are documented as one group
         scan_overrides["scope"] = scope
     if max_pages is not None:
         scan_overrides["max_pages"] = max_pages
+    if max_duration is not None:
+        scan_overrides["max_duration_s"] = max_duration
     if openapi is not None:
         scan_overrides["openapi"] = openapi
     if har is not None:

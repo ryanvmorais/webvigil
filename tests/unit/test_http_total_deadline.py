@@ -17,7 +17,7 @@ import httpx
 import pytest
 
 from webvigil.core.config import ScanConfig
-from webvigil.core.errors import RequestFailed
+from webvigil.core.errors import RequestFailed, ScanDeadlineExceeded
 from webvigil.core.target import Target
 from webvigil.http import client as client_mod
 from webvigil.http.client import HttpClient
@@ -72,8 +72,9 @@ async def test_a_dripping_body_is_cut_off_by_the_total_deadline(httpx_mock: obje
     async with _client() as http:
         with pytest.raises(RequestFailed, match="total_timeout_s"):
             await http.get(_URL)
-    # An idempotent request is retried like any timeout (three attempts), then reported.
-    assert (http.stats.requests, http.stats.retries, http.stats.failed) == (3, 2, 1)
+    # Not retried, even though GET is idempotent: a server that used the whole deadline once
+    # would use it again (security audit 2026-11), so a slow target costs one deadline.
+    assert (http.stats.requests, http.stats.retries, http.stats.failed) == (1, 0, 1)
     # Each attempt stopped pulling at the deadline instead of draining the stream.
     assert all(stream.pulled < 10 for stream in streams)
 
@@ -122,3 +123,69 @@ def test_the_deadline_has_a_default_and_must_be_positive() -> None:
     assert ScanConfig().http.total_timeout_s == 60.0
     with pytest.raises(ValueError):
         ScanConfig.model_validate({"http": {"total_timeout_s": 0}})
+
+
+# --- the whole-scan deadline, [scan] max_duration_s (security audit 2026-11) ----------------
+
+
+def _scan_client(max_duration: float, total: float = 30.0) -> HttpClient:
+    """
+    Args:
+        max_duration (float): The ``[scan] max_duration_s`` value.
+        total (float): The ``[http] total_timeout_s`` value. Defaults to 30.
+
+    Returns:
+        HttpClient: A client for ``https://example.com`` with those limits.
+    """
+    config = ScanConfig.model_validate(
+        {"scan": {"max_duration_s": max_duration}, "http": {"total_timeout_s": total}}
+    )
+    return HttpClient(Target.parse("https://example.com"), config)
+
+
+async def test_the_scan_deadline_cuts_a_request_in_flight(httpx_mock: object) -> None:
+    """A slow body that would fit the per-request deadline still stops at the scan deadline."""
+    httpx_mock.add_callback(  # type: ignore[attr-defined]
+        lambda request: httpx.Response(200, stream=_Drip(count=1000)), is_reusable=True
+    )
+    async with _scan_client(max_duration=0.3) as http:
+        with pytest.raises(ScanDeadlineExceeded):
+            await http.get(_URL)
+    assert http.stats.deadline_reached
+    assert http.stats.requests == 1 and http.stats.retries == 0
+    assert http.stats.failed == 0  # not a "no response" from the target
+
+
+async def test_no_request_is_sent_after_the_scan_deadline(httpx_mock: object) -> None:
+    """Once the deadline passed, a request fails at once without reaching the network."""
+    async with _scan_client(max_duration=0.05) as http:
+        await asyncio.sleep(0.1)
+        with pytest.raises(ScanDeadlineExceeded):
+            await http.get(_URL)
+    assert http.stats.requests == 0
+    assert httpx_mock.get_requests() == []  # type: ignore[attr-defined]
+
+
+async def test_a_scan_within_its_deadline_is_untouched(httpx_mock: object) -> None:
+    """The ordinary case: requests go out and nothing is flagged."""
+    httpx_mock.add_response(content=b"ok")  # type: ignore[attr-defined]
+    async with _scan_client(max_duration=60) as http:
+        response = await http.get(_URL)
+    assert response.content == b"ok"
+    assert not http.stats.deadline_reached
+
+
+def test_the_scan_deadline_defaults_to_four_hours_and_zero_disables_it() -> None:
+    """``max_duration_s`` is 14400 by default, 0 turns it off, and a negative value is refused."""
+    assert ScanConfig().scan.max_duration_s == 14_400
+    assert ScanConfig.model_validate({"scan": {"max_duration_s": 0}}).scan.max_duration_s == 0
+    with pytest.raises(ValueError):
+        ScanConfig.model_validate({"scan": {"max_duration_s": -1}})
+
+
+async def test_no_limit_means_no_deadline(httpx_mock: object) -> None:
+    """With ``max_duration_s = 0`` the client never computes a deadline."""
+    httpx_mock.add_response(content=b"ok")  # type: ignore[attr-defined]
+    async with _scan_client(max_duration=0) as http:
+        await http.get(_URL)
+        assert http._remaining() is None

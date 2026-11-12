@@ -11,6 +11,21 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 ## [Unreleased]
 
+### Added
+
+- `[scan] max_duration_s` (`--max-duration` on the CLI): the most a whole scan may take, 4 hours by
+  default (`0` for no limit). Past it no request is sent, every pass ends with what it has, and the
+  report carries a warning that names the setting. The Web API's scans use the default.
+
+### Changed
+
+- A request that uses up `[http] total_timeout_s` is no longer retried, so a slow target costs one
+  deadline per request instead of three.
+- The scanner decodes response bodies itself and asks only for `gzip` and `deflate`
+  (`Accept-Encoding: gzip, deflate`). A body in another coding (`br`, `zstd`) is kept as it came,
+  whatever else is installed next to WebVigil, and a response that lists more than three codings is
+  not decoded.
+
 ### Fixed
 
 - The Web API's scan runner keeps going after an unexpected error (a database failure while
@@ -42,6 +57,13 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
   the queue holds at most 100 scans (`429` beyond that).
 - A scan that crashes records `internal error` instead of the exception text, which stays in the
   server log.
+- What a scanned site sends is bounded in memory and time beyond one response
+  (GHSA-2qw3-xm7x-r7cg): `[http] max_body_bytes` holds at every decoding stage of a compressed body,
+  `robots.txt` is read up to 500 KiB (RFC 9309), the text the scan keeps of its pages shares a
+  256 MiB allowance (a page past it keeps its first 256 KiB), the automated login's cookie jar is
+  bounded (past 1 024 distinct values the session is given up, with a warning), and the OpenAPI
+  import builds only the operations it keeps, bounds a local document to 64 MiB and reports a
+  malformed one as an import error.
 
 ## [1.2.1] - 2026-11-12
 

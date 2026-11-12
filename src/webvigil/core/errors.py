@@ -59,6 +59,10 @@ class RequestFailed(WebVigilError):
         self.reason = reason
 
 
+class ScanDeadlineExceeded(RequestFailed):
+    """The scan reached ``[scan] max_duration_s``: the request was not sent."""
+
+
 class ActiveModeNotAuthorized(WebVigilError):
     """Active Mode was requested without an ``authorized_by`` attestation."""
 

@@ -13,6 +13,11 @@ from urllib.robotparser import RobotFileParser
 from webvigil.core.errors import OutOfScopeError, RequestFailed
 from webvigil.http.client import HttpClient
 
+# RFC 9309, 2.5: a crawler must parse at least the first 500 KiB of robots.txt, and may stop
+# there. A longer file is cut at its last whole line; every queued URL is checked against the
+# rules, so their number bounds the crawl's cost.
+MAX_ROBOTS_BYTES = 500 * 1024
+
 
 @dataclass(frozen=True, slots=True)
 class Robots:
@@ -70,7 +75,11 @@ async def load(http: HttpClient, origin: str, user_agent: str) -> Robots:
     if response.status_code != 200 or not response.text.strip():
         return Robots.allow_all()
 
+    text = response.text
+    if len(response.content) > MAX_ROBOTS_BYTES:
+        head = response.content[:MAX_ROBOTS_BYTES].rpartition(b"\n")[0]
+        text = head.decode("utf-8", "replace")  # RFC 9309, 2.3: the file is UTF-8
     parser = RobotFileParser()
-    parser.parse(response.text.splitlines())
+    parser.parse(text.splitlines())
     sitemaps = parser.site_maps() or []
     return Robots(_rules=parser, sitemaps=tuple(sitemaps))

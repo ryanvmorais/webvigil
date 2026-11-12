@@ -42,6 +42,11 @@ form-urlencoded body, and reads the answer as a page. It writes to the target; s
 
 ## Limits
 
+- **Bounded.** A local document is read up to 64 MiB. Only the operations kept under
+  `openapi_max_operations` are built; an operation keeps its first 100 parameters, an
+  `example` / `default` / `enum` value over 256 characters (or a list or object) becomes the
+  type placeholder, an operation whose filled-in URL would pass 8 192 characters is skipped,
+  and a `$ref` chain longer than 32 hops resolves to nothing. Each case is a scan warning.
 - **JSON only.** `--openapi` reads a `.json` file or a URL returning JSON. A YAML document
   must be converted first (any tool). Adding YAML support would mean a new runtime
   dependency, which WebVigil has avoided since `v0.4`.

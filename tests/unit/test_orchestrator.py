@@ -10,6 +10,7 @@ tiny local stand-ins that emit canned findings or raise.
 
 from __future__ import annotations
 
+import asyncio
 from typing import ClassVar
 
 import httpx
@@ -26,7 +27,7 @@ from webvigil.checks.session.scanner import SessionHit
 from webvigil.core import orchestrator as orch_mod
 from webvigil.core.config import ScanConfig
 from webvigil.core.context import Page, ScanContext
-from webvigil.core.errors import ActiveModeNotAuthorized, LoginFailedError
+from webvigil.core.errors import ActiveModeNotAuthorized, LoginFailedError, ScanDeadlineExceeded
 from webvigil.core.findings import Category, Confidence, Location, ScanMode, Severity
 from webvigil.core.orchestrator import Orchestrator
 from webvigil.core.result import LoginSummary
@@ -548,3 +549,23 @@ async def test_the_logout_test_warns_when_its_preconditions_are_missing(
         _TARGET
     )
     assert any("logout test requires" in w for w in result.warnings) is warned
+
+
+class _LateRequest(_Base):
+    """A check that asks for a page once the scan deadline has passed (security audit 2026-11)."""
+
+    id = "test.late-request"
+
+    async def run(self, ctx: ScanContext) -> list[object]:
+        await asyncio.sleep(0.1)
+        with pytest.raises(ScanDeadlineExceeded):
+            await ctx.http.get(_TARGET)
+        return []
+
+
+async def test_a_scan_past_its_deadline_reports_what_it_has_and_says_so() -> None:
+    """The scan finishes with a result and a warning naming the setting."""
+    config = ScanConfig.model_validate({"scan": {"max_duration_s": 0.05}})
+    result = await Orchestrator(config, check_types=[_LateRequest]).run(_TARGET)
+    assert not result.errors
+    assert any("max_duration_s" in line for line in result.warnings)

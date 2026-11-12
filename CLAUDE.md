@@ -75,9 +75,10 @@ Camadas, de cima para baixo:
 2. **Scan Engine** (`webvigil.core`) — biblioteca pura, sem dependência de UI nem de banco:
    `Orchestrator`, `Target`/escopo/política, HTTP layer (`webvigil.http`), crawler leve
    (`webvigil.crawler`), registry de checks, modelo de `Finding`/`Severity`. O cliente lê no
-   máximo `[http] max_body_bytes` de cada resposta (10 MiB, depois de descomprimir) e o scan avisa
-   quantas foram cortadas; cada requisição tem um prazo total, `[http] total_timeout_s` (60 s, do
-   envio ao último byte), tratado como timeout. O alvo é um host com ponto, de um rótulo só
+   máximo `[http] max_body_bytes` de cada resposta (10 MiB, depois de descomprimir, em cada etapa:
+   o engine decodifica `gzip`/`deflate` sozinho em `http/decoding.py`) e o scan avisa quantas foram
+   cortadas; cada requisição tem um prazo total, `[http] total_timeout_s` (60 s, do envio ao último
+   byte, sem repetição), e o scan inteiro tem `[scan] max_duration_s` (4 h, `--max-duration`). O alvo é um host com ponto, de um rótulo só
    (`http://app:8000/`, nome de serviço do Compose ou de cluster) ou um literal IPv4/IPv6
    (`core/target.py::is_valid_host`); num host sem domínio registrável o `--scope subdomains` age como
    `host`, e os payloads que põem o host em userinfo (`payloads.fill_host`) não saem para um alvo IPv6.

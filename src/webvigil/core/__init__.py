@@ -20,6 +20,7 @@ from webvigil.core.errors import (
     LoginFailedError,
     OutOfScopeError,
     RequestFailed,
+    ScanDeadlineExceeded,
     WebVigilError,
 )
 from webvigil.core.findings import (
@@ -59,6 +60,7 @@ __all__ = [
     "RequestFailed",
     "ScanConfig",
     "ScanContext",
+    "ScanDeadlineExceeded",
     "ScanMetadata",
     "ScanMode",
     "ScanResult",

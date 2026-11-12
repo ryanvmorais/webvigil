@@ -230,3 +230,64 @@ async def test_an_ordinary_site_reaches_no_limit(httpx_mock: object) -> None:
     assert f"{_SEED}a" in urls
     assert any(u.startswith(f"{_SEED}p/") for u in urls)
     assert len(crawler.forms) == 1
+
+
+async def test_only_the_first_500_kib_of_robots_txt_is_parsed(httpx_mock: object) -> None:
+    """RFC 9309's minimum is also the maximum: rules past 500 KiB are not read (audit 2026-11)."""
+    from webvigil.crawler import robots
+
+    filler = "".join(f"Disallow: /filler/{i}/\n" for i in range(40_000))  # about 1 MiB
+    body = f"User-agent: *\nDisallow: /early/\n{filler}Disallow: /late/\n"
+    assert len(body.encode()) > robots.MAX_ROBOTS_BYTES + 400_000
+    router = _Router({f"{_SEED}robots.txt": (200, body, "text/plain")})
+    httpx_mock.add_callback(router, is_reusable=True)  # type: ignore[attr-defined]
+    async with HttpClient(_TARGET, ScanConfig()) as http:
+        rules = await robots.load(http, _SEED.rstrip("/"), "webvigil")
+    assert not rules.can_fetch("webvigil", f"{_SEED}early/page")
+    assert rules.can_fetch("webvigil", f"{_SEED}late/page")
+
+
+async def test_a_small_robots_txt_is_read_whole(httpx_mock: object) -> None:
+    """The cut changes nothing for an ordinary file."""
+    from webvigil.crawler import robots
+
+    body = "User-agent: *\nDisallow: /private/\nSitemap: https://example.com/sitemap.xml\n"
+    router = _Router({f"{_SEED}robots.txt": (200, body, "text/plain")})
+    httpx_mock.add_callback(router, is_reusable=True)  # type: ignore[attr-defined]
+    async with HttpClient(_TARGET, ScanConfig()) as http:
+        rules = await robots.load(http, _SEED.rstrip("/"), "webvigil")
+    assert not rules.can_fetch("webvigil", f"{_SEED}private/x")
+    assert rules.sitemaps == ("https://example.com/sitemap.xml",)
+
+
+async def test_the_text_kept_for_the_scan_stays_within_its_allowance(
+    httpx_mock: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Once the kept pages use up their allowance, a later page keeps only its head."""
+    from webvigil.crawler import crawler as crawler_mod
+
+    monkeypatch.setattr(crawler_mod, "_MAX_RETAINED_TEXT_BYTES", 2_000_000)
+    big = "<p>" + "a" * 600_000 + "</p>"
+    links = "".join(f'<a href="/p{i}">p</a>' for i in range(8))
+    routes = {f"{_SEED}p{i}": (200, big, "text/html") for i in range(8)}
+    routes[_SEED] = (200, f"<html><body>{links}</body></html>", "text/html")
+    crawler, pages = await _crawl(_Router(routes), httpx_mock)
+    sizes = [len(page.text) for page in pages if page.url != _SEED]
+    assert len(sizes) == 8
+    assert sizes[0] == len(big)
+    assert sizes[-1] == crawler_mod._HEAD_CHARS
+    assert crawler.limit_warning is not None and "page text" in crawler.limit_warning
+
+
+async def test_an_ordinary_crawl_keeps_every_page_whole(httpx_mock: object) -> None:
+    """Pages of ordinary size are never cut."""
+    links = "".join(f'<a href="/p{i}">p</a>' for i in range(5))
+    routes = {f"{_SEED}p{i}": (200, "<p>small</p>" * 1_000, "text/html") for i in range(5)}
+    routes[_SEED] = (200, f"<html><body>{links}</body></html>", "text/html")
+    crawler, pages = await _crawl(_Router(routes), httpx_mock)
+    assert all(
+        len(page.text) in (len("<p>small</p>") * 1_000, len(routes[_SEED][1]))
+        for page in pages
+        if page.ok
+    )
+    assert crawler.limit_warning is None or "page text" not in crawler.limit_warning
