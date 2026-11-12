@@ -52,15 +52,20 @@ revoked without rotating `session_secret`; the short default TTL bounds exposure
 argon2id hashes.
 
 **A credential change ends the other sessions.** Changing the password (or running
-`webvigil-web reset-password`) rejects every token minted before the change; the session that
-changed it gets a fresh cookie and stays signed in.
+`webvigil-web reset-password`) rejects every token minted before the change, down to the
+fraction of a second; the session that changed it gets a fresh cookie and stays signed in. A
+session token must carry its subject, issue time and expiry, or it is refused. `reset-password`
+enforces the same policy as the API: 8 to 256 characters.
 
 **Login attempts are throttled.** After 5 failed attempts a client address, or a username, must
 wait before trying again, whatever the password: 1 second, doubling with each further failure up
 to 5 minutes, answered with `429` and `Retry-After`; a successful login forgets the failures. The
-state is in memory, per process. Behind a reverse proxy every request carries the proxy's address
-(`X-Forwarded-For` is not trusted: the client controls it), so the per-username limit is what
-holds. Someone guessing can delay you by a few minutes, never lock you out. A username that does
+state is in memory, per process. Behind the dashboard's proxy every request carries the proxy's
+address (`X-Forwarded-For` is not trusted: the client controls it), so a request the proxy
+forwarded (it has `X-Forwarded-Host`) counts against the username only, and one stranger's
+failures do not make everyone wait. The password change re-checks the current password under the
+same limit, per user, so a stolen session cannot guess it without limit. Someone guessing can
+delay you by a few minutes, never lock you out. A username that does
 not exist takes the same time as a wrong password (one Argon2 check each) and gets the same
 answer, so the response does not say which usernames are real.
 

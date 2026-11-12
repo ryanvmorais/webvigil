@@ -3,8 +3,8 @@ Login throttling and session revocation through the real app — security audit 
 
 ``TestClient`` has one client address, so a second client with another address is how the
 per-username key is told apart from the per-address one. Tokens are minted by hand with
-``jwt.encode`` and an issue time in the past, because the clock this feature reads has
-one-second resolution and a test cannot wait for it.
+``jwt.encode`` and an issue time in the past, so a test sets the order of the token and the
+credential change without waiting for the clock.
 """
 
 from __future__ import annotations
@@ -38,19 +38,21 @@ def _age_credentials(engine: Engine, hours: int = 1) -> None:
         user.updated_at = utcnow() - timedelta(hours=hours)
 
 
-def _token(config: WebConfig, *, issued_ago: int, user_id: int = 1, with_iat: bool = True) -> str:
+def _token(
+    config: WebConfig, *, issued_ago: float, user_id: int = 1, with_iat: bool = True
+) -> str:
     """
     Args:
         config (WebConfig): Supplies the signing secret.
-        issued_ago (int): How many seconds ago the token was minted.
+        issued_ago (float): How many seconds ago the token was minted.
         user_id (int): The ``sub`` claim. Defaults to 1.
         with_iat (bool): Whether to include the issue time. Defaults to ``True``.
 
     Returns:
         str: A valid, unexpired session token.
     """
-    now = int(time.time())
-    claims: dict[str, object] = {"sub": str(user_id), "exp": now + 3600}
+    now = time.time()
+    claims: dict[str, object] = {"sub": str(user_id), "exp": int(now) + 3600}
     if with_iat:
         claims["iat"] = now - issued_ago
     return jwt.encode(claims, config.session_secret, algorithm="HS256")
@@ -90,9 +92,66 @@ def test_the_username_is_slowed_from_any_address(client: TestClient) -> None:
     assert elsewhere.post("/api/auth/login", json=ADMIN).status_code == 429
 
 
+def test_behind_the_proxy_a_strangers_failures_do_not_slow_the_owner(client: TestClient) -> None:
+    """Every proxied request has the proxy's address, so only the username key counts there."""
+    assert client.post("/api/setup", json=ADMIN).status_code == 201
+    proxied = {"X-Forwarded-Host": "localhost"}
+    stranger = {"username": "someone-else", "password": "a-guess"}
+    for _ in range(6):
+        client.post("/api/auth/login", json=stranger, headers=proxied)
+    assert client.post("/api/auth/login", json=ADMIN, headers=proxied).status_code == 204
+
+
+def test_a_direct_client_is_still_slowed_by_its_address(client: TestClient) -> None:
+    """Without the proxy, failures on any username slow the address that made them."""
+    assert client.post("/api/setup", json=ADMIN).status_code == 201
+    for _ in range(5):
+        client.post("/api/auth/login", json={"username": "someone-else", "password": "a-guess"})
+    assert client.post("/api/auth/login", json=ADMIN).status_code == 429
+
+
+def test_the_password_change_is_throttled_like_a_login(auth_client: TestClient) -> None:
+    """A stolen session is no unlimited oracle for the current password: the sixth check waits."""
+    wrong = {"current_password": "not-the-password", "new_password": "brandnew123"}
+    for _ in range(5):
+        assert auth_client.post("/api/auth/password", json=wrong).status_code == 403
+    right = {"current_password": ADMIN["password"], "new_password": "brandnew123"}
+    blocked = auth_client.post("/api/auth/password", json=right)
+    assert blocked.status_code == 429
+    assert int(blocked.headers["retry-after"]) >= 1
+
+
+def test_a_good_password_change_forgets_the_earlier_failures(auth_client: TestClient) -> None:
+    """Four wrong checks then the right one: changed, and the count starts over."""
+    wrong = {"current_password": "not-the-password", "new_password": "brandnew123"}
+    for _ in range(4):
+        assert auth_client.post("/api/auth/password", json=wrong).status_code == 403
+    right = {"current_password": ADMIN["password"], "new_password": "brandnew123"}
+    assert auth_client.post("/api/auth/password", json=right).status_code == 204
+    wrong["current_password"] = "still-not-it"
+    for _ in range(4):
+        assert auth_client.post("/api/auth/password", json=wrong).status_code == 403
+
+
 # ---------------------------------------------------------------------------
 # Sessions and a credential change
 # ---------------------------------------------------------------------------
+
+
+def test_a_token_from_earlier_in_the_same_second_is_signed_out(
+    auth_client: TestClient, web_engine: Engine, web_config: WebConfig
+) -> None:
+    """The change and the token are compared below the second, so the older token loses."""
+    changed = utcnow().replace(microsecond=800_000) - timedelta(minutes=10)
+    with session_scope(web_engine) as session:
+        user = session.get(User, 1)
+        assert user is not None
+        user.updated_at = changed
+    older = TestClient(auth_client.app)
+    # Half a second before the change, inside the same whole second.
+    issued_ago = time.time() - (changed.timestamp() - 0.5)
+    older.cookies.set(SESSION_COOKIE, _token(web_config, issued_ago=issued_ago))
+    assert older.get("/api/auth/me").status_code == 401
 
 
 def test_changing_the_password_signs_the_other_sessions_out(

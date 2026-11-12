@@ -11,6 +11,7 @@ create / decode with the right and wrong secret and past expiry, and
 from __future__ import annotations
 
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 import jwt
@@ -47,18 +48,35 @@ def test_verify_rejects_a_garbage_hash() -> None:
 
 def test_token_round_trip() -> None:
     """A token decodes back to its user id, stamped with the time it was issued."""
-    before = int(time.time())
+    before = time.time()
     token = create_token(42, _SECRET, ttl_hours=1)
     claims = decode_token(token, _SECRET)
     assert claims is not None
     assert claims.user_id == 42
-    assert before <= claims.issued_at <= int(time.time())
+    assert before <= claims.issued_at <= time.time()
+
+
+def test_the_issue_time_keeps_its_fraction_of_a_second() -> None:
+    """Whole seconds would let a token from earlier in the same second outlive a password change."""
+    moment = datetime.now(UTC).replace(microsecond=654_321)
+    claims = decode_token(create_token(42, _SECRET, ttl_hours=1, issued_at=moment), _SECRET)
+    assert claims is not None
+    assert claims.issued_at == moment.timestamp()
 
 
 def test_token_without_an_issue_time_is_rejected() -> None:
     """A token with no ``iat`` cannot be compared with a password change, so it is refused."""
     token = jwt.encode({"sub": "42", "exp": int(time.time()) + 3600}, _SECRET, algorithm="HS256")
     assert decode_token(token, _SECRET) is None
+
+
+def test_token_without_an_expiry_or_a_subject_is_rejected() -> None:
+    """A token that never expires, or names nobody, is refused rather than defaulted."""
+    now = int(time.time())
+    no_expiry = jwt.encode({"sub": "42", "iat": now}, _SECRET, algorithm="HS256")
+    no_subject = jwt.encode({"iat": now, "exp": now + 3600}, _SECRET, algorithm="HS256")
+    assert decode_token(no_expiry, _SECRET) is None
+    assert decode_token(no_subject, _SECRET) is None
 
 
 def test_token_with_wrong_secret_is_rejected() -> None:
