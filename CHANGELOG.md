@@ -31,6 +31,9 @@ exit codes, the check ids or the JSON report changes; the Web API has one new se
 
 ### Changed
 
+- The container image applies Debian's security updates when it is built, so it carries a fix
+  Debian has published before the official Python base image is rebuilt with it, and it starts from
+  a newer base image.
 - The README (and `README.pt-BR.md`) lists what WebVigil checks by area instead of by build
   milestone: a table with what each area finds, whether it is passive or active, and the switch
   that turns it on. The ten switches that are off by default are a table under "Safe by default".
