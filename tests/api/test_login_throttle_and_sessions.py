@@ -38,9 +38,7 @@ def _age_credentials(engine: Engine, hours: int = 1) -> None:
         user.updated_at = utcnow() - timedelta(hours=hours)
 
 
-def _token(
-    config: WebConfig, *, issued_ago: float, user_id: int = 1, with_iat: bool = True
-) -> str:
+def _token(config: WebConfig, *, issued_ago: float, user_id: int = 1, with_iat: bool = True) -> str:
     """
     Args:
         config (WebConfig): Supplies the signing secret.
