@@ -7,7 +7,7 @@ import binascii
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Query, status
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, func, or_
 from sqlmodel import col, select
 
 from webvigil.api.db import TERMINAL_STATUSES, Scan, ScanStatus
@@ -21,13 +21,28 @@ router = APIRouter(prefix="/scans", tags=["scans"])
 
 _LIST_LIMIT_DEFAULT = 20
 _LIST_LIMIT_MAX = 100
+# Scans waiting at once. One runs at a time, so a longer queue is hours of work nobody is watching;
+# the cap keeps a script stuck in a loop from filling the database with queued rows.
+MAX_QUEUED_SCANS = 100
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_scan(
     body: ScanCreate, _user: CurrentUser, session: SessionDep, runner: RunnerDep
 ) -> ScanOut:
-    """Queue a scan and wake the runner. Returns the new scan row (status ``queued``)."""
+    """
+    Queue a scan and wake the runner. Returns the new scan row (status ``queued``).
+
+    429 when ``MAX_QUEUED_SCANS`` are already waiting.
+    """
+    queued = session.exec(
+        select(func.count()).select_from(Scan).where(Scan.status == ScanStatus.QUEUED)
+    ).one()
+    if queued >= MAX_QUEUED_SCANS:
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            f"{MAX_QUEUED_SCANS} scans are already queued: wait for some to finish",
+        )
     scan = Scan(
         target=Target.parse(body.target).entry_url,
         mode=body.mode.value,

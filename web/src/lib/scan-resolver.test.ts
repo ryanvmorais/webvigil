@@ -74,4 +74,12 @@ describe("scanResolver", () => {
     const result = await validate({ ...valid, mode: "active" });
     expect(result.errors).toHaveProperty("authorized_by");
   });
+
+  it("refuses the limits above the API's ceilings and accepts the ceilings", async () => {
+    const over = await validate({ ...valid, max_pages: "10001", delay_ms: "60001" });
+    expect(over.errors).toHaveProperty("max_pages");
+    expect(over.errors).toHaveProperty("delay_ms");
+    const at = await validate({ ...valid, max_pages: "10000", delay_ms: "60000" });
+    expect(at.errors).toEqual({});
+  });
 });

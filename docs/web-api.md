@@ -138,8 +138,11 @@ in memory: a proxy that limits them too is better.
 ## Scan execution
 
 Scans run **one at a time** as an in-process background task; the rest wait in a `queued`
-state. Cancelling a running scan stops it and stores no partial findings. If the process
-dies mid-scan, that scan is marked `interrupted` on the next start and the queue resumes.
+state, at most 100 of them (a new scan beyond that gets `429`). Cancelling a running scan stops it
+and stores no partial findings; once its result is in and being written, a cancel gets `409` and
+the scan ends `completed`. If the process dies mid-scan, that scan is marked `interrupted` on the
+next start and the queue resumes. A scan that crashes is `failed` with the error `internal error`;
+the details are in the server log, not in the API.
 
 ## Active Mode
 
@@ -155,7 +158,14 @@ URL to read: neither `--openapi` nor `--har` (a browser recording, [`har-import.
 is exposed, because a path in a request would be read from the server's disk by whoever sent it. A
 field a request holds that the API does not define is ignored. Scan with those options from the CLI.
 
+Every option has a ceiling, and a request over one gets `422`: `max_pages` up to 10 000, `delay_ms`
+up to 60 000, a `target` of up to 2 048 characters, an `authorized_by` of up to 256, and up to 200
+`disabled_checks` of up to 128 characters each.
+
 ## Backup
 
 The SQLite file (`database_path`) is the only stateful artefact — it holds the user, the
-scan history, and the generated session secret. Back it up by copying the file.
+scan history, and the generated session secret. Back it up by copying the file. It is created
+readable by its owner only (`0600`, in a `0700` directory when the server creates it), and an
+existing one, with its `-wal` and `-shm` files, is set to `0600` on start; keep the same mode on
+the copy.

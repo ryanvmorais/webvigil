@@ -12,17 +12,31 @@ import { z } from "zod";
 
 const TARGET_RE = /^\S+\.\S+$|^https?:\/\/\S+$|^https?:\/\/localhost(:\d+)?(\/\S*)?$/i;
 
+// The API's ceilings (`api/schemas.py`): checked here too, so the form says so before a round trip.
+const MAX_PAGES_LIMIT = 10_000;
+const DELAY_MS_LIMIT = 60_000;
+const TARGET_MAX_CHARS = 2048;
+
 const scanSchema = z
   .object({
     target: z
       .string()
       .trim()
       .min(1, "Target is required.")
+      .max(TARGET_MAX_CHARS, `At most ${TARGET_MAX_CHARS} characters.`)
       .regex(TARGET_RE, "Enter a URL like https://example.com."),
     mode: z.enum(["passive", "active"]),
     scope: z.enum(["host", "subdomains"]),
-    max_pages: z.coerce.number().int().positive("Must be greater than 0."),
-    delay_ms: z.coerce.number().int().min(0, "Cannot be negative."),
+    max_pages: z.coerce
+      .number()
+      .int()
+      .positive("Must be greater than 0.")
+      .max(MAX_PAGES_LIMIT, `At most ${MAX_PAGES_LIMIT.toLocaleString("en")}.`),
+    delay_ms: z.coerce
+      .number()
+      .int()
+      .min(0, "Cannot be negative.")
+      .max(DELAY_MS_LIMIT, `At most ${DELAY_MS_LIMIT.toLocaleString("en")} ms.`),
     follow_robots: z.boolean(),
     authorized_by: z.string().trim().max(200).optional().default(""),
     disabled_checks: z.array(z.string()),

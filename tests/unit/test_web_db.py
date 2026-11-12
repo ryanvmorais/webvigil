@@ -9,8 +9,11 @@ no difference between the SQLModel models and the initial migration.
 
 from __future__ import annotations
 
+import stat
+import sys
 from pathlib import Path
 
+import pytest
 from alembic.autogenerate import compare_metadata
 from alembic.command import downgrade
 from alembic.config import Config as AlembicConfig
@@ -80,3 +83,39 @@ def test_models_match_the_initial_migration(tmp_path: Path) -> None:
         )
         diff = compare_metadata(context, SQLModel.metadata)
     assert diff == [], f"models drifted from 0001_initial: {diff}"
+
+
+# ---------------------------------------------------------------------------
+# File permissions: the database holds the password hash and the session secret
+# ---------------------------------------------------------------------------
+
+_posix_only = pytest.mark.skipif(sys.platform == "win32", reason="POSIX modes; Windows uses ACLs")
+
+
+@_posix_only
+def test_a_new_database_is_readable_by_its_owner_only(tmp_path: Path) -> None:
+    """The file is created ``0600`` before SQLite opens it, and so are its -wal and -shm."""
+    config = WebConfig(database_path=tmp_path / "private" / "webvigil.db")
+    run_alembic_upgrade(config)
+    engine = make_engine(config)
+    with engine.connect() as conn:
+        conn.execute(text("SELECT 1"))
+        for path in (config.database_path, *config.database_path.parent.glob("webvigil.db-*")):
+            assert stat.S_IMODE(path.stat().st_mode) == 0o600, path
+    assert stat.S_IMODE(config.database_path.parent.stat().st_mode) == 0o700
+
+
+@_posix_only
+def test_an_existing_database_is_tightened(tmp_path: Path) -> None:
+    """A database an earlier version left world-readable, and its side files, become ``0600``."""
+    config = _config(tmp_path)
+    run_alembic_upgrade(config)
+    wal = config.database_path.with_name(config.database_path.name + "-wal")
+    wal.touch()
+    for path in (config.database_path, wal):
+        path.chmod(0o644)
+
+    make_engine(config)
+
+    for path in (config.database_path, wal):
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600, path
