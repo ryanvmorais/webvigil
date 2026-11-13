@@ -198,7 +198,7 @@ def test_a_table_cell_survives_a_pipe_in_a_library_name() -> None:
 def test_check_error_text_is_plain() -> None:
     """An error message, which can echo the target, cannot break out of its list item."""
     error = CheckError(check_id="x`y", message="boom <b>\n## h\n[l](javascript:1)", traceback="")
-    md = _render(make_result(make_finding(), errors=[error]))
+    md = _render(make_result(make_finding(references=()), errors=[error]))
     tokens = _tokens(md)
     assert _heading_texts(md, "h2")[-1] == "Check errors"
     assert sum(t.type == "list_item_open" for t in tokens) >= 1
@@ -230,10 +230,15 @@ def test_an_ordinary_finding_is_written_as_before() -> None:
     lines = _render(make_result(finding)).splitlines()
     assert "## [MEDIUM] Missing Content-Security-Policy header" in lines
     assert "- Check: `http.headers.csp` · Confidence: HIGH" in lines
-    assert "- Location: https://example.com/_next/a_b?x=1&y=2 (`Content-Security-Policy`)" in lines
+    # The zero-width space keeps GitHub from turning the target's URL into a link; it reads the
+    # same.
+    assert (
+        "- Location: https:&#8203;//example.com/_next/a_b?x=1&y=2 (`Content-Security-Policy`)"
+        in lines
+    )
     assert "Add `integrity` to every `<script>` (see RFC 9110)." in lines
     assert "**Remediation:** Set the header; do not use 'unsafe-inline'." in lines
-    assert "- https://owasp.org/www-project-secure-headers/" in lines
+    assert "- <https://owasp.org/www-project-secure-headers/>" in lines
 
 
 def test_the_check_authors_code_spans_are_kept_as_code() -> None:

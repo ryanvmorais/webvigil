@@ -14,6 +14,8 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+{# The Web API sends this policy as a header; a report opened from a file has no header, so the page carries it too. No script, no fetch, no form, no base change: only the inline <style>. #}
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>WebVigil scan report — {{ meta.target }}</title>
 {# Palette + layout + one badge colour per severity, with a prefers-color-scheme dark set. #}

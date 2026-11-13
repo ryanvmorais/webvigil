@@ -1,6 +1,8 @@
 /**
  * The findings table for a scan (RF-22..RF-24): one expandable row per finding, showing
- * severity, confidence, location, description, remediation, evidence, and CWE links.
+ * severity, confidence, location, description, remediation, evidence, and CWE links. Every value
+ * that came from the scanned site goes through `showControls`, so a bidirectional override or a
+ * zero-width character shows as an escape instead of changing what the text reads as.
  */
 "use client";
 
@@ -19,6 +21,7 @@ import {
 } from "@/components/ui/table";
 import { cweUrl } from "@/lib/format";
 import { isHttpUrl } from "@/lib/links";
+import { showControls } from "@/lib/text";
 import { cn } from "@/lib/utils";
 import type { FindingOut, LocationOut } from "@/lib/api";
 
@@ -30,7 +33,8 @@ function locationText(location: LocationOut): string {
       : location.cookie
         ? `cookie ${location.cookie}`
         : null;
-  return qualifier ? `${location.url} · ${qualifier}` : location.url;
+  const text = qualifier ? `${location.url} · ${qualifier}` : location.url;
+  return showControls(text, { oneLine: true });
 }
 
 /**
@@ -68,6 +72,7 @@ export function FindingsTable({ findings }: { findings: FindingOut[] }) {
           const key = finding.fingerprint;
           const isOpen = expanded.has(key);
           const location = locationText(finding.location);
+          const title = showControls(finding.title, { oneLine: true });
           const detailId = `finding-detail-${key}`;
           return (
             <Fragment key={key}>
@@ -81,7 +86,7 @@ export function FindingsTable({ findings }: { findings: FindingOut[] }) {
                     onClick={() => toggle(key)}
                     aria-expanded={isOpen}
                     aria-controls={isOpen ? detailId : undefined}
-                    aria-label={`${isOpen ? "Collapse" : "Expand"} finding: ${finding.title}`}
+                    aria-label={`${isOpen ? "Collapse" : "Expand"} finding: ${title}`}
                     className="focus-visible:ring-ring -m-3.5 rounded-sm p-3.5 focus-visible:ring-2 focus-visible:outline-none"
                   >
                     <ChevronRight
@@ -93,7 +98,7 @@ export function FindingsTable({ findings }: { findings: FindingOut[] }) {
                 <TableCell>
                   <SeverityBadge severity={finding.severity} />
                 </TableCell>
-                <TableCell className="font-medium">{finding.title}</TableCell>
+                <TableCell className="font-medium">{title}</TableCell>
                 <TableCell className="font-mono text-xs">{finding.check_id}</TableCell>
                 <TableCell className="text-muted-foreground max-w-xs truncate" title={location}>
                   {location}
@@ -106,22 +111,22 @@ export function FindingsTable({ findings }: { findings: FindingOut[] }) {
                 <TableRow id={detailId}>
                   <TableCell colSpan={6} className="bg-muted/40">
                     <div className="space-y-3 py-2 text-sm">
-                      <p>{finding.description}</p>
+                      <p>{showControls(finding.description)}</p>
                       <div>
                         <span className="font-semibold">Location. </span>
                         <span className="break-all">{location}</span>
                       </div>
                       <div>
                         <span className="font-semibold">Remediation. </span>
-                        {finding.remediation}
+                        {showControls(finding.remediation)}
                       </div>
                       {finding.evidence.map((item, index) => (
                         <div key={index}>
                           <div className="text-muted-foreground text-xs font-semibold">
-                            {item.label}
+                            {showControls(item.label, { oneLine: true })}
                           </div>
                           <pre className="bg-background overflow-x-auto rounded p-2 text-xs">
-                            {item.content}
+                            {showControls(item.content)}
                           </pre>
                         </div>
                       ))}
@@ -154,7 +159,7 @@ export function FindingsTable({ findings }: { findings: FindingOut[] }) {
                                   {href}
                                 </a>
                               ) : (
-                                href
+                                showControls(href, { oneLine: true })
                               )}
                             </li>
                           ))}
