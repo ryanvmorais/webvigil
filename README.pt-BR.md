@@ -387,7 +387,26 @@ scans, formulário de novo scan, detalhe do scan com achados filtráveis, prévi
 relatório, o catálogo de checks e uma tela de configurações. É um cliente fino da API: nunca
 fala com o engine.
 
-![Dashboard do WebVigil (interface web opcional): página de detalhe de um scan com os achados agrupados por severidade](assets/webvigil-dashboard-scan-detail-findings-by-severity.png)
+![Dashboard do WebVigil (interface web opcional): a página de um scan com os achados restritos por uma busca e pela severidade mínima Medium, o primeiro achado aberto na evidência e a contagem de achados na tela](assets/webvigil-dashboard-scan-detail-findings-by-severity.png)
+
+Na página de um scan, os achados aparecem do mais grave para o menos grave, 50 de cada vez. O
+botão **Load more** traz os próximos 50, e a linha embaixo da tabela diz quantos do total estão
+na tela. A seta no começo de cada linha abre a descrição, a evidência, a correção e as
+referências do achado.
+
+Três filtros acima da tabela restringem a lista. Eles rodam no servidor, então valem para todos
+os achados do scan, não só para as linhas já carregadas:
+
+- **Search** procura uma palavra no título, na URL ou no nome do parâmetro, do header ou do
+  cookie, sem diferenciar maiúsculas: `login`, `/admin` ou `X-Frame-Options`, por exemplo. A
+  tabela se atualiza quando você para de digitar.
+- **Minimum severity** mantém essa severidade e as acima dela: *Medium* mostra Medium, High e
+  Critical.
+- **Check** mostra os achados de um check só. A lista traz apenas os checks que acharam algo
+  neste scan, cada um com o número de achados.
+
+Os filtros se combinam e ficam no endereço da página, então uma visão filtrada pode ir para os
+favoritos.
 
 ```bash
 # API em :8000 em outro terminal (veja acima); depois:

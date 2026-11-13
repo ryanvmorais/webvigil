@@ -15,6 +15,8 @@ export type ScanDefaults = Schemas["ScanDefaults"];
 export type ScanSummary = Schemas["ScanSummary"];
 export type ScanOut = Schemas["ScanOut"];
 export type FindingOut = Schemas["FindingOut"];
+export type FindingPage = Schemas["FindingPage"];
+export type CheckCount = Schemas["CheckCount"];
 export type TechnologyOut = Schemas["TechnologyOut"];
 export type LocationOut = Schemas["LocationOut"];
 export type EvidenceOut = Schemas["EvidenceOut"];
@@ -129,6 +131,13 @@ function query(params: Record<string, string | number | boolean | null | undefin
 }
 
 export type ScanListParams = { status?: ScanStatus; limit?: number; cursor?: string };
+export type FindingParams = {
+  severity?: string;
+  check_id?: string;
+  q?: string;
+  limit?: number;
+  cursor?: string;
+};
 
 export const api = {
   // --- setup / auth ---
@@ -155,8 +164,9 @@ export const api = {
   getScan: (id: number) => request<ScanOut>(`/api/scans/${id}`),
   cancelScan: (id: number) => request<void>(`/api/scans/${id}/cancel`, { method: "POST" }),
   deleteScan: (id: number) => request<void>(`/api/scans/${id}`, { method: "DELETE" }),
-  findings: (id: number, params: { severity?: string; check_id?: string } = {}) =>
-    request<FindingOut[]>(`/api/scans/${id}/findings${query(params)}`),
+  findings: (id: number, params: FindingParams = {}) =>
+    request<FindingPage>(`/api/scans/${id}/findings${query(params)}`),
+  findingChecks: (id: number) => request<CheckCount[]>(`/api/scans/${id}/findings/checks`),
 
   // --- reports ---
   reportUrl: (id: number, format: ReportFormat, download: boolean) =>

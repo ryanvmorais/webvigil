@@ -227,10 +227,34 @@ export interface paths {
         };
         /**
          * List Findings
-         * @description A scan's findings, optionally filtered by ``check_id`` or a minimum ``severity``,
-         *     sorted severity-descending then check id / URL / sub-location.
+         * @description A page of a scan's findings, sorted severity-descending then check id / URL / sub-location.
+         *
+         *     Optionally filtered by ``check_id``, a minimum ``severity``, and ``q``: a case-insensitive
+         *     substring of the title, the URL, or the parameter, header or cookie name. ``total`` counts
+         *     every match. The findings are written once, when the scan completes, so an offset cursor
+         *     is stable between pages.
          */
         get: operations["list_findings_api_scans__scan_id__findings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scans/{scan_id}/findings/checks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Finding Checks
+         * @description The checks that found something in a scan, each with its number of findings, by check id.
+         */
+        get: operations["list_finding_checks_api_scans__scan_id__findings_checks_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -292,6 +316,20 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
+         * CheckCount
+         * @description How many findings one check produced in a scan.
+         *
+         *     Attributes:
+         *         check_id (str): The check.
+         *         count (int): Its findings in the scan.
+         */
+        CheckCount: {
+            /** Check Id */
+            check_id: string;
+            /** Count */
+            count: number;
+        };
+        /**
          * CheckOut
          * @description One registered check, for the check-catalogue endpoint.
          */
@@ -349,6 +387,24 @@ export interface components {
             severity: string;
             /** Title */
             title: string;
+        };
+        /**
+         * FindingPage
+         * @description A page of a scan's findings, with how many match the filters in all.
+         *
+         *     Attributes:
+         *         items (list[FindingOut]): The findings on this page.
+         *         next_cursor (str | None): Opaque cursor for the next page, or ``None``
+         *             on the last page.
+         *         total (int): Every finding that matches the filters, across all pages.
+         */
+        FindingPage: {
+            /** Items */
+            items: components["schemas"]["FindingOut"][];
+            /** Next Cursor */
+            next_cursor?: string | null;
+            /** Total */
+            total: number;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -994,6 +1050,9 @@ export interface operations {
             query?: {
                 severity?: string | null;
                 check_id?: string | null;
+                q?: string | null;
+                limit?: number;
+                cursor?: string | null;
             };
             header?: never;
             path: {
@@ -1009,7 +1068,38 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["FindingOut"][];
+                    "application/json": components["schemas"]["FindingPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_finding_checks_api_scans__scan_id__findings_checks_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                scan_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CheckCount"][];
                 };
             };
             /** @description Validation Error */

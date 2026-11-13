@@ -3,7 +3,7 @@
  * invalidate by the broadest prefix they affect (e.g. `["scans"]`).
  */
 export type ScanListFilters = { status?: string };
-export type FindingFilters = { severity?: string; checkId?: string };
+export type FindingFilters = { severity?: string; checkId?: string; q?: string };
 
 export const keys = {
   auth: {
@@ -20,5 +20,6 @@ export const keys = {
     detail: (id: number) => ["scans", "detail", id] as const,
     findings: (id: number, filters: FindingFilters = {}) =>
       ["scans", "findings", id, filters] as const,
+    findingChecks: (id: number) => ["scans", "finding-checks", id] as const,
   },
 };
