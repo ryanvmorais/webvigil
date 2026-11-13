@@ -11,6 +11,31 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 ## [Unreleased]
 
+### Changed
+
+- The SARIF rule's `shortDescription` is `WebVigil check <check id>`, no longer the title of the
+  first finding of that check. Each result's message still carries its own title.
+- In the Markdown report, only a reference that is an `http(s)` URL is a link (`<url>`), as in the
+  HTML report. Mentions (`@name`), issue references (`#12`) and bare URLs in the rest of the text
+  are broken with a zero-width space, so a report pasted into GitHub notifies nobody and links
+  nowhere; it reads the same.
+
+### Security
+
+- Bidirectional controls and zero-width characters from the scanned site (the "Trojan Source"
+  characters) are shown as visible `\uNNNN` escapes in the terminal summary, the Markdown, HTML
+  and JSON reports and the dashboard, so a title, a URL or a piece of evidence reads as what it
+  holds. A reference with one of them, or with a C1 control, is never a link.
+- A `|` inside backticks in a library name, version or advisory id no longer splits its row of
+  the Markdown technologies table.
+- The SARIF report escapes brackets and backslashes in result messages (so text from the site
+  is never rendered as a link), uses only an `http(s)` reference as `helpUri`, and percent-encodes
+  the location into a valid URI.
+- The HTML report carries its own `Content-Security-Policy` (`<meta>`), so a report opened from a
+  file runs no script and loads nothing, as when the Web API serves it.
+- The dashboard links a reference only when `//` follows the scheme: `http:example.org` was
+  accepted and resolved against the dashboard's own page.
+
 ## [1.3.1] - 2026-11-13
 
 A patch release with one security fix for how the terminal output shows what a scanned site
