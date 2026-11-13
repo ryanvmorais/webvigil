@@ -18,6 +18,11 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
   the values of `pass`, `pin`, `sig`, `nonce`, `ticket`, `assertion` and of a parameter named
   exactly `code` or `state`. An entry whose path carries a token-like segment is left out and
   counted as `token in path` in the import summary.
+- The crawler skips links and `GET` forms that look state-changing (`delete`, `remove`,
+  `unsubscribe`, `cancel` and the rest of the list in
+  [docs/authenticated-scanning.md](docs/authenticated-scanning.md)) on every scan, not only on
+  an authenticated one: an anonymous `GET /items/5/delete` can change state too. The warning
+  that counts them no longer says "(authenticated crawl)".
 
 ### Security
 

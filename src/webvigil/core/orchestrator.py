@@ -170,7 +170,7 @@ class Orchestrator:
             if crawler.skipped_destructive:
                 warnings.append(
                     f"declined to follow {crawler.skipped_destructive} link(s) that look "
-                    "state-changing (authenticated crawl)"
+                    "state-changing"
                 )
             if crawler.skipped_by_robots:
                 warnings.append(

@@ -221,17 +221,17 @@ anonymous scan would have been bounced to a login page. WebVigil mitigates this:
 
 - **Logout links are never followed** — on any scan. A URL whose path matches `logout`,
   `log-out`, `logoff`, `signout`, `sign-out`, or `disconnect` is skipped.
-- **On an authenticated scan, links that look state-changing are skipped** — `delete`,
+- **Links that look state-changing are never followed** — on any scan, anonymous or not:
+  an anonymous `GET /items/5/delete` can change state as well. The words are `delete`,
   `remove`, `destroy`, `drop`, `revoke`, `deactivate`, `disable`, `unsubscribe`, `cancel`,
   `purge`, `wipe` (word-boundary match on the path or query). The scan records a warning
-  with the count.
+  with the count. There is no switch to turn this off.
 
 The heuristic is keyword-based and imperfect. It **misses** a delete action whose verb is
 only in the HTTP method (`DELETE /items/5`), a logout at `/session`, or a "password reset"
 link. It **over-skips** a benign `/deleted-items` listing. `reset` is deliberately excluded
-(`?reset=1` is a common benign filter). If you need one of these paths crawled, the residual
-risk of an authenticated scan touching a state-changing `GET` is yours to weigh — you are
-the expected operator, scanning your own app.
+(`?reset=1` is a common benign filter). A skipped page can still be scanned by giving it as
+the target itself.
 
 ## Form-driven crawling
 
@@ -340,8 +340,8 @@ free-text field:
   uses to skip destructive links). `deleted-items` does not match.
 
 Search forms, `POST` forms and logout forms are never flagged. The check sends nothing: it reads
-the form inventory. The crawler never submits a form with a password field, and on an authenticated
-scan it skips a `GET` form with a destructive verb as well.
+the form inventory. The crawler never submits a form with a password field, and on every scan it
+skips a `GET` form with a destructive verb as well.
 
 Confidence is `MEDIUM` at most, because the form is recognised by its shape and WebVigil cannot
 see that the server acts on the request. It follows the session cookie's `SameSite`, but not the

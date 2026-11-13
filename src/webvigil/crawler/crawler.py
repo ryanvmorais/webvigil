@@ -5,8 +5,8 @@ BFS from the seed URL plus any sitemap seeds and ``--openapi`` GET operations
 (spec 013), following ``<a href>`` links that stay in scope, bounded by
 ``max_pages``. GET only — no JavaScript. Since spec
 007 the crawler also submits safe ``GET`` forms (search, filters) with their
-default values (RF-05) and skips ``logout`` links (always) and — on an
-authenticated crawl — links that look state-changing (RF-03). The ``<form>``
+default values (RF-05) and skips ``logout`` links and links that look
+state-changing (RF-03), on every crawl, anonymous or not. The ``<form>``
 inventory it builds is exposed via :attr:`Crawler.forms`.
 
 Since spec 018 the crawler can also **write**: with ``[scan] submit_post_forms`` on, in
@@ -135,8 +135,7 @@ class Crawler:
             http (HttpClient): The shared, scope-guarded HTTP client.
             target (Target): The normalized target and its scope rule.
             config (ScanConfig): The resolved scan configuration; supplies
-                ``max_pages``, ``follow_robots``, ``submit_forms``, and whether
-                the crawl is authenticated.
+                ``max_pages``, ``follow_robots`` and ``submit_forms``.
             extra_seeds (Sequence[str]): Absolute URLs to enqueue before the
                 seed page's own links — the GET operations of an ``--openapi``
                 import (spec 013). Scope / logout / destructive guards and
@@ -149,7 +148,6 @@ class Crawler:
         self._target = target
         self._config = config
         self._user_agent = config.http.user_agent
-        self._authenticated = config.auth.configured
         self._submit_forms = config.scan.submit_forms
         self._extra_seeds = tuple(extra_seeds)
         self._forms: dict[_FormKey, Form] = {}
@@ -587,9 +585,9 @@ class Crawler:
         """
         Normalize ``raw_url`` and enqueue it unless it is out of scope, seen, or unsafe.
 
-        A logout URL, or — on an authenticated crawl — a destructive-looking
-        URL, is marked seen but never queued (and the destructive counter is
-        bumped).
+        A logout URL or a destructive-looking URL is marked seen but never
+        queued (and the destructive counter is bumped), on every crawl: an
+        anonymous ``GET /items/5/delete`` can change state as well.
 
         Args:
             raw_url (str): A candidate URL, possibly relative-resolved already.
@@ -607,7 +605,7 @@ class Crawler:
         if is_logout(normalized):
             seen.add(normalized)  # do not revisit it via another link either
             return
-        if self._authenticated and is_destructive(normalized):
+        if is_destructive(normalized):
             seen.add(normalized)
             self._skipped_destructive += 1
             return
@@ -619,7 +617,7 @@ class Crawler:
         Record every ``<form>`` on ``page`` and enqueue the safe ``GET`` ones' submissions.
 
         Auth forms and logout forms are never submitted; a destructive-looking
-        action is skipped on an authenticated crawl (and counted).
+        action is skipped (and counted).
 
         Args:
             page (Page): The page whose forms to walk; skipped when not OK HTML.
@@ -638,7 +636,7 @@ class Crawler:
                 continue
             if is_auth_form(form) or is_logout(form.action):
                 continue
-            if self._authenticated and is_destructive(form.action):
+            if is_destructive(form.action):
                 self._skipped_destructive += 1
                 continue
             url = submission_url(form)
