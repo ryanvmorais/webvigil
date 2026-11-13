@@ -88,7 +88,7 @@ username_field = "email"
 password_field = "pass"
 form_index = 0                                # among the POST forms with a password input
 extra_fields = ["tenant=acme"]
-logged_in_marker = "Sign out"                 # regex over the body
+logged_in_marker = "Sign out"                 # regex over the body (first 200,000 chars)
 logged_out_marker = "Please sign in"
 check_url = "https://app.example.com/account" # answers differently when logged out
 max_relogins = 3                              # 0..10, failed attempts included
@@ -113,7 +113,9 @@ the session. The session cookies, like the password, go to the target origin onl
 many apps, so the result is checked in this order, the first rule that applies deciding: a
 `logged_out_marker` in the body fails the login and a `logged_in_marker` confirms it; then
 `check_url` fetched with the new session; then a heuristic (the login form is gone **and** a
-cookie is new or changed). A login form still on the page fails it. Nothing to go on is
+cookie is new or changed). A login form still on the page fails it. Both markers, here and in
+the re-login below, are searched in the first 200,000 characters of the body only: put them in
+something the page shows near the top, such as the navigation bar. Nothing to go on is
 *inconclusive*: the scan continues with a warning and the summary says `not confirmed`. A
 **failed** login stops the scan before the crawl with a message that says what was seen (the
 URL and status, never a body, a cookie or the password) and exit code **4**, so a pipeline

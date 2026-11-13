@@ -25,7 +25,7 @@ from webvigil.core.target import Target
 from webvigil.crawler.forms import Form, form_body, parse_forms_html
 from webvigil.crawler.safety import is_login_url
 from webvigil.http.client import HttpClient, Response
-from webvigil.http.session import Session, SessionJar
+from webvigil.http.session import MARKER_BODY_CHARS, Session, SessionJar
 
 # Input types a username can live in (a missing ``type`` is parsed as ``text``).
 _USERNAME_TYPES = frozenset({"text", "email", "tel"})
@@ -471,10 +471,13 @@ class Authenticator:
         where = _safe(response.url)
         if response.status_code >= 500:
             raise LoginFailedError(f"the login answered {response.status_code} at {where}")
-        if self._logged_out is not None and self._logged_out.search(response.text):
+        # The markers read the head of the body only: a target answering the login with a huge
+        # page must not turn two regular expressions into minutes of CPU.
+        head = response.text[:MARKER_BODY_CHARS]
+        if self._logged_out is not None and self._logged_out.search(head):
             raise LoginFailedError(f"logged_out_marker matched after the login at {where}")
         if self._logged_in is not None:
-            if self._logged_in.search(response.text):
+            if self._logged_in.search(head):
                 self.session.jar.commit()
                 return LoginResult(confirmed=True)
             raise LoginFailedError(f"logged_in_marker not found after the login at {where}")
