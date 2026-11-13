@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import sys
 import sysconfig
 import traceback
@@ -874,12 +875,14 @@ def _local_prefixes() -> list[tuple[str, str]]:
 
 
 def _portable_traceback(exc: BaseException) -> str:
-    """
+    r"""
     Format a check's exception for the result without the machine's paths.
 
     The traceback is stored in ``ScanResult.errors`` and travels with the JSON report, which
     gets shared. The install path names the OS user (``/home/<name>/...``), so each frame
-    keeps only its path inside the install (``webvigil/checks/...``, ``httpx/...``).
+    keeps only its path inside the install (``webvigil/checks/...``, ``httpx/...``). A frame
+    still absolute after that (a plugin in a directory outside the install and the home,
+    such as ``D:\work\plugin`` on Windows) keeps only its file name.
 
     Args:
         exc (BaseException): The exception a check raised.
@@ -890,4 +893,25 @@ def _portable_traceback(exc: BaseException) -> str:
     text = "".join(traceback.format_exception(exc))
     for prefix, replacement in _local_prefixes():
         text = text.replace(prefix, replacement)
-    return text
+    return _FRAME_FILE_RE.sub(_frame_file_name, text)
+
+
+# A traceback frame line, ``  File "<path>", line N``; the path is the second group.
+_FRAME_FILE_RE = re.compile(r'^(\s*File ")([^"\n]+)(", line )', re.MULTILINE)
+# An absolute path in either OS's form: ``/x``, ``\x``, ``C:\x`` or ``C:/x``.
+_ABSOLUTE_PATH_RE = re.compile(r"^(?:[A-Za-z]:)?[\\/]")
+
+
+def _frame_file_name(match: re.Match[str]) -> str:
+    """
+    Args:
+        match (re.Match[str]): A frame line matched by ``_FRAME_FILE_RE``.
+
+    Returns:
+        str: The line unchanged when its path is relative, else with the path cut to its
+            file name.
+    """
+    head, path, tail = match.groups()
+    if _ABSOLUTE_PATH_RE.match(path):
+        path = re.split(r"[\\/]", path)[-1]
+    return f"{head}{path}{tail}"

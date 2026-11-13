@@ -155,6 +155,22 @@ async def test_a_check_traceback_carries_no_local_path() -> None:
     assert "test_orchestrator.py" in traceback  # the frame is still named
 
 
+@pytest.mark.parametrize(
+    "where",
+    ["/srv/plugins/acme/check.py", "D:\\work\\acme\\check.py", "D:/work/acme/check.py"],
+)
+def test_a_frame_outside_the_install_and_home_keeps_only_its_file_name(where: str) -> None:
+    r"""A plugin outside every known directory (a Windows runner's ``D:\a\...``) is cut too."""
+    from webvigil.core.orchestrator import _portable_traceback
+
+    try:
+        exec(compile("raise RuntimeError('kaboom')", where, "exec"))
+    except RuntimeError as exc:
+        text = _portable_traceback(exc)
+    assert 'File "check.py", line 1' in text
+    assert "acme" not in text
+
+
 async def test_a_static_cookie_or_header_echoed_into_evidence_is_redacted() -> None:
     """``--cookie`` / ``--header`` values are scrubbed with no login, bearer token included."""
     token = "eyJhbGciOiJIUzI1NiJ9.e30.c2ln"
