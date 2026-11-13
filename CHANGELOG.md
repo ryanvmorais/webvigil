@@ -11,6 +11,16 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-11-13
+
+A minor release with two security fixes for what a scanned site can make the checks do
+(GHSA-xwxv-whh4-h422 and GHSA-9w7j-qp5j-mw26), a round of hardening of the reports, and paged,
+searchable findings in the Web API and the dashboard. It is backward compatible with
+[docs/stability.md](docs/stability.md): no CLI option, exit code, configuration key, check id or
+JSON report field changes. The Web API's findings route now returns pages, a change to a
+provisional interface listed under Changed, and the SRI, mixed-content and
+session-identifier-in-URL checks report at most 20 findings per page, as part of a security fix.
+
 ### Added
 
 - The dashboard's findings table has a text search (title, URL, parameter, header or cookie
@@ -583,7 +593,8 @@ confirmed against a per-request baseline)
 - A security policy with private vulnerability reporting, a code of conduct, and the
   [stability policy](docs/stability.md).
 
-[Unreleased]: https://github.com/ryanvmorais/webvigil/compare/v1.3.1...HEAD
+[Unreleased]: https://github.com/ryanvmorais/webvigil/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/ryanvmorais/webvigil/compare/v1.3.1...v1.4.0
 [1.3.1]: https://github.com/ryanvmorais/webvigil/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/ryanvmorais/webvigil/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/ryanvmorais/webvigil/compare/v1.2.0...v1.2.1
