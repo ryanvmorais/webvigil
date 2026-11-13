@@ -353,3 +353,30 @@ class Page[T](BaseModel):
 
     items: list[T]
     next_cursor: str | None = None
+
+
+class FindingPage(Page[FindingOut]):
+    """
+    A page of a scan's findings, with how many match the filters in all.
+
+    Attributes:
+        items (list[FindingOut]): The findings on this page.
+        next_cursor (str | None): Opaque cursor for the next page, or ``None``
+            on the last page.
+        total (int): Every finding that matches the filters, across all pages.
+    """
+
+    total: int
+
+
+class CheckCount(BaseModel):
+    """
+    How many findings one check produced in a scan.
+
+    Attributes:
+        check_id (str): The check.
+        count (int): Its findings in the scan.
+    """
+
+    check_id: str
+    count: int

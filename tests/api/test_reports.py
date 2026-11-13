@@ -101,7 +101,7 @@ def test_json_report_is_byte_identical_to_the_reporter(auth_client: TestClient) 
     )
     scan_id = _completed_scan(auth_client)
     scan = auth_client.get(f"/api/scans/{scan_id}").json()
-    findings = auth_client.get(f"/api/scans/{scan_id}/findings").json()
+    findings = auth_client.get(f"/api/scans/{scan_id}/findings").json()["items"]
 
     api_json = auth_client.get(f"/api/scans/{scan_id}/report?format=json").text
     # The API rebuilds the same ScanResult the reporter would render.

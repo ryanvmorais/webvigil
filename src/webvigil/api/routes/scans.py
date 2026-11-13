@@ -5,15 +5,24 @@ from __future__ import annotations
 import base64
 import binascii
 from datetime import datetime
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, status
-from sqlalchemy import and_, func, or_
+from sqlalchemy import ColumnElement, and_, func, or_
 from sqlmodel import col, select
 
 from webvigil.api.db import TERMINAL_STATUSES, Scan, ScanStatus
 from webvigil.api.db import Finding as FindingRow
 from webvigil.api.deps import MAX_ROW_ID, CurrentUser, RunnerDep, ScanId, SessionDep
-from webvigil.api.schemas import FindingOut, Page, ScanCreate, ScanOut, ScanSummary
+from webvigil.api.schemas import (
+    CheckCount,
+    FindingOut,
+    FindingPage,
+    Page,
+    ScanCreate,
+    ScanOut,
+    ScanSummary,
+)
 from webvigil.core.findings import Severity
 from webvigil.core.target import Target
 
@@ -24,6 +33,38 @@ _LIST_LIMIT_MAX = 100
 # Scans waiting at once. One runs at a time, so a longer queue is hours of work nobody is watching;
 # the cap keeps a script stuck in a loop from filling the database with queued rows.
 MAX_QUEUED_SCANS = 100
+# A page of findings the dashboard draws at once. A hostile site can make a scan produce thousands
+# of findings; the whole set is in the JSON report, not in one response.
+_FINDINGS_LIMIT_DEFAULT = 50
+_FINDINGS_LIMIT_MAX = 200
+# Longer than any URL fragment or title a person types; the cap keeps the LIKE pattern small.
+_SEARCH_MAX_LENGTH = 200
+_SUB_KEYS = ("param", "header", "cookie")
+
+
+def _location_field(key: str) -> ColumnElement[Any]:
+    """
+    Args:
+        key (str): A :class:`~webvigil.core.findings.Location` field.
+
+    Returns:
+        ColumnElement[Any]: That field read from the stored location JSON (SQLite
+            ``json_extract``); ``NULL`` when it is absent.
+    """
+    return func.json_extract(col(FindingRow.location), f"$.{key}")
+
+
+_URL = func.coalesce(_location_field("url"), "")
+# The first non-empty of param / header / cookie, as the report sorts by.
+_SUB_LOCATION = func.coalesce(*(func.nullif(_location_field(key), "") for key in _SUB_KEYS), "")
+# Severity first, then check id / URL / sub-location; the id breaks ties so pages never overlap.
+_FINDING_ORDER = (
+    col(FindingRow.severity).desc(),
+    col(FindingRow.check_id),
+    _URL,
+    _SUB_LOCATION,
+    col(FindingRow.id),
+)
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -99,31 +140,52 @@ def list_findings(
     session: SessionDep,
     severity: str | None = None,
     check_id: str | None = None,
-) -> list[FindingOut]:
+    q: str | None = Query(default=None, max_length=_SEARCH_MAX_LENGTH),
+    limit: int = Query(default=_FINDINGS_LIMIT_DEFAULT, ge=1, le=_FINDINGS_LIMIT_MAX),
+    cursor: str | None = None,
+) -> FindingPage:
     """
-    A scan's findings, optionally filtered by ``check_id`` or a minimum ``severity``,
-    sorted severity-descending then check id / URL / sub-location.
+    A page of a scan's findings, sorted severity-descending then check id / URL / sub-location.
+
+    Optionally filtered by ``check_id``, a minimum ``severity``, and ``q``: a case-insensitive
+    substring of the title, the URL, or the parameter, header or cookie name. ``total`` counts
+    every match. The findings are written once, when the scan completes, so an offset cursor
+    is stable between pages.
     """
     _load(session, scan_id)
-    statement = select(FindingRow).where(FindingRow.scan_id == scan_id)
-    if check_id is not None:
-        statement = statement.where(FindingRow.check_id == check_id)
-    rows = list(session.exec(statement))
-    if severity is not None:
-        try:
-            threshold = int(Severity.from_name(severity))
-        except KeyError as exc:
-            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "unknown severity") from exc
-        rows = [row for row in rows if row.severity >= threshold]
-    rows.sort(
-        key=lambda row: (
-            -row.severity,
-            row.check_id,
-            str(row.location.get("url", "")),
-            _location_key(row.location),
-        )
+    conditions = _finding_conditions(scan_id, severity, check_id, q)
+    total = session.exec(select(func.count()).select_from(FindingRow).where(*conditions)).one()
+    offset = _decode_offset(cursor) if cursor is not None else 0
+    statement = (
+        select(FindingRow)
+        .where(*conditions)
+        .order_by(*_FINDING_ORDER)
+        .offset(offset)
+        .limit(limit + 1)
     )
-    return [FindingOut.from_row(row) for row in rows]
+    rows = list(session.exec(statement))
+    next_cursor: str | None = None
+    if len(rows) > limit:
+        rows = rows[:limit]
+        next_cursor = _encode_offset(offset + limit)
+    return FindingPage(
+        items=[FindingOut.from_row(row) for row in rows], next_cursor=next_cursor, total=total
+    )
+
+
+@router.get("/{scan_id}/findings/checks")
+def list_finding_checks(
+    scan_id: ScanId, _user: CurrentUser, session: SessionDep
+) -> list[CheckCount]:
+    """The checks that found something in a scan, each with its number of findings, by check id."""
+    _load(session, scan_id)
+    statement = (
+        select(FindingRow.check_id, func.count())
+        .where(FindingRow.scan_id == scan_id)
+        .group_by(col(FindingRow.check_id))
+        .order_by(col(FindingRow.check_id))
+    )
+    return [CheckCount(check_id=check, count=count) for check, count in session.exec(statement)]
 
 
 @router.post("/{scan_id}/cancel", status_code=status.HTTP_204_NO_CONTENT)
@@ -166,20 +228,79 @@ def _load(session: SessionDep, scan_id: int) -> Scan:
     return scan
 
 
-def _location_key(location: dict[str, object]) -> str:
+def _finding_conditions(
+    scan_id: int, severity: str | None, check_id: str | None, q: str | None
+) -> list[ColumnElement[bool]]:
     """
     Args:
-        location (dict[str, object]): A serialised
-            :class:`~webvigil.core.findings.Location`.
+        scan_id (int): The scan whose findings are listed.
+        severity (str | None): A minimum severity name, or ``None``.
+        check_id (str | None): One check id, or ``None``.
+        q (str | None): Search text, or ``None``; blank text matches everything.
 
     Returns:
-        str: The salient sub-location (param / header / cookie), or ``""``.
+        list[ColumnElement[bool]]: The ``WHERE`` conditions, joined by ``AND``.
+
+    Raises:
+        HTTPException: 422 when ``severity`` is not a severity name.
     """
-    for key in ("param", "header", "cookie"):
-        value = location.get(key)
-        if value:
-            return str(value)
-    return ""
+    conditions: list[ColumnElement[bool]] = [col(FindingRow.scan_id) == scan_id]
+    if check_id is not None:
+        conditions.append(col(FindingRow.check_id) == check_id)
+    if severity is not None:
+        try:
+            threshold = int(Severity.from_name(severity))
+        except KeyError as exc:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "unknown severity") from exc
+        conditions.append(col(FindingRow.severity) >= threshold)
+    if q is not None and q.strip():
+        pattern = f"%{_escape_like(q.strip())}%"
+        searched = (col(FindingRow.title), _URL, *(_location_field(key) for key in _SUB_KEYS))
+        conditions.append(or_(*(field.ilike(pattern, escape="\\") for field in searched)))
+    return conditions
+
+
+def _escape_like(text: str) -> str:
+    """
+    Args:
+        text (str): Search text as typed.
+
+    Returns:
+        str: The text with the backslash, ``%`` and ``_`` escaped, so they match themselves
+            in a ``LIKE`` pattern (backslash as the escape) instead of acting as wildcards.
+    """
+    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _encode_offset(offset: int) -> str:
+    """
+    Args:
+        offset (int): How many findings the next page skips.
+
+    Returns:
+        str: An opaque, URL-safe cursor.
+    """
+    return base64.urlsafe_b64encode(str(offset).encode()).decode()
+
+
+def _decode_offset(cursor: str) -> int:
+    """
+    Args:
+        cursor (str): A cursor from :func:`_encode_offset`.
+
+    Returns:
+        int: The offset to page from.
+
+    Raises:
+        HTTPException: 422 when the cursor is malformed.
+    """
+    try:
+        offset = int(base64.urlsafe_b64decode(cursor.encode()).decode())
+        if not 0 <= offset <= MAX_ROW_ID:
+            raise ValueError("cursor offset out of range")
+        return offset
+    except (binascii.Error, ValueError) as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "invalid cursor") from exc
 
 
 def _encode_cursor(scan: Scan) -> str:

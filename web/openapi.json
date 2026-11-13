@@ -1,6 +1,25 @@
 {
   "components": {
     "schemas": {
+      "CheckCount": {
+        "description": "How many findings one check produced in a scan.\n\nAttributes:\n    check_id (str): The check.\n    count (int): Its findings in the scan.",
+        "properties": {
+          "check_id": {
+            "title": "Check Id",
+            "type": "string"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "check_id",
+          "count"
+        ],
+        "title": "CheckCount",
+        "type": "object"
+      },
       "CheckOut": {
         "description": "One registered check, for the check-catalogue endpoint.",
         "properties": {
@@ -151,6 +170,39 @@
           "fingerprint"
         ],
         "title": "FindingOut",
+        "type": "object"
+      },
+      "FindingPage": {
+        "description": "A page of a scan's findings, with how many match the filters in all.\n\nAttributes:\n    items (list[FindingOut]): The findings on this page.\n    next_cursor (str | None): Opaque cursor for the next page, or ``None``\n        on the last page.\n    total (int): Every finding that matches the filters, across all pages.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/FindingOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "title": "FindingPage",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -1252,7 +1304,7 @@
     },
     "/api/scans/{scan_id}/findings": {
       "get": {
-        "description": "A scan's findings, optionally filtered by ``check_id`` or a minimum ``severity``,\nsorted severity-descending then check id / URL / sub-location.",
+        "description": "A page of a scan's findings, sorted severity-descending then check id / URL / sub-location.\n\nOptionally filtered by ``check_id``, a minimum ``severity``, and ``q``: a case-insensitive\nsubstring of the title, the URL, or the parameter, header or cookie name. ``total`` counts\nevery match. The findings are written once, when the scan completes, so an offset cursor\nis stable between pages.",
         "operationId": "list_findings_api_scans__scan_id__findings_get",
         "parameters": [
           {
@@ -1297,6 +1349,51 @@
               ],
               "title": "Check Id"
             }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
           }
         ],
         "responses": {
@@ -1304,11 +1401,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/FindingOut"
-                  },
-                  "title": "Response List Findings Api Scans  Scan Id  Findings Get",
-                  "type": "array"
+                  "$ref": "#/components/schemas/FindingPage"
                 }
               }
             },
@@ -1326,6 +1419,55 @@
           }
         },
         "summary": "List Findings",
+        "tags": [
+          "scans"
+        ]
+      }
+    },
+    "/api/scans/{scan_id}/findings/checks": {
+      "get": {
+        "description": "The checks that found something in a scan, each with its number of findings, by check id.",
+        "operationId": "list_finding_checks_api_scans__scan_id__findings_checks_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scan_id",
+            "required": true,
+            "schema": {
+              "maximum": 9223372036854775807,
+              "minimum": 1,
+              "title": "Scan Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CheckCount"
+                  },
+                  "title": "Response List Finding Checks Api Scans  Scan Id  Findings Checks Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Finding Checks",
         "tags": [
           "scans"
         ]

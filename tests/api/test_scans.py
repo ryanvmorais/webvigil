@@ -45,6 +45,19 @@ def _wait_status(client: TestClient, scan_id: int, target: str, timeout: float =
     raise AssertionError(f"scan {scan_id} is {last}, expected {target}")
 
 
+def _completed_scan(client: TestClient) -> int:
+    """
+    Args:
+        client (TestClient): An authenticated API client.
+
+    Returns:
+        int: The id of a new scan of ``FakeOrchestrator.result``, once it is ``completed``.
+    """
+    scan_id: int = client.post("/api/scans", json={"target": "https://example.com"}).json()["id"]
+    _wait_status(client, scan_id, "completed")
+    return scan_id
+
+
 # ---------------------------------------------------------------------------
 # Create and validate
 # ---------------------------------------------------------------------------
@@ -119,7 +132,7 @@ def test_scan_runs_to_completed_with_findings(auth_client: TestClient) -> None:
     scan_id = auth_client.post("/api/scans", json={"target": "https://example.com"}).json()["id"]
     _wait_status(auth_client, scan_id, "completed")
 
-    findings = auth_client.get(f"/api/scans/{scan_id}/findings").json()
+    findings = auth_client.get(f"/api/scans/{scan_id}/findings").json()["items"]
     assert [f["check_id"] for f in findings] == ["http.headers.csp"]
     assert findings[0]["severity"] == "MEDIUM"
 
@@ -174,10 +187,133 @@ def test_findings_filter_by_severity_and_check(auth_client: TestClient) -> None:
     scan_id = auth_client.post("/api/scans", json={"target": "https://example.com"}).json()["id"]
     _wait_status(auth_client, scan_id, "completed")
 
-    high = auth_client.get(f"/api/scans/{scan_id}/findings?severity=high").json()
+    high = auth_client.get(f"/api/scans/{scan_id}/findings?severity=high").json()["items"]
     assert [f["check_id"] for f in high] == ["tls.https"]
-    csp = auth_client.get(f"/api/scans/{scan_id}/findings?check_id=http.headers.csp").json()
+    csp = auth_client.get(f"/api/scans/{scan_id}/findings?check_id=http.headers.csp").json()[
+        "items"
+    ]
     assert [f["check_id"] for f in csp] == ["http.headers.csp"]
+
+
+def _all_pages(client: TestClient, path: str) -> list[dict[str, object]]:
+    """
+    Follow ``next_cursor`` from ``path`` to the last page.
+
+    Args:
+        client (TestClient): An authenticated API client.
+        path (str): The findings URL, with its query string.
+
+    Returns:
+        list[dict[str, object]]: Every page's items, in order.
+    """
+    items: list[dict[str, object]] = []
+    url = path
+    while True:
+        page = client.get(url).json()
+        items.extend(page["items"])
+        if page["next_cursor"] is None:
+            return items
+        url = f"{path}&cursor={page['next_cursor']}"
+
+
+def test_findings_pages_follow_the_report_order(auth_client: TestClient) -> None:
+    """Pages of findings concatenate, with no overlap, into the order the report sorts by."""
+    findings = [
+        make_finding(severity=Severity.LOW, url="https://example.com/b", dedup_key="1"),
+        make_finding(check_id="injection.xss", severity=Severity.HIGH, param="q", dedup_key="2"),
+        make_finding(severity=Severity.LOW, url="https://example.com/a", dedup_key="3"),
+        make_finding(check_id="injection.xss", severity=Severity.HIGH, param="id", dedup_key="4"),
+        make_finding(check_id="tls.https", severity=Severity.HIGH, header=None, dedup_key="5"),
+        make_finding(check_id="disclosure.vcs", severity=Severity.CRITICAL, dedup_key="6"),
+        make_finding(check_id="http.headers.hsts", dedup_key="7"),
+    ]
+    FakeOrchestrator.result = make_result(*findings)
+    scan_id = _completed_scan(auth_client)
+    expected = sorted(
+        findings,
+        key=lambda f: (
+            -f.severity,
+            f.check_id,
+            f.location.url,
+            f.location.param or f.location.header or f.location.cookie or "",
+        ),
+    )
+
+    first = auth_client.get(f"/api/scans/{scan_id}/findings?limit=3").json()
+    assert len(first["items"]) == 3
+    assert first["total"] == 7
+    pages = _all_pages(auth_client, f"/api/scans/{scan_id}/findings?limit=3")
+    assert [f["fingerprint"] for f in pages] == [f.fingerprint for f in expected]
+
+
+def test_findings_search_matches_title_url_and_location_names(auth_client: TestClient) -> None:
+    """``q`` matches the title, URL, parameter or header name, ignoring case; so does ``total``."""
+    FakeOrchestrator.result = make_result(
+        make_finding(check_id="injection.xss", param="search", dedup_key="1"),
+        make_finding(url="https://example.com/admin", dedup_key="2"),
+        make_finding(check_id="tls.https", header="Strict-Transport-Security", dedup_key="3"),
+    )
+    scan_id = _completed_scan(auth_client)
+    base = f"/api/scans/{scan_id}/findings"
+
+    def checks(query: str) -> list[object]:
+        page = auth_client.get(f"{base}?q={query}").json()
+        assert page["total"] == len(page["items"])
+        return [f["check_id"] for f in page["items"]]
+
+    assert checks("XSS") == ["injection.xss"]
+    assert checks("/ADMIN") == ["http.headers.csp"]
+    assert checks("search") == ["injection.xss"]
+    assert checks("transport") == ["tls.https"]
+    assert len(checks("%20")) == 3  # a blank search matches everything
+
+
+def test_findings_search_treats_wildcards_as_text(auth_client: TestClient) -> None:
+    """``%`` and ``_`` in ``q`` match themselves, not any text (no ``LIKE`` wildcard)."""
+    FakeOrchestrator.result = make_result(
+        make_finding(param="user_id", dedup_key="1"),
+        make_finding(param="userXid", dedup_key="2"),
+    )
+    scan_id = _completed_scan(auth_client)
+    base = f"/api/scans/{scan_id}/findings"
+
+    underscore = auth_client.get(f"{base}?q=user_id").json()["items"]
+    assert [f["location"]["param"] for f in underscore] == ["user_id"]
+    assert auth_client.get(f"{base}?q=%25").json()["total"] == 0
+
+
+def test_finding_checks_count_each_check(auth_client: TestClient) -> None:
+    """``/findings/checks`` lists only the checks with findings, with their count, by id."""
+    FakeOrchestrator.result = make_result(
+        make_finding(check_id="tls.https", dedup_key="1"),
+        make_finding(check_id="http.headers.csp", dedup_key="2"),
+        make_finding(check_id="http.headers.csp", url="https://example.com/a", dedup_key="3"),
+    )
+    scan_id = _completed_scan(auth_client)
+
+    assert auth_client.get(f"/api/scans/{scan_id}/findings/checks").json() == [
+        {"check_id": "http.headers.csp", "count": 2},
+        {"check_id": "tls.https", "count": 1},
+    ]
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "limit=0",
+        "limit=201",
+        "cursor=not*base64",
+        f"cursor={base64.urlsafe_b64encode(b'-1').decode()}",
+        f"cursor={base64.urlsafe_b64encode(b'x').decode()}",
+        f"q={'a' * 201}",
+        "severity=urgent",
+    ],
+)
+def test_findings_refuse_a_bad_page_request(auth_client: TestClient, query: str) -> None:
+    """A size outside 1..200, a bad cursor, an overlong search or an unknown severity is a 422."""
+    FakeOrchestrator.result = make_result(make_finding())
+    scan_id = _completed_scan(auth_client)
+    assert auth_client.get(f"/api/scans/{scan_id}/findings?{query}").status_code == 422
 
 
 def test_list_pagination_and_status_filter(auth_client: TestClient) -> None:
@@ -232,6 +368,7 @@ def test_out_of_range_scan_id_is_422_on_every_route(auth_client: TestClient, sca
     base = f"/api/scans/{scan_id}"
     assert auth_client.get(base).status_code == 422
     assert auth_client.get(f"{base}/findings").status_code == 422
+    assert auth_client.get(f"{base}/findings/checks").status_code == 422
     assert auth_client.get(f"{base}/report?format=json").status_code == 422
     assert auth_client.post(f"{base}/cancel").status_code == 422
     assert auth_client.delete(base).status_code == 422
@@ -273,7 +410,7 @@ def test_cancel_a_running_scan(web_config: WebConfig) -> None:
 
         assert client.post(f"/api/scans/{scan_id}/cancel").status_code == 204
         _wait_status(client, scan_id, "cancelled")
-        assert client.get(f"/api/scans/{scan_id}/findings").json() == []
+        assert client.get(f"/api/scans/{scan_id}/findings").json()["items"] == []
         assert client.delete(f"/api/scans/{scan_id}").status_code == 204
 
 
