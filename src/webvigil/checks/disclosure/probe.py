@@ -17,7 +17,7 @@ from __future__ import annotations
 import hashlib
 import secrets
 from dataclasses import dataclass, field
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import urlsplit
 
 from selectolax.lexbor import LexborHTMLParser as HTMLParser
 
@@ -32,6 +32,7 @@ from webvigil.core.context import Page
 from webvigil.core.errors import OutOfScopeError, RequestFailed
 from webvigil.core.findings import Confidence, Severity
 from webvigil.core.target import Target
+from webvigil.core.urls import resolve_url
 from webvigil.http.client import HttpClient, Response
 
 # A directory name no application is expected to have, requested once per parent directory as the
@@ -275,8 +276,10 @@ class DisclosureProbe:
                 src = node.attributes.get("src")
                 if not src:
                     continue
-                url = urljoin(page.url, src)
-                if url.endswith(".js") and url not in seen and self._target.in_scope(url):
+                url = resolve_url(page.url, src)
+                if url is None or not url.endswith(".js") or url in seen:
+                    continue
+                if self._target.in_scope(url):
                     seen.add(url)
                     found.append(url)
         return found

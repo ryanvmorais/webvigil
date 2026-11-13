@@ -18,7 +18,7 @@ request of their own.
 
 from __future__ import annotations
 
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import urlsplit
 
 from selectolax.lexbor import LexborHTMLParser as HTMLParser
 from selectolax.lexbor import LexborNode as Node
@@ -27,6 +27,7 @@ from webvigil.checks.base import Check
 from webvigil.checks.registry import register
 from webvigil.core.context import Page, ScanContext
 from webvigil.core.findings import Category, Confidence, EvidenceItem, Finding, Location, Severity
+from webvigil.core.urls import resolve_url
 
 _EVIDENCE_TAG_CHARS = 300
 
@@ -156,8 +157,8 @@ class SriMissingCheck(Check):
         raw = node.attributes.get("src") or node.attributes.get("href")
         if not raw:
             return None
-        resource = urljoin(page.url, raw.strip())
-        if not resource.lower().startswith(("http://", "https://")):
+        resource = resolve_url(page.url, raw.strip())
+        if resource is None or not resource.lower().startswith(("http://", "https://")):
             return None
         if _origin(resource) == _origin(page.url) or resource in seen:
             return None
@@ -241,8 +242,10 @@ class MixedContentCheck(Check):
                     raw = (node.attributes.get(attr) or "").strip()
                     if not raw:
                         continue
-                    resource = urljoin(page.url, raw)
-                    if not resource.lower().startswith("http://") or resource in seen:
+                    resource = resolve_url(page.url, raw)
+                    if resource is None or not resource.lower().startswith("http://"):
+                        continue
+                    if resource in seen:
                         continue
                     seen.add(resource)
                     findings.append(self._finding(page, tag, node, resource, active))

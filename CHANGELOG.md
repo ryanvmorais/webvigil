@@ -42,6 +42,12 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 - The automated login searches `logged_in_marker` and `logged_out_marker` in the first 200,000
   characters of the answer, as the re-login already did, so a huge login answer no longer costs
   a regular expression over up to 10 MiB.
+- What the scanned site writes can no longer end a scan with an error. A link, a form action, a
+  sitemap entry or a `Location` header with a malformed host or port is skipped; a `charset=`
+  that names a codec that is not a text encoding reads the body as UTF-8; a body that does not
+  decode as its `Content-Encoding` claims, or a URL longer than 64 KiB, fails that one request.
+  An unexpected error in the dependency fingerprint or the disclosure probe becomes a warning,
+  as in the other passes.
 
 ## [1.3.0] - 2026-11-12
 

@@ -167,3 +167,17 @@ async def test_osv_lookup_failure_is_a_warning_not_a_crash(
     result = await Orchestrator(cfg, check_types=[VulnerableLibraryCheck]).run(_TARGET)
     assert any("OSV.dev lookup failed" in w for w in result.warnings)
     assert any(f.check_id == "deps.js.vulnerable-library" for f in result.findings)
+
+
+async def test_a_raising_fingerprint_pass_becomes_a_warning_not_a_crash(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An exception from the fingerprint pass degrades to a scan warning (audit S-33)."""
+
+    async def _raises(*_a: object, **_k: object) -> object:
+        raise ValueError("Invalid IPv6 URL")
+
+    monkeypatch.setattr(orch_mod.Fingerprinter, "scan", _raises)
+    result = await Orchestrator(ScanConfig(), check_types=[VulnerableLibraryCheck]).run(_TARGET)
+    assert any("dependency fingerprint pass failed" in w for w in result.warnings)
+    assert result.technologies == ()

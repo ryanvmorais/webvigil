@@ -347,6 +347,14 @@ async def test_destructive_links_and_get_forms_are_skipped_on_every_crawl(
         assert crawler.skipped_destructive == 2
 
 
+async def test_a_malformed_link_is_dropped_and_the_crawl_goes_on(httpx_mock: object) -> None:
+    """An unclosed bracket or a port out of range costs that link only (audit S-33)."""
+    links = _html("http://[::1", "https://example.com:99999/", "/ok")
+    router = _Router({_SEED: _page(links), "https://example.com/ok": _page(_html())})
+    await _crawl(ScanConfig(), router, httpx_mock)
+    assert "https://example.com/ok" in router.seen
+
+
 async def test_submitted_form_urls_count_against_max_pages(httpx_mock: object) -> None:
     """A submitted form URL is a page like any other and counts toward ``max_pages``."""
     router = _Router(

@@ -32,6 +32,7 @@ from webvigil.core.context import Page
 from webvigil.core.errors import OutOfScopeError, RequestFailed
 from webvigil.core.findings import Confidence, Severity
 from webvigil.core.target import Target
+from webvigil.core.urls import resolve_url
 from webvigil.crawler.forms import Form, form_body
 from webvigil.crawler.safety import is_logout
 from webvigil.http.client import HttpClient, Response
@@ -381,8 +382,11 @@ class SessionScanner:
                 continue
             for node in HTMLParser(page.text).css("a[href]"):
                 href = (node.attributes.get("href") or "").strip()
-                url = urllib.parse.urljoin(page.url, href).split("#", 1)[0]
-                if href and self._target.in_scope(url) and is_logout(url):
+                resolved = resolve_url(page.url, href) if href else None
+                if resolved is None:
+                    continue
+                url = resolved.split("#", 1)[0]
+                if self._target.in_scope(url) and is_logout(url):
                     return "GET", url, None
         for form in self._forms:
             if (

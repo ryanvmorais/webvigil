@@ -11,7 +11,6 @@ rules to every source — the resource URL, its body, and the page's inline
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from urllib.parse import urljoin
 
 from selectolax.lexbor import LexborHTMLParser as HTMLParser
 
@@ -20,6 +19,7 @@ from webvigil.core.context import Detection, Page
 from webvigil.core.errors import OutOfScopeError, RequestFailed
 from webvigil.core.target import Target, normalize_url
 from webvigil.core.technology import DetectionMethod
+from webvigil.core.urls import resolve_url
 from webvigil.http.client import HttpClient
 
 _MAX_FETCHES = 50
@@ -136,7 +136,8 @@ class Fingerprinter:
                     rel = (node.attributes.get("rel") or "").lower()
                     if not any(k in rel for k in ("stylesheet", "preload", "modulepreload")):
                         continue
-                urls.append(urljoin(base, value))
+                if (url := resolve_url(base, value)) is not None:
+                    urls.append(url)
         return urls
 
     def _from_inline_scripts(self, tree: HTMLParser, page_url: str) -> list[Detection]:

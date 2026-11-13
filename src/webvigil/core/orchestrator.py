@@ -383,7 +383,8 @@ class Orchestrator:
         Run the dependency fingerprint pass when a DEPS check is selected (ADR-1, ADR-3).
 
         A no-op returning ``()`` when no DEPS check is in ``check_types``.
-        Appends any staleness or fingerprint notice to ``warnings`` in place.
+        Appends any staleness or fingerprint notice to ``warnings`` in place. A pass
+        bug is caught here and downgraded to a warning.
 
         Args:
             check_types (Sequence[type[Check]]): The checks selected for the run.
@@ -399,7 +400,12 @@ class Orchestrator:
             return ()
         rules = RetireJsRules.load()
         warnings.extend(staleness_warning(rules))
-        result = await Fingerprinter(http, target, rules).scan(pages)
+        fingerprinter = Fingerprinter(http, target, rules)
+        try:
+            result = await fingerprinter.scan(pages)
+        except Exception as exc:  # a pass bug must not abort the whole scan
+            warnings.append(f"dependency fingerprint pass failed: {exc or type(exc).__name__}")
+            return ()
         warnings.extend(result.warnings)
         return tuple(result.detections)
 
@@ -461,7 +467,7 @@ class Orchestrator:
 
         A no-op returning ``()`` when ``[disclosure] probe`` is off or no
         probe-fed check is selected. Appends probe notices to ``warnings`` in
-        place.
+        place. A pass bug is caught here and downgraded to a warning.
 
         Args:
             check_types (Sequence[type[Check]]): The checks selected for the run.
@@ -477,7 +483,12 @@ class Orchestrator:
             return ()
         if not any(getattr(check, "family", None) in _PROBE_FAMILIES for check in check_types):
             return ()
-        report = await DisclosureProbe(http, target, load_catalogue(), pages).run()
+        probe = DisclosureProbe(http, target, load_catalogue(), pages)
+        try:
+            report = await probe.run()
+        except Exception as exc:  # a pass bug must not abort the whole scan
+            warnings.append(f"disclosure probe pass failed: {exc or type(exc).__name__}")
+            return ()
         warnings.extend(report.warnings)
         return tuple(report.hits)
 

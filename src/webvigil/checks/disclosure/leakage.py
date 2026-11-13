@@ -18,7 +18,6 @@ request of their own.
 from __future__ import annotations
 
 import re
-from urllib.parse import urljoin
 
 from selectolax.lexbor import LexborHTMLParser as HTMLParser
 
@@ -27,6 +26,7 @@ from webvigil.checks.disclosure import redaction
 from webvigil.checks.registry import register
 from webvigil.core.context import Page, ScanContext
 from webvigil.core.findings import Category, Confidence, EvidenceItem, Finding, Location, Severity
+from webvigil.core.urls import resolve_url
 
 _WSTG_SESSION = (
     "https://owasp.org/www-project-web-security-testing-guide/stable/"
@@ -113,8 +113,8 @@ def _link_urls(page: Page) -> list[str]:
     if page.ok and page.is_html and page.text:
         for node in HTMLParser(page.text).css("a[href], form[action]"):
             raw = (node.attributes.get("href") or node.attributes.get("action") or "").strip()
-            if raw:
-                urls.append(urljoin(page.url, raw))
+            if raw and (url := resolve_url(page.url, raw)) is not None:
+                urls.append(url)
     return urls
 
 

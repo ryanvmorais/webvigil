@@ -10,12 +10,13 @@ it in ``final_location``.
 from __future__ import annotations
 
 import re
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import urlsplit
 
 from webvigil.checks.injection import payloads
 from webvigil.checks.injection.detect import DetectCtx
 from webvigil.checks.injection.models import Baseline, InjectionHit, InjectionPoint
 from webvigil.core.findings import Confidence, Severity
+from webvigil.core.urls import resolve_url
 from webvigil.http.client import Response
 
 _CHECK_ID = "injection.redirect.open"
@@ -85,7 +86,8 @@ def _honoured(response: Response) -> tuple[str | None, Confidence]:
     if response.final_location and _host(response.final_location) == _SENTINEL:
         return f"Location -> {response.final_location}", Confidence.HIGH
     location = response.headers.get("location")
-    if location and _host(urljoin(response.url, location)) == _SENTINEL:
+    resolved = resolve_url(response.url, location) if location else None
+    if resolved is not None and _host(resolved) == _SENTINEL:
         return f"Location -> {location}", Confidence.HIGH
     if _META_RE.search(payloads.head(response.text)):
         return "meta refresh", Confidence.MEDIUM

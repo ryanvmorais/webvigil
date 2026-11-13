@@ -355,3 +355,74 @@ async def test_caller_header_wins_over_a_configured_auth_header(httpx_mock: obje
         )
     sent = httpx_mock.get_requests()  # type: ignore[attr-defined]
     assert sent[0].headers["authorization"] == "Bearer caller"
+
+
+# ---------------------------------------------------------------------------
+# What the target writes cannot break the client (audit S-33)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("charset", ["base64", "zlib", "hex", "idna", "undefined"])
+async def test_a_charset_that_is_not_a_text_encoding_reads_as_utf8(
+    httpx_mock: object, charset: str
+) -> None:
+    """``charset=`` names a codec Python knows but that cannot decode text: UTF-8 is used."""
+    httpx_mock.add_response(  # type: ignore[attr-defined]
+        content="héllo".encode(), headers={"content-type": f"text/html; charset={charset}"}
+    )
+    async with _http() as http:
+        response = await http.get("https://example.com/")
+    assert response.text == "héllo"
+
+
+async def test_a_body_that_does_not_decode_fails_the_request_once(httpx_mock: object) -> None:
+    """A ``gzip`` body that is not gzip is a failed request, not an exception, and not retried."""
+    httpx_mock.add_response(  # type: ignore[attr-defined]
+        content=b"not gzip at all", headers={"content-encoding": "gzip"}
+    )
+    async with _http() as http:
+        with pytest.raises(RequestFailed, match="DecodingError"):
+            await http.get("https://example.com/")
+    assert http.stats.requests == 1
+    assert http.stats.retries == 0
+
+
+async def test_a_url_httpx_refuses_to_build_fails_the_request(httpx_mock: object) -> None:
+    """A URL over httpx's 64 KiB limit is a failed request and is never sent."""
+    async with _http() as http:
+        with pytest.raises(RequestFailed, match="InvalidURL"):
+            await http.get("https://example.com/?q=" + "a" * 70_000)
+    assert http.stats.requests == 0
+    assert httpx_mock.get_requests() == []  # type: ignore[attr-defined]
+
+
+@pytest.mark.parametrize("url", ["https://[::1/", "https://example.com:99999/"])
+async def test_a_malformed_url_is_refused_before_anything_is_sent(
+    httpx_mock: object, url: str
+) -> None:
+    """A malformed URL raises ``RequestFailed``; it is not a failure of the target."""
+    async with _http() as http:
+        with pytest.raises(RequestFailed, match="malformed URL"):
+            await http.get(url)
+    assert http.stats.requests == 0
+    assert http.stats.failed == 0
+    assert httpx_mock.get_requests() == []  # type: ignore[attr-defined]
+
+
+@pytest.mark.parametrize("location", ["http://[::1", "https://example.com:70000/next"])
+async def test_a_location_that_is_not_a_url_fails_the_request(
+    httpx_mock: object, location: str
+) -> None:
+    """
+    A redirect to a malformed ``Location`` is a failed request, not an exception.
+
+    ``httpx`` itself refuses the unclosed bracket (a ``RemoteProtocolError``, retried like any
+    transport error); the port out of range gets past it and is refused by the client.
+    """
+    httpx_mock.add_response(  # type: ignore[attr-defined]
+        status_code=302, headers={"location": location}, is_reusable=True
+    )
+    async with _http() as http:
+        with pytest.raises(RequestFailed):
+            await http.get("https://example.com/")
+    assert all(r.url.path == "/" for r in httpx_mock.get_requests())  # type: ignore[attr-defined]

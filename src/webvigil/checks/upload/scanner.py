@@ -27,6 +27,7 @@ from webvigil.core.context import Page
 from webvigil.core.errors import OutOfScopeError, RequestFailed
 from webvigil.core.findings import Confidence, Severity
 from webvigil.core.target import Target
+from webvigil.core.urls import resolve_url
 from webvigil.crawler.forms import Form
 from webvigil.http.client import HttpClient, Response
 
@@ -287,11 +288,14 @@ class UploadScanner:
         candidates: list[str] = []
 
         body = upload_response.text
-        for token_pos in _iter_marker_urls(body, marker):
-            candidates.append(urljoin(action, token_pos))
+        # where the target says the file went: its own text, so possibly a malformed URL
+        reported = [*_iter_marker_urls(body, marker)]
         location = upload_response.headers.get("location", "")
         if marker in location:
-            candidates.append(urljoin(action, location))
+            reported.append(location)
+        for ref in reported:
+            if (url := resolve_url(action, ref)) is not None:
+                candidates.append(url)
 
         for prefix in _UPLOAD_PREFIXES:
             candidates.append(urljoin(action, prefix + base_name))

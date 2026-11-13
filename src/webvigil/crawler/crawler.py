@@ -27,7 +27,7 @@ import sys
 from collections import deque
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
-from urllib.parse import urlencode, urljoin, urlsplit
+from urllib.parse import urlencode, urlsplit
 
 from selectolax.lexbor import LexborHTMLParser as HTMLParser
 
@@ -36,6 +36,7 @@ from webvigil.core.context import Page
 from webvigil.core.errors import OutOfScopeError, RequestFailed
 from webvigil.core.findings import ScanMode
 from webvigil.core.target import Target, normalize_url
+from webvigil.core.urls import resolve_url
 from webvigil.crawler import robots as robots_mod
 from webvigil.crawler import sitemap as sitemap_mod
 from webvigil.crawler.forms import Form, form_body, parse_forms, submission_url
@@ -579,22 +580,25 @@ class Crawler:
         if len(hrefs) > self._links_per_page:
             self._limits_hit.add("links")
         for href in hrefs[: self._links_per_page]:
-            self._maybe_enqueue(urljoin(page.url, href), seen, queue)
+            if (url := resolve_url(page.url, href)) is not None:
+                self._maybe_enqueue(url, seen, queue)
 
     def _maybe_enqueue(self, raw_url: str, seen: set[str], queue: deque[str]) -> None:
         """
         Normalize ``raw_url`` and enqueue it unless it is out of scope, seen, or unsafe.
 
-        A logout URL or a destructive-looking URL is marked seen but never
-        queued (and the destructive counter is bumped), on every crawl: an
-        anonymous ``GET /items/5/delete`` can change state as well.
+        A malformed URL is dropped. A logout URL or a destructive-looking URL is
+        marked seen but never queued (and the destructive counter is bumped), on
+        every crawl: an anonymous ``GET /items/5/delete`` can change state as well.
 
         Args:
             raw_url (str): A candidate URL, possibly relative-resolved already.
             seen (set[str]): Already-queued URLs, updated in place.
             queue (deque[str]): The BFS queue, appended to in place.
         """
-        if not urlsplit(raw_url).scheme.startswith("http"):
+        # a sitemap ``<loc>`` or a form submission is the site's text too: a malformed one
+        # (bad bracketed host, port out of range) is dropped, not allowed to end the crawl
+        if resolve_url(raw_url, "") is None or not urlsplit(raw_url).scheme.startswith("http"):
             return
         normalized = normalize_url(raw_url)
         if normalized in seen or not self._target.in_scope(normalized):
