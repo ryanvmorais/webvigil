@@ -67,7 +67,7 @@ class _SessionCheck(Check):
             severity=hit.severity,
             confidence=hit.confidence,
             dedup_key=self.hit_kind,
-            evidence=[EvidenceItem(label=label, content=content) for label, content in hit.facts],
+            evidence=[EvidenceItem.of(label, content) for label, content in hit.facts],
         )
 
 

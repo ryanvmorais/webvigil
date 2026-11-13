@@ -3,7 +3,10 @@ The result of a scan: metadata, findings, per-check errors, and warnings.
 
 Serialized to JSON this is the canonical report format (RF-21); every other
 reporter is a pure function of a :class:`ScanResult`, and ``webvigil report``
-reloads one from disk.
+reloads one from disk. A file can come from anyone, so what it says is not taken
+on trust: the schema version must be an integer, the severity counts are worked
+out again from the findings, and every free-text field is bounded
+(:mod:`webvigil.core.bounded`).
 """
 
 from __future__ import annotations
@@ -11,8 +14,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, StrictInt, model_validator
 
+from webvigil.core.bounded import Name, Text, Url
 from webvigil.core.findings import Finding, ScanMode, Severity
 from webvigil.core.target import Scope
 from webvigil.core.technology import Technology
@@ -51,7 +55,7 @@ class ScanMetadata(BaseModel):
         finished_at (datetime): When the scan finished (UTC).
         pages_scanned (int): Number of pages the crawler fetched.
         counts (dict[str, int]): Finding count per severity name, including
-            zero buckets.
+            zero buckets. A :class:`ScanResult` always recomputes it from its findings.
         authorized_by (str | None): Active-Mode authorization attestation, or
             ``None`` for a passive scan.
         authenticated (bool): Records only *that* cookies were supplied for an
@@ -62,15 +66,15 @@ class ScanMetadata(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    target: str
+    target: Url
     mode: ScanMode
     scope: Scope
-    tool_version: str
+    tool_version: Name
     started_at: datetime
     finished_at: datetime
     pages_scanned: int
     counts: dict[str, int]
-    authorized_by: str | None = None
+    authorized_by: Name | None = None
     authenticated: bool = False
     login: LoginSummary | None = None
 
@@ -87,9 +91,9 @@ class CheckError(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    check_id: str
-    message: str
-    traceback: str
+    check_id: Name
+    message: Text
+    traceback: Url
 
 
 # The version of the canonical JSON report. It is part of the compatibility promise
@@ -105,7 +109,8 @@ class ScanResult(BaseModel):
         schema_version (int): The version of the report's JSON shape
             (:data:`SCHEMA_VERSION`). A report written by a newer WebVigil than this one
             is refused with a message that says to upgrade; one without the field is a
-            pre-1.0 report and reads as version 1. Defaults to the current version.
+            pre-1.0 report and reads as version 1; a value that is not an integer is
+            refused. Defaults to the current version.
         metadata (ScanMetadata): Everything about the run except the findings.
         findings (tuple[Finding, ...]): The deduplicated findings.
         technologies (tuple[Technology, ...]): Detected client-side libraries.
@@ -117,12 +122,12 @@ class ScanResult(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    schema_version: int = SCHEMA_VERSION
+    schema_version: StrictInt = SCHEMA_VERSION
     metadata: ScanMetadata
     findings: tuple[Finding, ...]
     technologies: tuple[Technology, ...] = ()
     errors: tuple[CheckError, ...] = ()
-    warnings: tuple[str, ...] = ()
+    warnings: tuple[Text, ...] = ()
 
     @model_validator(mode="before")
     @classmethod
@@ -141,12 +146,31 @@ class ScanResult(BaseModel):
         """
         if isinstance(data, dict):
             version = data.get("schema_version", SCHEMA_VERSION)
+            # A string or a float is refused by the strict field type after this check.
             if isinstance(version, int) and version > SCHEMA_VERSION:
                 raise ValueError(
                     f"this report uses schema {version}, but this WebVigil reads up to schema "
                     f"{SCHEMA_VERSION}: upgrade WebVigil to read it"
                 )
         return data
+
+    @model_validator(mode="after")
+    def _counts_from_findings(self) -> ScanResult:
+        """
+        Make the severity counts agree with the findings.
+
+        A report file is read as it was written, and its counts were only ever a summary of
+        its findings: a file that showed a clean table over real findings would mislead.
+
+        Returns:
+            ScanResult: ``self``, or a copy whose ``metadata.counts`` is recomputed when the
+                stored counts disagree with the findings.
+        """
+        counts = self.severity_counts(self.findings)
+        if self.metadata.counts == counts:
+            return self
+        metadata = self.metadata.model_copy(update={"counts": counts})
+        return self.model_copy(update={"metadata": metadata})
 
     @staticmethod
     def severity_counts(findings: tuple[Finding, ...]) -> dict[str, int]:

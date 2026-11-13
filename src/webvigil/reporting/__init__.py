@@ -19,6 +19,12 @@ from webvigil.reporting.json_report import JsonReporter
 from webvigil.reporting.markdown import MarkdownReporter
 from webvigil.reporting.sarif import SarifReporter
 
+# The largest report file ``load_result`` reads. Parsing takes about one and a half times the
+# file's size in memory on top of the text, so this keeps a file someone sent from exhausting the
+# machine, while a real report (about 10 KiB per finding at worst) reaches it only with tens of
+# thousands of findings.
+MAX_REPORT_BYTES = 256 * 1024 * 1024
+
 
 class Reporter(Protocol):
     """
@@ -74,8 +80,22 @@ def load_result(path: str | Path) -> ScanResult:
 
     Returns:
         ScanResult: The parsed result.
+
+    Raises:
+        OSError: If the file cannot be read.
+        ValueError: If the file is larger than :data:`MAX_REPORT_BYTES`, or is not a valid
+            report (a :class:`pydantic.ValidationError` is a ``ValueError``).
     """
-    return ScanResult.model_validate_json(Path(path).read_text("utf-8"))
+    # Read one byte past the limit instead of trusting the size the file reports: a pipe or a
+    # device has none, and a file can grow while it is read.
+    with Path(path).open("rb") as handle:
+        data = handle.read(MAX_REPORT_BYTES + 1)
+    if len(data) > MAX_REPORT_BYTES:
+        raise ValueError(
+            f"the file is larger than {MAX_REPORT_BYTES // (1024 * 1024)} MiB, the most "
+            "`webvigil report` reads"
+        )
+    return ScanResult.model_validate_json(data)
 
 
-__all__ = ["Reporter", "get_reporter", "load_result", "sort_findings"]
+__all__ = ["MAX_REPORT_BYTES", "Reporter", "get_reporter", "load_result", "sort_findings"]

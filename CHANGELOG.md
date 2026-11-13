@@ -19,6 +19,12 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
   HTML report. Mentions (`@name`), issue references (`#12`) and bare URLs in the rest of the text
   are broken with a zero-width space, so a report pasted into GitHub notifies nobody and links
   nowhere; it reads the same.
+- Every free-text field of a scan result has a size bound, applied when a check builds a finding
+  and when a report is read back: 1,024 characters for a check id, a title, a parameter, header
+  or cookie name, a label or a library name, version or advisory id; 16,384 for a description, a
+  remediation, an error message or a warning; 65,536 for a URL or a traceback; 4,096 for a piece
+  of evidence, as before. A longer value is cut and ends in `...[truncated]`; a report whose
+  values were already cut reads back unchanged.
 
 ### Security
 
@@ -35,6 +41,11 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
   file runs no script and loads nothing, as when the Web API serves it.
 - The dashboard links a reference only when `//` follows the scheme: `http:example.org` was
   accepted and resolved against the dashboard's own page.
+- `webvigil report` reads a JSON file of at most 256 MiB and exits with code 4 on a larger one,
+  so a file someone sent cannot exhaust the machine's memory.
+- `webvigil report` refuses a report whose `schema_version` is not an integer (a string or a
+  float could pass the newer-schema check and be read anyway), and recomputes the severity counts
+  from the findings instead of showing the counts written in the file.
 
 ## [1.3.1] - 2026-11-13
 

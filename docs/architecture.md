@@ -112,7 +112,12 @@ Persistence       webvigil.api.db  (SQLite via SQLModel + Alembic, web only)
    functions of it, so `webvigil report` re-renders any format offline). What the scanned
    site sent (titles, evidence, names) is text in every format: the HTML template escapes
    it, and the Markdown reporter escapes the Markdown and HTML metacharacters and fences the
-   evidence with a run of backticks longer than any inside it.
+   evidence with a run of backticks longer than any inside it. Every free-text field of a
+   result has a size bound (`core/bounded.py`: 1 Ki characters for a name or a title, 16 Ki for
+   a paragraph, 64 Ki for a URL or a traceback, 4 Ki for a piece of evidence); a longer value
+   is cut and marked `...[truncated]`. `webvigil report` reads a JSON file of at most 256 MiB,
+   refuses a `schema_version` that is not an integer, and recomputes the severity counts from
+   the findings, since the file may come from someone else.
 
 See [writing-checks.md](writing-checks.md) for the check plugin contract,
 [web-api.md](web-api.md) for running the Web API, and [stack.md](stack.md) for

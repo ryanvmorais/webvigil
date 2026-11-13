@@ -2,17 +2,24 @@
 The canonical finding model: severities, locations, evidence, and the ``Finding`` itself.
 
 This module is pure data. It must not import any HTTP, crawler, or reporting
-code — every reporter is a pure function of the objects defined here.
+code — every reporter is a pure function of the objects defined here. Every
+free-text field has a size bound (:mod:`webvigil.core.bounded`): a longer value
+is cut and marked, when a check builds it and when a report is read back.
 """
 
 from __future__ import annotations
 
 import hashlib
 from enum import IntEnum, StrEnum
+from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from webvigil.core.bounded import Name, Text, Url, bounded
+
 _EVIDENCE_MAX_CHARS = 4096
+# Evidence is multi-line, so the marker starts a line of its own instead of ending the last one.
+_EVIDENCE_MARKER = "\n...[truncated]"
 _FINGERPRINT_CHARS = 16
 
 
@@ -144,11 +151,11 @@ class Location(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    url: str
-    method: str = "GET"
-    param: str | None = None
-    header: str | None = None
-    cookie: str | None = None
+    url: Url
+    method: Name = "GET"
+    param: Name | None = None
+    header: Name | None = None
+    cookie: Name | None = None
 
     @property
     def key(self) -> str:
@@ -169,13 +176,13 @@ class EvidenceItem(BaseModel):
     Attributes:
         label (str): Short human-readable name for the snippet.
         content (str): The snippet itself, trimmed to a bounded size by
-            :meth:`of`.
+            :meth:`of` (and on validation, so a report read from a file is bounded too).
     """
 
     model_config = ConfigDict(frozen=True)
 
-    label: str
-    content: str
+    label: Name
+    content: Annotated[str, bounded(_EVIDENCE_MAX_CHARS, _EVIDENCE_MARKER)]
 
     @classmethod
     def of(cls, label: str, content: str) -> EvidenceItem:
@@ -192,7 +199,7 @@ class EvidenceItem(BaseModel):
             EvidenceItem: The frozen evidence item.
         """
         if len(content) > _EVIDENCE_MAX_CHARS:
-            content = content[:_EVIDENCE_MAX_CHARS] + "\n...[truncated]"
+            content = content[:_EVIDENCE_MAX_CHARS] + _EVIDENCE_MARKER
         return cls(label=label, content=content)
 
 
@@ -244,14 +251,14 @@ class Finding(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    check_id: str
+    check_id: Name
     severity: Severity
     confidence: Confidence
-    title: str
-    description: str
+    title: Name
+    description: Text
     location: Location
-    remediation: str
+    remediation: Text
     evidence: tuple[EvidenceItem, ...] = ()
     cwe: tuple[int, ...] = ()
-    references: tuple[str, ...] = ()
+    references: tuple[Url, ...] = ()
     fingerprint: str = Field(min_length=1)
