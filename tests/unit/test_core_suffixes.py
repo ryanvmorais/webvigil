@@ -69,8 +69,7 @@ def test_the_registrable_domain_follows_the_list_rules(host: str, expected: str 
 def test_comments_and_blank_lines_are_not_rules() -> None:
     """``//`` lines and blank lines hold no rule; a line is read up to its first space."""
     rules = parse_rules(_LIST)
-    assert "github.io" in rules.exact
-    assert not any(rule.startswith("//") for rule in rules.exact)
+    assert rules.exact == frozenset({"com", "uk", "co.uk", "xn--55qx5d.cn", "cn", "github.io"})
     assert rules.wildcards == frozenset({"ck"})
     assert rules.exceptions == frozenset({"www.ck"})
 
