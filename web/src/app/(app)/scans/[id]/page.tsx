@@ -1,7 +1,8 @@
 /**
  * `/scans/[id]` — the scan detail view (RF-20..RF-28): metadata, severity summary,
  * technology inventory, the filterable findings table, and the cancel / delete / report
- * actions. Polls the scan until it reaches a terminal status.
+ * actions. Polls the scan until it reaches a terminal status. Findings come 50 at a time,
+ * with "Load more" as on the scan list (S-46).
  */
 "use client";
 
@@ -11,6 +12,7 @@ import { Suspense, useEffect, useRef } from "react";
 import { toast } from "sonner";
 
 import { ConfirmButton } from "@/components/confirm-button";
+import { Button } from "@/components/ui/button";
 import { Empty, FullPageSpinner, LoadFailed, NotFound } from "@/components/error-states";
 import { FindingsFilters } from "@/components/findings-filters";
 import { FindingsTable } from "@/components/findings-table";
@@ -45,6 +47,13 @@ function emptyFindingsTitle(filtered: boolean, isTerminal: boolean): string {
     : "Findings will appear here as the scan runs";
 }
 
+/** "50 of 1,234 findings shown", or "All 12 findings shown" once every page is in. */
+function countText(shown: number, total: number): string {
+  const format = (value: number) => value.toLocaleString("en-US");
+  if (shown >= total) return `All ${format(total)} ${total === 1 ? "finding" : "findings"} shown`;
+  return `${format(shown)} of ${format(total)} findings shown`;
+}
+
 function ScanDetail({ id }: { id: number }) {
   const queryClient = useQueryClient();
   const search = useSearchParams();
@@ -61,9 +70,12 @@ function ScanDetail({ id }: { id: number }) {
   const filters = {
     severity: search.get("severity") ?? undefined,
     checkId: search.get("check_id") ?? undefined,
+    q: search.get("q") ?? undefined,
   };
-  const filtered = Boolean(filters.severity || filters.checkId);
+  const filtered = Boolean(filters.severity || filters.checkId || filters.q);
   const findings = useFindings(id, filters);
+  const items = findings.data?.pages.flatMap((page) => page.items) ?? [];
+  const total = findings.data?.pages.at(-1)?.total ?? 0;
 
   const cancel = useCancelScan(id);
   const remove = useDeleteScan(id);
@@ -74,6 +86,7 @@ function ScanDetail({ id }: { id: number }) {
     if (isTerminal && !wasTerminal.current) {
       wasTerminal.current = true;
       queryClient.invalidateQueries({ queryKey: keys.scans.findings(id) });
+      queryClient.invalidateQueries({ queryKey: keys.scans.findingChecks(id) });
     }
   }, [isTerminal, id, queryClient]);
 
@@ -154,17 +167,33 @@ function ScanDetail({ id }: { id: number }) {
 
       <section className="space-y-3">
         <h2 className="text-lg font-semibold">Findings</h2>
-        <FindingsFilters />
+        <FindingsFilters scanId={id} />
 
         {findings.isLoading ? <FullPageSpinner /> : null}
         {findings.isError ? (
           <LoadFailed message="Could not load findings." onRetry={() => findings.refetch()} />
         ) : null}
-        {findings.isSuccess && findings.data.length === 0 ? (
+        {findings.isSuccess && items.length === 0 ? (
           <Empty title={emptyFindingsTitle(filtered, isTerminal)} />
         ) : null}
-        {findings.data && findings.data.length > 0 ? (
-          <FindingsTable findings={findings.data} />
+        {items.length > 0 ? (
+          <>
+            <FindingsTable findings={items} />
+            <div className="flex flex-col items-center gap-1.5">
+              {findings.hasNextPage ? (
+                <Button
+                  variant="outline"
+                  onClick={() => findings.fetchNextPage()}
+                  disabled={findings.isFetchingNextPage}
+                >
+                  {findings.isFetchingNextPage ? "Loading…" : "Load more"}
+                </Button>
+              ) : null}
+              <p className="text-muted-foreground text-sm tabular-nums" aria-live="polite">
+                {countText(items.length, total)}
+              </p>
+            </div>
+          </>
         ) : null}
       </section>
     </div>

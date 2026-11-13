@@ -39,8 +39,10 @@ vi.mock("@/components/report-preview", () => ({ ReportPreview: () => null }));
 function mockScan(scan: Record<string, unknown>, findings: unknown[] = []) {
   server.use(
     http.get("*/api/scans/7", () => HttpResponse.json(scan)),
-    http.get("*/api/scans/7/findings", () => HttpResponse.json(findings)),
-    http.get("*/api/checks", () => HttpResponse.json([])),
+    http.get("*/api/scans/7/findings", () =>
+      HttpResponse.json({ items: findings, next_cursor: null, total: findings.length }),
+    ),
+    http.get("*/api/scans/7/findings/checks", () => HttpResponse.json([])),
   );
 }
 
@@ -60,8 +62,10 @@ describe("ScanDetailPage", () => {
       http.get("*/api/scans/7", () =>
         HttpResponse.json({ detail: "scan not found" }, { status: 404 }),
       ),
-      http.get("*/api/scans/7/findings", () => HttpResponse.json([])),
-      http.get("*/api/checks", () => HttpResponse.json([])),
+      http.get("*/api/scans/7/findings", () =>
+        HttpResponse.json({ items: [], next_cursor: null, total: 0 }),
+      ),
+      http.get("*/api/scans/7/findings/checks", () => HttpResponse.json([])),
     );
     renderWithClient(<ScanDetailPage />);
     // the placeholder is the whole page, so its title is the page's h1 (axe page-has-heading-one)
@@ -79,6 +83,51 @@ describe("ScanDetailPage", () => {
     const body = rows.slice(1).map((r) => r.textContent);
     expect(body[0]).toContain("Low first");
     expect(body[1]).toContain("High second");
+  });
+
+  it("appends the next page of findings when 'Load more' is used", async () => {
+    mockScan(makeScanOut({ id: 7, status: "completed" }));
+    server.use(
+      http.get("*/api/scans/7/findings", ({ request }) =>
+        new URL(request.url).searchParams.get("cursor") === "c2"
+          ? HttpResponse.json({
+              items: [makeFinding({ title: "Second page", fingerprint: "b" })],
+              next_cursor: null,
+              total: 2,
+            })
+          : HttpResponse.json({
+              items: [makeFinding({ title: "First page", fingerprint: "a" })],
+              next_cursor: "c2",
+              total: 2,
+            }),
+      ),
+    );
+    const user = userEvent.setup();
+    renderWithClient(<ScanDetailPage />);
+    await screen.findByText("First page");
+    expect(screen.getByText("1 of 2 findings shown")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Load more" }));
+    await screen.findByText("Second page");
+    expect(screen.getByText("First page")).toBeInTheDocument();
+    expect(screen.getByText("All 2 findings shown")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
+  });
+
+  it("sends the search from the URL to the API", async () => {
+    const seen = vi.fn();
+    searchParams.value = new URLSearchParams("q=admin");
+    mockScan(makeScanOut({ id: 7, status: "completed" }));
+    server.use(
+      http.get("*/api/scans/7/findings", ({ request }) => {
+        seen(new URL(request.url).searchParams.get("q"));
+        return HttpResponse.json({ items: [], next_cursor: null, total: 0 });
+      }),
+    );
+    renderWithClient(<ScanDetailPage />);
+    await screen.findByText("No findings match this filter");
+    expect(seen).toHaveBeenCalledWith("admin");
+    searchParams.value = new URLSearchParams();
   });
 
   it("cancels a running scan and refetches", async () => {

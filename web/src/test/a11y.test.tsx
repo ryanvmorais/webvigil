@@ -103,8 +103,12 @@ describe("accessibility (no serious/critical axe violations)", () => {
           }),
         ),
       ),
-      http.get("*/api/scans/7/findings", () => HttpResponse.json([makeFinding()])),
-      http.get("*/api/checks", () => HttpResponse.json([makeCheck()])),
+      http.get("*/api/scans/7/findings", () =>
+        HttpResponse.json({ items: [makeFinding()], next_cursor: null, total: 1 }),
+      ),
+      http.get("*/api/scans/7/findings/checks", () =>
+        HttpResponse.json([{ check_id: "http.headers.csp", count: 1 }]),
+      ),
     );
     const { default: ScanDetailPage } = await import("@/app/(app)/scans/[id]/page");
     const { container } = renderWithClient(<ScanDetailPage />);
