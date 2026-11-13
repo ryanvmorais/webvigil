@@ -65,6 +65,7 @@ HAR import: 212 entries read, 41 operations seeded (30 GET, 11 POST); ignored: 1
 | images, fonts, stylesheets, scripts, media, source maps | the crawler already finds the scripts a page references and the fingerprint pass reads them |
 | `PUT` / `PATCH` / `DELETE` / `OPTIONS` / `HEAD` | the injection pass fuzzes `GET` and `POST` only |
 | a path that looks like authentication or a state-changing action (`login`, `logout`, `register`, `password`, `delete`, `checkout`, `pay`, `order`, ...) | a person who recorded a purchase does not make WebVigil place another one |
+| a path with a segment that looks like a credential (`/reset/<token>`, `/invite/<token>/accept`) | counted as `token in path`: replaying it would put the token in the report, and another segment would be another endpoint |
 | an entry with no usable request, URL or parameter name, a URL over 2,048 characters | counted as malformed |
 
 ## Secrets in the recording
@@ -74,11 +75,15 @@ A HAR often holds a live session. WebVigil never uses it:
 - **Headers and cookies are never read**, not `Cookie`, not `Authorization`, not `Set-Cookie`, not
   response bodies. The only thing taken from them is the fact that the recording looks authenticated.
 - A query or form parameter whose **name** looks like a secret (`token`, `access_token`, `api_key`,
-  `key`, `secret`, `password`, `auth`, `session`, `sid`, `jwt`, `signature`, `otp`, `csrf`, ... whole
-  words, any case, with `_` and `-` as breaks) keeps its name, because it is still an injection point,
-  and loses its **value**: it becomes `wv`. So does any value over 256 characters.
-- A recorded value under a name that is not on that list (`?code=...`) is kept as the baseline. Record
-  against a test account.
+  `key`, `secret`, `password`, `pass`, `pin`, `auth`, `session`, `sid`, `jwt`, `signature`, `sig`,
+  `otp`, `nonce`, `ticket`, `assertion`, `csrf`, ... whole words, any case, with `_` and `-` as
+  breaks), or is exactly `code` or `state` (the OAuth redirect), keeps its name, because it is still
+  an injection point, and loses its **value**: it becomes `wv`. So does any value over 256 characters.
+- A value that **looks like** a credential becomes `wv` whatever its name: a JWT, 24 or more base64
+  characters that mix upper case, lower case and digits, or 32 or more hex digits. A UUID, an ObjectId
+  or a slug is kept.
+- An entry whose **path** has a segment that looks like a credential is left out (see the table above).
+- Any other recorded value is kept as the baseline. Record against a test account.
 - The credentials in the URL (`https://user:pass@host`) and the fragment are dropped.
 
 To reach the routes of the logged-in application the scan has to log in **itself**, with `--cookie`,

@@ -165,8 +165,11 @@ login a partir de página que não é de login (aprendida uma vez, ADR-6), ou `l
 e `5xx` nunca** (payload bloqueado não gasta login); `check_url` confirma antes. Re-login serializado
 por número de geração, 1 retry, teto `max_relogins` (3), depois a sessão fica "perdida" com aviso. A
 senha **não é campo do `ScanConfig`** (vai como `Credentials`, vinda do env ou de prompt; chave
-`password` no TOML é erro); `scrub_result` limpa senha e valores de sessão (4 grafias) dos campos de
-texto livre no fim do scan (segredos < 4 chars ficam). `metadata.login` guarda `relogins` /
+`password` no TOML é erro); `scrub_result` limpa senha, cookies e headers fixos (o token do
+`Bearer` também sozinho) e valores de sessão (grafias cru, JSON, HTML e percent maiúsculo/minúsculo)
+dos campos de texto livre no fim do scan, com ou sem login, e avisa quantos campos mudou; valor
+emitido pelo alvo só entra se parecer id de sessão (`looks_like_session_value`: 8+ chars, 2
+classes), e segredo do usuário < 4 chars fica, com aviso. `metadata.login` guarda `relogins` /
 `session_lost` / `confirmed`, nunca o usuário. Sem login configurado o cliente é byte a byte o de antes
 (a regra da 007 de descartar `Set-Cookie` continua). Detalhes em
 [`docs/authenticated-scanning.md`](docs/authenticated-scanning.md#automated-login----login-url-opt-in).

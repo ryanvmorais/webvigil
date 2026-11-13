@@ -11,6 +11,30 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 ## [Unreleased]
 
+### Changed
+
+- The HAR import hides more of what a recording holds. A value that looks like a credential (a
+  JWT, a long random token, a long hex digest) becomes `wv` under any parameter name, and so do
+  the values of `pass`, `pin`, `sig`, `nonce`, `ticket`, `assertion` and of a parameter named
+  exactly `code` or `state`. An entry whose path carries a token-like segment is left out and
+  counted as `token in path` in the import summary.
+
+### Security
+
+- `--cookie` and `--header` values (a bearer token also on its own) are now scrubbed from the
+  report when the target echoes them, with or without `--login-url`. Before, only the login's
+  password and session were.
+- The report scrubbing also catches HTML-escaped and lower-case percent-encoded echoes, covers
+  finding references and technology names, versions and advisories, and adds a warning that
+  counts the fields it changed. A session value the target set is scrubbed only when it looks
+  like a session id, so a target cannot blank out findings by setting a cookie to a common word.
+  A configured credential under four characters, which cannot be scrubbed, gets a warning.
+- The traceback of a check that fails no longer carries the machine's paths (the install
+  directory, the OS user name): each frame keeps only its path inside the install.
+- A configuration error names the setting and its position, never the value given, so a
+  malformed cookie or header, a `password` in `[auth.login]` or a short `session_secret` no longer
+  reach the terminal or a CI log.
+
 ## [1.3.0] - 2026-11-12
 
 A minor release with two security fixes for what a scanned site can make a scan do
