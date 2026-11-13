@@ -16,13 +16,14 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from urllib.parse import urlencode, urljoin, urlsplit, urlunsplit
+from urllib.parse import urlencode, urlsplit, urlunsplit
 
 from selectolax.lexbor import LexborHTMLParser as HTMLParser
 from selectolax.lexbor import LexborNode as Node
 
 from webvigil.core.context import Page
 from webvigil.core.target import Target, normalize_url
+from webvigil.core.urls import resolve_url
 
 _DEFAULT_ENCTYPE = "application/x-www-form-urlencoded"
 
@@ -271,7 +272,10 @@ def _form_from_node(node: Node, page_url: str) -> Form | None:
     """
     attrs = node.attributes
     raw_action = (attrs.get("action") or "").strip()
-    action = normalize_url(urljoin(page_url, raw_action or page_url))
+    resolved = resolve_url(page_url, raw_action or page_url)
+    if resolved is None:  # an action the site wrote malformed: the form goes nowhere
+        return None
+    action = normalize_url(resolved)
     method = "POST" if (attrs.get("method") or "").strip().upper() == "POST" else "GET"
     enctype = (attrs.get("enctype") or "").strip().lower() or _DEFAULT_ENCTYPE
 

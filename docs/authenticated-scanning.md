@@ -88,7 +88,7 @@ username_field = "email"
 password_field = "pass"
 form_index = 0                                # among the POST forms with a password input
 extra_fields = ["tenant=acme"]
-logged_in_marker = "Sign out"                 # regex over the body
+logged_in_marker = "Sign out"                 # regex over the body (first 200,000 chars)
 logged_out_marker = "Please sign in"
 check_url = "https://app.example.com/account" # answers differently when logged out
 max_relogins = 3                              # 0..10, failed attempts included
@@ -113,7 +113,9 @@ the session. The session cookies, like the password, go to the target origin onl
 many apps, so the result is checked in this order, the first rule that applies deciding: a
 `logged_out_marker` in the body fails the login and a `logged_in_marker` confirms it; then
 `check_url` fetched with the new session; then a heuristic (the login form is gone **and** a
-cookie is new or changed). A login form still on the page fails it. Nothing to go on is
+cookie is new or changed). A login form still on the page fails it. Both markers, here and in
+the re-login below, are searched in the first 200,000 characters of the body only: put them in
+something the page shows near the top, such as the navigation bar. Nothing to go on is
 *inconclusive*: the scan continues with a warning and the summary says `not confirmed`. A
 **failed** login stops the scan before the crawl with a message that says what was seen (the
 URL and status, never a body, a cookie or the password) and exit code **4**, so a pipeline
@@ -219,17 +221,17 @@ anonymous scan would have been bounced to a login page. WebVigil mitigates this:
 
 - **Logout links are never followed** — on any scan. A URL whose path matches `logout`,
   `log-out`, `logoff`, `signout`, `sign-out`, or `disconnect` is skipped.
-- **On an authenticated scan, links that look state-changing are skipped** — `delete`,
+- **Links that look state-changing are never followed** — on any scan, anonymous or not:
+  an anonymous `GET /items/5/delete` can change state as well. The words are `delete`,
   `remove`, `destroy`, `drop`, `revoke`, `deactivate`, `disable`, `unsubscribe`, `cancel`,
   `purge`, `wipe` (word-boundary match on the path or query). The scan records a warning
-  with the count.
+  with the count. There is no switch to turn this off.
 
 The heuristic is keyword-based and imperfect. It **misses** a delete action whose verb is
 only in the HTTP method (`DELETE /items/5`), a logout at `/session`, or a "password reset"
 link. It **over-skips** a benign `/deleted-items` listing. `reset` is deliberately excluded
-(`?reset=1` is a common benign filter). If you need one of these paths crawled, the residual
-risk of an authenticated scan touching a state-changing `GET` is yours to weigh — you are
-the expected operator, scanning your own app.
+(`?reset=1` is a common benign filter). A skipped page can still be scanned by giving it as
+the target itself.
 
 ## Form-driven crawling
 
@@ -338,8 +340,8 @@ free-text field:
   uses to skip destructive links). `deleted-items` does not match.
 
 Search forms, `POST` forms and logout forms are never flagged. The check sends nothing: it reads
-the form inventory. The crawler never submits a form with a password field, and on an authenticated
-scan it skips a `GET` form with a destructive verb as well.
+the form inventory. The crawler never submits a form with a password field, and on every scan it
+skips a `GET` form with a destructive verb as well.
 
 Confidence is `MEDIUM` at most, because the form is recognised by its shape and WebVigil cannot
 see that the server acts on the request. It follows the session cookie's `SameSite`, but not the

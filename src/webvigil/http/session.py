@@ -26,9 +26,10 @@ from webvigil.core.result import LoginSummary
 if TYPE_CHECKING:
     from webvigil.http.client import Response
 
-# A logged-out marker is searched in at most this much of the body: a login page is small, and
-# a regular expression over a multi-megabyte download is a cost nobody asked for.
-_MARKER_BODY_CHARS = 200_000
+# A login marker (``logged_in_marker``, ``logged_out_marker``) is searched in at most this much
+# of the body, here and in the login (``auth.login``): a login page is small, and a regular
+# expression over a multi-megabyte download is a cost nobody asked for.
+MARKER_BODY_CHARS = 200_000
 
 
 # ---------------------------------------------------------------------------
@@ -353,7 +354,7 @@ class Session:
         ):
             return True
         return self._marker is not None and bool(
-            self._marker.search(response.text[:_MARKER_BODY_CHARS])
+            self._marker.search(response.text[:MARKER_BODY_CHARS])
         )
 
     def learn(self, url: str) -> None:

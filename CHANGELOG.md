@@ -18,6 +18,11 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
   the values of `pass`, `pin`, `sig`, `nonce`, `ticket`, `assertion` and of a parameter named
   exactly `code` or `state`. An entry whose path carries a token-like segment is left out and
   counted as `token in path` in the import summary.
+- The crawler skips links and `GET` forms that look state-changing (`delete`, `remove`,
+  `unsubscribe`, `cancel` and the rest of the list in
+  [docs/authenticated-scanning.md](docs/authenticated-scanning.md)) on every scan, not only on
+  an authenticated one: an anonymous `GET /items/5/delete` can change state too. The warning
+  that counts them no longer says "(authenticated crawl)".
 
 ### Security
 
@@ -34,6 +39,21 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 - A configuration error names the setting and its position, never the value given, so a
   malformed cookie or header, a `password` in `[auth.login]` or a short `session_secret` no longer
   reach the terminal or a CI log.
+- `--scope subdomains` finds the registrable domain with the full
+  [Public Suffix List](https://publicsuffix.org/), vendored in the package (both its ICANN and
+  private sections), instead of a list of eleven suffixes. A target on a shared host such as
+  `alice.herokuapp.com` no longer takes `bob.herokuapp.com` into scope, and a target that is a
+  public suffix itself is scanned as that host only. The list is refreshed by
+  `scripts/update-public-suffix-list.py`; nothing is downloaded during a scan.
+- The automated login searches `logged_in_marker` and `logged_out_marker` in the first 200,000
+  characters of the answer, as the re-login already did, so a huge login answer no longer costs
+  a regular expression over up to 10 MiB.
+- What the scanned site writes can no longer end a scan with an error. A link, a form action, a
+  sitemap entry or a `Location` header with a malformed host or port is skipped; a `charset=`
+  that names a codec that is not a text encoding reads the body as UTF-8; a body that does not
+  decode as its `Content-Encoding` claims, or a URL longer than 64 KiB, fails that one request.
+  An unexpected error in the dependency fingerprint or the disclosure probe becomes a warning,
+  as in the other passes.
 
 ## [1.3.0] - 2026-11-12
 

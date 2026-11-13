@@ -26,6 +26,7 @@ from webvigil.core.errors import LoginFailedError
 from webvigil.core.target import Scope, Target
 from webvigil.http import client as client_mod
 from webvigil.http.client import HttpClient
+from webvigil.http.session import MARKER_BODY_CHARS
 
 _PASSWORD = "s3cret-pw"
 _USER = "scanner@example.com"
@@ -410,6 +411,20 @@ async def test_the_verification_order_markers_then_check_url(
                 await auth.login()
             _no_secret(caught.value)
             assert auth.session.jar.names == frozenset()
+
+
+async def test_the_markers_read_only_the_head_of_the_body() -> None:
+    """A marker past ``MARKER_BODY_CHARS`` is not seen: the regex never runs on the whole body."""
+    padding = "x" * MARKER_BODY_CHARS
+    pages = {"/home": lambda r: _html(padding, "<p>Welcome back</p>")}
+    async with _open(_Site(pages=pages), logged_in_marker="Welcome back") as auth:
+        with pytest.raises(LoginFailedError, match="logged_in_marker not found"):
+            await auth.login()
+    pages = {"/home": lambda r: _html("<p>Welcome back</p>", padding, "Please sign in")}
+    async with _open(
+        _Site(pages=pages), logged_in_marker="Welcome back", logged_out_marker="Please sign in"
+    ) as auth:
+        assert (await auth.login()).confirmed
 
 
 async def test_without_a_marker_or_a_new_cookie_the_login_is_unconfirmed_not_failed() -> None:

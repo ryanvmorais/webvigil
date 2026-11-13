@@ -324,25 +324,35 @@ async def test_logout_links_are_never_followed(httpx_mock: object) -> None:
         assert "https://example.com/logout" not in router.seen
 
 
-async def test_destructive_links_are_skipped_only_when_authenticated(httpx_mock: object) -> None:
-    """A destructive link is skipped (and counted) only under an authenticated scan."""
-    links = _html("/items/5/delete", "/ok")
+async def test_destructive_links_and_get_forms_are_skipped_on_every_crawl(
+    httpx_mock: object,
+) -> None:
+    """A destructive link or ``GET`` form is skipped (and counted), anonymous or authenticated."""
+    form = '<form method="get" action="/unsubscribe"><input name="list"></form>'
+    page = _html("/items/5/delete", "/ok").replace("</body>", form + "</body>")
     router = _Router(
         {
-            _SEED: _page(links),
+            _SEED: _page(page),
             "https://example.com/items/5/delete": _page(_html()),
+            "https://example.com/unsubscribe": _page(_html()),
             "https://example.com/ok": _page(_html()),
         }
     )
-    router.seen.clear()
-    crawler = await _crawl(_AUTHED, router, httpx_mock)
-    assert "https://example.com/items/5/delete" not in router.seen
-    assert crawler.skipped_destructive == 1
+    for config in (ScanConfig(), _AUTHED):
+        router.seen.clear()
+        crawler = await _crawl(config, router, httpx_mock)
+        assert "https://example.com/items/5/delete" not in router.seen
+        assert not any("/unsubscribe" in url for url in router.seen)
+        assert "https://example.com/ok" in router.seen
+        assert crawler.skipped_destructive == 2
 
-    router.seen.clear()
-    crawler = await _crawl(ScanConfig(), router, httpx_mock)
-    assert "https://example.com/items/5/delete" in router.seen
-    assert crawler.skipped_destructive == 0
+
+async def test_a_malformed_link_is_dropped_and_the_crawl_goes_on(httpx_mock: object) -> None:
+    """An unclosed bracket or a port out of range costs that link only."""
+    links = _html("http://[::1", "https://example.com:99999/", "/ok")
+    router = _Router({_SEED: _page(links), "https://example.com/ok": _page(_html())})
+    await _crawl(ScanConfig(), router, httpx_mock)
+    assert "https://example.com/ok" in router.seen
 
 
 async def test_submitted_form_urls_count_against_max_pages(httpx_mock: object) -> None:

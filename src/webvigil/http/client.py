@@ -21,13 +21,14 @@ import random
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from types import TracebackType
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import urlsplit
 
 import httpx
 
 from webvigil.core.config import ScanConfig
 from webvigil.core.errors import RequestFailed, ScanDeadlineExceeded
 from webvigil.core.target import Target
+from webvigil.core.urls import resolve_url
 from webvigil.http.addresses import AddressGuard, BlockedAddressError, Resolver, install
 from webvigil.http.decoding import ACCEPT_ENCODING, BodyDecoder
 from webvigil.http.policy import RateLimiter
@@ -232,6 +233,28 @@ class Response:
             bool: ``True`` when the response ``Content-Type`` names HTML.
         """
         return "html" in self.headers.get("content-type", "").lower()
+
+
+def _decode_text(raw: httpx.Response) -> str:
+    """
+    The body as text, in the charset the response declares, or UTF-8 when that cannot decode.
+
+    ``charset=`` is the target's to write, and Python's codec registry also holds codecs that
+    are not text encodings (``base64``, ``zlib``, ``hex``) or that refuse the ``replace``
+    error handler (``idna``): ``httpx`` looks the name up and then fails inside ``.text`` with
+    whatever that codec raises. Such a body is read as UTF-8 with replacement characters, as an
+    unknown charset already is.
+
+    Args:
+        raw (httpx.Response): A response with its body loaded.
+
+    Returns:
+        str: The decoded body.
+    """
+    try:
+        return raw.text
+    except Exception:  # any codec's own error: the charset name came from the target
+        return raw.content.decode("utf-8", errors="replace")
 
 
 def _host_of(url: str) -> str:
@@ -578,11 +601,16 @@ class HttpClient:
         Raises:
             OutOfScopeError: When ``url`` is out of scope and ``allow_out_of_scope`` is
                 ``False``.
-            RequestFailed: When the request fails after exhausting retries.
+            RequestFailed: When the request fails after exhausting retries, when ``url`` or a
+                redirect's ``Location`` is malformed, or when the body cannot be decoded.
         """
         method = method.upper()
         if content is not None and files is not None:
             raise ValueError("request() takes content or files, not both")
+        if resolve_url(url, "") is None:
+            # built from the site's own text (a link, a form action): not sent, and not counted
+            # as a failure, which would read as a target that stopped answering
+            raise RequestFailed(url, "malformed URL")
         if not allow_out_of_scope and not self._guard.allows(url):
             self.stats.blocked_out_of_scope += 1
             self._guard.check(url)  # raises OutOfScopeError
@@ -610,7 +638,9 @@ class HttpClient:
         for _ in range(_MAX_REDIRECT_HOPS):
             if raw.status_code not in _REDIRECT_STATUS or "location" not in raw.headers:
                 break
-            target_url = urljoin(current_url, raw.headers["location"])
+            target_url = resolve_url(current_url, raw.headers["location"])
+            if target_url is None:
+                raise RequestFailed(current_url, "the Location header is not a valid URL")
             if not self._guard.allows(target_url):
                 redirected_out = True
                 final_location = target_url
@@ -641,7 +671,7 @@ class HttpClient:
             requested_url=requested_url,
             status_code=raw.status_code,
             headers=raw.headers,
-            text=raw.text,
+            text=_decode_text(raw),
             content=raw.content,
             elapsed_ms=raw.elapsed.total_seconds() * 1000,
             history=tuple(hops),
@@ -717,7 +747,8 @@ class HttpClient:
             httpx.Response: The raw response.
 
         Raises:
-            RequestFailed: When every attempt fails.
+            RequestFailed: When every attempt fails, or at once when ``httpx`` cannot build
+                the URL or decode the body.
         """
         idempotent = method in _IDEMPOTENT
         # The scanner sends exactly the cookies configured in ``[auth]`` and nothing it
@@ -762,9 +793,6 @@ class HttpClient:
             try:
                 async with self.limiter.slot(_host_of(url)):
                     self._check_deadline(url)  # the wait for a slot may have used it up
-                    self.stats.requests += 1
-                    if crafted or not idempotent:
-                        self.stats.crafted_requests += 1
                     # httpx's stubs are narrower than what it accepts at runtime
                     # (a list of pairs works for both params and a form body).
                     request = self._active_client.build_request(
@@ -776,6 +804,9 @@ class HttpClient:
                         files=files,
                         headers=req_headers,
                     )
+                    self.stats.requests += 1
+                    if crafted or not idempotent:
+                        self.stats.crafted_requests += 1
                     # ``timeout_s`` limits each operation, so a server that drips one byte every
                     # few seconds never trips it: this is the deadline for the whole exchange,
                     # sending to last byte (issue #140). It starts after the slot is held, so
@@ -801,6 +832,10 @@ class HttpClient:
                             f"no complete response within {self._total_timeout:g} s "
                             "([http] total_timeout_s)"
                         ) from exc
+            except (httpx.InvalidURL, httpx.DecodingError) as exc:
+                # A URL httpx refuses to build (one over 64 KiB, say) or a body that does not
+                # decode as its Content-Encoding claims: the same answer on every attempt.
+                raise RequestFailed(url, f"{type(exc).__name__}: {exc}") from exc
             except (httpx.TransportError, httpx.TimeoutException) as exc:
                 last_error = f"{type(exc).__name__}: {exc}"
                 if isinstance(exc.__cause__, BlockedAddressError):

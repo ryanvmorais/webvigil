@@ -107,3 +107,17 @@ async def test_probe_warnings_surface_on_the_result(
     config = ScanConfig(disclosure={"probe": True})
     result = await Orchestrator(config, check_types=[VcsExposedCheck]).run(_TARGET)
     assert any("3-request cap" in w for w in result.warnings)
+
+
+async def test_a_raising_probe_pass_becomes_a_warning_not_a_crash(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An exception from the probe pass degrades to a scan warning."""
+
+    async def _raises(*_a: object, **_k: object) -> object:
+        raise ValueError("Port out of range 0-65535")
+
+    monkeypatch.setattr(orch_mod.DisclosureProbe, "run", _raises)
+    config = ScanConfig(disclosure={"probe": True})
+    result = await Orchestrator(config, check_types=[VcsExposedCheck]).run(_TARGET)
+    assert any("disclosure probe pass failed" in w for w in result.warnings)

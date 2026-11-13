@@ -52,6 +52,16 @@ def test_out_of_scope_action_is_dropped() -> None:
     assert _forms('<form action="https://evil.test/x"><input name="q"></form>') == ()
 
 
+def test_a_malformed_action_drops_the_form_not_the_page() -> None:
+    """An ``action`` the stdlib cannot parse drops that form; the next one is still read."""
+    html = (
+        '<form action="http://[::1"><input name="a"></form>'
+        '<form action="https://example.com:99999/"><input name="b"></form>'
+        '<form action="/ok"><input name="c"></form>'
+    )
+    assert [form.action for form in _forms(html)] == ["https://example.com/ok"]
+
+
 def test_fields_from_input_textarea_and_select() -> None:
     """Input, textarea and select fields are captured with their type and default value."""
     (form,) = _forms(

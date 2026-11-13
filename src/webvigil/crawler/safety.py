@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 _LOGOUT_RE = re.compile(
     r"log[\s_-]?out|log[\s_-]?off|sign[\s_-]?out|(?:^|/)disconnect(?:$|/|\?)", re.I
 )
-# Looks state-changing. Skipped only on an authenticated crawl (RF-03). ``reset`` is
+# Looks state-changing. Skipped on every crawl (RF-03). ``reset`` is
 # intentionally absent — ``?reset=1`` is a common benign filter; "password reset" links
 # are a documented gap.
 _DESTRUCTIVE_RE = re.compile(
@@ -82,8 +82,8 @@ def is_destructive(url: str) -> bool:
         url (str): The absolute URL to test.
 
     Returns:
-        bool: ``True`` when ``url`` looks state-changing. Skipped only on an
-            authenticated crawl (RF-03).
+        bool: ``True`` when ``url`` looks state-changing. Skipped on every crawl
+            (RF-03).
     """
     return bool(_DESTRUCTIVE_RE.search(_path_and_query(url)))
 
