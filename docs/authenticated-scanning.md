@@ -29,7 +29,9 @@ same host, or the plain `http` form of an `https` target never receives them. Un
 subdomain separately if you need that.
 
 **Privacy.** A cookie value is held only in memory for the scan and is never written to a
-report, a log line, a warning, or the scan metadata. The JSON report records
+report, a log line, a warning, or the scan metadata. If the target echoes it into a page that a
+finding quotes, the result is scrubbed of it (`[redacted]`, as for the login below), and a
+malformed `--cookie` is reported by its position, never by its text. The JSON report records
 `metadata.authenticated: true` (a boolean — no names, no values, no count). The CLI summary
 prints the cookie **count** and nothing more.
 
@@ -137,10 +139,15 @@ what it has.
 **Privacy.** The password is read once, held in memory, and never written to the config (it is
 not a field), a report, a log line, a warning or the metadata. The JSON report gains
 `metadata.login: {relogins, session_lost, confirmed}` (`null` without a login) and no username.
-If a target reflects the password or a session value into a page, an error or a URL, the final
-result is scrubbed of it (`[redacted]`, in the raw, JSON-escaped, percent-encoded and
-form-encoded spellings) in findings, locations, warnings and check errors. A value shorter than
-four characters is not scrubbed: replacing it would shred the report.
+If a target reflects the password, a configured cookie or header (a bearer token also on its
+own), or a session value into a page, an error or a URL, the final result is scrubbed of it
+(`[redacted]`, in the raw, JSON-escaped, HTML-escaped, percent-encoded and form-encoded
+spellings) in findings, locations, references, technologies, warnings and check errors, and a
+warning counts the fields changed. A session value the target set is scrubbed only when it looks
+like a session id (8 or more characters mixing two of lower case, upper case and digits), so a
+target cannot blank the report by setting a cookie to a common word. A configured value shorter
+than four characters is not scrubbed, since replacing it would shred the report, and the result
+says so in a warning.
 
 **What it will not do.** CAPTCHA, MFA / TOTP, SSO and delegated logins, forms built by
 JavaScript, multi-page logins (the username on one page and the password on the next), JSON /

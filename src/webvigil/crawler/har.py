@@ -25,7 +25,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qsl, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, unquote, urlsplit, urlunsplit
 
 from webvigil.core.errors import HarError
 from webvigil.core.target import Target
@@ -118,8 +118,9 @@ _STATIC_EXTENSIONS = (
 )
 
 # Whole words of a parameter name that mark its value as a secret (RF-07 plus csrf, xsrf, pwd,
-# apikey, authorization, credential and bearer: replacing a value costs a baseline, leaking one
-# costs more). Matched after splitting camelCase and ``_`` / ``-`` / any non-alphanumeric.
+# apikey, authorization, credential, bearer, pass, pin, sig, nonce, ticket and assertion:
+# replacing a value costs a baseline, leaking one costs more). Matched after splitting camelCase
+# and ``_`` / ``-`` / any non-alphanumeric.
 _SECRET_WORDS = frozenset(
     {
         "token",
@@ -140,8 +141,24 @@ _SECRET_WORDS = frozenset(
         "xsrf",
         "credential",
         "bearer",
+        "pass",
+        "pin",
+        "sig",
+        "nonce",
+        "ticket",
+        "assertion",
     }
 )
+# Whole names that carry a secret only when they stand alone: the OAuth ``code`` and ``state``
+# of a redirect back to the application, not ``zip_code`` or ``state_id``.
+_SECRET_NAMES = frozenset({"code", "state"})
+
+# Values that look like a credential whatever their name (a JWT, a long random token, a long
+# hex digest). A UUID or a 24-digit ObjectId is an identifier and does not match: no upper case
+# in the first, too short for the last.
+_JWT_RE = re.compile(r"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*")
+_TOKEN_RE = re.compile(r"[A-Za-z0-9_+/=-]{24,}")
+_HEX_RE = re.compile(r"[0-9a-fA-F]{32,}")
 _CAMEL_BREAK_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
 _NON_WORD_RE = re.compile(r"[^a-z0-9]+")
 
@@ -169,6 +186,8 @@ class HarTally:
         static (int): An image, font, stylesheet, script, media file or source map.
         other_method (int): A method that is neither ``GET`` nor ``POST``.
         unsafe (int): A login, logout or state-changing path (``looks_unsafe_operation``).
+        token_path (int): A path segment that looks like a credential (a reset link, a token
+            in the URL); replaying it would carry the secret into the report.
         malformed (int): No usable request, URL or parameter name.
         duplicate (int): The same operation as one already kept.
         seeded_get (int): ``GET`` operations returned.
@@ -180,6 +199,7 @@ class HarTally:
     static: int = 0
     other_method: int = 0
     unsafe: int = 0
+    token_path: int = 0
     malformed: int = 0
     duplicate: int = 0
     seeded_get: int = 0
@@ -225,6 +245,7 @@ class HarImport:
                 (t.static, "static"),
                 (t.other_method, "other method"),
                 (t.unsafe, "unsafe"),
+                (t.token_path, "token in path"),
                 (t.malformed, "malformed"),
                 (t.duplicate, "duplicate"),
             )
@@ -295,6 +316,9 @@ def load_har(path: str, *, target: Target, max_operations: int) -> HarImport:
             continue
         if _is_static(raw, parts.path):
             tally.static += 1
+            continue
+        if _path_carries_token(parts.path):
+            tally.token_path += 1
             continue
         operation = _operation(method, parts, request)
         if operation is None:
@@ -632,8 +656,43 @@ def _is_secret_name(name: str) -> bool:
             non-alphanumeric break, with an optional plural ``s``) is a secret word: ``token``,
             ``access_token``, ``accessToken``, ``X-Api-Key``; not ``tokenizer`` or ``monkey``.
     """
+    if name.strip().lower() in _SECRET_NAMES:
+        return True
     words = _NON_WORD_RE.split(_CAMEL_BREAK_RE.sub(" ", name).lower())
     return any(word in _SECRET_WORDS or word.rstrip("s") in _SECRET_WORDS for word in words)
+
+
+def _looks_like_credential(value: str) -> bool:
+    """
+    Args:
+        value (str): A decoded parameter value or path segment.
+
+    Returns:
+        bool: ``True`` for a JWT, a run of 24 or more base64 characters that mixes upper
+            case, lower case and digits, or 32 or more hex digits; ``False`` for a word, a
+            number, a UUID or an ObjectId.
+    """
+    if _JWT_RE.fullmatch(value) or _HEX_RE.fullmatch(value):
+        return True
+    return bool(
+        _TOKEN_RE.fullmatch(value)
+        and any(c.isupper() for c in value)
+        and any(c.islower() for c in value)
+        and any(c.isdigit() for c in value)
+    )
+
+
+def _path_carries_token(path: str) -> bool:
+    """
+    Args:
+        path (str): The request URL's path, still percent-encoded.
+
+    Returns:
+        bool: ``True`` when a segment looks like a credential (:func:`_looks_like_credential`).
+            Such an entry is left out rather than rewritten: another segment would be another
+            endpoint, not the recorded one.
+    """
+    return any(_looks_like_credential(unquote(segment)) for segment in path.split("/"))
 
 
 def _scrub(name: str, value: str) -> str:
@@ -643,10 +702,10 @@ def _scrub(name: str, value: str) -> str:
         value (str): The recorded value.
 
     Returns:
-        str: ``value``, or the placeholder when the name is secret-like or the value is longer
-            than ``_MAX_VALUE``.
+        str: ``value``, or the placeholder when the name is secret-like, the value looks like a
+            credential, or the value is longer than ``_MAX_VALUE``.
     """
-    if len(value) > _MAX_VALUE or _is_secret_name(name):
+    if len(value) > _MAX_VALUE or _is_secret_name(name) or _looks_like_credential(value):
         return _PLACEHOLDER
     return value
 

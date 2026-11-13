@@ -306,3 +306,34 @@ def test_the_login_table_takes_a_logout_url(tmp_path: Path) -> None:
         ).auth.login.logout_url
         is None
     )  # type: ignore[union-attr]
+
+
+# ---------------------------------------------------------------------------
+# Error messages never echo a value (a cookie, a header, a password)
+# ---------------------------------------------------------------------------
+
+_LEAK = "s3cr3t-LEAK-value"
+
+
+@pytest.mark.parametrize(
+    ("auth", "expected"),
+    [
+        ({"cookies": ["ok=1", _LEAK]}, "invalid cookie #2"),
+        ({"headers": [f"Bearer {_LEAK}"]}, "invalid header #1"),
+        (
+            {"login": {"url": "http://x/in", "username": "u", "extra_fields": [_LEAK]}},
+            "invalid extra field #1",
+        ),
+        ({"login": {"url": "http://x/in", "username": "u", "password": _LEAK}}, "password_env"),
+        ({"cookies": [_LEAK, 7]}, "auth.cookies.1"),
+    ],
+)
+def test_a_config_error_names_the_setting_but_never_its_value(
+    auth: dict[str, object], expected: str
+) -> None:
+    """A malformed credential, or a password in the file, must not reach a terminal or CI log."""
+    with pytest.raises(ConfigError) as caught:
+        ScanConfig.model_validate_or_raise({"auth": auth})
+    assert expected in str(caught.value)
+    assert _LEAK not in str(caught.value)
+    assert caught.value.__cause__ is None

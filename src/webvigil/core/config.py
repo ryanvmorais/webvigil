@@ -226,6 +226,9 @@ class LoginSection(_Section):
         """
         Reject an extra field that is not a ``name=value`` pair.
 
+        The message names the entry by its position, never by its text: a malformed entry
+        may be a secret typed without its name.
+
         Args:
             raw (list[str]): The configured pairs.
 
@@ -235,10 +238,10 @@ class LoginSection(_Section):
         Raises:
             ValueError: If an entry has no ``=`` or an empty name.
         """
-        for entry in raw:
+        for index, entry in enumerate(raw, start=1):
             name, sep, _value = entry.partition("=")
             if not sep or not name.strip():
-                raise ValueError(f"invalid extra field {entry!r}: expected 'name=value'")
+                raise ValueError(f"invalid extra field #{index}: expected 'name=value'")
         return raw
 
     @field_validator("logged_in_marker", "logged_out_marker")
@@ -305,6 +308,9 @@ class AuthSection(_Section):
         """
         Reject any cookie entry that is not a ``name=value`` pair.
 
+        The message names the entry by its position, never by its text: a malformed entry
+        is often the session value pasted without its name.
+
         Args:
             raw (list[str]): The configured cookie entries.
 
@@ -314,10 +320,10 @@ class AuthSection(_Section):
         Raises:
             ValueError: If an entry has no ``=`` or an empty name.
         """
-        for entry in raw:
+        for index, entry in enumerate(raw, start=1):
             name, sep, _value = entry.partition("=")
             if not sep or not name.strip():
-                raise ValueError(f"invalid cookie {entry!r}: expected 'name=value'")
+                raise ValueError(f"invalid cookie #{index}: expected 'name=value'")
         return raw
 
     @field_validator("headers")
@@ -329,7 +335,9 @@ class AuthSection(_Section):
         The value may be empty and may itself contain ``:`` (a URL, a
         timestamp); only the name — everything before the first ``:`` — is
         constrained. ``Host`` and ``Content-Length`` are computed by the
-        transport and a user override would corrupt the request.
+        transport and a user override would corrupt the request. A malformed entry is named
+        by its position, never by its text (it may be a bare token); a reserved name is named,
+        since a header name is no secret.
 
         Args:
             raw (list[str]): The configured header entries.
@@ -341,10 +349,10 @@ class AuthSection(_Section):
             ValueError: If an entry has no ``:``, an empty name, or names a
                 reserved header.
         """
-        for entry in raw:
+        for index, entry in enumerate(raw, start=1):
             name, sep, _value = entry.partition(":")
             if not sep or not name.strip():
-                raise ValueError(f"invalid header {entry!r}: expected 'Name: Value'")
+                raise ValueError(f"invalid header #{index}: expected 'Name: Value'")
             if name.strip().lower() in {"host", "content-length"}:
                 raise ValueError(
                     f"header {name.strip()!r} is computed by the transport and cannot be set"
@@ -388,6 +396,22 @@ class AuthSection(_Section):
             (name.strip(), value.strip())
             for name, _sep, value in (entry.partition(":") for entry in self.headers)
         )
+
+    @property
+    def secret_values(self) -> frozenset[str]:
+        """
+        Returns:
+            frozenset[str]: What the report must be scrubbed of (spec 019 RF-11, applied to the
+                static credentials): each cookie value, and each header value both whole and
+                without its scheme (``Bearer <token>`` gives the token on its own too).
+        """
+        values = {entry.partition("=")[2].strip() for entry in self.cookies}
+        for _name, value in self.header_pairs:
+            values.add(value)
+            scheme, _sep, credential = value.partition(" ")
+            if scheme and credential.strip():
+                values.add(credential.strip())
+        return frozenset(value for value in values if value)
 
 
 class ChecksSection(_Section):
@@ -583,12 +607,14 @@ class ScanConfig(_Section):
             ScanConfig: The validated configuration.
 
         Raises:
-            ConfigError: If ``data`` fails model validation.
+            ConfigError: If ``data`` fails model validation. The message carries each
+                field's location and reason, never the value given
+                (:func:`describe_validation_error`).
         """
         try:
             return cls.model_validate(data)
         except ValidationError as exc:
-            raise ConfigError(str(exc)) from exc
+            raise ConfigError(describe_validation_error(exc)) from None
 
     def with_overrides(self, **sections: dict[str, Any]) -> ScanConfig:
         """
@@ -622,3 +648,26 @@ class ScanConfig(_Section):
             current = merged.get(name) or {}
             merged[name] = {**current, **values}
         return self.model_validate_or_raise(merged)
+
+
+def describe_validation_error(exc: ValidationError) -> str:
+    """
+    Render a validation failure without the values that failed.
+
+    ``str(exc)`` would print pydantic's ``input_value``: the whole ``[auth]`` table with its
+    cookies and headers, or the ``password`` a user put in ``[auth.login]``, on a terminal or in
+    a CI log.
+
+    Args:
+        exc (ValidationError): The failure.
+
+    Returns:
+        str: One ``location: reason`` line per error, under a count.
+    """
+    lines = [
+        f"  {'.'.join(str(part) for part in error['loc']) or 'config'}: {error['msg']}"
+        for error in exc.errors(include_url=False, include_context=False, include_input=False)
+    ]
+    count = len(lines)
+    head = f"{count} invalid setting{'' if count == 1 else 's'} in the configuration"
+    return "\n".join([head, *lines])
