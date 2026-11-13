@@ -3,6 +3,8 @@
  * (#161).
  */
 
+import { hasHiddenCharacters } from "@/lib/text";
+
 export const REPO_URL = "https://github.com/ryanvmorais/webvigil";
 export const SECURITY_DOC_URL = `${REPO_URL}/blob/main/SECURITY.md`;
 
@@ -11,15 +13,20 @@ export const SECURITY_DOC_URL = `${REPO_URL}/blob/main/SECURITY.md`;
  *
  * A finding's references come from the checks, except the ones the opt-in OSV lookup copies from
  * an advisory record that a third party wrote. React escapes an attribute, but a `javascript:` or
- * `data:` value is still a link, so only an absolute `http(s)` URL with a host and no whitespace
- * or control character qualifies (browsers drop tabs and newlines inside a URL). The Python side
- * keeps the same rule in `webvigil.core.urls.is_http_url` (#161).
+ * `data:` value is still a link, so only an absolute `http(s)` URL with a host and no whitespace,
+ * control, bidirectional or invisible character qualifies (browsers drop tabs and newlines inside
+ * a URL, and a bidirectional override makes it read as another address). The `//` after the
+ * scheme is required: `new URL` accepts `http:example.com`, but a browser resolves that `href`
+ * against the dashboard's own page. The Python side keeps the same rule in
+ * `webvigil.core.urls.is_http_url` (#161).
  *
  * @param value - The reference as the API sent it.
  * @returns `true` when it is safe to render as an `<a href>`.
  */
 export function isHttpUrl(value: string): boolean {
-  if (/[\s\p{Cc}]/u.test(value)) return false;
+  if (/[\s\p{Cc}]/u.test(value) || hasHiddenCharacters(value)) return false;
+  const lower = value.toLowerCase();
+  if (!lower.startsWith("http://") && !lower.startsWith("https://")) return false;
   try {
     const url = new URL(value);
     return (url.protocol === "http:" || url.protocol === "https:") && url.hostname !== "";

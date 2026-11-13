@@ -16,9 +16,15 @@ bad link costs that link and not the crawl, the check or the pass that met it.
 
 from __future__ import annotations
 
+import re
 from urllib.parse import urljoin, urlsplit
 
+from webvigil.core.text import INVISIBLE_CHARS
+
 _LINK_SCHEMES = frozenset({"http", "https"})
+# A bidirectional or invisible character makes a link read as another address than the one it
+# opens, and the reporters would show it as an escape inside the ``href``.
+_INVISIBLE_RE = re.compile(f"[{INVISIBLE_CHARS}]")
 
 
 def is_http_url(value: str) -> bool:
@@ -28,10 +34,13 @@ def is_http_url(value: str) -> bool:
 
     Returns:
         bool: ``True`` when ``value`` is an absolute ``http`` or ``https`` URL with a host and
-            carries no whitespace or control character. Browsers drop tabs and newlines inside a
-            URL, so ``"java<TAB>script:..."`` must not slip through by looking like something else.
+            carries no whitespace, control, bidirectional or invisible character. Browsers drop
+            tabs and newlines inside a URL, so ``"java<TAB>script:..."`` must not slip through by
+            looking like something else.
     """
-    if any(ch.isspace() or ord(ch) < 0x20 or ord(ch) == 0x7F for ch in value):
+    if any(ch.isspace() or ord(ch) < 0x20 or 0x7F <= ord(ch) <= 0x9F for ch in value):
+        return False
+    if _INVISIBLE_RE.search(value):
         return False
     try:
         parts = urlsplit(value)

@@ -75,6 +75,31 @@ describe("FindingsTable", () => {
     expect(screen.queryByRole("link", { name: "data:text/html,x" })).not.toBeInTheDocument();
   });
 
+  it("shows bidirectional and zero-width characters from the site as escapes", async () => {
+    const user = userEvent.setup();
+    const rlo = String.fromCodePoint(0x202e);
+    const zwsp = String.fromCodePoint(0x200b);
+    render(
+      <FindingsTable
+        findings={[
+          makeFinding({
+            fingerprint: "z",
+            title: `Reflected in ${rlo}fdp.exe`,
+            evidence: [{ label: `cookie ad${zwsp}min`, content: `a${rlo}b` }],
+          }),
+        ]}
+      />,
+    );
+    expect(screen.getByText("Reflected in \\u202efdp.exe")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /^Expand finding:/ }));
+
+    expect(screen.getByText("cookie ad\\u200bmin")).toBeInTheDocument();
+    expect(screen.getByText("a\\u202eb")).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain(rlo);
+    expect(document.body.textContent).not.toContain(zwsp);
+  });
+
   it("names each expand button after its finding, so a screen reader can tell them apart", () => {
     render(
       <FindingsTable

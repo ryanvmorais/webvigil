@@ -50,12 +50,16 @@ def test_an_absolute_http_url_is_a_link(value: str) -> None:
         "mailto:someone@example.org",
         "http://[::1",  # urlsplit raises ValueError on this one
         "",
+        "http:example.org/path",  # a browser resolves it against the current page
+        "https://example.org/" + chr(0x9B) + "x",  # C1: a terminal reads it as CSI
+        "https://example.org/" + chr(0x202E) + "fdp.exe",  # reads as another address
+        "https://exa" + chr(0x200B) + "mple.org/",
     ],
 )
 def test_anything_else_is_not_a_link(value: str) -> None:
     """
-    Another scheme, a relative or scheme-relative value, a missing host or a stray control
-    or whitespace character is rejected; a malformed URL does not raise.
+    Another scheme, a relative or scheme-relative value, a missing host or a stray control,
+    whitespace, bidirectional or invisible character is rejected; a malformed URL does not raise.
     """
     assert is_http_url(value) is False
 

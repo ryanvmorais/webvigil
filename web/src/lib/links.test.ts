@@ -27,6 +27,10 @@ describe("isHttpUrl", () => {
     ["ftp://example.org/file", "ftp scheme"],
     ["mailto:someone@example.org", "mailto scheme"],
     ["", "empty"],
+    ["http:example.org/path", "no // after the scheme, which a browser resolves as relative"],
+    [`https://example.org/${String.fromCodePoint(0x202e)}fdp.exe`, "bidirectional override"],
+    [`https://exa${String.fromCodePoint(0x200b)}mple.org/`, "zero-width space"],
+    [`https://example.org/${String.fromCodePoint(0x9b)}x`, "C1 control"],
   ])("rejects %j (%s)", (value) => {
     expect(isHttpUrl(value)).toBe(false);
   });
