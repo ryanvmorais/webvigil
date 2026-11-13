@@ -42,6 +42,9 @@ _REDIRECT_STATUS = frozenset({301, 302, 303, 307, 308})
 _IDEMPOTENT = frozenset({"GET", "HEAD", "OPTIONS", "TRACE"})
 # A 307/308 replays the method and body; a 301/302/303 becomes a bodyless GET.
 _REDIRECT_KEEPS_METHOD = frozenset({307, 308})
+# Headers that carry a credential when a caller passes them itself; dropped on a redirect hop to a
+# URL the scan's credentials may not reach (see ``HttpClient._hop_headers``).
+_CREDENTIAL_HEADERS = frozenset({"cookie", "authorization"})
 
 # spec 019. Set only inside the task that called ``HttpClient.handshake()`` / ``quiet()``, so a
 # re-login running in one task never switches another task's requests into handshake mode.
@@ -568,6 +571,30 @@ class HttpClient:
                 session.learn(url)
         return response
 
+    def _hop_headers(self, headers: dict[str, str] | None, url: str) -> dict[str, str] | None:
+        """
+        The caller's headers for a redirect hop, without the credentials ``url`` may not get.
+
+        A caller can pass a credential itself (the session tests send the login's cookies as a
+        ``Cookie`` header). The client keeps the caller's headers on every hop it follows, and the
+        scope lets a hop reach another subdomain or plain ``http``, where
+        :meth:`~webvigil.core.target.Target.carries_credentials` says no credential goes: there a
+        ``Cookie``, an ``Authorization`` or a configured ``[auth]`` header is dropped, as the client
+        never adds its own.
+
+        Args:
+            headers (dict[str, str] | None): The headers the caller passed.
+            url (str): The URL of the hop.
+
+        Returns:
+            dict[str, str] | None: ``headers`` unchanged when ``url`` may carry credentials, else a
+                copy without the credential headers.
+        """
+        if not headers or self._target.carries_credentials(url):
+            return headers
+        secret = _CREDENTIAL_HEADERS | {name.lower() for name, _value in self._auth_headers}
+        return {name: value for name, value in headers.items() if name.lower() not in secret}
+
     async def _send_with_redirects(
         self,
         method: str,
@@ -658,7 +685,7 @@ class HttpClient:
             raw = await self._request_with_retry(
                 current_method,
                 current_url,
-                headers,
+                self._hop_headers(headers, current_url),
                 current_params,
                 current_data,
                 content,

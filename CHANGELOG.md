@@ -50,6 +50,10 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
   The ASP.NET error-page signature and the open-redirect detector bound their repetitions.
 - The SRI, mixed-content and session-identifier-in-URL checks report at most 20 findings per
   page; the last one notes that the page lists more.
+- A `Cookie`, an `Authorization` or a configured `[auth]` header that a check passes itself no
+  longer follows a redirect to another subdomain (`--scope subdomains`) or down to plain `http`
+  (GHSA-9w7j-qp5j-mw26). The session tests of the automated login sent the session cookie this
+  way; on such a hop it is now dropped, like the credentials the client adds itself.
 - Bidirectional controls and zero-width characters from the scanned site (the "Trojan Source"
   characters) are shown as visible `\uNNNN` escapes in the terminal summary, the Markdown, HTML
   and JSON reports and the dashboard, so a title, a URL or a piece of evidence reads as what it
