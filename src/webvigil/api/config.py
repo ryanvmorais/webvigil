@@ -10,6 +10,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 
+from webvigil.core.config import describe_validation_error
 from webvigil.core.errors import ConfigError
 
 _ENV_PREFIX = "WEBVIGIL_"
@@ -164,7 +165,8 @@ class WebConfig(BaseModel):
         try:
             return cls.model_validate(data)
         except ValidationError as exc:
-            raise ConfigError(str(exc)) from exc
+            # describe_validation_error, not str(exc): a short session_secret is still a secret
+            raise ConfigError(describe_validation_error(exc)) from None
 
 
 def _env_overrides() -> dict[str, Any]:

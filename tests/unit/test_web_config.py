@@ -140,3 +140,13 @@ def test_an_allowed_hosts_entry_that_is_not_a_plain_name_is_refused(entry: str) 
     """A wildcard would undo the check; a scheme, port or path would never match a Host."""
     with pytest.raises(ValidationError):
         WebConfig(allowed_hosts=[entry])
+
+
+def test_a_short_session_secret_is_not_echoed_in_the_error(tmp_path: Path) -> None:
+    """The refused secret is still a secret: the message names the field, not the value."""
+    toml = tmp_path / "web.toml"
+    toml.write_text("[web]\nsession_secret = 'tooShort-LEAK'\n", encoding="utf-8")
+    with pytest.raises(ConfigError) as caught:
+        WebConfig.load(toml)
+    assert "session_secret" in str(caught.value)
+    assert "tooShort-LEAK" not in str(caught.value)

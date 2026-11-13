@@ -316,6 +316,16 @@ class Session:
         """
         return frozenset(self._secrets | self.jar.values)
 
+    @property
+    def given_secrets(self) -> frozenset[str]:
+        """
+        Returns:
+            frozenset[str]: The values the user gave (the password), always scrubbed; the jar's
+                values are the target's and are scrubbed only when they look like a session id
+                (``webvigil.auth.scrub.looks_like_session_value``).
+        """
+        return frozenset(self._secrets)
+
     def looks_dropped(self, response: Response) -> bool:
         """
         Whether a response to a target-host request says the session is gone (RF-08).

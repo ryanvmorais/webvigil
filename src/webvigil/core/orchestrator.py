@@ -9,9 +9,13 @@ checks concurrently against a shared context → dedupe findings → assemble a
 from __future__ import annotations
 
 import asyncio
+import os
+import sys
+import sysconfig
 import traceback
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from pathlib import Path
 
 from webvigil import __version__
 from webvigil.auth.login import Authenticator, Credentials
@@ -252,8 +256,14 @@ class Orchestrator:
             errors=tuple(errors),
             warnings=tuple(warnings),
         )
-        # spec 019, RF-11: a target may have reflected the password or a session id into a page.
-        return scrub_result(result, session.secrets) if session is not None else result
+        # spec 019, RF-11: a target may have reflected the password, a configured cookie or
+        # header, or a session id into a page. The static credentials are scrubbed with or
+        # without a login; the jar's values only when they look like a session id.
+        given = set(self._config.auth.secret_values)
+        if session is not None:
+            given |= session.given_secrets
+        issued = session.jar.values if session is not None else frozenset()
+        return scrub_result(result, given, issued=issued)
 
     async def _log_in(
         self, http: HttpClient, target: Target, warnings: list[str]
@@ -813,7 +823,7 @@ class Orchestrator:
                     CheckError(
                         check_id=check_cls.id,
                         message=str(exc) or type(exc).__name__,
-                        traceback="".join(traceback.format_exception(exc)),
+                        traceback=_portable_traceback(exc),
                     )
                 )
                 return
@@ -845,3 +855,39 @@ def _dedupe(findings: Sequence[Finding]) -> tuple[Finding, ...]:
         seen.add(finding.fingerprint)
         unique.append(finding)
     return tuple(unique)
+
+
+def _local_prefixes() -> list[tuple[str, str]]:
+    """
+    Returns:
+        list[tuple[str, str]]: ``(directory + separator, replacement)`` for each place this
+            install lives (the directory that holds the ``webvigil`` package, the interpreter's
+            library paths and prefixes, then the user's home as ``~``), longest first so a
+            nested directory is cut before its parent.
+    """
+    paths = sysconfig.get_paths()
+    places = {str(Path(__file__).resolve().parents[2]), sys.prefix, sys.base_prefix}
+    places |= {paths[key] for key in ("purelib", "platlib", "stdlib", "platstdlib") if key in paths}
+    pairs = {(str(Path(place)) + os.sep, "") for place in places if place}
+    pairs.add((str(Path.home()) + os.sep, "~" + os.sep))
+    return sorted(pairs, key=lambda pair: len(pair[0]), reverse=True)
+
+
+def _portable_traceback(exc: BaseException) -> str:
+    """
+    Format a check's exception for the result without the machine's paths.
+
+    The traceback is stored in ``ScanResult.errors`` and travels with the JSON report, which
+    gets shared. The install path names the OS user (``/home/<name>/...``), so each frame
+    keeps only its path inside the install (``webvigil/checks/...``, ``httpx/...``).
+
+    Args:
+        exc (BaseException): The exception a check raised.
+
+    Returns:
+        str: The formatted traceback, chained exceptions included, with local directories cut.
+    """
+    text = "".join(traceback.format_exception(exc))
+    for prefix, replacement in _local_prefixes():
+        text = text.replace(prefix, replacement)
+    return text

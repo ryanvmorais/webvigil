@@ -28,7 +28,7 @@ from webvigil.core import orchestrator as orch_mod
 from webvigil.core.config import ScanConfig
 from webvigil.core.context import Page, ScanContext
 from webvigil.core.errors import ActiveModeNotAuthorized, LoginFailedError, ScanDeadlineExceeded
-from webvigil.core.findings import Category, Confidence, Location, ScanMode, Severity
+from webvigil.core.findings import Category, Confidence, Finding, Location, ScanMode, Severity
 from webvigil.core.orchestrator import Orchestrator
 from webvigil.core.result import LoginSummary
 from webvigil.http.session import Session, SessionJar
@@ -141,6 +141,41 @@ async def test_a_raising_check_is_isolated() -> None:
     assert len(result.findings) == 1
     assert [e.check_id for e in result.errors] == ["test.boom"]
     assert "kaboom" in result.errors[0].message
+
+
+async def test_a_check_traceback_carries_no_local_path() -> None:
+    """The traceback travels with the JSON report: no install directory, no OS user name."""
+    from pathlib import Path
+
+    result = await Orchestrator(ScanConfig(), check_types=[Boom]).run(_TARGET)
+    traceback = result.errors[0].traceback
+    assert "RuntimeError: kaboom" in traceback
+    assert str(Path(__file__).resolve().parents[2]) not in traceback
+    assert str(Path.home()) not in traceback
+    assert "test_orchestrator.py" in traceback  # the frame is still named
+
+
+async def test_a_static_cookie_or_header_echoed_into_evidence_is_redacted() -> None:
+    """``--cookie`` / ``--header`` values are scrubbed with no login, bearer token included."""
+    token = "eyJhbGciOiJIUzI1NiJ9.e30.c2ln"
+
+    class Echo(_Base):
+        id = "test.echo"
+
+        async def run(self, ctx: ScanContext) -> list[object]:
+            finding = self._finding("echo")
+            assert isinstance(finding, Finding)  # _finding is typed object; this narrows it
+            echoed = f"echoed: sid=c00kieVALUE9 and token {token}"
+            return [finding.model_copy(update={"description": echoed})]
+
+    config = ScanConfig.model_validate(
+        {"auth": {"cookies": ["sid=c00kieVALUE9"], "headers": [f"Authorization: Bearer {token}"]}}
+    )
+    result = await Orchestrator(config, check_types=[Echo]).run(_TARGET)
+    rendered = result.model_dump_json()
+    assert "c00kieVALUE9" not in rendered
+    assert token not in rendered
+    assert "[redacted]" in result.findings[0].description
 
 
 async def test_active_mode_without_authorization_is_rejected() -> None:

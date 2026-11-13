@@ -380,6 +380,75 @@ def test_a_secret_named_form_field_is_scrubbed_too(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
+    "name",
+    ["code", "state", "pass", "pin", "sig", "nonce", "ticket", "saml_assertion", "user_pass"],
+)
+def test_an_oauth_or_sso_name_gets_a_placeholder_value(tmp_path: Path, name: str) -> None:
+    """The OAuth ``code``/``state`` of a redirect and the SSO names are secrets too."""
+    result = _load(tmp_path, [_entry(f"{_SITE}/rest/cb?{name}=LEAKME")])
+    assert result.operations[0].query == ((name, "wv"),)
+
+
+@pytest.mark.parametrize("name", ["zip_code", "country_code", "state_id", "passport"])
+def test_code_and_state_inside_a_longer_name_keep_their_value(tmp_path: Path, name: str) -> None:
+    """``code`` and ``state`` match only as the whole name; ``pass`` only as a whole word."""
+    result = _load(tmp_path, [_entry(f"{_SITE}/rest/s?{name}=BR")])
+    assert result.operations[0].query == ((name, "BR"),)
+
+
+_JWT = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjMifQ.c2lnbmF0dXJlLXZhbHVl"
+
+
+@pytest.mark.parametrize(
+    "value",
+    [_JWT, "Zx8Kq2LmN4pR7tVw9yB3cD5fH", "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822c"],
+)
+def test_a_credential_looking_value_gets_a_placeholder_whatever_its_name(
+    tmp_path: Path, value: str
+) -> None:
+    """A JWT, a long mixed-case random token or a long hex digest is hidden under any name."""
+    result = _load(tmp_path, [_entry(f"{_SITE}/rest/s?q={value}&page=2")])
+    assert result.operations[0].query == (("q", "wv"), ("page", "2"))
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["550e8400-e29b-41d4-a716-446655440000", "507f1f77bcf86cd799439011", "running-shoes-2026"],
+)
+def test_an_identifier_or_a_slug_keeps_its_value(tmp_path: Path, value: str) -> None:
+    """A UUID, an ObjectId or a slug is a baseline, not a credential."""
+    result = _load(tmp_path, [_entry(f"{_SITE}/rest/s?id={value}")])
+    assert result.operations[0].query == (("id", value),)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        f"/reset/{_JWT}",
+        "/invite/Zx8Kq2LmN4pR7tVw9yB3cD5fH/accept",
+        "/dl/9f86d081884c7d659a2feaa0c55ad015",
+    ],
+)
+def test_an_entry_with_a_token_in_its_path_is_left_out(tmp_path: Path, path: str) -> None:
+    """Rewriting the segment would be another endpoint, so the entry is counted and dropped."""
+    result = _load(tmp_path, [_entry(f"{_SITE}{path}")])
+    assert result.operations == []
+    assert result.tally.token_path == 1
+    assert "1 token in path" in result.summary()
+    assert path.split("/")[2] not in repr(result) + result.summary()
+
+
+def test_an_identifier_in_the_path_keeps_the_entry(tmp_path: Path) -> None:
+    """``/users/<uuid>`` and ``/orders/<objectid>`` are REST routes, not secrets."""
+    urls = [
+        f"{_SITE}/rest/users/550e8400-e29b-41d4-a716-446655440000",
+        f"{_SITE}/rest/orders/507f1f77bcf86cd799439011",
+    ]
+    result = _load(tmp_path, [_entry(url) for url in urls])
+    assert sorted(op.url for op in result.operations) == sorted(urls)
+
+
+@pytest.mark.parametrize(
     ("kwargs", "expected"),
     [
         ({"headers": [{"name": "Cookie", "value": "s=1"}]}, True),
