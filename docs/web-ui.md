@@ -11,9 +11,9 @@ capability. The visual language (design tokens, severity scale, badge rules) is 
 First-run setup and login · a paginated, status-filterable scan history that polls while a
 scan runs · a new-scan form (mode / scope / politeness / `disabled_checks`, with the
 Active-Mode `authorized_by` gate) · scan detail with live status, a per-severity summary,
-and a findings table filterable by severity and check id · report preview (HTML, in a
-sandboxed iframe) and download (json / sarif / html / md) · the check catalogue · a
-settings screen (change password, API version, log out).
+and a findings table paged 50 at a time, searchable and filterable by severity and check id ·
+report preview (HTML, in a sandboxed iframe) and download (json / sarif / html / md) · the
+check catalogue · a settings screen (change password, API version, log out).
 
 ## Requirements
 

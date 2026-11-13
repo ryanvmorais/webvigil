@@ -11,7 +11,20 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 ## [Unreleased]
 
+### Added
+
+- The dashboard's findings table has a text search (title, URL, parameter, header or cookie
+  name), and its Check filter lists only the checks that found something in the scan, each with
+  its number of findings. Both run on the server, across every page. In the Web API they are the
+  `q` parameter of `GET /api/scans/{id}/findings` and the new `GET /api/scans/{id}/findings/checks`.
+
 ### Changed
+
+- **The findings of a scan come in pages.** `GET /api/scans/{id}/findings` returns
+  `{items, next_cursor, total}` instead of a bare list: 50 findings by default, up to 200 with
+  `limit`, and the next page with `cursor`. The dashboard shows 50 at a time with "Load more", as
+  in the scan list, so a scan with thousands of findings no longer arrives, or renders, at once.
+  The order is unchanged. The full set is in every report format.
 
 - The SARIF rule's `shortDescription` is `WebVigil check <check id>`, no longer the title of the
   first finding of that check. Each result's message still carries its own title.

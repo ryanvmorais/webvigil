@@ -384,7 +384,24 @@ A Next.js dashboard for the Web API: first-run setup, login, scan history, a new
 scan detail with filterable findings, report preview and download, the check catalogue, and
 a settings screen. It is a thin client of the API — it never talks to the engine.
 
-![WebVigil dashboard (optional web UI) — scan detail page showing findings grouped by severity](assets/webvigil-dashboard-scan-detail-findings-by-severity.png)
+![WebVigil dashboard (optional web UI): a scan's detail page with its findings narrowed by a search and by Minimum severity Medium, the first finding opened on its evidence, and the count of findings shown](assets/webvigil-dashboard-scan-detail-findings-by-severity.png)
+
+On a scan's page the findings are listed most severe first, 50 at a time. **Load more** adds the
+next 50, and the line under the table says how many of the total are on screen. The arrow at the
+start of a row opens its description, evidence, remediation and references.
+
+Three filters above the table narrow the list. They run on the server, so they cover every
+finding of the scan, not only the rows already loaded:
+
+- **Search** finds a word in the title, the URL, or the name of the parameter, header or cookie,
+  ignoring case: `login`, `/admin` or `X-Frame-Options`, for example. The table updates when you
+  stop typing.
+- **Minimum severity** keeps that severity and the ones above it: *Medium* shows Medium, High and
+  Critical.
+- **Check** shows the findings of one check. The list names only the checks that found something
+  in this scan, each with its number of findings.
+
+The filters combine, and they are kept in the page address, so a filtered view can be bookmarked.
 
 ```bash
 # API on :8000 in one shell (see above), then:
