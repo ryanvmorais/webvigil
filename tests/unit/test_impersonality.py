@@ -20,10 +20,13 @@ import pytest
 _ROOT = Path(__file__).resolve().parents[2]
 
 # Authorship and license are metadata, so the name stays. This file names it in the rule below.
+# The vendored Public Suffix List is a third party's file, copied unchanged: its contributor
+# credits are other people, and editing it would break the hash in its PROVENANCE.json.
 _MAY_NAME_THE_MAINTAINER = {
     "LICENSE",
     "NOTICE",
     "pyproject.toml",
+    "src/webvigil/core/data/public_suffix_list.dat",
     "tests/unit/test_impersonality.py",
 }
 
