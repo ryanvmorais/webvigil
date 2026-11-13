@@ -348,7 +348,7 @@ async def test_destructive_links_and_get_forms_are_skipped_on_every_crawl(
 
 
 async def test_a_malformed_link_is_dropped_and_the_crawl_goes_on(httpx_mock: object) -> None:
-    """An unclosed bracket or a port out of range costs that link only (audit S-33)."""
+    """An unclosed bracket or a port out of range costs that link only."""
     links = _html("http://[::1", "https://example.com:99999/", "/ok")
     router = _Router({_SEED: _page(links), "https://example.com/ok": _page(_html())})
     await _crawl(ScanConfig(), router, httpx_mock)

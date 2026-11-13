@@ -139,7 +139,7 @@ def test_scope_subdomains_with_multi_label_suffix() -> None:
 
 
 def test_scope_subdomains_keeps_tenants_of_a_shared_host_apart() -> None:
-    """``herokuapp.com`` is a public suffix: one tenant's scope never reaches another (S-27)."""
+    """``herokuapp.com`` is a public suffix: one tenant's scope never reaches another."""
     target = Target.parse("https://www.alice.herokuapp.com", scope=Scope.SUBDOMAINS)
     assert target.in_scope("https://alice.herokuapp.com/x")
     assert target.in_scope("https://api.alice.herokuapp.com/x")

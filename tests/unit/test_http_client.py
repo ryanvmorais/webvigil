@@ -358,7 +358,7 @@ async def test_caller_header_wins_over_a_configured_auth_header(httpx_mock: obje
 
 
 # ---------------------------------------------------------------------------
-# What the target writes cannot break the client (audit S-33)
+# What the target writes cannot break the client
 # ---------------------------------------------------------------------------
 
 

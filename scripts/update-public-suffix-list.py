@@ -24,7 +24,9 @@ import urllib.request
 from datetime import date
 from pathlib import Path
 
+# The list's canonical URL: publicsuffix.org asks to be pulled from there and nowhere else.
 _DEFAULT_SOURCE = "https://publicsuffix.org/list/public_suffix_list.dat"
+# Where the engine reads the copy (``webvigil.core.suffixes``) and its provenance.
 _DATA_DIR = Path(__file__).resolve().parent.parent / "src" / "webvigil" / "core" / "data"
 _LIST_PATH = _DATA_DIR / "public_suffix_list.dat"
 _PROVENANCE_PATH = _DATA_DIR / "PROVENANCE.json"

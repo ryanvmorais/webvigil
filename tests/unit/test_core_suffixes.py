@@ -1,5 +1,5 @@
 """
-The Public Suffix List reader behind ``--scope subdomains`` (audit S-27).
+The Public Suffix List reader behind ``--scope subdomains``.
 
 Two layers. The algorithm runs over a small list written here, so each rule kind (plain,
 wildcard, exception, Unicode) is pinned without depending on what publicsuffix.org lists today.

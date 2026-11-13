@@ -22,7 +22,9 @@ from dataclasses import dataclass
 from functools import lru_cache
 from importlib.resources import files
 
+# Read through importlib.resources, so the list is found in a wheel, a zip or an editable checkout.
 _PACKAGE = "webvigil.core.data"
+# The file name publicsuffix.org serves, kept so the copy is recognisable as the upstream list.
 _LIST_NAME = "public_suffix_list.dat"
 
 

@@ -79,11 +79,13 @@ Camadas, de cima para baixo:
    máximo `[http] max_body_bytes` de cada resposta (10 MiB, depois de descomprimir, em cada etapa:
    o engine decodifica `gzip`/`deflate` sozinho em `http/decoding.py`) e o scan avisa quantas foram
    cortadas; cada requisição tem um prazo total, `[http] total_timeout_s` (60 s, do envio ao último
-   byte, sem repetição), e o scan inteiro tem `[scan] max_duration_s` (4 h, `--max-duration`). O alvo é um host com ponto, de um rótulo só
-   (`http://app:8000/`, nome de serviço do Compose ou de cluster) ou um literal IPv4/IPv6
-   (`core/target.py::is_valid_host`); num host sem domínio registrável o `--scope subdomains` age como
-   `host` (o domínio registrável vem da Public Suffix List vendorada em `core/data/`, seções ICANN e
-   privada; um alvo que é sufixo público também fica exato), e os payloads que põem o host em userinfo (`payloads.fill_host`) não saem para um alvo IPv6.
+   byte, sem repetição), e o scan inteiro tem `[scan] max_duration_s` (4 h, `--max-duration`). O
+   alvo é um host com ponto, de um rótulo só (`http://app:8000/`, nome de serviço do Compose ou de
+   cluster) ou um literal IPv4/IPv6 (`core/target.py::is_valid_host`); o domínio registrável do
+   `--scope subdomains` vem da Public Suffix List vendorada em `core/data/` (seções ICANN e
+   privada), e num host sem domínio registrável (um rótulo, IP ou o próprio sufixo público) ele age
+   como `host`; os payloads que põem o host em userinfo (`payloads.fill_host`) não saem para um
+   alvo IPv6.
    O escopo confere também a porta (a do alvo, mais o par 80/443 se o alvo usa a padrão) e as
    credenciais só vão à origem do alvo ou ao upgrade `https` (`Target.carries_credentials`). Cada
    nome resolve uma vez por scan e a conexão vai ao IP conferido (`http/addresses.py`, instalado no

@@ -172,7 +172,7 @@ async def test_osv_lookup_failure_is_a_warning_not_a_crash(
 async def test_a_raising_fingerprint_pass_becomes_a_warning_not_a_crash(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """An exception from the fingerprint pass degrades to a scan warning (audit S-33)."""
+    """An exception from the fingerprint pass degrades to a scan warning."""
 
     async def _raises(*_a: object, **_k: object) -> object:
         raise ValueError("Invalid IPv6 URL")

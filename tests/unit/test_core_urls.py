@@ -1,6 +1,6 @@
 """
 ``is_http_url``, the predicate that decides whether a reference becomes a link — issue #161 —
-and ``resolve_url``, which follows a link the scanned site wrote (audit S-33).
+and ``resolve_url``, which follows a link the scanned site wrote.
 
 Pure string logic: no I/O, nothing mocked. The accepted values are what a check or an advisory
 legitimately carries; the rejected ones are the schemes and tricks a third-party record could use

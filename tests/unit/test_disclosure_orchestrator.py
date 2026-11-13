@@ -112,7 +112,7 @@ async def test_probe_warnings_surface_on_the_result(
 async def test_a_raising_probe_pass_becomes_a_warning_not_a_crash(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """An exception from the probe pass degrades to a scan warning (audit S-33)."""
+    """An exception from the probe pass degrades to a scan warning."""
 
     async def _raises(*_a: object, **_k: object) -> object:
         raise ValueError("Port out of range 0-65535")
