@@ -12,6 +12,8 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict
 
+from webvigil.core.bounded import Name, Url
+
 
 class DetectionMethod(StrEnum):
     """
@@ -52,9 +54,9 @@ class Technology(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    name: str
-    version: str | None
+    name: Name
+    version: Name | None
     detection: DetectionMethod
-    source_url: str
+    source_url: Url
     vulnerable: bool = False
-    advisories: tuple[str, ...] = ()
+    advisories: tuple[Name, ...] = ()
