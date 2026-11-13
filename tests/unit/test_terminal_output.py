@@ -90,6 +90,14 @@ def test_show_controls_on_one_line_escapes_tab_and_line_feed_too() -> None:
     assert show_controls("a\tb\nc\r\nd", one_line=True) == "a\\x09b\\x0ac\\x0d\\x0ad"
 
 
+def test_show_controls_writes_bidirectional_and_invisible_characters_as_escapes() -> None:
+    """An override, an isolate and a zero-width character show as escapes; a letter stays."""
+    value = "a" + chr(0x202E) + "b" + chr(0x200B) + "c" + chr(0x2066) + "d" + chr(0xFEFF) + "é"
+    expected = "a\\u202eb\\u200bc\\u2066d\\ufeffé"
+    assert show_controls(value) == expected
+    assert show_controls(value, one_line=True) == expected
+
+
 # ---------------------------------------------------------------------------
 # The terminal summary
 # ---------------------------------------------------------------------------

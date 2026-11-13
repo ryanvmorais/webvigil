@@ -432,6 +432,21 @@ def _log(scan) -> list[str]:
     return scan.holder["app"].state.requests  # type: ignore[no-any-return]
 
 
+def _leaks(secret: str, text: str) -> bool:
+    """
+    Args:
+        secret (str): A password, a token or a session value.
+        text (str): A rendered report, a finding or a warning.
+
+    Returns:
+        bool: ``True`` when ``secret`` appears in ``text`` as a whole token. The insecure
+            profile issues sequential session ids (``1001``), which can turn up by chance inside
+            the random hex marker of another check (``wvb121001ce3ad``); a real leak shows the
+            value on its own (``session=1001``).
+    """
+    return re.search(rf"(?<![0-9A-Za-z]){re.escape(secret)}(?![0-9A-Za-z])", text) is not None
+
+
 # ---------------------------------------------------------------------------
 # Passive headers, cookies, CORS, deps, disclosure, and crawl coverage
 # ---------------------------------------------------------------------------
@@ -1009,7 +1024,7 @@ async def test_session_checks_find_the_three_weaknesses_of_the_insecure_app(scan
     values = {*app.state.sessions, *app.state.expired, "abc123"}
     for finding in found.values():
         text = finding.model_dump_json()
-        assert not any(value in text for value in values), finding.check_id
+        assert not any(_leaks(value, text) for value in values), finding.check_id
 
 
 async def test_the_logout_test_runs_last_and_no_login_follows_it(scan) -> None:
@@ -1042,8 +1057,8 @@ async def test_secrets_never_appear_in_any_report(scan) -> None:
     for fmt in ("json", "sarif", "html", "md"):
         rendered = get_reporter(fmt).render(result)
         for secret in secrets:
-            assert secret not in rendered, (fmt, secret)  # never leaves, even via the TRACE echo
-    assert all(secret not in warning for warning in result.warnings for secret in secrets)
+            assert not _leaks(secret, rendered), (fmt, secret)  # not even via the TRACE echo
+    assert not any(_leaks(secret, warning) for warning in result.warnings for secret in secrets)
 
 
 async def test_csrf_confirmation_flags_the_unenforced_forms_only(scan) -> None:

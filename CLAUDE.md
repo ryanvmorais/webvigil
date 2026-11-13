@@ -101,10 +101,13 @@ Camadas, de cima para baixo:
    leia-o antes de mexer em `webvigil.checks`.
 4. **Reporting** (`webvigil.reporting`) — JSON (canônico), SARIF 2.1.0, HTML (Jinja2), Markdown. Tudo que
    veio do site escaneado é texto não confiável: o Markdown o escreve como texto puro (metacaracteres
-   escapados, evidência cercada por mais crases do que qualquer sequência interna) e só uma referência
-   `http(s)` vira link, no HTML e no dashboard (`core/urls.py::is_http_url`; o provider OSV só guarda URL
-   absoluta `http(s)`). Caractere de controle vira `\xNN` visível (`core/text.py::show_controls`) no
-   resumo do terminal, nas linhas de erro, no Markdown e no HTML, e `\u00XX` no JSON; o resumo
+   escapados, evidência cercada por mais crases do que qualquer sequência interna, célula de tabela sem
+   code span, menção/`#n`/URL nua quebradas com `&#8203;`) e só uma referência `http(s)` vira link, no
+   Markdown, no HTML e no dashboard (`core/urls.py::is_http_url`, espelhado em `web/src/lib/links.ts`; o
+   provider OSV só guarda URL absoluta `http(s)`). Caractere de controle vira `\xNN` e bidi/largura zero
+   (`INVISIBLE_CHARS`) vira `\uNNNN` visível (`core/text.py::show_controls`, espelhado em
+   `web/src/lib/text.ts`) no resumo do terminal, nas linhas de erro, no Markdown, no HTML e no dashboard,
+   e escape `\uNNNN` no JSON; o SARIF escapa `[`/`]` na mensagem. O resumo
    (`cli/_render.py`) nunca interpreta texto de achado ou aviso como marcação do Rich (`Text` por partes).
 5. **Persistência** (só Web, `webvigil.api.db`) — SQLite via SQLModel + Alembic; scans
    executados por um `ScanRunner` in-process (1 por vez, fila). O login tem espera crescente após 5

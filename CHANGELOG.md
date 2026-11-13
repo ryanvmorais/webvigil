@@ -13,6 +13,12 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 ### Changed
 
+- The SARIF rule's `shortDescription` is `WebVigil check <check id>`, no longer the title of the
+  first finding of that check. Each result's message still carries its own title.
+- In the Markdown report, only a reference that is an `http(s)` URL is a link (`<url>`), as in the
+  HTML report. Mentions (`@name`), issue references (`#12`) and bare URLs in the rest of the text
+  are broken with a zero-width space, so a report pasted into GitHub notifies nobody and links
+  nowhere; it reads the same.
 - Every free-text field of a scan result has a size bound, applied when a check builds a finding
   and when a report is read back: 1,024 characters for a check id, a title, a parameter, header
   or cookie name, a label or a library name, version or advisory id; 16,384 for a description, a
@@ -22,6 +28,19 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 ### Security
 
+- Bidirectional controls and zero-width characters from the scanned site (the "Trojan Source"
+  characters) are shown as visible `\uNNNN` escapes in the terminal summary, the Markdown, HTML
+  and JSON reports and the dashboard, so a title, a URL or a piece of evidence reads as what it
+  holds. A reference with one of them, or with a C1 control, is never a link.
+- A `|` inside backticks in a library name, version or advisory id no longer splits its row of
+  the Markdown technologies table.
+- The SARIF report escapes brackets and backslashes in result messages (so text from the site
+  is never rendered as a link), uses only an `http(s)` reference as `helpUri`, and percent-encodes
+  the location into a valid URI.
+- The HTML report carries its own `Content-Security-Policy` (`<meta>`), so a report opened from a
+  file runs no script and loads nothing, as when the Web API serves it.
+- The dashboard links a reference only when `//` follows the scheme: `http:example.org` was
+  accepted and resolved against the dashboard's own page.
 - `webvigil report` reads a JSON file of at most 256 MiB and exits with code 4 on a larger one,
   so a file someone sent cannot exhaust the machine's memory.
 - `webvigil report` refuses a report whose `schema_version` is not an integer (a string or a

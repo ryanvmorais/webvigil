@@ -5,10 +5,13 @@ A report is built from what the scanned site sent (titles with a path or a param
 evidence, cookie names, library names), so every such value is written as plain text: the
 Markdown and HTML metacharacters are escaped, a line break cannot start a new block, and the
 evidence is fenced (and inline code delimited) with a run of backticks longer than any run in
-the content, so it cannot close the block early. The HTML report gets the same guarantee from
-Jinja's autoescaping; JSON and SARIF are data (issue #172). The report can also be printed to a
-terminal, so its control characters (an escape sequence in the evidence) are written as visible
-``\xNN`` escapes, which a terminal shows instead of acting on.
+the content, so it cannot close the block early. A table cell holds no code span (GFM splits a
+row at a ``|`` even inside one), and the mentions, issue references and bare URLs that GitHub
+would link are broken, so only a reference that is an ``http(s)`` URL becomes a link, as in the
+HTML report. The HTML report gets the same guarantee from Jinja's autoescaping; JSON and SARIF
+are data (issue #172). The report can also be printed to a terminal, so its control characters
+(an escape sequence in the evidence) are written as visible ``\xNN`` escapes, which a terminal
+shows instead of acting on, and its bidirectional and invisible characters as ``\uNNNN``.
 """
 
 from __future__ import annotations
@@ -19,6 +22,7 @@ import re
 from webvigil.core.findings import Severity
 from webvigil.core.result import ScanResult
 from webvigil.core.text import show_controls
+from webvigil.core.urls import is_http_url
 from webvigil.reporting._ordering import sort_findings
 
 # ---------------------------------------------------------------------------
@@ -39,6 +43,26 @@ _ENTITY_RE = re.compile(r"&(?=#?\w+;)")
 _LINE_START_RE = re.compile(r"^[#>+=~-]")
 _ORDERED_LIST_RE = re.compile(r"^(\d+)([.)])")
 _BACKTICK_RUN_RE = re.compile(r"`+")
+# What GitHub turns into a link, a notification or a cross-reference in plain text: a mention
+# (``@name``), an issue reference (``#12``) and the extended autolinks (``scheme://``, ``www.``).
+# A zero-width space written as a character reference after the trigger breaks each one and reads
+# the same; a raw one would be shown as an escape by ``show_controls``.
+_AUTOLINK_RE = re.compile(r"@(?=[\w-])|#(?=\d)|:(?=//)|(?<![\w.-])www(?=\.)", re.IGNORECASE)
+_ZERO_WIDTH_SPACE = "&#8203;"
+# A CommonMark autolink ends at the first ``>`` and cannot hold a ``<``.
+_AUTOLINK_BREAKERS_RE = re.compile(r"[<>]")
+
+
+def _inert(value: str) -> str:
+    """
+    Args:
+        value (str): Escaped text outside any code span.
+
+    Returns:
+        str: ``value`` with a zero-width space after each mention, issue reference and autolink
+            trigger, so a report pasted into GitHub notifies nobody and links nowhere.
+    """
+    return _AUTOLINK_RE.sub(lambda m: m.group() + _ZERO_WIDTH_SPACE, value)
 
 
 def _plain(value: str) -> str:
@@ -47,11 +71,13 @@ def _plain(value: str) -> str:
         value (str): Text outside any code span.
 
     Returns:
-        str: ``value`` with the Markdown and HTML metacharacters escaped. The character
-            references are escaped first, so the ``&`` of a ``&lt;`` written here is not.
+        str: ``value`` with the Markdown and HTML metacharacters escaped and the GitHub
+            autolinks broken. The character references are escaped first, so the ``&`` of a
+            ``&lt;`` written here is not.
     """
     value = _ENTITY_RE.sub("&amp;", value)
-    return _INLINE_RE.sub(lambda m: "&lt;" if m.group() == "<" else "\\" + m.group(), value)
+    value = _INLINE_RE.sub(lambda m: "&lt;" if m.group() == "<" else "\\" + m.group(), value)
+    return _inert(value)
 
 
 def _escape(value: str) -> str:
@@ -102,6 +128,32 @@ def _text(value: str) -> str:
             and the metacharacters are escaped.
     """
     return _escape(_BREAKS_RE.sub(" ", value).strip())
+
+
+def _cell(value: str) -> str:
+    """
+    Args:
+        value (str): Text for a table cell.
+
+    Returns:
+        str: ``value`` as one line of plain text with no code span: GFM splits a row at a ``|``
+            even inside a code span, so the cell keeps every backtick and pipe escaped.
+    """
+    return _plain(_BREAKS_RE.sub(" ", value).strip())
+
+
+def _reference(value: str) -> str:
+    """
+    Args:
+        value (str): A finding reference.
+
+    Returns:
+        str: An autolink when ``value`` is an absolute ``http(s)`` URL that fits inside one (the
+            rule of the HTML report), otherwise plain text that links nowhere.
+    """
+    if is_http_url(value) and not _AUTOLINK_BREAKERS_RE.search(value):
+        return f"<{value}>"
+    return _text(value)
 
 
 def _block(value: str) -> str:
@@ -161,9 +213,10 @@ def _summary(label: str) -> str:
 
     Returns:
         str: ``label`` escaped for HTML, on one line. The ``<summary>`` line is a raw HTML
-            block, where Markdown is not processed, so the HTML escape is the right one here.
+            block, where Markdown is not processed, so the HTML escape is the right one here;
+            GitHub still links mentions and references in its text, so those are broken too.
     """
-    return html.escape(_BREAKS_RE.sub(" ", label).strip(), quote=False)
+    return _inert(html.escape(_BREAKS_RE.sub(" ", label).strip(), quote=False))
 
 
 # ---------------------------------------------------------------------------
@@ -209,10 +262,10 @@ class MarkdownReporter:
             for tech in result.technologies:
                 status = "**Vulnerable**" if tech.vulnerable else "—"
                 if tech.vulnerable and tech.advisories:
-                    status += f" ({_text(', '.join(tech.advisories))})"
-                version = _text(tech.version) if tech.version else "unknown"
+                    status += f" ({_cell(', '.join(tech.advisories))})"
+                version = _cell(tech.version) if tech.version else "unknown"
                 lines.append(
-                    f"| {_text(tech.name)} | {version} | {tech.detection.value} | {status} |"
+                    f"| {_cell(tech.name)} | {version} | {tech.detection.value} | {status} |"
                 )
             lines.append("")
 
@@ -246,7 +299,7 @@ class MarkdownReporter:
                     "",
                 ]
             for reference in finding.references:
-                lines.append(f"- {_text(reference)}")
+                lines.append(f"- {_reference(reference)}")
             lines.append("")
 
         if result.errors:
