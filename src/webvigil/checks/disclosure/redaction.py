@@ -18,16 +18,18 @@ _LIMIT = 1024
 _JSON_LIMIT = 2000
 _MAX_LINES = 80
 
-# Well-known secret shapes plus a catch-all for long high-entropy tokens.
+# Well-known secret shapes plus a catch-all for long high-entropy tokens. The text comes from the
+# scanned site, so every repetition is bounded, and the pattern only ever reads a capped amount
+# of it (``_LIMIT`` of a body, ``_JSON_LIMIT`` of the strings of a JSON body).
 _SECRET_RE = re.compile(
     r"(?i)(?:"
     r"AKIA[0-9A-Z]{16}"
     r"|(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36}"
-    r"|xox[baprs]-[A-Za-z0-9-]{10,}"
-    r"|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}"
-    r"|-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----"
-    r"|[A-Za-z0-9+/]{40,}={0,2}"
-    r"|[0-9a-f]{40,}"
+    r"|xox[baprs]-[A-Za-z0-9-]{10,200}"
+    r"|eyJ[A-Za-z0-9_-]{8,2048}\.[A-Za-z0-9_-]{8,2048}\.[A-Za-z0-9_-]{8,2048}"
+    r"|-----BEGIN [A-Z ]{0,40}PRIVATE KEY-----[\s\S]{0,8192}?-----END [A-Z ]{0,40}PRIVATE KEY-----"
+    r"|[A-Za-z0-9+/]{40,4096}={0,2}"
+    r"|[0-9a-f]{40,4096}"
     r")"
 )
 _KV_RE = re.compile(r"^(\s*(?:export\s+)?[A-Za-z_][A-Za-z0-9_.]*\s*[:=]\s*)(\S.*)$")
@@ -86,26 +88,36 @@ def _json_env(body: str) -> str:
         data = json.loads(body)
     except ValueError:
         return _SECRET_RE.sub(_MASK, body[:_LIMIT])
-    return json.dumps(_scrub(data), indent=2)[:_JSON_LIMIT]
+    return json.dumps(_scrub(data, [_JSON_LIMIT]), indent=2)[:_JSON_LIMIT]
 
 
-def _scrub(node: Any) -> Any:
+def _scrub(node: Any, budget: list[int]) -> Any:
     """
     Recursively mask secret-named keys and token-shaped string values.
 
+    Only the first ``_JSON_LIMIT`` characters of the serialised result are kept, so only that
+    many characters of strings are worth scanning. Strings are visited in the order they are
+    serialised; once ``budget`` is spent, every later string is masked without being scanned,
+    and so is a string longer than the whole budget.
+
     Args:
         node (Any): Any JSON value.
+        budget (list[int]): Characters of string left to scan, updated in place.
 
     Returns:
         Any: The same structure with secrets removed.
     """
     if isinstance(node, dict):
         return {
-            key: (_VALUE_MASK if key.lower() in _SECRET_KEYS else _scrub(value))
+            key: (_VALUE_MASK if key.lower() in _SECRET_KEYS else _scrub(value, budget))
             for key, value in node.items()
         }
     if isinstance(node, list):
-        return [_scrub(item) for item in node]
+        return [_scrub(item, budget) for item in node]
     if isinstance(node, str):
+        if len(node) > budget[0]:
+            budget[0] = 0
+            return _VALUE_MASK
+        budget[0] -= len(node)
         return _SECRET_RE.sub(_MASK, node)
     return node

@@ -14,7 +14,9 @@ The text the matchers read comes from the scanned site, and the patterns were wr
 JavaScript, with unbounded repetitions that can cost time proportional to the square of a
 script's size. So every open-ended repetition is bounded when the pattern is compiled
 (:func:`_bound_repeats`), and a body is read up to ``_BODY_MAX`` characters (its SHA-1 still
-covers all of it).
+covers all of it). A pattern made of pieces joined by "anything in between" is matched piece by
+piece (:class:`_Chain`): bounding its repetitions is not enough, since a single regex retries
+every way of splitting the text between the pieces.
 """
 
 from __future__ import annotations
@@ -23,7 +25,7 @@ import hashlib
 import re
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Any
+from typing import Any, Protocol
 from urllib.parse import urlsplit
 
 from webvigil.checks.deps import _data
@@ -44,6 +46,10 @@ _REPEAT_MAX = 400
 _BODY_MAX = 256 * 1024
 _PATH_MAX = 4096
 _OPEN_REPEAT = re.compile(r"\{(\d*),\}")
+# Joints that let the rest of a database pattern start anywhere later in the text: any lines
+# then any text on a line, or any characters at all. The database writes the line break both as
+# the character and as its escape.
+_CHAIN_JOINTS = ("(.*\n)*.*", "(?:.*\n)*.*", r"(.*\n)*.*", r"(?:.*\n)*.*", r"[\s\S]*")
 # Retire.js authors its regexes for JavaScript, which allows variable-width look-behind;
 # Python's ``re`` does not. Such a pattern is skipped rather than failing the whole load.
 _SUFFIX_RE = re.compile(r"[.\-_](?:min|slim|pack|dev|debug|latest|module|esm|cjs|umd)\b.*$", re.I)
@@ -76,6 +82,149 @@ class VulnerabilityEntry:
     info: tuple[str, ...]
 
 
+class Matcher(Protocol):
+    """What a compiled extractor offers: a plain regex, or a :class:`_Chain` of them."""
+
+    @property
+    def pattern(self) -> str:
+        """
+        Returns:
+            str: The pattern source.
+        """
+        ...  # pragma: no cover
+
+    def search(self, string: str, /) -> re.Match[str] | None:
+        """
+        Args:
+            string (str): The text to search.
+
+        Returns:
+            re.Match[str] | None: The match that carries the version group, or ``None``.
+        """
+        ...  # pragma: no cover
+
+
+class _Chain:
+    """
+    A pattern matched as pieces in order, each one searched after where the previous one ended.
+
+    ``A<joint>B`` (where the joint matches anything) is found when ``B`` occurs anywhere after
+    the first ``A``, so searching for ``A`` and then for ``B`` gives the same answer as the whole
+    pattern, in time proportional to the text. The match returned is the one of the piece that
+    holds the version group, so the version and the marker read as before.
+    """
+
+    def __init__(self, source: str, pieces: tuple[re.Pattern[str], ...], version_at: int) -> None:
+        """
+        Args:
+            source (str): The original pattern, for :attr:`pattern`.
+            pieces (tuple[re.Pattern[str], ...]): The compiled pieces, in order.
+            version_at (int): The index of the piece that holds the version group.
+        """
+        self._source = source
+        self._pieces = pieces
+        self._version_at = version_at
+
+    @property
+    def pattern(self) -> str:
+        """
+        Returns:
+            str: The original pattern.
+        """
+        return self._source
+
+    def search(self, string: str, /) -> re.Match[str] | None:
+        """
+        Args:
+            string (str): The text to search.
+
+        Returns:
+            re.Match[str] | None: The match of the piece that holds the version group, when every
+                piece is found in order; ``None`` otherwise.
+        """
+        found: re.Match[str] | None = None
+        position = 0
+        for index, piece in enumerate(self._pieces):
+            match = piece.search(string, position)
+            if match is None:
+                return None
+            if index == self._version_at:
+                found = match
+            position = match.end()
+        return found
+
+
+def _split_chain(pattern: str) -> list[str] | None:
+    """
+    Split a pattern at its top-level joints (``_CHAIN_JOINTS``).
+
+    Args:
+        pattern (str): A regex source, with the version placeholder already expanded.
+
+    Returns:
+        list[str] | None: The pieces between the joints, or ``None`` when the pattern has no
+            top-level joint, has a top-level alternation, or would leave an empty piece.
+    """
+    pieces: list[str] = []
+    depth = 0
+    start = 0
+    i = 0
+    size = len(pattern)
+    while i < size:
+        char = pattern[i]
+        if depth == 0:
+            joint = next((j for j in _CHAIN_JOINTS if pattern.startswith(j, i)), None)
+            if joint is not None:
+                pieces.append(pattern[start:i])
+                i += len(joint)
+                start = i
+                continue
+        if char == "\\":
+            i += 2
+            continue
+        if char == "[":
+            j = i + 1
+            if j < size and pattern[j] == "^":
+                j += 1
+            if j < size and pattern[j] == "]":
+                j += 1
+            while j < size and pattern[j] != "]":
+                j += 2 if pattern[j] == "\\" else 1
+            i = j + 1
+            continue
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+        elif char == "|" and depth == 0:
+            return None
+        i += 1
+    if not pieces:
+        return None
+    pieces.append(pattern[start:])
+    return pieces if all(pieces) else None
+
+
+def _compile_one(expanded: str) -> Matcher:
+    """
+    Args:
+        expanded (str): A database pattern, with the version placeholder expanded.
+
+    Returns:
+        Matcher: A :class:`_Chain` when the pattern splits at top-level joints, else the
+            bounded regex.
+
+    Raises:
+        re.error: When a piece uses a construct Python's ``re`` rejects.
+    """
+    pieces = _split_chain(expanded)
+    if pieces is None:
+        return re.compile(_bound_repeats(expanded))
+    version_at = next((i for i, piece in enumerate(pieces) if _VERSION_GROUP in piece), 0)
+    compiled = tuple(re.compile(_bound_repeats(piece)) for piece in pieces)
+    return _Chain(expanded, compiled, version_at)
+
+
 @dataclass(frozen=True)
 class Component:
     """
@@ -83,20 +232,18 @@ class Component:
 
     Attributes:
         name (str): Library name.
-        filename (tuple[re.Pattern[str], ...]): Regexes matched against a
-            resource filename.
-        filecontent (tuple[re.Pattern[str], ...]): Regexes matched against a
-            body / banner.
-        uri (tuple[re.Pattern[str], ...]): Regexes matched against a URL path.
+        filename (tuple[Matcher, ...]): Matchers applied to a resource filename.
+        filecontent (tuple[Matcher, ...]): Matchers applied to a body / banner.
+        uri (tuple[Matcher, ...]): Matchers applied to a URL path.
         hashes (dict[str, str]): SHA-1 hex digest -> exact version.
         vulnerabilities (tuple[VulnerabilityEntry, ...]): The library's
             advisories.
     """
 
     name: str
-    filename: tuple[re.Pattern[str], ...]
-    filecontent: tuple[re.Pattern[str], ...]
-    uri: tuple[re.Pattern[str], ...]
+    filename: tuple[Matcher, ...]
+    filecontent: tuple[Matcher, ...]
+    uri: tuple[Matcher, ...]
     hashes: dict[str, str]
     vulnerabilities: tuple[VulnerabilityEntry, ...]
 
@@ -149,12 +296,13 @@ def _bound_repeats(pattern: str) -> str:
     return "".join(out)
 
 
-def _compile_all(patterns: list[str]) -> tuple[re.Pattern[str], ...]:
+def _compile_all(patterns: list[str]) -> tuple[Matcher, ...]:
     """
     Compile a list of Retire.js extractor patterns.
 
-    The ``§§version§§`` placeholder becomes a capturing group, and every open-ended
-    repetition is bounded (:func:`_bound_repeats`). A pattern that
+    The ``§§version§§`` placeholder becomes a capturing group, every open-ended
+    repetition is bounded (:func:`_bound_repeats`), and a pattern with top-level
+    "anything in between" joints is matched piece by piece (:class:`_Chain`). A pattern that
     uses a JS-only construct Python's ``re`` rejects (e.g. variable-width
     look-behind) is skipped rather than failing the whole load.
 
@@ -162,13 +310,13 @@ def _compile_all(patterns: list[str]) -> tuple[re.Pattern[str], ...]:
         patterns (list[str]): Raw extractor patterns from the database.
 
     Returns:
-        tuple[re.Pattern[str], ...]: The compiled patterns.
+        tuple[Matcher, ...]: The compiled patterns.
     """
-    compiled: list[re.Pattern[str]] = []
+    compiled: list[Matcher] = []
     for pattern in patterns:
         expanded = pattern.replace(_VERSION_PLACEHOLDER, _VERSION_GROUP)
         try:
-            compiled.append(re.compile(_bound_repeats(expanded)))
+            compiled.append(_compile_one(expanded))
         except re.error:
             continue  # a JS-only construct (e.g. variable look-behind) — skip this one
     return tuple(compiled)
@@ -306,6 +454,9 @@ class RetireJsRules:
         filename = _basename(url)[:_PATH_MAX] if url else None
         path = urlsplit(url).path[:_PATH_MAX] if url else None
         head = body[:_BODY_MAX] if body is not None else ""
+        digest = (
+            hashlib.sha1(body.encode("utf-8", "ignore")).hexdigest() if body is not None else None
+        )
 
         for component in self._components.values():
             if filename is not None:
@@ -348,7 +499,7 @@ class RetireJsRules:
                                 marker,
                             )
                         )
-                digest = hashlib.sha1(body.encode("utf-8", "ignore")).hexdigest()
+            if digest is not None:
                 version = component.hashes.get(digest)
                 if version is not None:
                     detections.append(

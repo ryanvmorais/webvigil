@@ -47,7 +47,7 @@ check = "disclosure.vcs.exposed"
 severity = "high"
 confidence = "medium"
 title = "Git directory browsable"
-content = '(?i)Index of .*/\.git|<a href="config">'
+content = '(?i)Index of [^\n]{0,500}/\.git|<a href="config">'
 ok_status = [200, 403]
 
 [[entry]]
@@ -56,7 +56,7 @@ family = "vcs"
 check = "disclosure.vcs.exposed"
 severity = "high"
 title = "Subversion metadata exposed"
-content = '(?m)^(12|10|dir|\d+)$'
+content = '(?m)^(12|10|dir|\d{1,20})$'
 
 [[entry]]
 path = ".svn/wc.db"
@@ -90,7 +90,7 @@ family = "config"
 check = "disclosure.config.dotenv-exposed"
 severity = "high"
 title = "Environment file exposed"
-content = '(?m)^(export[ \t]+)?[A-Za-z_][A-Za-z0-9_]*='
+content = '(?m)^(export[ \t]{1,20})?[A-Za-z_][A-Za-z0-9_]{0,200}='
 min_matches = 2
 redact = "dotenv"
 
@@ -100,7 +100,7 @@ family = "config"
 check = "disclosure.config.dotenv-exposed"
 severity = "high"
 title = "Environment file (.env.local) exposed"
-content = '(?m)^(export[ \t]+)?[A-Za-z_][A-Za-z0-9_]*='
+content = '(?m)^(export[ \t]{1,20})?[A-Za-z_][A-Za-z0-9_]{0,200}='
 min_matches = 2
 redact = "dotenv"
 
@@ -110,7 +110,7 @@ family = "config"
 check = "disclosure.config.dotenv-exposed"
 severity = "high"
 title = "Environment file (.env.production) exposed"
-content = '(?m)^(export[ \t]+)?[A-Za-z_][A-Za-z0-9_]*='
+content = '(?m)^(export[ \t]{1,20})?[A-Za-z_][A-Za-z0-9_]{0,200}='
 min_matches = 2
 redact = "dotenv"
 
@@ -120,7 +120,7 @@ family = "config"
 check = "disclosure.config.dotenv-exposed"
 severity = "high"
 title = "Environment file (.env.development) exposed"
-content = '(?m)^(export[ \t]+)?[A-Za-z_][A-Za-z0-9_]*='
+content = '(?m)^(export[ \t]{1,20})?[A-Za-z_][A-Za-z0-9_]{0,200}='
 min_matches = 2
 redact = "dotenv"
 
@@ -130,7 +130,7 @@ family = "config"
 check = "disclosure.config.dotenv-exposed"
 severity = "high"
 title = "HTTP Basic-Auth password file exposed"
-content = '(?m)^[^:\s]+:[^:\s]+$'
+content = '(?m)^[^:\s]{1,200}:[^:\s]{1,200}$'
 redact = "generic"
 
 [[entry]]
@@ -139,7 +139,7 @@ family = "config"
 check = "disclosure.config.dotenv-exposed"
 severity = "medium"
 title = "Apache .htaccess exposed"
-content = '(?im)^\s*(RewriteRule|RewriteCond|AuthType|Require|Options|<Files|Deny |Allow )'
+content = '(?im)^[ \t]{0,200}(RewriteRule|RewriteCond|AuthType|Require|Options|<Files|Deny |Allow )'
 
 [[entry]]
 path = "web.config"
@@ -174,7 +174,7 @@ family = "config"
 check = "disclosure.config.dotenv-exposed"
 severity = "high"
 title = "Django settings backup exposed"
-content = '(SECRET_KEY|DATABASES)\s*='
+content = '(SECRET_KEY|DATABASES)[ \t]{0,20}='
 redact = "generic"
 
 [[entry]]
@@ -192,7 +192,7 @@ family = "config"
 check = "disclosure.config.dotenv-exposed"
 severity = "low"
 title = "Dockerfile exposed"
-content = '(?im)^FROM\s+\S'
+content = '(?im)^FROM[ \t]{1,20}\S'
 
 # --- Dependency manifests (report-only — spec 005 Resolved decision 3) --------------
 
@@ -226,7 +226,7 @@ family = "manifest"
 check = "disclosure.config.manifest-exposed"
 severity = "low"
 title = "Bundler manifest (Gemfile) exposed"
-content = '(?m)^\s*(source\s+["\x27]|gem\s+["\x27])'
+content = '(?m)^[ \t]{0,200}(source[ \t]{1,20}["\x27]|gem[ \t]{1,20}["\x27])'
 
 [[entry]]
 path = "Gemfile.lock"
@@ -258,7 +258,7 @@ family = "manifest"
 check = "disclosure.config.manifest-exposed"
 severity = "medium"
 title = "npm configuration (.npmrc) exposed"
-content = '(?m)^(//|_auth|_authToken|registry\s*=)'
+content = '(?m)^(//|_auth|_authToken|registry[ \t]{0,20}=)'
 redact = "generic"
 
 [[entry]]

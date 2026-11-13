@@ -16,8 +16,8 @@ import httpx
 import pytest
 
 from webvigil.checks.deps._data import Provenance
-from webvigil.checks.deps.fingerprint import Fingerprinter
-from webvigil.checks.deps.rules import RetireJsRules
+from webvigil.checks.deps.fingerprint import _MAX_INLINE_CHARS, _MAX_RESOURCE_URLS, Fingerprinter
+from webvigil.checks.deps.rules import _BODY_MAX, RetireJsRules
 from webvigil.core.config import ScanConfig
 from webvigil.core.context import Page
 from webvigil.core.target import Target
@@ -149,3 +149,70 @@ async def test_non_html_and_failed_pages_are_skipped(httpx_mock: object) -> None
     failed = Page.failed("https://example.com/x", "boom")
     result, _ = await _run((failed,), _router({}), httpx_mock)
     assert result.detections == []
+
+
+# ---------------------------------------------------------------------------
+# What one scan reads: the pages decide how much they carry, the pass does not follow
+# ---------------------------------------------------------------------------
+
+
+def _spy_identify(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str | None, str | None]]:
+    """
+    Record every ``identify`` call as ``(url, body)``.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): The fixture that installs the spy.
+
+    Returns:
+        list[tuple[str | None, str | None]]: The calls, filled while the pass runs.
+    """
+    calls: list[tuple[str | None, str | None]] = []
+    real = RetireJsRules.identify
+
+    def spy(self: RetireJsRules, *, url: str | None = None, body: str | None = None) -> list:
+        calls.append((url, body))
+        return real(self, url=url, body=body)
+
+    monkeypatch.setattr(RetireJsRules, "identify", spy)
+    return calls
+
+
+async def test_an_inline_script_repeated_on_every_page_is_read_once(
+    httpx_mock: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The same inline script on five pages reaches the matchers once."""
+    calls = _spy_identify(monkeypatch)
+    html = "<html><body><script>window.app = 1;</script></body></html>"
+    pages = tuple(_page(html, f"https://example.com/p{i}") for i in range(5))
+    await _run(pages, _router({}), httpx_mock)
+    assert [body for _url, body in calls] == ["window.app = 1;"]
+
+
+async def test_inline_scripts_past_the_scan_budget_are_not_read(
+    httpx_mock: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Distinct full-size inline scripts stop at ``_MAX_INLINE_CHARS``, with a warning."""
+    calls = _spy_identify(monkeypatch)
+    fit = _MAX_INLINE_CHARS // _BODY_MAX
+    scripts = "".join(f"<script>{i:08d}{'x' * (_BODY_MAX - 8)}</script>" for i in range(fit + 3))
+    result, _ = await _run(
+        (_page(f"<html><body>{scripts}</body></html>"),), _router({}), httpx_mock
+    )
+    assert len(calls) == fit
+    assert any("stopped reading inline scripts" in w for w in result.warnings)
+
+
+async def test_resource_urls_past_the_scan_cap_are_not_examined(
+    httpx_mock: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Distinct script URLs stop at ``_MAX_RESOURCE_URLS``, with a warning."""
+    calls = _spy_identify(monkeypatch)
+    refs = "".join(
+        f'<script src="https://cdn.example/s{i}.js"></script>'
+        for i in range(_MAX_RESOURCE_URLS + 50)
+    )
+    result, _ = await _run((_page(f"<html><body>{refs}</body></html>"),), _router({}), httpx_mock)
+    assert len(calls) == _MAX_RESOURCE_URLS
+    assert any(
+        f"stopped at {_MAX_RESOURCE_URLS} distinct resource URLs" in w for w in result.warnings
+    )

@@ -51,6 +51,8 @@ def _elapsed(body: str) -> float:
         pytest.param("a" * 100_000, id="one-long-word"),
         pytest.param("<code>" + "a" * 290 + "</code>" * 50, id="rails-code-tags"),
         pytest.param('<div id="summary">' + " " * 150 + "<h1>" + "a" * 190 + "</h1>", id="django"),
+        pytest.param("[aException:" * 20000, id="aspnet-bracketed-exceptions"),
+        pytest.param("<b>" + " " * 100_000, id="aspnet-long-gap"),
     ],
 )
 def test_a_long_body_of_repeated_pieces_is_scanned_quickly(body: str) -> None:

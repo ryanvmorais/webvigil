@@ -95,8 +95,8 @@ ERROR_SIGNATURES: tuple[ErrorSignature, ...] = (
         "ASP.NET",
         re.compile(
             r"Server Error in .{1,40} Application"
-            r"|<b>\s*Exception Details:\s*</b>"
-            r"|\[[A-Za-z][\w.]*Exception:[^\]]*\]",
+            r"|<b>\s{0,200}Exception Details:\s{0,200}</b>"
+            r"|\[[A-Za-z][\w.]{0,300}Exception:[^\]\n]{0,500}\]",
         ),
         interactive=False,
         severity=Severity.MEDIUM,
@@ -157,9 +157,9 @@ ERROR_SIGNATURES: tuple[ErrorSignature, ...] = (
 )
 
 LISTING_SIGNATURES: tuple[re.Pattern[str], ...] = (
-    re.compile(r"<title>\s*Index of /"),
-    re.compile(r"<title>\s*Directory listing for /"),
-    re.compile(r"<h1>\s*Index of /"),
+    re.compile(r"<title>\s{0,200}Index of /"),
+    re.compile(r"<title>\s{0,200}Directory listing for /"),
+    re.compile(r"<h1>\s{0,200}Index of /"),
 )
 
 

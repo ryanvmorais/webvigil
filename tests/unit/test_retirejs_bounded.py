@@ -20,7 +20,14 @@ import pytest
 
 from webvigil.checks.deps import rules as rules_module
 from webvigil.checks.deps._data import Provenance, load_raw_db
-from webvigil.checks.deps.rules import _BODY_MAX, _REPEAT_MAX, RetireJsRules, _bound_repeats
+from webvigil.checks.deps.rules import (
+    _BODY_MAX,
+    _REPEAT_MAX,
+    RetireJsRules,
+    _bound_repeats,
+    _Chain,
+    _split_chain,
+)
 
 # Seconds a single pattern may take on one input.
 _BUDGET_S = 5.0
@@ -184,3 +191,68 @@ def test_a_library_in_the_file_name_is_still_identified() -> None:
     """The vendored database finds a library and version from the file name."""
     detections = RetireJsRules.load().identify(url="https://example.com/js/jquery-3.6.0.min.js")
     assert any(d.name == "jquery" and d.version == "3.6.0" for d in detections)
+
+
+# ---------------------------------------------------------------------------
+# Patterns made of pieces joined by "anything in between"
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("raw", "pieces"),
+    [
+        ("A(.*\n)*.*B", ["A", "B"]),
+        ("A(?:.*\n)*.*B", ["A", "B"]),
+        (r"A[\s\S]*B[\s\S]*C", ["A", "B", "C"]),
+        (r"A[\s\S]{1,200}B", None),
+        ("A(.*\n){1,3}B", None),
+        (r"A[\s\S]*B|C", None),
+        (r"(A[\s\S]*B)", None),
+        (r"[\s\S]*B", None),
+        ("plain", None),
+    ],
+)
+def test_only_a_top_level_joint_splits_a_pattern(raw: str, pieces: list[str] | None) -> None:
+    """A bounded gap, a joint inside a group and a top-level alternation keep the regex whole."""
+    assert _split_chain(raw) == pieces
+
+
+def test_a_joined_pattern_finds_its_last_piece_far_from_the_first() -> None:
+    """The version comes from the first piece; the last one may sit hundreds of lines below."""
+    rules = _rules_for("/\\*! Demo §§version§§(.*\n)*.*\\.demo\\.widget")
+    far = "/*! Demo 1.9.2 */\n" + "var x = 1;\n" * 2000 + "$.demo.widget = {};\n"
+    near = "/*! Demo 1.9.2 */\n$.demo.other = {};\n"
+    detections = rules.identify(body=far)
+    assert [(d.name, d.version) for d in detections] == [("demo", "1.9.2")]
+    assert detections[0].marker.startswith("/*! Demo 1.9.2")
+    assert rules.identify(body=near) == []
+
+
+def test_the_vendored_joined_patterns_are_matched_piece_by_piece() -> None:
+    """The jQuery UI widget patterns and the pdf.js API pattern are chains, and still match."""
+    chained = {
+        name
+        for name, component in RetireJsRules.load()._components.items()
+        for matcher in component.filecontent
+        if isinstance(matcher, _Chain)
+    }
+    assert {"jquery-ui-autocomplete", "jquery-ui-dialog", "jquery-ui-tooltip", "pdf.js"} <= chained
+    body = "/*! jQuery UI 1.9.2\n * http://jqueryui.com\n */\n" + "x;\n" * 900 + "$.ui.tooltip;\n"
+    found = RetireJsRules.load().identify(body=body)
+    assert ("jquery-ui-tooltip", "1.9.2") in [(d.name, d.version) for d in found]
+
+
+@pytest.mark.parametrize(
+    "unit",
+    [
+        pytest.param("/*\njQuery UI 1.0" + "a" * 50 + "\n", id="widget-header-lines"),
+        pytest.param("apiVersion:'1.0',data,password,", id="api-version-pieces"),
+    ],
+)
+def test_a_script_head_of_repeated_pieces_is_read_quickly(unit: str) -> None:
+    """A full head made of the first pieces of the joined patterns, with no last piece."""
+    text = (unit * (_BODY_MAX // len(unit) + 1))[:_BODY_MAX]
+    rules = RetireJsRules.load()
+    started = time.perf_counter()
+    rules.identify(body=text)
+    assert time.perf_counter() - started < _BUDGET_S

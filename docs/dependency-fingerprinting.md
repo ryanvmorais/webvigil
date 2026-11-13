@@ -33,11 +33,13 @@ a known vulnerability.
 - **No reachability analysis.** A vulnerable version is reported whether or not the flawed
   code path is actually used.
 - **Reads the top of a script only.** The content patterns look at the first 256 KiB of a script
-  and every open-ended repetition in a database pattern is bounded when it is compiled, so a hostile
-  script cannot keep the scan busy in them. A library banner that appears only after that point is not
-  recognised (the SHA-1 match still covers the whole file).
-- **Best effort.** Fetching is capped at 50 distinct in-scope resources per scan; hitting
-  the cap adds a scan warning. Minified bundles with their version banner stripped may be
+  and every open-ended repetition in a database pattern is bounded when it is compiled; a pattern
+  made of pieces joined by "anything in between" is matched piece by piece. A hostile script cannot
+  keep the scan busy in them. A library banner that appears only after that point is not recognised
+  (the SHA-1 match still covers the whole file).
+- **Best effort.** Fetching is capped at 50 distinct in-scope resources per scan, each distinct
+  inline script is read once and up to 4 MiB of them in a scan, and up to 1,000 distinct script and
+  stylesheet URLs are examined; hitting a cap adds a scan warning. Minified bundles with their version banner stripped may be
   missed unless an exact file hash matches.
 
 ## Turning it off

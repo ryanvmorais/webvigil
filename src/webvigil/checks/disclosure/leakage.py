@@ -21,7 +21,7 @@ import re
 
 from selectolax.lexbor import LexborHTMLParser as HTMLParser
 
-from webvigil.checks.base import Check
+from webvigil.checks.base import PER_PAGE_FINDINGS_CAP, Check, note_more_on_page
 from webvigil.checks.disclosure import redaction
 from webvigil.checks.registry import register
 from webvigil.core.context import Page, ScanContext
@@ -145,29 +145,46 @@ class SessionIdInUrlCheck(Check):
         findings: list[Finding] = []
         seen: set[str] = set()
         for page in ctx.pages:
-            for url in _link_urls(page):
-                for match in _SESSION_RE.finditer(url):
-                    key = match.group(1)
-                    redacted = url.replace(match.group(2), "***", 1)
-                    dedup = f"{key.lower()}|{redacted}"
-                    if dedup in seen:
-                        continue
-                    seen.add(dedup)
-                    findings.append(
-                        self.finding(
-                            title=f"Session identifier '{key}' carried in a URL",
-                            description=_SESSION_DESC,
-                            remediation=_SESSION_REMEDIATION,
-                            location=Location(url=page.url),
-                            confidence=Confidence.HIGH,
-                            dedup_key=dedup,
-                            evidence=[
-                                EvidenceItem.of("parameter", f"{key}=***"),
-                                EvidenceItem.of("URL (redacted)", redacted),
-                                EvidenceItem.of("seen on", page.url),
-                            ],
-                        )
+            findings.extend(self._page_findings(page, seen))
+        return findings
+
+    def _page_findings(self, page: Page, seen: set[str]) -> list[Finding]:
+        """
+        Args:
+            page (Page): A crawled page.
+            seen (set[str]): ``(key, redacted URL)`` pairs already reported, updated in place.
+
+        Returns:
+            list[Finding]: The page's findings, at most ``PER_PAGE_FINDINGS_CAP``; the last
+                one notes when the page carries more.
+        """
+        findings: list[Finding] = []
+        for url in _link_urls(page):
+            for match in _SESSION_RE.finditer(url):
+                key = match.group(1)
+                redacted = url.replace(match.group(2), "***", 1)
+                dedup = f"{key.lower()}|{redacted}"
+                if dedup in seen:
+                    continue
+                if len(findings) >= PER_PAGE_FINDINGS_CAP:
+                    note_more_on_page(findings, "URLs that carry a session identifier")
+                    return findings
+                seen.add(dedup)
+                findings.append(
+                    self.finding(
+                        title=f"Session identifier '{key}' carried in a URL",
+                        description=_SESSION_DESC,
+                        remediation=_SESSION_REMEDIATION,
+                        location=Location(url=page.url),
+                        confidence=Confidence.HIGH,
+                        dedup_key=dedup,
+                        evidence=[
+                            EvidenceItem.of("parameter", f"{key}=***"),
+                            EvidenceItem.of("URL (redacted)", redacted),
+                            EvidenceItem.of("seen on", page.url),
+                        ],
                     )
+                )
         return findings
 
 

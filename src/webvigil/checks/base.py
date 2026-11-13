@@ -25,6 +25,28 @@ from webvigil.core.findings import (
     compute_fingerprint,
 )
 
+# Findings one check reports for one page when it reports one per item the page lists (a
+# resource, a link). The page comes from the scanned site and lists as many items as it wants.
+PER_PAGE_FINDINGS_CAP = 20
+
+
+def note_more_on_page(findings: list[Finding], what: str) -> None:
+    """
+    Tell, in the last finding of a page, that the page lists more than the ones reported.
+
+    Args:
+        findings (list[Finding]): The page's findings, ``PER_PAGE_FINDINGS_CAP`` of them;
+            the last one is replaced in place.
+        what (str): What the page lists, in the plural (``"cross-origin resources"``).
+    """
+    if not findings:
+        return
+    note = f"this page lists more {what}; the first {len(findings)} are reported"
+    last = findings[-1]
+    findings[-1] = last.model_copy(
+        update={"evidence": (*last.evidence, EvidenceItem.of("note", note))}
+    )
+
 
 class Check(ABC):
     """

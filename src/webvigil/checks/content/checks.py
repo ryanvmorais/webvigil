@@ -23,7 +23,7 @@ from urllib.parse import urlsplit
 from selectolax.lexbor import LexborHTMLParser as HTMLParser
 from selectolax.lexbor import LexborNode as Node
 
-from webvigil.checks.base import Check
+from webvigil.checks.base import PER_PAGE_FINDINGS_CAP, Check, note_more_on_page
 from webvigil.checks.registry import register
 from webvigil.core.context import Page, ScanContext
 from webvigil.core.findings import Category, Confidence, EvidenceItem, Finding, Location, Severity
@@ -135,12 +135,30 @@ class SriMissingCheck(Check):
         for page in ctx.pages:
             if not (page.ok and page.is_html and page.text):
                 continue
-            tree = HTMLParser(page.text)
-            for selector in _SRI_SELECTORS:
-                for node in tree.css(selector):
-                    finding = self._inspect(page, node, seen)
-                    if finding is not None:
-                        findings.append(finding)
+            findings.extend(self._page_findings(page, seen))
+        return findings
+
+    def _page_findings(self, page: Page, seen: set[str]) -> list[Finding]:
+        """
+        Args:
+            page (Page): An HTML page.
+            seen (set[str]): Resource URLs already reported, updated in place.
+
+        Returns:
+            list[Finding]: The page's findings, at most ``PER_PAGE_FINDINGS_CAP``; the last
+                one notes when the page lists more.
+        """
+        tree = HTMLParser(page.text)
+        findings: list[Finding] = []
+        for selector in _SRI_SELECTORS:
+            for node in tree.css(selector):
+                finding = self._inspect(page, node, seen)
+                if finding is None:
+                    continue
+                if len(findings) >= PER_PAGE_FINDINGS_CAP:
+                    note_more_on_page(findings, "cross-origin resources without integrity")
+                    return findings
+                findings.append(finding)
         return findings
 
     def _inspect(self, page: Page, node: Node, seen: set[str]) -> Finding | None:
@@ -232,7 +250,8 @@ class MixedContentCheck(Check):
             seen (set[str]): ``http://`` URLs already reported, updated in place.
 
         Returns:
-            list[Finding]: The mixed-content findings on this page.
+            list[Finding]: The mixed-content findings on this page, at most
+                ``PER_PAGE_FINDINGS_CAP``; the last one notes when the page lists more.
         """
         tree = HTMLParser(page.text)
         findings: list[Finding] = []
@@ -247,6 +266,9 @@ class MixedContentCheck(Check):
                         continue
                     if resource in seen:
                         continue
+                    if len(findings) >= PER_PAGE_FINDINGS_CAP:
+                        note_more_on_page(findings, "resources over HTTP")
+                        return findings
                     seen.add(resource)
                     findings.append(self._finding(page, tag, node, resource, active))
         return findings

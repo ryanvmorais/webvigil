@@ -41,6 +41,15 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 ### Security
 
+- What a scanned site serves can no longer keep the checks busy for hours or fill memory with
+  findings (GHSA-xwxv-whh4-h422). Dependency fingerprinting matches the library patterns made of
+  pieces joined by "anything in between" piece by piece, reads each distinct inline script once
+  and up to 4 MiB of them in a scan, and examines up to 1,000 distinct script and stylesheet URLs,
+  with a warning past either limit. The `--probe` validators read the first 256 KiB of a body with
+  bounded patterns, and the redaction of a JSON body scans only the strings its evidence keeps.
+  The ASP.NET error-page signature and the open-redirect detector bound their repetitions.
+- The SRI, mixed-content and session-identifier-in-URL checks report at most 20 findings per
+  page; the last one notes that the page lists more.
 - Bidirectional controls and zero-width characters from the scanned site (the "Trojan Source"
   characters) are shown as visible `\uNNNN` escapes in the terminal summary, the Markdown, HTML
   and JSON reports and the dashboard, so a title, a URL or a piece of evidence reads as what it

@@ -21,9 +21,13 @@ from webvigil.http.client import Response
 
 _CHECK_ID = "injection.redirect.open"
 _SENTINEL = payloads.REDIRECT_SENTINEL
-_META_RE = re.compile(r"http-equiv=[\"']?refresh[\"']?[^>]*" + re.escape(_SENTINEL), re.I)
+# Every repetition is bounded: the patterns read text the scanned site chose, and an open-ended
+# run before the sentinel costs time proportional to the square of the body.
+_META_RE = re.compile(r"http-equiv=[\"']?refresh[\"']?[^>]{0,500}" + re.escape(_SENTINEL), re.I)
 _JS_RE = re.compile(
-    r"location\s*(?:\.\s*(?:href|replace)\s*)?[=(]\s*[\"'][^\"']*" + re.escape(_SENTINEL), re.I
+    r"location\s{0,20}(?:\.\s{0,20}(?:href|replace)\s{0,20})?[=(]\s{0,20}[\"'][^\"']{0,500}"
+    + re.escape(_SENTINEL),
+    re.I,
 )
 
 

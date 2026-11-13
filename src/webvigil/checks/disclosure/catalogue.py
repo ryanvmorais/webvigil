@@ -13,6 +13,7 @@ import tomllib
 from dataclasses import dataclass, field
 from functools import lru_cache
 from importlib.resources import files
+from itertools import islice
 from typing import Any
 
 from webvigil.core.errors import ConfigError
@@ -20,6 +21,9 @@ from webvigil.core.findings import Confidence, Severity
 
 _PACKAGE = "webvigil.checks.disclosure.data"
 _FILE = "paths.toml"
+# Characters of a probe body the ``content`` validators read. A sensitive file shows what it is
+# near its top; the body comes from the scanned site, and the HTTP layer only caps it at 10 MiB.
+_SCAN_MAX = 256 * 1024
 
 PROBE_CHECK_IDS = frozenset(
     {
@@ -80,7 +84,7 @@ _BACKUP_SQL_RE = re.compile(
     r"PostgreSQL database dump|-- Dumping data)"
 )
 _BACKUP_SOURCE_RE = re.compile(
-    r"(?i)(<\?php|<%@|DB_PASSWORD|SECRET_KEY|AWS_SECRET|password\s*[:=]|"
+    r"(?i)(<\?php|<%@|DB_PASSWORD|SECRET_KEY|AWS_SECRET|password[ \t]{0,20}[:=]|"
     r"BEGIN (?:RSA|OPENSSH|EC|DSA|PRIVATE)|connectionstring)"
 )
 _HIGH_BACKUP_SUFFIXES = frozenset({".sql", ".sql.gz"})
@@ -94,8 +98,8 @@ class Validator:
     A response passes if **any** configured check passes.
 
     Attributes:
-        content (re.Pattern[str] | None): Pattern the body must match at least
-            ``min_matches`` times.
+        content (re.Pattern[str] | None): Pattern the first ``_SCAN_MAX`` characters of the
+            body must match at least ``min_matches`` times.
         min_matches (int): Required number of ``content`` matches. Defaults to 1.
         content_type (tuple[str, ...]): Substrings, any of which in the
             ``Content-Type`` passes.
@@ -134,7 +138,10 @@ class Validator:
                 data = None
             if isinstance(data, dict) and any(key in data for key in self.json_keys):
                 return True
-        return self.content is not None and len(self.content.findall(body)) >= self.min_matches
+        if self.content is None:
+            return False
+        matches = self.content.finditer(body[:_SCAN_MAX])
+        return sum(1 for _ in islice(matches, self.min_matches)) >= self.min_matches
 
 
 @dataclass(frozen=True, slots=True)

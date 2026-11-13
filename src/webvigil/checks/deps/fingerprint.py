@@ -6,15 +6,21 @@ the shared HTTP client it: collects referenced script/style resources, fetches
 the in-scope ones (bounded, best-effort), and applies the vendored Retire.js
 rules to every source — the resource URL, its body, and the page's inline
 ``<script>`` text.
+
+The pages come from the scanned site, which decides how many inline scripts and resource
+references they carry. The pass reads each distinct inline script once, up to
+``_MAX_INLINE_CHARS`` characters of them in a scan, and examines up to ``_MAX_RESOURCE_URLS``
+distinct resource URLs; past either limit it stops reading that source and warns.
 """
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
 
 from selectolax.lexbor import LexborHTMLParser as HTMLParser
 
-from webvigil.checks.deps.rules import RetireJsRules
+from webvigil.checks.deps.rules import _BODY_MAX, RetireJsRules
 from webvigil.core.context import Detection, Page
 from webvigil.core.errors import OutOfScopeError, RequestFailed
 from webvigil.core.target import Target, normalize_url
@@ -23,6 +29,10 @@ from webvigil.core.urls import resolve_url
 from webvigil.http.client import HttpClient
 
 _MAX_FETCHES = 50
+# Characters of distinct inline scripts the content patterns read in one scan (each script is
+# read up to the rules' head cap), and distinct script / stylesheet URLs examined in one scan.
+_MAX_INLINE_CHARS = 4 * 1024 * 1024
+_MAX_RESOURCE_URLS = 1000
 _RESOURCE_ATTRS = (("script", "src"), ("link", "href"))
 
 
@@ -86,21 +96,36 @@ class Fingerprinter:
 
         in_scope_queue: list[str] = []
         seen_resources: set[str] = set()
+        inline = _InlineBudget()
+        urls_capped = False
 
         for page in pages:
             if not (page.ok and page.is_html and page.text):
                 continue
             tree = HTMLParser(page.text)
-            raw.extend(self._from_inline_scripts(tree, page.url))
+            raw.extend(self._from_inline_scripts(tree, page.url, inline))
             for url in self._resource_urls(tree, page.url):
                 if url in seen_resources:
                     continue
+                if len(seen_resources) >= _MAX_RESOURCE_URLS:
+                    urls_capped = True
+                    break
                 seen_resources.add(url)
                 if not self._target.in_scope(url):
                     raw.extend(self._rules.identify(url=url))  # CDN: URL only, never fetched
                 elif normalize_url(url) not in crawled:
                     in_scope_queue.append(url)
 
+        if urls_capped:
+            result.warnings.append(
+                "dependency fingerprinting stopped at "
+                f"{_MAX_RESOURCE_URLS} distinct resource URLs"
+            )
+        if inline.exhausted:
+            result.warnings.append(
+                "dependency fingerprinting stopped reading inline scripts after "
+                f"{_MAX_INLINE_CHARS} characters"
+            )
         if len(in_scope_queue) > self._max_fetches:
             result.warnings.append(
                 f"dependency fingerprinting stopped at {self._max_fetches} resource fetches "
@@ -140,22 +165,28 @@ class Fingerprinter:
                     urls.append(url)
         return urls
 
-    def _from_inline_scripts(self, tree: HTMLParser, page_url: str) -> list[Detection]:
+    def _from_inline_scripts(
+        self, tree: HTMLParser, page_url: str, budget: _InlineBudget
+    ) -> list[Detection]:
         """
         Args:
             tree (HTMLParser): The parsed page.
             page_url (str): The page URL, recorded as the detection source.
+            budget (_InlineBudget): What is left to read in this scan, updated in place.
 
         Returns:
             list[Detection]: Libraries identified from the text of every inline
-                ``<script>`` (those with no ``src``).
+                ``<script>`` (those with no ``src``) not read on an earlier page, until the
+                budget runs out.
         """
         found: list[Detection] = []
         for node in tree.css("script"):
+            if budget.exhausted:
+                break
             if node.attributes.get("src"):
                 continue
             text = node.text(deep=False)
-            if text and text.strip():
+            if text and text.strip() and budget.admit(text):
                 found.extend(self._rules.identify(url=page_url, body=text))
         return found
 
@@ -175,6 +206,44 @@ class Fingerprinter:
         if response.status_code >= 400:
             return None
         return response.text
+
+
+@dataclass
+class _InlineBudget:
+    """
+    What one scan still reads of inline scripts.
+
+    Attributes:
+        left (int): Characters the content patterns may still read. Defaults to
+            ``_MAX_INLINE_CHARS``.
+        seen (set[bytes]): Digests of the scripts already read. Defaults to empty.
+        exhausted (bool): Whether a script was turned away for lack of budget. Defaults to
+            ``False``.
+    """
+
+    left: int = _MAX_INLINE_CHARS
+    seen: set[bytes] = field(default_factory=set)
+    exhausted: bool = False
+
+    def admit(self, text: str) -> bool:
+        """
+        Args:
+            text (str): An inline script.
+
+        Returns:
+            bool: ``True`` when the script is new in this scan and fits what is left; its
+                characters (up to the rules' head cap) are then taken from the budget.
+        """
+        digest = hashlib.sha256(text.encode("utf-8", "surrogatepass")).digest()
+        if digest in self.seen:
+            return False
+        cost = min(len(text), _BODY_MAX)
+        if cost > self.left:
+            self.exhausted = True
+            return False
+        self.seen.add(digest)
+        self.left -= cost
+        return True
 
 
 def _dedupe(detections: list[Detection]) -> list[Detection]:
