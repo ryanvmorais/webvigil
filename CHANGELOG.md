@@ -54,6 +54,15 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
   decode as its `Content-Encoding` claims, or a URL longer than 64 KiB, fails that one request.
   An unexpected error in the dependency fingerprint or the disclosure probe becomes a warning,
   as in the other passes.
+- Text from the scanned site is no longer read as terminal markup or control sequences
+  (GHSA-98xg-gg8r-r93h). The terminal summary printed a finding's title and location (which
+  quote cookie names, header values and form fields) and the scan warnings as Rich markup, so a
+  bracket the site wrote could restyle or hide that line, or make the summary fail before any
+  finding was shown; it now prints them as text. Control characters (an escape sequence, the C1
+  range, a lone carriage return) are written as a visible `\xNN` escape in the summary, in error
+  lines and in the Markdown and HTML reports, and as `\u00XX` in the JSON report, so a report
+  printed to a terminal shows them instead of acting on them. A CRLF in the evidence of the
+  Markdown and HTML reports reads as LF.
 
 ## [1.3.0] - 2026-11-12
 

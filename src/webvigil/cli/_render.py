@@ -1,4 +1,11 @@
-"""Human-facing terminal output — always to stderr, so stdout stays pipeable (RF-24)."""
+"""
+Human-facing terminal output — always to stderr, so stdout stays pipeable (RF-24).
+
+Text that came from the scanned site or from the command line (a finding's title and location,
+a warning, the target, the authorization note) is never parsed as Rich markup: it goes in as a
+plain part of a :class:`~rich.text.Text`, with its control characters made visible, so a bracket
+in a cookie name is printed as a bracket and an escape sequence in a field name is shown, not run.
+"""
 
 from __future__ import annotations
 
@@ -8,6 +15,7 @@ from rich.text import Text
 
 from webvigil.core.findings import ScanMode, Severity
 from webvigil.core.result import ScanResult
+from webvigil.core.text import show_controls
 
 _console = Console(stderr=True)
 
@@ -31,14 +39,29 @@ _SEVERITY_STYLE = {
 }
 
 
+def _plain(value: str) -> str:
+    r"""
+    Args:
+        value (str): Text from the scanned site or the command line.
+
+    Returns:
+        str: ``value`` on one line, its control characters written as ``\xNN``. It is meant
+            to be a plain part of a :class:`~rich.text.Text`, never a markup string.
+    """
+    return show_controls(value, one_line=True)
+
+
 def error(message: str) -> None:
     """
     Print an ``error: <message>`` line to stderr in bold red.
 
     Args:
-        message (str): The error text; printed literally, no Rich markup.
+        message (str): The error text; printed literally, no Rich markup, its control
+            characters made visible (an exception message can quote what the site sent).
     """
-    _console.print(f"error: {message}", style="bold red", markup=False, highlight=False)
+    _console.print(
+        f"error: {show_controls(message)}", style="bold red", markup=False, highlight=False
+    )
 
 
 def status(message: str) -> None:
@@ -46,9 +69,10 @@ def status(message: str) -> None:
     Print a plain status line to stderr.
 
     Args:
-        message (str): The text; printed literally, no Rich markup.
+        message (str): The text; printed literally, no Rich markup, its control characters
+            made visible.
     """
-    _console.print(message, markup=False, highlight=False)
+    _console.print(show_controls(message), markup=False, highlight=False)
 
 
 def banner(authorized_by: str) -> None:
@@ -59,8 +83,12 @@ def banner(authorized_by: str) -> None:
         authorized_by (str): The authorization attestation to echo back.
     """
     _console.print(
-        "[bold yellow]Active Mode[/] — sending crafted requests. Only scan systems you are "
-        f"authorized to test.\nAuthorization on record: [italic]{authorized_by}[/]"
+        Text.assemble(
+            ("Active Mode", "bold yellow"),
+            " — sending crafted requests. Only scan systems you are authorized to test.\n"
+            "Authorization on record: ",
+            (_plain(authorized_by), "italic"),
+        )
     )
 
 
@@ -105,7 +133,7 @@ def summary(
     meta = result.metadata
     # The title is its own line: as the table's title it is wrapped to the table's width (about
     # 20 columns), which cuts a URL in two.
-    _console.print(Text.assemble(("WebVigil", "bold"), f" — {meta.target}"))
+    _console.print(Text.assemble(("WebVigil", "bold"), f" — {_plain(meta.target)}"))
     table = Table()
     table.add_column("Severity")
     table.add_column("Count", justify="right")
@@ -168,18 +196,20 @@ def summary(
         _console.print(f"[dim]Authenticated scan: {' + '.join(parts)} supplied[/]")
 
     if session_checks:
-        _console.print(f"[dim]Session checks: {session_checks}[/]")
+        _console.print(Text(f"Session checks: {_plain(session_checks)}", style="dim"))
 
     if meta.login is not None:
-        as_user = f" as {login_user}" if login_user else ""
+        as_user = f" as {_plain(login_user)}" if login_user else ""
         relogins = meta.login.relogins
         if not meta.login.confirmed:
-            _console.print(f"[yellow]Login: submitted{as_user}, not confirmed[/]")
+            _console.print(Text(f"Login: submitted{as_user}, not confirmed", style="yellow"))
         elif meta.login.session_lost:
-            _console.print(f"[yellow]Login: session lost after {relogins} re-login(s){as_user}[/]")
+            _console.print(
+                Text(f"Login: session lost after {relogins} re-login(s){as_user}", style="yellow")
+            )
         else:
             noun = "re-login" if relogins == 1 else "re-logins"
-            _console.print(f"[dim]Login: logged in{as_user} ({relogins} {noun})[/]")
+            _console.print(Text(f"Login: logged in{as_user} ({relogins} {noun})", style="dim"))
     csrf_confirmed = sum(1 for f in result.findings if f.check_id == "csrf.form.token-not-enforced")
     if csrf_confirmed:
         _console.print(
@@ -199,10 +229,15 @@ def summary(
         if finding.location.key:
             location += f" ({finding.location.key})"
         _console.print(
-            f"  [{style}]{finding.severity.name:>8}[/]  {finding.title}  [dim]{location}[/]"
+            Text.assemble(
+                "  ",
+                (f"{finding.severity.name:>8}", style),
+                f"  {_plain(finding.title)}  ",
+                (_plain(location), "dim"),
+            )
         )
 
     if result.errors:
         _console.print(f"[dim]{len(result.errors)} check(s) errored[/]")
     for warning in result.warnings:
-        _console.print(f"[dim]warning: {warning}[/]")
+        _console.print(Text(f"warning: {_plain(warning)}", style="dim"))

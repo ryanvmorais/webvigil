@@ -99,7 +99,9 @@ Camadas, de cima para baixo:
    veio do site escaneado é texto não confiável: o Markdown o escreve como texto puro (metacaracteres
    escapados, evidência cercada por mais crases do que qualquer sequência interna) e só uma referência
    `http(s)` vira link, no HTML e no dashboard (`core/urls.py::is_http_url`; o provider OSV só guarda URL
-   absoluta `http(s)`).
+   absoluta `http(s)`). Caractere de controle vira `\xNN` visível (`core/text.py::show_controls`) no
+   resumo do terminal, nas linhas de erro, no Markdown e no HTML, e `\u00XX` no JSON; o resumo
+   (`cli/_render.py`) nunca interpreta texto de achado ou aviso como marcação do Rich (`Text` por partes).
 5. **Persistência** (só Web, `webvigil.api.db`) — SQLite via SQLModel + Alembic; scans
    executados por um `ScanRunner` in-process (1 por vez, fila). O login tem espera crescente após 5
    falhas (`api/throttle.py`, em memória, por cliente e por usuário) e trocar a senha encerra as

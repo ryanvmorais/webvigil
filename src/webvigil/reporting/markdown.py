@@ -1,4 +1,4 @@
-"""
+r"""
 Markdown reporter: a summary table plus a section per finding (RF-23).
 
 A report is built from what the scanned site sent (titles with a path or a parameter name,
@@ -6,7 +6,9 @@ evidence, cookie names, library names), so every such value is written as plain 
 Markdown and HTML metacharacters are escaped, a line break cannot start a new block, and the
 evidence is fenced (and inline code delimited) with a run of backticks longer than any run in
 the content, so it cannot close the block early. The HTML report gets the same guarantee from
-Jinja's autoescaping; JSON and SARIF are data (issue #172).
+Jinja's autoescaping; JSON and SARIF are data (issue #172). The report can also be printed to a
+terminal, so its control characters (an escape sequence in the evidence) are written as visible
+``\xNN`` escapes, which a terminal shows instead of acting on.
 """
 
 from __future__ import annotations
@@ -16,6 +18,7 @@ import re
 
 from webvigil.core.findings import Severity
 from webvigil.core.result import ScanResult
+from webvigil.core.text import show_controls
 from webvigil.reporting._ordering import sort_findings
 
 # ---------------------------------------------------------------------------
@@ -252,4 +255,4 @@ class MarkdownReporter:
                 f"- {_code(error.check_id)}: {_text(error.message)}" for error in result.errors
             ]
             lines.append("")
-        return "\n".join(lines).rstrip() + "\n"
+        return show_controls("\n".join(lines)).rstrip() + "\n"
