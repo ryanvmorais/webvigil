@@ -11,6 +11,15 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-11-13
+
+A patch release with one security fix for how the terminal output shows what a scanned site
+sent (GHSA-98xg-gg8r-r93h) and a round of hardening of the scan engine and the reports. It is
+backward compatible with [docs/stability.md](docs/stability.md): no CLI option, exit code,
+configuration key, check id or JSON report field changes. Two behaviours change on purpose, as
+part of the security fixes, and are listed under Changed: the HAR import hides more of what a
+recording holds, and the crawler skips state-changing links on every scan.
+
 ### Changed
 
 - The HAR import hides more of what a recording holds. A value that looks like a credential (a
@@ -512,7 +521,8 @@ confirmed against a per-request baseline)
 - A security policy with private vulnerability reporting, a code of conduct, and the
   [stability policy](docs/stability.md).
 
-[Unreleased]: https://github.com/ryanvmorais/webvigil/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/ryanvmorais/webvigil/compare/v1.3.1...HEAD
+[1.3.1]: https://github.com/ryanvmorais/webvigil/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/ryanvmorais/webvigil/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/ryanvmorais/webvigil/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/ryanvmorais/webvigil/compare/v1.1.0...v1.2.0
