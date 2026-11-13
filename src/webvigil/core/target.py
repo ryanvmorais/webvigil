@@ -14,6 +14,7 @@ from enum import StrEnum
 from urllib.parse import urlsplit, urlunsplit
 
 from webvigil.core.errors import InvalidTargetError
+from webvigil.core.suffixes import load_rules
 
 _ALLOWED_SCHEMES = frozenset({"http", "https"})
 _DEFAULT_PORTS = {"http": 80, "https": 443}
@@ -27,25 +28,6 @@ _HOSTNAME_RE = re.compile(
 )
 # A leading "<scheme>:" that is not http(s) and has no "//" (e.g. "mailto:a@b.c").
 _BARE_SCHEME_RE = re.compile(r"^[a-z][a-z0-9+.-]*:(?!//)", re.IGNORECASE)
-
-# A tiny multi-label public-suffix subset, enough for the common cases that matter for
-# ``--scope subdomains``. Anything not listed falls back to "last two labels", which is
-# documented as a limitation (see design ADR / Risks). Ordered longest-first at match time.
-_MULTI_LABEL_SUFFIXES = frozenset(
-    {
-        "co.uk",
-        "org.uk",
-        "gov.uk",
-        "ac.uk",
-        "com.br",
-        "com.au",
-        "co.jp",
-        "co.nz",
-        "co.za",
-        "com.mx",
-        "github.io",
-    }
-)
 
 
 class Scope(StrEnum):
@@ -136,25 +118,19 @@ def normalize_url(url: str) -> str:
     return urlunsplit((scheme, netloc, path, parts.query, ""))
 
 
-def registrable_domain(host: str) -> str:
+def registrable_domain(host: str) -> str | None:
     """
-    Best-effort registrable domain of ``host`` using the bundled suffix subset.
+    Registrable domain of ``host`` by the vendored Public Suffix List (:mod:`.suffixes`).
 
     Args:
-        host (str): A hostname, e.g. ``"api.example.co.uk"``.
+        host (str): A hostname in ASCII, e.g. ``"api.example.co.uk"``.
 
     Returns:
-        str: The registrable domain (``"example.co.uk"``). Falls back to the
-            last two labels for any suffix not in ``_MULTI_LABEL_SUFFIXES``.
+        str | None: The registrable domain (``"example.co.uk"``; ``"alice.github.io"`` for
+            ``"www.alice.github.io"``, since ``github.io`` is a public suffix), or ``None`` when
+            ``host`` is itself a public suffix.
     """
-    labels = host.lower().split(".")
-    if len(labels) <= 2:
-        return host.lower()
-    last_two = ".".join(labels[-2:])
-    last_three = ".".join(labels[-3:])
-    if last_two in _MULTI_LABEL_SUFFIXES and len(labels) >= 3:
-        return last_three
-    return last_two
+    return load_rules().registrable_domain(host)
 
 
 @dataclass(frozen=True, slots=True)
@@ -295,9 +271,11 @@ class Target:
             return True
         # A one-label name (``app``) or an IP literal has no registrable domain: widening it would
         # let ``evil.app`` in, so it stays an exact match, as under ``Scope.HOST`` (issue #191).
+        # A target that is itself a public suffix (``github.io``) has no domain to widen to:
+        # every name under it is somebody else's, so it stays an exact match too.
         if self.scope is Scope.SUBDOMAINS and _is_domain_name(self.host):
             base = registrable_domain(self.host)
-            return other == base or other.endswith(f".{base}")
+            return base is not None and (other == base or other.endswith(f".{base}"))
         return False
 
     def carries_credentials(self, url: str) -> bool:

@@ -132,10 +132,26 @@ def test_scope_subdomains() -> None:
 
 
 def test_scope_subdomains_with_multi_label_suffix() -> None:
-    """A bundled multi-label suffix (``co.uk``) is treated as a public suffix."""
+    """A multi-label suffix of the Public Suffix List (``co.uk``) is treated as a public suffix."""
     target = Target.parse("https://shop.example.co.uk", scope=Scope.SUBDOMAINS)
     assert target.in_scope("https://api.example.co.uk/x")
     assert not target.in_scope("https://example.org.uk/x")
+
+
+def test_scope_subdomains_keeps_tenants_of_a_shared_host_apart() -> None:
+    """``herokuapp.com`` is a public suffix: one tenant's scope never reaches another (S-27)."""
+    target = Target.parse("https://www.alice.herokuapp.com", scope=Scope.SUBDOMAINS)
+    assert target.in_scope("https://alice.herokuapp.com/x")
+    assert target.in_scope("https://api.alice.herokuapp.com/x")
+    assert not target.in_scope("https://bob.herokuapp.com/x")
+    assert not target.in_scope("https://herokuapp.com/x")
+
+
+def test_scope_subdomains_of_a_public_suffix_is_that_host_only() -> None:
+    """A target that is itself a public suffix has no domain to widen to."""
+    target = Target.parse("https://github.io", scope=Scope.SUBDOMAINS)
+    assert target.in_scope("https://github.io/x")
+    assert not target.in_scope("https://alice.github.io/x")
 
 
 def test_scope_of_a_one_label_or_ipv6_host_is_that_host_only() -> None:

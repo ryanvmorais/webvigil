@@ -63,7 +63,13 @@ def version() -> None:
 def scan(
     url: Annotated[str, typer.Argument(help="Target URL (https:// assumed if no scheme).")],
     mode: Annotated[ScanMode | None, typer.Option(help="Scan mode.")] = None,
-    scope: Annotated[Scope | None, typer.Option(help="How wide to crawl.")] = None,
+    scope: Annotated[
+        Scope | None,
+        typer.Option(
+            help="How wide to crawl: the target host only, or its registrable domain "
+            "(by the Public Suffix List) and every subdomain."
+        ),
+    ] = None,
     output_format: Annotated[
         str | None,
         typer.Option(

@@ -39,6 +39,7 @@ _WHEEL_MUST_HAVE = (
     "webvigil/py.typed",
     "webvigil/reporting/templates/report.html.j2",
     "webvigil/checks/deps/data/retirejs.json",
+    "webvigil/core/data/public_suffix_list.dat",
 )
 
 _RELATIVE_LINK = re.compile(r"\]\((?!https?://|#|mailto:)[^)\s]+\)")

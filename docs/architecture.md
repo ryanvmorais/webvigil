@@ -83,7 +83,13 @@ Persistence       webvigil.api.db  (SQLite via SQLModel + Alembic, web only)
 
 ## Scan flow
 
-1. Parse the target URL, build the `Target` (scope + politeness policy).
+1. Parse the target URL, build the `Target` (scope + politeness policy). Under
+   `--scope subdomains` the scope is the target's registrable domain and every name under it,
+   by the [Public Suffix List](https://publicsuffix.org/) vendored in
+   `src/webvigil/core/data/` (ICANN and private sections, so `alice.github.io` never reaches
+   `bob.github.io`); a target that is a public suffix itself, a one-label name or an IP literal
+   stays an exact match. `scripts/update-public-suffix-list.py` refreshes the copy; the engine
+   never downloads it.
 2. Enforce the Active-Mode gate: `active` mode without an `authorized_by` attestation is
    refused here, in the engine, so every caller is bound by it.
 3. The `HttpClient` opens; all requests route through its shared rate limiter (concurrency
