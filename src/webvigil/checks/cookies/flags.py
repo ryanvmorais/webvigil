@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from webvigil.checks.base import Check
-from webvigil.checks.headers._parsing import is_https, parse_set_cookie
+from webvigil.checks.headers._parsing import is_https, mask_set_cookie, parse_set_cookie
 from webvigil.checks.registry import register
 from webvigil.core.context import Page, ScanContext
 from webvigil.core.findings import Category, EvidenceItem, Finding, Location, Severity
@@ -65,7 +65,7 @@ class CookieFlagsCheck(Check):
         path = str(attrs.get("path", "")) or "/"
         has_domain = "domain" in attrs
         on_https = is_https(page.url)
-        evidence = [EvidenceItem.of("Set-Cookie", raw)]
+        evidence = [EvidenceItem.of("Set-Cookie", mask_set_cookie(raw))]
         location = Location(url=page.url, cookie=name)
         out: list[Finding] = []
 
@@ -158,7 +158,7 @@ class CookieFlagsCheck(Check):
 
         Args:
             location (Location): The cookie location.
-            evidence (list[EvidenceItem]): The shared ``Set-Cookie`` evidence.
+            evidence (list[EvidenceItem]): The shared ``Set-Cookie`` evidence, its value masked.
             dedup_suffix (str): Short key identifying the specific weakness.
             severity (Severity): Severity for this weakness.
             title (str): Finding title.

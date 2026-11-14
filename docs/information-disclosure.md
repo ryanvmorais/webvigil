@@ -21,8 +21,8 @@ Runs against the responses the crawler already fetched — **no extra requests**
   …) carried as a query or `;name=value` path parameter in a URL the **target produced** —
   a hyperlink, a form action, or a redirect `Location`. The page's own request URL is not
   inspected (it may be a scanner-crafted `--openapi` seed), and a bare one-time `?token=`
-  link (reset / verification) is deliberately excluded. The value is redacted in the
-  evidence.
+  link (reset / verification) is deliberately excluded. Every session value is redacted
+  (`sid=***`), in the evidence and in the finding's location.
 - **`disclosure.private-ip`** (`LOW`, CWE-200 — spec 013) — an RFC-1918, loopback,
   link-local, or IPv6 unique-local address literal in a response body (an HTML comment, a
   JSON value, an error page). The target's own host is never flagged; at most ten distinct

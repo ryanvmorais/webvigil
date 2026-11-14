@@ -62,3 +62,13 @@ async def test_http_site_does_not_require_secure() -> None:
     """Over plaintext HTTP the missing-``Secure`` finding is suppressed."""
     findings = await _run("t=1; HttpOnly; SameSite=Lax; Path=/", url="http://example.com/")
     assert findings == []
+
+
+async def test_the_cookie_value_never_reaches_the_evidence() -> None:
+    """The target's cookie value is masked; the name and the attributes stay readable."""
+    findings = await _run("session=TOPSECRET; Path=/")
+    assert findings
+    for finding in findings:
+        blob = " ".join(e.content for e in finding.evidence)
+        assert "TOPSECRET" not in blob
+        assert "session=***; Path=/" in blob

@@ -65,7 +65,10 @@ async def detect(point: InjectionPoint, baseline: Baseline, ctx: DetectCtx) -> l
 
         cookie = response.headers.get("set-cookie", "")
         if f"wv{token}=1" in cookie and f"wv{token}=1" not in base_cookie:
-            return [_hit(point, payload, "Set-Cookie split", cookie[:200])]
+            # Only the line that carries the canary: the other Set-Cookie lines are the
+            # target's own cookies, possibly a session token, and prove nothing.
+            split = next(c for c in response.headers.get_list("set-cookie") if f"wv{token}=1" in c)
+            return [_hit(point, payload, "Set-Cookie split", split[:200])]
 
         if response.text.strip() == body_marker and body_marker not in baseline.raw_body:
             return [_hit(point, payload, "response body split", response.text[:200])]

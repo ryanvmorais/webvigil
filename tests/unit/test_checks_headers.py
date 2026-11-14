@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 
 from tests.support import hardened_headers, make_context, make_page
+from webvigil.checks.headers._parsing import mask_set_cookie
 from webvigil.checks.headers.csp import CspCheck
 from webvigil.checks.headers.hsts import HstsCheck
 from webvigil.checks.headers.misc import (
@@ -138,3 +139,32 @@ async def test_leading_zeros_do_not_inflate_max_age() -> None:
     ctx = make_context(make_page(headers={"strict-transport-security": header}))
     titles = [f.title for f in await HstsCheck().run(ctx)]
     assert titles == ["Strict-Transport-Security max-age is too low"]
+
+
+# ---------------------------------------------------------------------------
+# Response-headers evidence
+# ---------------------------------------------------------------------------
+
+
+async def test_response_headers_evidence_masks_every_set_cookie_value() -> None:
+    """Each ``Set-Cookie`` line keeps its name and attributes, never the target's value."""
+    page = make_page(headers={}, set_cookies=("sid=ONE; HttpOnly", "pref=TWO; Path=/"))
+    findings = await CspCheck().run(make_context(page))
+    blob = " ".join(e.content for e in findings[0].evidence)
+    assert "ONE" not in blob and "TWO" not in blob
+    assert "set-cookie: sid=***; HttpOnly" in blob
+    assert "set-cookie: pref=***; Path=/" in blob
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("sid=abc; Path=/; Secure", "sid=***; Path=/; Secure"),
+        ("sid=abc", "sid=***"),
+        ("sid=a=b=c; HttpOnly", "sid=***; HttpOnly"),
+        ("sid=; Max-Age=0", "sid=; Max-Age=0"),
+        ("garbage", "garbage"),
+    ],
+)
+def test_mask_set_cookie(raw: str, expected: str) -> None:
+    assert mask_set_cookie(raw) == expected

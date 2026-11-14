@@ -9,6 +9,7 @@ a body-text reflection.
 
 from __future__ import annotations
 
+import dataclasses
 import re
 from collections.abc import Callable
 
@@ -150,3 +151,20 @@ async def test_detector_stops_when_send_returns_none() -> None:
     hits = await crlf.detect(_POINT, _baseline(), _ctx(render))
     assert hits == []
     assert calls == 3  # own baseline + one payload, then None
+
+
+async def test_set_cookie_split_proof_leaves_out_the_targets_own_cookies() -> None:
+    """Only the canary's ``Set-Cookie`` line is the proof; a session cookie beside it is not."""
+
+    def render(value: str) -> Response:
+        pairs = [("set-cookie", "session=TOPSECRET; HttpOnly")]
+        c = _COOKIE_RE.search(value)
+        if c:
+            pairs.append(("set-cookie", c.group(1)))
+        return dataclasses.replace(_resp("ok"), headers=httpx.Headers(pairs))
+
+    hits = await crlf.detect(_POINT, _baseline(), _ctx(render))
+    assert hits
+    blob = " ".join(content for _, content in hits[0].evidence)
+    assert "TOPSECRET" not in blob
+    assert re.search(r"wv[0-9a-f]+=1", blob)
