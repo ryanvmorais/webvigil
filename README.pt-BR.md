@@ -197,8 +197,7 @@ usar no lugar.
 
 - **Bordas do scan de APIs.** O `--openapi` lê só **JSON** (converta antes um documento YAML) e
   testa parâmetros de query / path / corpo form-urlencoded, não campos individuais de um corpo de
-  requisição JSON. São limites atuais, não permanentes. Veja o
-  [scan de APIs](docs/api-scanning.md).
+  requisição JSON. Veja o [scan de APIs](docs/api-scanning.md).
 
 - **Fronteiras de rede.** Um scan de alvo público nunca conecta em endereço de loopback, privado
   ou link-local, nem para um subdomínio no escopo cujo DNS responda com um deles (DNS

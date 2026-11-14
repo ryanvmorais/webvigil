@@ -197,8 +197,7 @@ to reach for instead.
 
 - **API-scanning edges.** `--openapi` reads **JSON** only (convert a YAML document first)
   and fuzzes query / path / form-urlencoded-body parameters — not individual fields of a
-  JSON request body. These are current limits, not permanent ones.
-  See [API scanning](docs/api-scanning.md).
+  JSON request body. See [API scanning](docs/api-scanning.md).
 
 - **Network boundaries.** A scan of a public target never connects to a loopback, private or
   link-local address, even for a subdomain in scope whose DNS answers with one (split-horizon

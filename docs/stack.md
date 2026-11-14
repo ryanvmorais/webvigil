@@ -66,8 +66,10 @@ of a package on disk, hard-linked into each project), and its lockfile
 
 **Learn:** `pnpm install`, `pnpm <script>` (runs a `package.json` script),
 `pnpm dlx` (run a package without installing), the `dependencies` vs
-`devDependencies` split, and `pnpm.overrides` (force a transitive version — used
-here to patch `js-yaml`, `brace-expansion` and `source-map-js`).
+`devDependencies` split, and the `overrides` key of `pnpm-workspace.yaml` (force a
+transitive version — used here to patch `brace-expansion`, `js-yaml`, `minimatch` and
+`source-map-js`; pnpm 12 ignores the old `pnpm` field of `package.json`). The same file's
+`minimumReleaseAge` is the one-week cooldown before a new release resolves.
 
 ### TypeScript
 
@@ -403,7 +405,7 @@ docstring (a missing docstring does not fail the gate yet). **Black** formats
 
 Enforces the architecture contract in CI (ADR-1): the engine packages
 (`core`, `http`, `crawler`, `checks`, `reporting`) may **not** import Typer,
-Rich, FastAPI, SQLModel, Alembic, PyJWT or argon2, and `webvigil.cli` /
+Rich, FastAPI, SQLModel, Alembic, PyJWT, argon2 or Uvicorn, and `webvigil.cli` /
 `webvigil.api` may not import each other. `uv run lint-imports` checks it.
 
 **Learn:** the contract lives in `pyproject.toml` `[tool.importlinter]`; a
