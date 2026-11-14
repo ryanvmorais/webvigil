@@ -92,14 +92,14 @@ Changelog = "https://github.com/ryanvmorais/webvigil/blob/main/CHANGELOG.md"
 [dependency-groups]
 dev = [
     # Lint / format / types (see the `webvigil` command list in CLAUDE.md).
-    "ruff>=0.17.2",
+    "ruff>=0.17.4",
     "black>=26.10.1",
-    "mypy>=2.4.0",
+    "mypy>=2.4.1",
     # Architecture contract: `lint-imports` enforces engine purity (RNF-01 / ADR-1).
-    "import-linter>=2.15",
+    "import-linter>=2.16",
     # Test runner and helpers.
-    "pytest>=9.1.1",
-    "pytest-asyncio>=1.4.0",
+    "pytest>=9.2.0",
+    "pytest-asyncio>=1.4.1.post1",
     "pytest-httpx>=0.36.2",
     # Coverage: the guard of the test-suite audit (issue #101) — a refactor of the tests must not
     # lower the per-file line and branch coverage of `src/webvigil`.
