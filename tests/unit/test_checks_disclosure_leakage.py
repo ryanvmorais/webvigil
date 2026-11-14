@@ -86,6 +86,44 @@ async def test_a_bare_reset_token_in_a_link_is_not_flagged() -> None:
     assert await _session_titles(page) == []
 
 
+async def test_a_short_value_seen_earlier_in_the_url_is_still_redacted() -> None:
+    """The matched span is redacted, not the first spelling of the value in the URL."""
+    page = make_page(url="https://app.example/home", text='<a href="/a?sid=a">go</a>')
+    findings = await SessionIdInUrlCheck().run(
+        make_context(page, target_url="https://app.example/")
+    )
+    redacted = {e.label: e.content for e in findings[0].evidence}["URL (redacted)"]
+    assert redacted == "https://app.example/a?sid=***"
+
+
+async def test_every_session_parameter_of_a_url_is_redacted() -> None:
+    """A URL with two session parameters yields two findings, neither showing a value."""
+    page = make_page(
+        url="https://app.example/home",
+        text='<a href="/x?sid=ONE&amp;sessionid=TWO">go</a>',
+    )
+    findings = await SessionIdInUrlCheck().run(
+        make_context(page, target_url="https://app.example/")
+    )
+    assert len(findings) == 2
+    for finding in findings:
+        blob = " ".join(e.content for e in finding.evidence)
+        assert "ONE" not in blob and "TWO" not in blob
+
+
+async def test_the_page_url_of_a_followed_link_is_redacted() -> None:
+    """A page the crawler reached through such a link is shown redacted in the location."""
+    page = make_page(
+        url="https://app.example/x?sid=ONE",
+        text='<a href="/y?sid=ONE">next</a>',
+    )
+    findings = await SessionIdInUrlCheck().run(
+        make_context(page, target_url="https://app.example/")
+    )
+    assert findings[0].location.url == "https://app.example/x?sid=***"
+    assert "ONE" not in " ".join(e.content for e in findings[0].evidence)
+
+
 # ---------------------------------------------------------------------------
 # disclosure.private-ip
 # ---------------------------------------------------------------------------

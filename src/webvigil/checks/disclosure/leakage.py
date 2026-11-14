@@ -8,8 +8,8 @@ request of their own.
   shaped parameter carried in a URL the **target produced** — a hyperlink, a
   form action, or a redirect ``Location`` — where it leaks into logs, the
   ``Referer`` header, and browser history. The page's own request URL is not
-  inspected (it may be a scanner-crafted ``--openapi`` seed); the token value is
-  redacted in the evidence.
+  inspected (it may be a scanner-crafted ``--openapi`` seed); every session value
+  is redacted in the evidence and in the finding's location.
 * ``disclosure.private-ip`` (RF-14) flags an RFC-1918 / loopback / link-local /
   IPv6 unique-local address literal in a response body, capped per page. The
   target's own host is never flagged.
@@ -97,6 +97,23 @@ _PRIVATE_IP_REMEDIATION = (
 )
 
 
+def _redact(url: str) -> str:
+    """
+    Replace the value of every session parameter in a URL with ``***``.
+
+    The match's own span is replaced, so a value that also appears earlier in the
+    URL, or a second session parameter, is never left visible.
+
+    Args:
+        url (str): A URL, possibly carrying session parameters.
+
+    Returns:
+        str: ``url`` with each ``key=value`` that :data:`_SESSION_RE` matches turned
+            into ``key=***``; a URL without one comes back unchanged.
+    """
+    return _SESSION_RE.sub(lambda m: f"{m.group(0)[: m.start(2) - m.start()]}***", url)
+
+
 def _link_urls(page: Page) -> list[str]:
     """
     Args:
@@ -124,7 +141,8 @@ class SessionIdInUrlCheck(Check):
     Flags a session identifier or API key carried in a URL the target produced.
 
     Only hyperlinks, form actions, and redirect targets are inspected — never
-    the page's own request URL. The token value is redacted in the evidence.
+    the page's own request URL. Every session value is redacted, in the evidence
+    and in the location (the crawler may have followed such a link).
     """
 
     id = "disclosure.session-id-in-url"
@@ -159,10 +177,11 @@ class SessionIdInUrlCheck(Check):
                 one notes when the page carries more.
         """
         findings: list[Finding] = []
+        page_url = _redact(page.url)
         for url in _link_urls(page):
+            redacted = _redact(url)
             for match in _SESSION_RE.finditer(url):
                 key = match.group(1)
-                redacted = url.replace(match.group(2), "***", 1)
                 dedup = f"{key.lower()}|{redacted}"
                 if dedup in seen:
                     continue
@@ -175,13 +194,13 @@ class SessionIdInUrlCheck(Check):
                         title=f"Session identifier '{key}' carried in a URL",
                         description=_SESSION_DESC,
                         remediation=_SESSION_REMEDIATION,
-                        location=Location(url=page.url),
+                        location=Location(url=page_url),
                         confidence=Confidence.HIGH,
                         dedup_key=dedup,
                         evidence=[
                             EvidenceItem.of("parameter", f"{key}=***"),
                             EvidenceItem.of("URL (redacted)", redacted),
-                            EvidenceItem.of("seen on", page.url),
+                            EvidenceItem.of("seen on", page_url),
                         ],
                     )
                 )

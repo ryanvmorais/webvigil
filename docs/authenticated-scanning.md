@@ -31,7 +31,8 @@ subdomain separately if you need that.
 **Privacy.** A cookie value is held only in memory for the scan and is never written to a
 report, a log line, a warning, or the scan metadata. If the target echoes it into a page that a
 finding quotes, the result is scrubbed of it (`[redacted]`, as for the login below), and a
-malformed `--cookie` is reported by its position, never by its text. The JSON report records
+malformed `--cookie` is reported by its position, never by its text. A cookie the target sets
+shows up in a finding by its name and attributes, with `***` for its value. The JSON report records
 `metadata.authenticated: true` (a boolean — no names, no values, no count). The CLI summary
 prints the cookie **count** and nothing more.
 

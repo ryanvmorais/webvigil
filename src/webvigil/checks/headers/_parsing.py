@@ -44,15 +44,40 @@ def response_headers_evidence(page: Page, *, only: tuple[str, ...] = ()) -> Evid
             names (case-insensitive).
 
     Returns:
-        EvidenceItem: A ``"response headers"`` item; its content notes when none
-            of the relevant headers are present.
+        EvidenceItem: A ``"response headers"`` item, one line per header field, with
+            every ``Set-Cookie`` value masked (see :func:`mask_set_cookie`); its
+            content notes when none of the relevant headers are present.
     """
-    items = list(page.headers.items())
+    items = page.headers.multi_items()
     if only:
         wanted = {name.lower() for name in only}
         items = [(k, v) for k, v in items if k.lower() in wanted]
-    rendered = "\n".join(f"{k}: {v}" for k, v in items) or "(none of the relevant headers present)"
-    return EvidenceItem.of("response headers", rendered)
+    rendered = "\n".join(
+        f"{k}: {mask_set_cookie(v) if k.lower() == 'set-cookie' else v}" for k, v in items
+    )
+    return EvidenceItem.of("response headers", rendered or "(none of the relevant headers present)")
+
+
+def mask_set_cookie(raw: str) -> str:
+    """
+    Hide the value of one ``Set-Cookie`` header value, keeping its name and attributes.
+
+    The target issued the value, so the scan cannot know it is not a session token;
+    the name and the attributes are what a finding about the cookie needs to show.
+
+    Args:
+        raw (str): One raw ``Set-Cookie`` header value.
+
+    Returns:
+        str: ``raw`` with the value of its ``name=value`` pair replaced by ``***``
+            (``sid=abc; Path=/`` becomes ``sid=***; Path=/``); a pair with an empty
+            value, or without ``=``, is kept as it is.
+    """
+    pair, sep, attributes = raw.partition(";")
+    name, equals, value = pair.partition("=")
+    if equals and value.strip():
+        pair = f"{name}=***"
+    return f"{pair}{sep}{attributes}"
 
 
 def parse_csp(value: str) -> dict[str, list[str]]:
