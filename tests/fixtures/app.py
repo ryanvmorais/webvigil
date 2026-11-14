@@ -874,6 +874,10 @@ def _account_settings(cookie_name: str, *, escape: bool) -> Callable[[Request], 
 SIGNIN_USER = "scanner@example.com"
 SIGNIN_PASSWORD = "correct horse"
 SIGNIN_LOCKOUT = 3  # the hardened profile refuses logins after this many wrong passwords
+# The insecure profile's anonymous session ids count up from here (100001, 100002...). The
+# arithmetic probes print products from 121 to 9801 (`cmdi`, `ssti`, `el`), and a probe's
+# evidence must never equal an id the secrets test looks for.
+SESSION_ID_BASE = 100_000
 
 
 def _signin_page(token: str, error: str = "") -> HTMLResponse:
@@ -921,7 +925,7 @@ def _signin(cookie_name: str, *, lockout: bool) -> Callable[[Request], Awaitable
                 anon = _random_id(f"anon-{state.signin_visits}")
                 page.set_cookie(cookie_name, anon, path="/", httponly=True, samesite="lax")
             else:
-                page.set_cookie(cookie_name, str(1000 + state.signin_visits), path="/")
+                page.set_cookie(cookie_name, str(SESSION_ID_BASE + state.signin_visits), path="/")
             return page
         form = await request.form()
         csrf = str(form.get("csrf", ""))
