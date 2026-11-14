@@ -14,7 +14,7 @@ import httpx
 import pytest
 from starlette.applications import Starlette
 
-from tests.fixtures.app import SIGNIN_PASSWORD, SIGNIN_USER, make_app
+from tests.fixtures.app import SESSION_ID_BASE, SIGNIN_PASSWORD, SIGNIN_USER, make_app
 
 _BASE = "http://demo.test"
 
@@ -61,16 +61,25 @@ async def _login(client: httpx.AsyncClient) -> httpx.Response:
 
 
 async def test_the_insecure_app_hands_out_counter_ids_and_keeps_them_at_login() -> None:
-    """Visitors get 1001, 1002...; the login makes that same id the authenticated session."""
+    """Visitors get 100001, 100002...; the login makes that same id the authenticated session."""
     app = make_app("insecure")
     async with _client(app) as first, _client(app) as second:
         one = await _anonymous_id(first, "session")
         two = await _anonymous_id(second, "session")
-        assert (one, two) == ("1001", "1002")
+        assert (one, two) == ("100001", "100002")
 
         answer = await _login(first)
         assert not any("session" in c for c in answer.headers.get_list("set-cookie"))
     assert list(app.state.sessions) == [one]  # the anonymous id is now the authenticated session
+
+
+def test_the_insecure_ids_start_above_every_arithmetic_product() -> None:
+    """
+    The ``cmdi``, ``ssti`` and ``el`` probes draw both operands from 11 to 99 and their evidence
+    shows the product as a whole number (``wv<hex>=1001``); an id inside that range made the
+    secrets test of the integration scans report a leak that was the product.
+    """
+    assert SESSION_ID_BASE + 1 > 99 * 99
 
 
 async def test_the_hardened_app_issues_a_new_long_id_at_login() -> None:

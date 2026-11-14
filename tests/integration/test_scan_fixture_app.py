@@ -440,9 +440,9 @@ def _leaks(secret: str, text: str) -> bool:
 
     Returns:
         bool: ``True`` when ``secret`` appears in ``text`` as a whole token. The insecure
-            profile issues sequential session ids (``1001``), which can turn up by chance inside
-            the random hex marker of another check (``wvb121001ce3ad``); a real leak shows the
-            value on its own (``session=1001``).
+            profile issues sequential session ids (``100001``), which can turn up by chance inside
+            the random hex marker of another check (``wvb1100001ce3a``); a real leak shows the
+            value on its own (``session=100001``).
     """
     return re.search(rf"(?<![0-9A-Za-z]){re.escape(secret)}(?![0-9A-Za-z])", text) is not None
 
