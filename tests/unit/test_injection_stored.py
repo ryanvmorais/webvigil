@@ -17,6 +17,7 @@ import httpx
 import pytest
 
 from tests.support import make_page
+from webvigil.checks.injection import payloads
 from webvigil.checks.injection.models import InjectionPoint, StoredMarker
 from webvigil.checks.injection.stored import StoredXssScanner, _detect, _stored_order
 from webvigil.core.config import ScanConfig
@@ -120,6 +121,27 @@ def test_detect_reports_one_hit_with_a_count_for_a_multi_page_render() -> None:
     hits = _detect({"t6": marker}, pages, {})
     assert len(hits) == 1
     assert "(+1 more page(s))" in dict(hits[0].evidence)["Rendered on"]
+
+
+def test_every_stored_marker_carries_the_tag_the_page_scan_looks_for() -> None:
+    """``_detect`` finds a page's markers by the ``<wvstored{token}>`` tag alone."""
+    for template in payloads.STORED_MARKERS:
+        assert "<wvstored{token}>" in template
+
+
+def test_detect_with_many_markers_and_pages_finds_the_rendered_ones_in_marker_order() -> None:
+    """Only the markers a page names are looked up; the hits keep the markers' order."""
+    markers = {f"m{i}": _marker(f"m{i}", base=f"https://example.com/form/{i}") for i in range(200)}
+    filler = "<p>" + "filler " * 2000 + "</p>"
+    pages = [_rendered(f"https://example.com/p/{j}", filler) for j in range(50)]
+    pages.append(
+        _rendered("https://example.com/p/hit", "<div><wvstoredm123></div><div><wvstoredm7></div>")
+    )
+    hits = _detect(markers, pages, {})
+    assert [hit.url for hit in hits] == [
+        "https://example.com/form/7",
+        "https://example.com/form/123",
+    ]
 
 
 # ---------------------------------------------------------------------------

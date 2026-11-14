@@ -23,6 +23,18 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
   deadline of three times `[deps] osv_timeout_s`, keeps at most 200 records per package, and
   skips a malformed record with a warning. Any failure falls back to the offline database with a
   warning instead of aborting the scan.
+- The `--file-upload` pass reports server-side execution only when the uploaded file's own output
+  (its marker followed by the computed product) comes back. A not-found page that echoed the file
+  name and happened to hold the same number was reported as a critical finding. The pass also
+  follows at most 4 of the links an upload answer gives, and its fetches count against the
+  per-form request cap.
+- The SQL injection error probes no longer include an `OR` condition. A form field can feed an
+  `UPDATE` or a `DELETE`, and a condition true for every row could widen what it changes. The
+  quote-breaking probes that remain draw the same database errors.
+- The expression-language, CSRF confirmation, and stored XSS passes no longer slow down with the
+  size of a response. They cut the text before splitting it, stop tokenizing at their cap, skip
+  the full page comparison when a quick bound already rules it out, and read each re-crawled
+  page once instead of once per marker. The findings are the same.
 
 ### Security
 

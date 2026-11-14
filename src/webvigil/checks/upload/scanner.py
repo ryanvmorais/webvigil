@@ -48,7 +48,14 @@ _INLINE_TYPES = ("text/html", "application/xhtml+xml", "image/svg+xml")
 # Source markers: their presence means the file came back as source, not executed output.
 _SOURCE_MARKERS = ("<?php", "<?=", "<% ")
 _PER_FORM_CAP = 40
+# Where-the-file-went URLs taken from one upload answer (its body and ``Location``). The
+# target writes that answer, so it could list the marker in any number of links; a real
+# upload page names its file once or twice.
+_MAX_REPORTED_URLS = 4
 _SNIPPET_SPAN = 120
+# Characters that end a URL-shaped run of an upload answer: quotes and tag brackets (and any
+# whitespace, checked apart).
+_URL_STOPS = frozenset("\"'<>")
 
 
 @dataclass(frozen=True, slots=True)
@@ -231,6 +238,8 @@ class UploadScanner:
         )
         base_ok = baseline is not None and baseline.status_code < 400
         started = self._spent
+        # Retrievals count against the per-form cap too, not only the uploads between them.
+        limit = started + _PER_FORM_CAP
         # Whether the benign file can be fetched back; asked once, and only when a payload's
         # answer is the baseline's (issue #194).
         baseline_stored: bool | None = None
@@ -238,7 +247,7 @@ class UploadScanner:
         hits: list[UploadHit] = []
         outcomes: set[str] = set()
         for payload in self._payloads(token):
-            if self._spent >= self._budget or self._spent - started >= _PER_FORM_CAP:
+            if self._spent >= self._budget or self._spent >= limit:
                 break
             resp = await self._upload(
                 form.action, field, payload.filename, payload.content, payload.part_type, data
@@ -252,11 +261,11 @@ class UploadScanner:
                 # benign file never came back, nothing was stored either: do not spend a dozen
                 # requests looking for it, the per-form cap is for payloads that may be accepted.
                 if baseline_stored is None:
-                    served0, _ = await self._retrieve(form.action, baseline, token, benign)
+                    served0, _ = await self._retrieve(form.action, baseline, token, benign, limit)
                     baseline_stored = served0 is not None
                 if not baseline_stored:
                     continue
-            served, served_url = await self._retrieve(form.action, resp, token, payload)
+            served, served_url = await self._retrieve(form.action, resp, token, payload, limit)
             if served is None:
                 continue
             hit = self._classify(form.action, field, token, payload, served, served_url)
@@ -268,7 +277,12 @@ class UploadScanner:
         return hits
 
     async def _retrieve(
-        self, action: str, upload_response: Response, token: str, payload: UploadPayload
+        self,
+        action: str,
+        upload_response: Response,
+        token: str,
+        payload: UploadPayload,
+        limit: int,
     ) -> tuple[Response | None, str]:
         """
         Args:
@@ -278,6 +292,8 @@ class UploadScanner:
             token (str): The per-form token; the retrieved body must contain
                 ``wv<token>``.
             payload (UploadPayload): The payload whose stored file to locate.
+            limit (int): The request count (``self._spent``) at which the form's cap is
+                reached; no candidate is fetched past it.
 
         Returns:
             tuple[Response | None, str]: The served response and the URL it came
@@ -289,10 +305,11 @@ class UploadScanner:
 
         body = upload_response.text
         # where the target says the file went: its own text, so possibly a malformed URL
-        reported = [*_iter_marker_urls(body, marker)]
+        reported: list[str] = []
         location = upload_response.headers.get("location", "")
         if marker in location:
             reported.append(location)
+        reported += _iter_marker_urls(body, marker, _MAX_REPORTED_URLS - len(reported))
         for ref in reported:
             if (url := resolve_url(action, ref)) is not None:
                 candidates.append(url)
@@ -307,6 +324,8 @@ class UploadScanner:
                 candidates.append(urljoin(action, prefix + "../" + base_name))
 
         for url in _dedupe(candidates):
+            if self._spent >= limit:
+                break
             served = await self._get(url)
             if served is not None and served.status_code < 400 and marker in served.text:
                 return served, url
@@ -338,9 +357,12 @@ class UploadScanner:
         ctype = served.headers.get("content-type", "").lower()
         disposition = served.headers.get("content-disposition", "").lower()
 
+        # The file prints ``<marker>:<product>`` when it runs. The product alone is a two- to
+        # four-digit number any page may hold, and a not-found page that echoes the requested
+        # name already carries the marker, so only the two together prove execution.
         if (
             payload.product
-            and payload.product in body
+            and f"{marker}:{payload.product}" in body
             and not any(s in body for s in _SOURCE_MARKERS)
         ):
             return self._hit(
@@ -572,21 +594,35 @@ def _same_answer(baseline: Response, response: Response, token: str) -> bool:
     return mask.sub("FILE", baseline.text) == mask.sub("FILE", response.text)
 
 
-def _iter_marker_urls(body: str, marker: str) -> list[str]:
+def _iter_marker_urls(body: str, marker: str, limit: int) -> list[str]:
     """
+    Find the marker and widen each occurrence to the run of characters around it.
+
+    Only the marker's occurrences are visited, and the search stops at ``limit`` URLs, so a
+    large body costs one scan for the marker, not a split of the whole text.
+
     Args:
         body (str): A response body.
         marker (str): The ``wv<token>`` marker.
+        limit (int): The most URLs to return.
 
     Returns:
-        list[str]: URL-shaped substrings of ``body`` that contain the marker.
+        list[str]: Up to ``limit`` distinct URL-shaped substrings of ``body`` that contain
+            the marker, in order of appearance.
     """
     out: list[str] = []
-    for chunk in (
-        body.replace('"', " ").replace("'", " ").replace("<", " ").replace(">", " ").split()
-    ):
-        if marker in chunk and ("/" in chunk or chunk.startswith("http")):
-            out.append(chunk.strip("()[]"))
+    pos = 0
+    while len(out) < limit and (idx := body.find(marker, pos)) != -1:
+        start = idx
+        while start and body[start - 1] not in _URL_STOPS and not body[start - 1].isspace():
+            start -= 1
+        end = idx + len(marker)
+        while end < len(body) and body[end] not in _URL_STOPS and not body[end].isspace():
+            end += 1
+        pos = end
+        chunk = body[start:end].strip("()[]")
+        if ("/" in chunk or chunk.startswith("http")) and chunk not in out:
+            out.append(chunk)
     return out
 
 

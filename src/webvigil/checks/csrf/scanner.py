@@ -24,6 +24,7 @@ import difflib
 import re
 import secrets
 from dataclasses import dataclass
+from itertools import islice
 from typing import Literal
 from urllib.parse import urlencode, urlsplit
 
@@ -224,9 +225,26 @@ def _equivalent(control: _Shape, replay: _Shape) -> bool:
     longest = max(len(control.body), len(replay.body))
     if longest and abs(len(control.body) - len(replay.body)) > _LENGTH_GUARD * longest:
         return False
-    first = _WORD_RE.findall(control.body)[:_TOKEN_CAP]
-    second = _WORD_RE.findall(replay.body)[:_TOKEN_CAP]
-    return difflib.SequenceMatcher(None, first, second).ratio() >= _SIMILARITY
+    first = _tokens(control.body)
+    second = _tokens(replay.body)
+    matcher = difflib.SequenceMatcher(None, first, second)
+    # Both quick ratios are upper bounds of ``ratio()``: below the threshold, the costly
+    # comparison cannot reach it, so the answer is the same without running it.
+    if matcher.real_quick_ratio() < _SIMILARITY or matcher.quick_ratio() < _SIMILARITY:
+        return False
+    return matcher.ratio() >= _SIMILARITY
+
+
+def _tokens(body: str) -> list[str]:
+    """
+    Args:
+        body (str): A response's visible text.
+
+    Returns:
+        list[str]: Its first ``_TOKEN_CAP`` word and punctuation tokens; the scan stops at
+            the cap instead of tokenizing the whole body.
+    """
+    return [match.group() for match in islice(_WORD_RE.finditer(body), _TOKEN_CAP)]
 
 
 def _compare(control: _Shape, replay: _Shape) -> Verdict:

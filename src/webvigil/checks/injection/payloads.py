@@ -66,8 +66,10 @@ XSS_BREAKERS: tuple[str, ...] = (
 
 # --- SQL injection (RF-09) ------------------------------------------------------------
 
-# Error-based: break the quoting and look for a DBMS parser error.
-SQLI_ERROR: tuple[str, ...] = ("'", '"', "')", "';", "\\", "' OR '1")
+# Error-based: break the quoting and look for a DBMS parser error. Every probe only unbalances
+# the statement: none is a condition that holds for every row (an ``OR`` tautology), because a
+# form field may feed an ``UPDATE`` or a ``DELETE`` and a tautology would widen its ``WHERE``.
+SQLI_ERROR: tuple[str, ...] = ("'", '"', "')", "';", "\\")
 
 SQL_ERROR_SIGNATURES: tuple[tuple[str, re.Pattern[str]], ...] = (
     (

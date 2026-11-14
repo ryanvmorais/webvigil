@@ -535,3 +535,21 @@ async def test_no_probe_names_anything_with_a_side_effect(
         await el.detect_combined(point, _baseline(), ctx)
         for value in sent:
             assert not any(token in value for token in _FORBIDDEN), value
+
+
+# ---------------------------------------------------------------------------
+# The signature excerpt
+# ---------------------------------------------------------------------------
+
+
+def test_the_signature_excerpt_is_the_matched_line() -> None:
+    """The excerpt stops at the end of the line, however much body follows."""
+    found = el._signature(_SPEL_ERROR + "\n" + "x" * 1_000_000, "", "p")
+    assert found is not None and found.excerpt == _SPEL_ERROR[: el._EXCERPT_MAX]
+
+
+def test_the_signature_excerpt_of_a_long_line_is_cut_to_its_cap() -> None:
+    """A matched line longer than the cap is cut to ``_EXCERPT_MAX`` characters."""
+    found = el._signature(_SPEL_ERROR + "z" * 1_000_000, "", "p")
+    assert found is not None
+    assert found.excerpt == (_SPEL_ERROR + "z" * el._EXCERPT_MAX)[: el._EXCERPT_MAX]

@@ -9,12 +9,19 @@ tests can assert the pass uploads only benign markers and never sends ``DELETE``
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 import httpx
 
 from tests.support import make_page
-from webvigil.checks.upload.scanner import UploadScanner
+from webvigil.checks.upload.scanner import (
+    _MAX_REPORTED_URLS,
+    _PER_FORM_CAP,
+    UploadPayload,
+    UploadScanner,
+    _iter_marker_urls,
+)
 from webvigil.core.config import ScanConfig
 from webvigil.core.findings import Severity
 from webvigil.core.target import Target
@@ -252,3 +259,101 @@ async def test_pass_uploads_only_benign_markers_and_no_write_verbs() -> None:
         assert "system(" not in text
         assert "eval(" not in text
         assert len(payload) < 400
+
+
+# ---------------------------------------------------------------------------
+# What the target writes cannot make a verdict or spend the per-form cap
+# ---------------------------------------------------------------------------
+
+
+class _ManyLinks:
+    """An upload endpoint that links the stored file 50 times and never serves it back."""
+
+    def __init__(self) -> None:
+        self.posts = 0
+        self.gets: list[str] = []
+
+    async def request(
+        self,
+        method: str,
+        url: str,
+        *,
+        files: dict[str, tuple[str, bytes, str]] | None = None,
+        **_: object,
+    ) -> Response:
+        if method.upper() == "POST" and files:
+            self.posts += 1
+            name = next(iter(files.values()))[0]
+            found = re.search(r"wv[0-9a-f]+", name)
+            marker = found.group() if found else "wv"
+            links = "".join(f'<a href="/u/{i}/{marker}.bin">file</a>' for i in range(50))
+            # A different status from the benign upload's, so no payload looks like the baseline.
+            return _resp(links, status=200 if name.endswith(".txt") else 201)
+        self.gets.append(url)
+        return _resp("not found", status=404)
+
+
+def _exec_payload(scanner: UploadScanner, token: str) -> UploadPayload:
+    """
+    Args:
+        scanner (UploadScanner): Any scanner; the payloads depend only on the token.
+        token (str): The per-form token.
+
+    Returns:
+        UploadPayload: The first server-side execution payload.
+    """
+    return next(p for p in scanner._payloads(token) if p.family == "server-exec")
+
+
+def test_a_page_that_echoes_the_name_and_holds_the_number_is_not_execution() -> None:
+    """A not-found page names the requested file; the product next to it is not its output."""
+    scanner = _scanner(_FakeHttp(_Store()))
+    token = "abc123abc123"
+    payload = _exec_payload(scanner, token)
+    body = f"<p>No file /files/wv{token}.php here. Showing {payload.product} other results.</p>"
+    hit = scanner._classify(
+        _UPLOAD_FORM.action, "avatar", token, payload, _resp(body), "https://example.com/x"
+    )
+    assert hit is None or hit.outcome != "server-exec"
+
+
+def test_the_marker_and_the_product_together_are_execution() -> None:
+    """The file's own output, ``<marker>:<product>``, is the critical hit."""
+    scanner = _scanner(_FakeHttp(_Store()))
+    token = "abc123abc123"
+    payload = _exec_payload(scanner, token)
+    served = _resp(f"wv{token}:{payload.product}")
+    hit = scanner._classify(
+        _UPLOAD_FORM.action, "avatar", token, payload, served, "https://example.com/x"
+    )
+    assert hit is not None and hit.outcome == "server-exec"
+
+
+def test_marker_urls_come_from_links_and_text_once_each() -> None:
+    """A link and a bare URL are both taken; a repeat and a slash-less mention are not."""
+    body = (
+        '<a href="/files/wvab.php">x</a> saved to https://example.com/files/wvab.php'
+        " (wvab) /files/wvab.php"
+    )
+    assert _iter_marker_urls(body, "wvab", 4) == [
+        "/files/wvab.php",
+        "https://example.com/files/wvab.php",
+    ]
+
+
+def test_marker_urls_stop_at_the_limit() -> None:
+    """Fifty links to the marker give back only as many as asked for."""
+    body = "".join(f'<a href="/u/{i}/wvab.bin">f</a>' for i in range(50))
+    assert _iter_marker_urls(body, "wvab", 4) == [f"/u/{i}/wvab.bin" for i in range(4)]
+
+
+async def test_an_answer_with_many_links_spends_at_most_the_per_form_cap() -> None:
+    """The links the target lists are capped, and retrievals count against the form's cap."""
+    http = _ManyLinks()
+    scanner = UploadScanner(
+        http, _TARGET, ScanConfig(), (make_page(),), (_UPLOAD_FORM,)  # type: ignore[arg-type]
+    )
+    await scanner._probe_form(_UPLOAD_FORM)
+    assert len({url for url in http.gets if "/u/" in url}) <= _MAX_REPORTED_URLS
+    # the benign baseline upload comes before the cap starts counting
+    assert http.posts + len(http.gets) <= 1 + _PER_FORM_CAP

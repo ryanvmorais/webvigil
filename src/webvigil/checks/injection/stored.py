@@ -18,6 +18,7 @@ via ``take()``, Phase B via ``take_recrawl()``); ``_STORED_REFETCH_CAP`` bounds 
 
 from __future__ import annotations
 
+import re
 import secrets
 
 from webvigil.checks.injection import payloads
@@ -162,6 +163,11 @@ class StoredXssScanner:
             return None
 
 
+# The tag every ``STORED_MARKERS`` payload carries, with the token of the point that sent it.
+# One pass of it over a page names the markers that may be there; only those are looked up.
+_STORED_TAG_RE = re.compile(r"<wvstored(\w{1,64})>")
+
+
 def _stored_order(points: list[InjectionPoint]) -> list[InjectionPoint]:
     """
     Args:
@@ -198,26 +204,33 @@ def _detect(
     Returns:
         list[InjectionHit]: One ``xss-stored`` hit per marker that rendered.
     """
-    hits: list[InjectionHit] = []
-    for marker in markers.values():
-        renders: list[_Render] = []
-        for page in recrawled:
-            if not (page.ok and page.is_html and page.text):
-                continue
-            known = pre.get(normalize_url(page.url))
+    # Page by page, so each body is scanned once for the tag, not once per marker and payload.
+    renders: dict[str, list[_Render]] = {token: [] for token in markers}
+    for page in recrawled:
+        if not (page.ok and page.is_html and page.text):
+            continue
+        present = {m.group(1) for m in _STORED_TAG_RE.finditer(page.text)} & markers.keys()
+        if not present:
+            continue
+        page_url = normalize_url(page.url)
+        known = pre.get(page_url)
+        for token in present:
+            marker = markers[token]
             for payload in marker.payloads:
                 if payload not in page.text:
                     continue  # not there, or entity-/percent-encoded → safe
                 if known is not None and payload in known:
                     continue  # already present before we injected — not our doing
-                same_url = normalize_url(page.url) == normalize_url(marker.point.base_url)
+                same_url = page_url == normalize_url(marker.point.base_url)
                 if same_url and marker.point.method != "POST":
                     continue  # same URL as a GET injection point → reflected, not stored
-                renders.append((page.url, xss._context(page.text, payload), payload, page.text))
+                renders[token].append(
+                    (page.url, xss._context(page.text, payload), payload, page.text)
+                )
                 break
-        if renders:
-            hits.append(_stored_hit(marker, renders))
-    return hits
+    return [
+        _stored_hit(marker, renders[token]) for token, marker in markers.items() if renders[token]
+    ]
 
 
 def _stored_hit(marker: StoredMarker, renders: list[_Render]) -> InjectionHit:
