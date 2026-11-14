@@ -352,7 +352,9 @@ That keeps the per-form cap for the payloads that may be accepted.
 
 An upload is a finding only when the stored file is **retrieved** (from a link in the upload
 response, a conventional prefix like `/uploads/` or `/files/`, or the web root for the
-traversal case) and one of the outcomes above holds. A file that is stored and retrievable
+traversal case) and one of the outcomes above holds. At most 4 links of an upload response are
+followed, and every fetch counts against the per-form cap, so a response that lists the marker
+many times cannot spend the form's budget on look-ups. A file that is stored and retrievable
 but served as `application/octet-stream` + `attachment` is a **MEDIUM** "accepts an
 arbitrary type" finding.
 

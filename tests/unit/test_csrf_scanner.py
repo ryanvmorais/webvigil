@@ -10,6 +10,7 @@ but the token. No network, no fixture app (that is ``test_scan_fixture_app.py``)
 
 from __future__ import annotations
 
+import difflib
 from collections.abc import Callable
 from typing import Any
 from urllib.parse import parse_qsl
@@ -24,7 +25,9 @@ from webvigil.checks.csrf.scanner import (
     _alter,
     _build_body,
     _compare,
+    _equivalent,
     _Shape,
+    _tokens,
 )
 from webvigil.core.config import ScanConfig
 from webvigil.core.errors import RequestFailed
@@ -467,3 +470,27 @@ async def test_a_hidden_token_input_is_not_a_rejection() -> None:
     assert scan._shape(_resp(page), ()).rejected is False
     assert scan._shape(_resp("<p>CSRF token missing</p>"), ()).rejected is True
     assert scan._shape(_resp("<p>ok</p>", url="https://example.com/login"), ()).rejected is True
+
+
+# ---------------------------------------------------------------------------
+# The comparison's cost
+# ---------------------------------------------------------------------------
+
+
+def test_the_tokens_stop_at_the_cap() -> None:
+    """A body of many words is tokenized only up to ``_TOKEN_CAP``."""
+    assert len(_tokens("word " * (scanner_module._TOKEN_CAP * 3))) == scanner_module._TOKEN_CAP
+
+
+def test_different_words_are_told_apart_without_the_full_comparison(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Same length, other words: the quick upper bounds already rule the pages different."""
+
+    def _no_ratio(self: difflib.SequenceMatcher[str]) -> float:
+        raise AssertionError("ratio() ran")
+
+    monkeypatch.setattr(difflib.SequenceMatcher, "ratio", _no_ratio)
+    first = " ".join(f"alph{i}" for i in range(500))
+    second = " ".join(f"beta{i}" for i in range(500))
+    assert _equivalent(_shape(body=first), _shape(body=second)) is False

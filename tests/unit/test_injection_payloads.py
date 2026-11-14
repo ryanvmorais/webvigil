@@ -11,6 +11,8 @@ none of the template-engine errors, and no probe names anything with a side effe
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from webvigil.checks.injection import payloads
@@ -131,3 +133,10 @@ def test_every_host_payload_is_buildable_for_some_host() -> None:
     for table in (payloads.REDIRECT_PAYLOADS, payloads.SSRF_METADATA, payloads.SSRF_INTERNAL):
         for template in table:
             assert payloads.fill_host(template, "example.com") is not None
+
+
+def test_no_sql_probe_is_a_condition_true_for_every_row() -> None:
+    """A form field may feed an ``UPDATE`` or a ``DELETE``: an ``OR`` would widen its ``WHERE``."""
+    probes = [*payloads.SQLI_ERROR, *(t + f for t, f in payloads.SQLI_BOOLEAN_PAIRS)]
+    for probe in probes:
+        assert not re.search(r"\bOR\b", probe, re.I), probe

@@ -333,8 +333,10 @@ def _signature(text: str, baseline_text: str, payload: str) -> _Signature | None
     for dialect, pattern in payloads.EL_ERROR_SIGNATURES:
         found = pattern.search(payloads.head(text))
         if found and not pattern.search(payloads.head(baseline_text)):
-            line = text[found.start() :].splitlines()[0]
-            return _Signature(dialect, line[:_EXCERPT_MAX], payload)
+            # Cut before splitting: the excerpt is at most one line of ``_EXCERPT_MAX``
+            # characters, and the body after the match can be megabytes.
+            excerpt = text[found.start() : found.start() + _EXCERPT_MAX]
+            return _Signature(dialect, (excerpt.splitlines() or [""])[0], payload)
     return None
 
 
