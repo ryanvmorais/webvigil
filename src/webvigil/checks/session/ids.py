@@ -27,6 +27,9 @@ MIN_BITS = 64
 _EPOCH_S = (978_307_200, 4_102_444_800)
 _EPOCH_MS = (_EPOCH_S[0] * 1000, _EPOCH_S[1] * 1000)
 _COUNTER_MAX = 10**9
+# The longest all-digit id read as a number: past it no epoch or counter rule can match, and
+# int() on a run past Python's 4300-digit limit would raise.
+_MAX_INT_DIGITS = 64
 _MAX_BLOCK = 4  # the longest repeated block the "repeating" rule looks for
 _MIN_REPEAT = 8  # a block repeat needs at least this many characters to count
 _STEP_SPREAD = 4  # a sequence's largest step may be at most this many times its smallest
@@ -145,7 +148,8 @@ def judge_value(value: str) -> list[Rule]:
         )
     if value.isascii() and value.isdigit():
         rules.append(Rule("numeric", "digits only", Severity.HIGH))
-        number = int(value)
+        # Too long to convert: no epoch length, and never below the counter ceiling.
+        number = int(value) if len(value) <= _MAX_INT_DIGITS else _COUNTER_MAX
         if len(value) in (10, 13) and _in_epoch(number):
             rules.append(Rule("timestamp", "reads as an epoch timestamp", Severity.HIGH))
         elif number < _COUNTER_MAX:
@@ -161,9 +165,10 @@ def _integers(values: Sequence[str]) -> list[int] | None:
         values (Sequence[str]): Sampled ids.
 
     Returns:
-        list[int] | None: The values as integers when every one is all digits, else ``None``.
+        list[int] | None: The values as integers when every one is all digits (and at most
+            ``_MAX_INT_DIGITS`` long), else ``None``.
     """
-    if all(v.isascii() and v.isdigit() for v in values):
+    if all(v.isascii() and v.isdigit() and len(v) <= _MAX_INT_DIGITS for v in values):
         return [int(v) for v in values]
     return None
 

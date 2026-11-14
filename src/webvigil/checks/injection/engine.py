@@ -229,7 +229,9 @@ class InjectionScanner:
 
         Returns:
             InjectionReport: The confirmed hits, the point count, and any
-                warnings (point cap, budget exhausted).
+                warnings (point cap, budget exhausted, one per detector kind
+                that raised). A detector that raises on one point loses only
+                that point's result for that kind; the pass goes on.
         """
         points, warnings = enumerate_points(
             self._pages,
@@ -238,6 +240,8 @@ class InjectionScanner:
             max_points=self._config.max_injection_points,
         )
         report = InjectionReport(warnings=list(warnings))
+        # kind -> (points it failed on, exception type of the first failure)
+        failures: dict[str, tuple[int, str]] = {}
         for point in points:
             if self._budget.exhausted():
                 break
@@ -247,7 +251,12 @@ class InjectionScanner:
                 continue
             report.points_tested += 1
             for kind in self._ordered_kinds(point):
-                hits = await _DETECTORS[kind](point, baseline, self._ctx)
+                try:
+                    hits = await _DETECTORS[kind](point, baseline, self._ctx)
+                except Exception as exc:  # one hostile response must not drop every hit
+                    count, first = failures.get(kind, (0, type(exc).__name__))
+                    failures[kind] = (count + 1, first)
+                    continue
                 report.hits.extend(hits)
                 if self._budget.exhausted():
                     break
@@ -255,6 +264,11 @@ class InjectionScanner:
             report.warnings.append(
                 f"active injection stopped at the {self._config.request_budget}-request budget"
             )
+        report.warnings.extend(
+            f"injection detector {kind!r} failed on {count} point(s) ({first}); "
+            "its results for those points are missing"
+            for kind, (count, first) in failures.items()
+        )
         return report
 
     def _ordered_kinds(self, point: InjectionPoint) -> list[str]:

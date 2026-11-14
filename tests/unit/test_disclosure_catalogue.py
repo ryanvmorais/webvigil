@@ -90,3 +90,9 @@ def test_magic_validator_matches_a_byte_prefix() -> None:
     v = Validator(magic=(b"PK\x03\x04",))
     assert v.passes(body="", raw=b"PK\x03\x04rest", content_type="application/zip")
     assert not v.passes(body="", raw=b"<html>", content_type="text/html")
+
+
+def test_json_validator_rejects_a_body_nested_past_the_parser() -> None:
+    """A JSON body nested past the parser's depth fails the validator instead of raising."""
+    v = Validator(json_keys=("name",))
+    assert not v.passes(body="[" * 200_000, raw=b"", content_type="application/json")

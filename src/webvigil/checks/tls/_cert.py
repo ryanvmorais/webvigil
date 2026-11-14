@@ -6,9 +6,19 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from cryptography import x509
+from cryptography.exceptions import UnsupportedAlgorithm
 from cryptography.x509.oid import ExtensionOID
 
 from webvigil.core.findings import Severity
+
+# What reading a loaded certificate's fields can raise: a bad date or name (ValueError), an
+# unknown signature OID, a repeated extension, a SAN entry type cryptography does not model.
+_UNREADABLE = (
+    ValueError,
+    UnsupportedAlgorithm,
+    x509.DuplicateExtension,
+    x509.UnsupportedGeneralNameType,
+)
 
 _EXPIRY_WARNING = timedelta(days=14)
 _WEAK_HASHES = {"md5", "sha1"}
@@ -69,12 +79,15 @@ def analyze(cert_der: bytes, host: str, *, now: datetime | None = None) -> list[
     Returns:
         list[CertIssue]: The problems found, possibly empty. A single
             ``"cert-unparseable"`` issue is returned when the DER will not
-            decode.
+            decode or a field of it will not read.
     """
     now = now or datetime.now(UTC)
     try:
         cert = x509.load_der_x509_certificate(cert_der)
-    except ValueError:
+        # cryptography decodes fields lazily: a bad date, extension or signature OID only
+        # raises when read, so every read below is inside the same guard.
+        return _issues(cert, host, now)
+    except _UNREADABLE:
         return [
             CertIssue(
                 "cert-unparseable",
@@ -84,6 +97,19 @@ def analyze(cert_der: bytes, host: str, *, now: datetime | None = None) -> list[
             )
         ]
 
+
+def _issues(cert: x509.Certificate, host: str, now: datetime) -> list[CertIssue]:
+    """
+    Run the field checks on a loaded certificate; any field read may raise.
+
+    Args:
+        cert (x509.Certificate): The parsed certificate.
+        host (str): The host the certificate is expected to cover.
+        now (datetime): Reference time.
+
+    Returns:
+        list[CertIssue]: The problems found, possibly empty.
+    """
     issues: list[CertIssue] = []
 
     if cert.not_valid_after_utc < now:

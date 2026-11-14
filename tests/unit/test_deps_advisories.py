@@ -15,7 +15,12 @@ from pathlib import Path
 import pytest
 
 from webvigil.checks.deps._data import Provenance
-from webvigil.checks.deps.advisories import Advisory, RetireJsProvider, merge_advisories
+from webvigil.checks.deps.advisories import (
+    Advisory,
+    RetireJsProvider,
+    _pep440,
+    merge_advisories,
+)
 from webvigil.checks.deps.rules import RetireJsRules
 from webvigil.core.findings import Severity
 
@@ -191,3 +196,17 @@ def test_merge_is_order_stable_for_non_overlapping_input() -> None:
 
     assert ids([a, b, c]) == [("CVE-1",), ("CVE-2",), ("CVE-3",)]
     assert ids([c, a, b]) == [("CVE-3",), ("CVE-1",), ("CVE-2",)]
+
+
+def test_merge_keeps_the_earliest_bucket_when_an_advisory_bridges_two() -> None:
+    """An advisory sharing ids with two buckets joins the earlier one; the buckets stay apart."""
+    a = _adv("A", "CVE-1")
+    b = _adv("B", "CVE-2")
+    bridge = _adv("C", "CVE-2", "CVE-1")
+    merged = merge_advisories([a, b, bridge])
+    assert [m.identifiers for m in merged] == [("A", "CVE-1", "C", "CVE-2"), ("B", "CVE-2")]
+
+
+def test_a_version_past_the_int_string_limit_does_not_raise() -> None:
+    """PEP 440 parsing of a 5000-digit release segment falls back instead of raising."""
+    assert _pep440("1." + "9" * 5000) is None

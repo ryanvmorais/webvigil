@@ -65,3 +65,11 @@ def test_none_strategy_still_bounds_but_keeps_structure() -> None:
     out = redaction.apply("none", "line1\nline2\n" + "z" * 5000)
     assert out.startswith("line1")
     assert len(out) <= 1024
+
+
+def test_json_env_falls_back_to_generic_masking_on_deep_nesting() -> None:
+    """A body too deep to parse or to walk gets the generic, length-bounded masking."""
+    parsed_but_deep = "[" * 5000 + "]" * 5000  # json.loads takes it; the walk would not
+    for body in ("[" * 200_000, parsed_but_deep):
+        out = redaction.apply("json-env", body)
+        assert len(out) <= 1024

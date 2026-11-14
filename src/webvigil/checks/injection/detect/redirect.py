@@ -108,9 +108,13 @@ def _host(url: str) -> str:
 
     Returns:
         str: Its lower-cased host, normalising ``\`` to ``/`` and a leading
-            ``//`` to ``http://``.
+            ``//`` to ``http://``; ``""`` when the target does not parse (an
+            unbalanced IPv6 bracket), since it then names no host.
     """
     candidate = url.replace("\\", "/").strip()
     if candidate.startswith("//"):
         candidate = "http:" + candidate
-    return (urlsplit(candidate).hostname or "").lower()
+    try:
+        return (urlsplit(candidate).hostname or "").lower()
+    except ValueError:
+        return ""

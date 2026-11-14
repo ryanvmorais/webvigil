@@ -135,3 +135,11 @@ async def test_an_ipv6_target_gets_no_userinfo_payload() -> None:
     assert await redirect.detect(_POINT, _BASELINE, ctx) == []
     assert seen
     assert not any("@" in value and "[::1]" in value for value in seen)
+
+
+async def test_a_location_with_an_unbalanced_ipv6_bracket_is_not_a_hit() -> None:
+    """A ``Location`` that ``urlsplit`` rejects names no host: no hit, and no exception."""
+    hits = await redirect.detect(
+        _POINT, _BASELINE, _ctx(lambda v: _resp(status=302, location="http://[::1/next"))
+    )
+    assert hits == []

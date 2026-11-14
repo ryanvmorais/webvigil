@@ -92,3 +92,9 @@ def test_session_cookies_reads_every_set_cookie_line_and_skips_what_is_not_an_id
 def test_a_response_without_cookies_has_no_session_ids() -> None:
     """No ``Set-Cookie`` header, no ids."""
     assert session_cookies(httpx.Headers({"content-type": "text/html"})) == []
+
+
+def test_a_jwt_shaped_value_with_a_deeply_nested_header_is_not_a_jwt() -> None:
+    """A header nested past the JSON parser's depth is rejected, not raised."""
+    header = base64.urlsafe_b64encode(b"[" * 200_000).decode().rstrip("=")
+    assert is_jwt(f"{header}.e30.sig") is False

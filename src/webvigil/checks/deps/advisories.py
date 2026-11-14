@@ -17,7 +17,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Protocol
 
-from packaging.version import InvalidVersion, Version
+from packaging.version import Version
 
 from webvigil.checks.deps.rules import RetireJsRules, VulnerabilityEntry
 from webvigil.core.findings import Severity
@@ -80,11 +80,11 @@ def _pep440(raw: str) -> Version | None:
 
     Returns:
         Version | None: The parsed PEP 440 version, or ``None`` when it does not
-            parse.
+            parse (a number past Python's integer-string limit included).
     """
     try:
         return Version(raw)
-    except InvalidVersion:
+    except ValueError:  # InvalidVersion, or int() on a run of more than 4300 digits
         return None
 
 
@@ -220,13 +220,19 @@ def merge_advisories(*groups: Iterable[Advisory]) -> list[Advisory]:
             preserved.
     """
     buckets: list[list[Advisory]] = []
+    # identifier -> index of the earliest bucket holding it: one pass instead of rebuilding every
+    # bucket's identifier set for every advisory (quadratic in an OSV answer's record count).
+    first_bucket: dict[str, int] = {}
     for advisory in itertools.chain.from_iterable(groups):
-        ids = set(advisory.identifiers)
-        bucket = next((b for b in buckets if ids & {i for a in b for i in a.identifiers}), None)
-        if bucket is None:
-            buckets.append([advisory])
+        hits = [first_bucket[i] for i in advisory.identifiers if i in first_bucket]
+        if hits:
+            index = min(hits)
+            buckets[index].append(advisory)
         else:
-            bucket.append(advisory)
+            index = len(buckets)
+            buckets.append([advisory])
+        for identifier in advisory.identifiers:
+            first_bucket[identifier] = min(first_bucket.get(identifier, index), index)
     return [_coalesce(bucket) for bucket in buckets]
 
 
