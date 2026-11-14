@@ -190,7 +190,7 @@ class Orchestrator:
                 check_types, http, target, pages, forms, warnings, operations
             )
             stored_hits = await self._inject_stored(
-                check_types, http, target, pages, forms, warnings
+                check_types, http, target, pages, forms, warnings, crawler
             )
             envelope_hits = await self._scan_envelope(
                 check_types, http, target, pages, forms, warnings
@@ -742,6 +742,7 @@ class Orchestrator:
         pages: tuple[Page, ...],
         forms: tuple[Form, ...],
         warnings: list[str],
+        crawler: Crawler | None = None,
     ) -> tuple[InjectionHit, ...]:
         """
         Run the two-phase stored-XSS pass (spec 008) when it is Active, selected, opted in.
@@ -757,6 +758,8 @@ class Orchestrator:
             pages (tuple[Page, ...]): The pages the crawler discovered.
             forms (tuple[Form, ...]): The parsed ``<form>`` inventory.
             warnings (list[str]): Scan-level warning list, appended to in place.
+            crawler (Crawler | None): The first crawl's crawler, whose page-text allowance
+                the re-crawl shares.
 
         Returns:
             tuple[InjectionHit, ...]: The confirmed stored-XSS hits.
@@ -768,7 +771,9 @@ class Orchestrator:
         if not any(check.id == _STORED_CHECK_ID for check in check_types):
             return ()
         try:
-            report = await StoredXssScanner(http, target, self._config, pages, forms).run()
+            report = await StoredXssScanner(
+                http, target, self._config, pages, forms, crawler=crawler
+            ).run()
         except Exception as exc:  # a detector bug must not abort the whole scan
             warnings.append(f"stored-XSS pass failed: {exc or type(exc).__name__}")
             return ()

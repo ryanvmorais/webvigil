@@ -19,6 +19,7 @@ from webvigil.checks.csrf.checks import (
     TokenNotEnforcedCheck,
 )
 from webvigil.checks.csrf.scanner import CsrfHit
+from webvigil.checks.session.cookies import MAX_NAME_VALUE_OCTETS
 from webvigil.core.config import ScanConfig
 from webvigil.core.context import Observations
 from webvigil.core.findings import Confidence
@@ -141,6 +142,20 @@ async def test_confidence_is_low_with_samesite_lax() -> None:
     """``SameSite=Lax`` on the session cookie makes the finding barely exploitable."""
     findings = await _run([_form("x")], set_cookies=["session=abc; Path=/; SameSite=Lax"])
     assert findings[0].confidence is Confidence.LOW
+
+
+async def test_samesite_after_long_ignored_attributes_is_still_read() -> None:
+    """Attributes a browser ignores do not hide the ``SameSite`` that follows them."""
+    raw = "session=abc; x=" + "q" * 50_000 + "; SameSite=Lax"
+    findings = await _run([_form("x")], set_cookies=[raw])
+    assert findings[0].confidence is Confidence.LOW
+
+
+async def test_a_session_cookie_a_browser_ignores_is_not_weighed() -> None:
+    """A name and value past ``MAX_NAME_VALUE_OCTETS`` set no cookie: as if none was seen."""
+    raw = "session=" + "a" * MAX_NAME_VALUE_OCTETS + "; Path=/"
+    findings = await _run([_form("x")], set_cookies=[raw])
+    assert findings[0].confidence is Confidence.MEDIUM
 
 
 async def test_confidence_is_medium_without_a_session_cookie() -> None:

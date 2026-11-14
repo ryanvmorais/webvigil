@@ -14,7 +14,15 @@ import json
 import httpx
 import pytest
 
-from webvigil.checks.session.cookies import is_jwt, is_session_cookie, session_cookies
+from webvigil.checks.session.cookies import (
+    MAX_ATTRIBUTE_VALUE_OCTETS,
+    MAX_NAME_VALUE_OCTETS,
+    cookie_attribute,
+    cookie_pair,
+    is_jwt,
+    is_session_cookie,
+    session_cookies,
+)
 
 
 def _b64(obj: object) -> str:
@@ -87,6 +95,51 @@ def test_session_cookies_reads_every_set_cookie_line_and_skips_what_is_not_an_id
     )
 
     assert session_cookies(headers) == [("PHPSESSID", "abc123def"), ("sid", "9f8e7d")]
+
+
+def test_a_cookie_whose_name_and_value_pass_the_browser_limit_is_ignored() -> None:
+    """Past ``MAX_NAME_VALUE_OCTETS`` a browser drops the cookie, and so does the check."""
+    at_limit = "b" * (MAX_NAME_VALUE_OCTETS - len("session"))
+    headers = httpx.Headers(
+        [
+            ("set-cookie", "sid=" + "a" * MAX_NAME_VALUE_OCTETS),
+            ("set-cookie", f"session={at_limit}"),
+        ]
+    )
+    assert session_cookies(headers) == [("session", at_limit)]
+
+
+def test_long_attributes_do_not_hide_a_session_cookie() -> None:
+    """Attributes a browser ignores, however long, leave the cookie readable."""
+    junk = "; x=" + "q" * 50_000
+    headers = httpx.Headers([("set-cookie", f"sid=abc123{junk}; Path=/")])
+    assert session_cookies(headers) == [("sid", "abc123")]
+
+
+def test_the_pair_is_counted_in_octets() -> None:
+    """A multi-byte value counts every octet it takes."""
+    value = "\u00e9" * (MAX_NAME_VALUE_OCTETS // 2)  # two octets each in UTF-8
+    assert cookie_pair(f"s={value}") is None
+    assert cookie_pair("s=" + "e" * (MAX_NAME_VALUE_OCTETS - 1)) is not None
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        pytest.param("sid=a; Path=/; SameSite=Lax", "Lax", id="present"),
+        pytest.param("sid=a; Path=/", None, id="absent"),
+        pytest.param("sid=a; samesite=None; SameSite=Strict", "Strict", id="last-wins"),
+        pytest.param("sid=a; Secure", None, id="other-flag"),
+        pytest.param(
+            "sid=a; SameSite=Lax; SameSite=" + "x" * (MAX_ATTRIBUTE_VALUE_OCTETS + 1),
+            "Lax",
+            id="too-long-is-ignored",
+        ),
+    ],
+)
+def test_an_attribute_is_read_as_a_browser_reads_it(raw: str, expected: str | None) -> None:
+    """The last one wins, case does not matter, and a value past the limit is ignored."""
+    assert cookie_attribute(raw, "SameSite") == expected
 
 
 def test_a_response_without_cookies_has_no_session_ids() -> None:
