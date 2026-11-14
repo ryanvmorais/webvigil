@@ -118,6 +118,26 @@ def test_a_sitemap_gives_at_most_the_url_limit() -> None:
     assert sitemap.parse(xml, limit=5) == [f"{_SEED}p/{i}" for i in range(5)]
 
 
+def test_a_sitemap_with_a_document_type_declaration_is_not_parsed() -> None:
+    """A sitemap that declares entities is refused before the parser sees it."""
+    xml = (
+        '<?xml version="1.0"?>\n<!DOCTYPE urlset [<!ENTITY a "x">]>\n'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+        f"<url><loc>{_SEED}p/&a;</loc></url></urlset>"
+    )
+    assert sitemap.parse(xml) == []
+
+
+def test_an_ordinary_sitemap_is_still_read() -> None:
+    """A sitemap without a document type declaration gives its URLs."""
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+        f"<url><loc>{_SEED}a</loc></url><url><loc> {_SEED}b </loc></url></urlset>"
+    )
+    assert sitemap.parse(xml) == [f"{_SEED}a", f"{_SEED}b"]
+
+
 async def test_all_the_sitemaps_together_give_at_most_the_url_limit(httpx_mock: object) -> None:
     """The URL limit is shared by the sitemaps of a scan, not applied to each."""
     routes = {
@@ -277,6 +297,31 @@ async def test_the_text_kept_for_the_scan_stays_within_its_allowance(
     assert sizes[0] == len(big)
     assert sizes[-1] == crawler_mod._HEAD_CHARS
     assert crawler.limit_warning is not None and "page text" in crawler.limit_warning
+
+
+async def test_a_sibling_crawler_charges_the_same_allowance(
+    httpx_mock: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A re-crawl by a sibling keeps only heads once the first crawl has used the allowance."""
+    from webvigil.crawler import crawler as crawler_mod
+
+    monkeypatch.setattr(crawler_mod, "_MAX_RETAINED_TEXT_BYTES", 2_000_000)
+    big = "<p>" + "a" * 600_000 + "</p>"
+    links = "".join(f'<a href="/p{i}">p</a>' for i in range(3))
+    routes = {f"{_SEED}p{i}": (200, big, "text/html") for i in range(3)}
+    routes[_SEED] = (200, f"<html><body>{links}</body></html>", "text/html")
+    httpx_mock.add_callback(_Router(routes), is_reusable=True)  # type: ignore[attr-defined]
+    config = ScanConfig()
+    async with HttpClient(_TARGET, config) as http:
+        crawler = Crawler(http, _TARGET, config)
+        first = await crawler.discover()
+        sibling = crawler.sibling()
+        frontier = [page.url for page in first if page.url != _SEED]
+        again = await sibling.recrawl(frontier, should_fetch=lambda: True, max_fetches=10)
+    assert [len(page.text) for page in first if page.url != _SEED] == [len(big)] * 3
+    assert [len(page.text) for page in again] == [crawler_mod._HEAD_CHARS] * 3
+    assert sibling.limit_warning is not None and "page text" in sibling.limit_warning
+    assert crawler.limit_warning is None
 
 
 async def test_an_ordinary_crawl_keeps_every_page_whole(httpx_mock: object) -> None:

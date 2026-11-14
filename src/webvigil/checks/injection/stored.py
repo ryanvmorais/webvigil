@@ -63,6 +63,7 @@ class StoredXssScanner:
         config: ScanConfig,
         pages: tuple[Page, ...],
         forms: tuple[Form, ...],
+        crawler: Crawler | None = None,
     ) -> None:
         """
         Args:
@@ -73,8 +74,11 @@ class StoredXssScanner:
             pages (tuple[Page, ...]): The first crawl's pages — the Phase-B
                 frontier and the "known before injection" baseline.
             forms (tuple[Form, ...]): The parsed form inventory.
+            crawler (Crawler | None): The first crawl's crawler; the re-crawl charges page
+                text to its allowance. ``None`` gives the re-crawl an allowance of its own.
         """
         self._http = http
+        self._crawler = crawler
         self._target = target
         self._config = config
         self._pages = pages
@@ -126,10 +130,17 @@ class StoredXssScanner:
         frontier = tuple(page.url for page in readable)
         pre = {normalize_url(page.url): page.text for page in readable}
         max_fetches = min(_STORED_REFETCH_CAP, max(1, self._config.scan.max_pages))
-        recrawled = await Crawler(self._http, self._target, self._config).recrawl(
+        recrawler = (
+            self._crawler.sibling()
+            if self._crawler is not None
+            else Crawler(self._http, self._target, self._config)
+        )
+        recrawled = await recrawler.recrawl(
             frontier, should_fetch=self._budget.take_recrawl, max_fetches=max_fetches
         )
         report.pages_recrawled = len(recrawled)
+        if line := recrawler.limit_warning:
+            report.warnings.append(f"stored-XSS re-crawl: {line}")
         if self._budget.exhausted():
             report.warnings.append(
                 f"active injection stopped at the {self._budget.request_limit}-request budget"

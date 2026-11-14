@@ -71,6 +71,8 @@ async def test_the_stored_xss_recrawl_frontier_skips_a_post_answer(
     captured: dict[str, Any] = {}
 
     class _CapturingCrawler:
+        limit_warning = None  # read after the re-crawl, like Crawler.limit_warning
+
         def __init__(self, *_a: object, **_k: object) -> None: ...
 
         async def recrawl(self, frontier: tuple[str, ...], **_k: object) -> list[Page]:

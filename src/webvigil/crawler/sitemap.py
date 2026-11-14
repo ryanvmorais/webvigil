@@ -2,8 +2,10 @@
 Best-effort sitemap.xml parsing (RF-07).
 
 A missing or malformed sitemap is never an error — it just yields no extra seed
-URLs. ``xml.etree`` does not expand external entities, and ``expat`` stops an entity
-expansion that grows out of proportion, so untrusted sitemap XML is safe to parse.
+URLs. ``expat`` does not fetch external entities, and a sitemap whose text contains a document
+type declaration, the only place an entity can be declared, is not parsed at all: how well a
+given ``expat`` resists entity expansion depends on its version (the Python documentation says
+versions before 2.7.2 may be vulnerable to it), and that version comes with the Python runtime.
 
 The sitemaps come from the scanned site, so how many are read and how many URLs are taken from them
 is bounded (:data:`MAX_SITEMAPS`, :data:`MAX_URLS`).
@@ -22,6 +24,9 @@ MAX_SITEMAPS = 20
 # URLs a scan takes from all its sitemaps together; the crawl fetches at most ``max_pages`` of
 # them, so the rest would only fill memory.
 MAX_URLS = 10_000
+# What starts a document type declaration. The sitemap protocol has no use for one, and without
+# one there is no entity to expand.
+_DOCTYPE = "<!DOCTYPE"
 
 
 def parse(text: str, *, limit: int = MAX_URLS) -> list[str]:
@@ -34,8 +39,10 @@ def parse(text: str, *, limit: int = MAX_URLS) -> list[str]:
 
     Returns:
         list[str]: The trimmed ``<loc>`` values (at most ``limit``), or ``[]`` when the
-            body will not parse.
+            body will not parse or carries a document type declaration.
     """
+    if _DOCTYPE in text:
+        return []
     try:
         root = ElementTree.fromstring(text)
     except ElementTree.ParseError:

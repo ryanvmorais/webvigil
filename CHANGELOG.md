@@ -11,6 +11,20 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 ## [Unreleased]
 
+### Fixed
+
+- The stored-XSS re-crawl counts the page text it keeps against the same 256 MiB allowance as the
+  first crawl, instead of an allowance of its own, and the scan warns when the re-crawl reached
+  one of the crawl's limits, page text included.
+- `session.id.weak` and the session-cookie weighting of `csrf.form.no-token` read a `Set-Cookie`
+  line as a browser does (RFC 6265bis): a cookie whose name and value pass 4096 octets is ignored,
+  an attribute whose value passes 1024 octets is ignored, and only the `name=value` pair reaches
+  the standard library's cookie parser, whatever the length of the attributes.
+- A sitemap that carries a document type declaration is no longer parsed. The sitemap protocol
+  has no use for one, and without one there is no entity to expand, whatever version of `expat`
+  the Python runtime links (the Python documentation says versions before 2.7.2 may be
+  vulnerable to entity expansion).
+
 ## [1.4.1] - 2026-11-14
 
 A patch release with a security fix for what a scanned site can make the checks cost

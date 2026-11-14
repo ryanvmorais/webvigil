@@ -23,6 +23,7 @@ from webvigil.checks.injection.stored import StoredXssScanner, _detect, _stored_
 from webvigil.core.config import ScanConfig
 from webvigil.core.context import Page
 from webvigil.core.target import Target
+from webvigil.crawler.crawler import Crawler
 from webvigil.crawler.forms import Form, FormField
 from webvigil.http.client import HttpClient
 
@@ -238,6 +239,31 @@ async def test_marker_is_found_on_the_per_entry_page_after_a_recrawl(httpx_mock:
     assert (hit.kind, hit.method, hit.param) == ("xss-stored", "POST", "body")
     assert hit.url == "https://example.com/guestbook"
     assert "guestbook/e/0" in dict(hit.evidence)["Rendered on"]
+
+
+async def test_the_recrawl_charges_the_first_crawl_and_says_when_it_cut(
+    httpx_mock: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With the first crawl's crawler, the re-crawl spends its allowance and warns when cut."""
+    from webvigil.crawler import crawler as crawler_mod
+
+    monkeypatch.setattr(crawler_mod, "_MAX_RETAINED_TEXT_BYTES", 0)
+    monkeypatch.setattr(crawler_mod, "_HEAD_CHARS", 10)
+    seed = '<html><body><a href="/guestbook">gb</a></body></html>'
+    router = _Guestbook({"https://example.com/": seed, "https://example.com/guestbook": _GB_HTML})
+    pages = (
+        make_page(url="https://example.com/", text=seed),
+        make_page(url="https://example.com/guestbook", text=_GB_HTML),
+    )
+    httpx_mock.add_callback(router, is_reusable=True)  # type: ignore[attr-defined]
+    cfg = ScanConfig.model_validate({"injection": {"stored_xss": True}})
+    async with HttpClient(_TARGET, cfg) as http:
+        crawler = Crawler(http, _TARGET, cfg)
+        report = await StoredXssScanner(
+            http, _TARGET, cfg, pages, (_GB_FORM,), crawler=crawler
+        ).run()
+    assert crawler._text.spent > 0
+    assert any(w.startswith("stored-XSS re-crawl: ") and "page text" in w for w in report.warnings)
 
 
 async def test_an_escaped_guestbook_yields_no_hit(httpx_mock: object) -> None:

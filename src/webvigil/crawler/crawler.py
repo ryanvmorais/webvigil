@@ -112,6 +112,15 @@ class PostSummary:
         )
 
 
+class _TextAllowance:
+    """The page text a scan keeps in memory, in bytes; shared by a crawler and its siblings."""
+
+    __slots__ = ("spent",)
+
+    def __init__(self) -> None:
+        self.spent = 0
+
+
 class Crawler:
     """
     Discovers in-scope pages for one scan.
@@ -158,7 +167,7 @@ class Crawler:
         self._seen_cap = max(_MIN_SEEN, _SEEN_PER_PAGE * pages_cap)
         self._links_per_page = max(_MIN_LINKS_PER_PAGE, pages_cap)
         self._limits_hit: set[str] = set()
-        self._retained_text = 0
+        self._text = _TextAllowance()
         # spec 018: the POST phase runs only when asked for AND the scan is Active.
         self._post_enabled = config.scan.submit_post_forms and config.scan.mode is ScanMode.ACTIVE
         self._post_cap = config.scan.max_post_submissions
@@ -459,6 +468,21 @@ class Crawler:
             return Page.failed(op.url, str(exc), method="POST")
         return self._keep(Page.from_response(response, method="POST"))
 
+    def sibling(self) -> Crawler:
+        """
+        Make a crawler for the same scan that charges page text to this one's allowance.
+
+        A pass that fetches pages again (the stored-XSS re-crawl) keeps them in memory next to
+        the first crawl's, so both count against one ``_MAX_RETAINED_TEXT_BYTES``. Nothing else
+        is shared: the sibling starts with its own seen URLs, forms and limits.
+
+        Returns:
+            Crawler: A new crawler over the same client, target and config.
+        """
+        other = Crawler(self._http, self._target, self._config)
+        other._text = self._text
+        return other
+
     async def recrawl(
         self,
         frontier: Sequence[str],
@@ -529,11 +553,11 @@ class Crawler:
             Page: The same page, or a copy with only the first ``_HEAD_CHARS`` characters.
         """
         size = sys.getsizeof(page.text)
-        if self._retained_text + size > _MAX_RETAINED_TEXT_BYTES and len(page.text) > _HEAD_CHARS:
+        if self._text.spent + size > _MAX_RETAINED_TEXT_BYTES and len(page.text) > _HEAD_CHARS:
             page = dataclasses.replace(page, text=page.text[:_HEAD_CHARS])
             size = sys.getsizeof(page.text)
             self._limits_hit.add("page text")
-        self._retained_text += size
+        self._text.spent += size
         return page
 
     async def _enqueue_sitemaps(

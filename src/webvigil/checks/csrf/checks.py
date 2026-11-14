@@ -32,7 +32,7 @@ from http.cookies import SimpleCookie
 from webvigil.checks.base import Check
 from webvigil.checks.csrf.tokens import is_candidate, is_token_field
 from webvigil.checks.registry import register
-from webvigil.checks.session.cookies import SESSION_NAME_RE
+from webvigil.checks.session.cookies import SESSION_NAME_RE, cookie_attribute, cookie_pair
 from webvigil.core.context import Page, ScanContext
 from webvigil.core.findings import (
     Category,
@@ -102,21 +102,25 @@ def _session_samesite(pages: tuple[Page, ...]) -> str | None:
 
     Returns:
         str | None: The weakest ``SameSite`` seen on a session-looking cookie
-            across the crawl, or ``None`` when no session cookie was observed.
+            across the crawl, or ``None`` when no session cookie was observed. The name is
+            parsed from the ``name=value`` pair only, and ``SameSite`` is read as a browser
+            reads it (:func:`~webvigil.checks.session.cookies.cookie_attribute`).
     """
     seen: str | None = None
     for page in pages:
         for raw in page.headers.get_list("set-cookie"):
+            pair = cookie_pair(raw)
+            if pair is None:  # a browser ignores the cookie
+                continue
             jar: SimpleCookie = SimpleCookie()
             try:
-                jar.load(raw)
+                jar.load(pair)
             except Exception:  # a malformed Set-Cookie must not break the check
                 continue
-            for name, morsel in jar.items():
-                if not SESSION_NAME_RE.search(name):
-                    continue
-                samesite = (morsel["samesite"] or "none").strip().lower() or "none"
-                seen = _weaker(seen, samesite)
+            if not any(SESSION_NAME_RE.search(name) for name in jar):
+                continue
+            samesite = (cookie_attribute(raw, "samesite") or "none").strip().lower() or "none"
+            seen = _weaker(seen, samesite)
     return seen
 
 
