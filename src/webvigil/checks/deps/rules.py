@@ -46,6 +46,13 @@ _REPEAT_MAX = 400
 _BODY_MAX = 256 * 1024
 _PATH_MAX = 4096
 _OPEN_REPEAT = re.compile(r"\{(\d*),\}")
+# A non-capturing group whose branches each match one character: ``.``, a line break or a tab
+# (as the character or its escape), ``\s``, ``\S`` or ``[\s]``. Repeated, such a group retries
+# every way of giving a character to one branch or another when the branches overlap, which
+# costs time exponential in the run; one character class matches the same text in one way.
+_ONE_CHAR_ATOM = r"(?:\.|\\[rntsS]|\[\\s\]|[\r\n\t])"
+_ONE_CHAR_ALTERNATION = re.compile(rf"\(\?:({_ONE_CHAR_ATOM}(?:\|{_ONE_CHAR_ATOM})+)\)")
+_ATOM_CLASS = {"\r": r"\r", "\n": r"\n", "\t": r"\t", r"[\s]": r"\s"}
 # Joints that let the rest of a database pattern start anywhere later in the text: any lines
 # then any text on a line, or any characters at all. The database writes the line break both as
 # the character and as its escape.
@@ -217,6 +224,7 @@ def _compile_one(expanded: str) -> Matcher:
     Raises:
         re.error: When a piece uses a construct Python's ``re`` rejects.
     """
+    expanded = _merge_one_char_alternations(expanded)
     pieces = _split_chain(expanded)
     if pieces is None:
         return re.compile(_bound_repeats(expanded))
@@ -246,6 +254,82 @@ class Component:
     uri: tuple[Matcher, ...]
     hashes: dict[str, str]
     vulnerabilities: tuple[VulnerabilityEntry, ...]
+
+
+def _merge_one_char_alternations(pattern: str) -> str:
+    r"""
+    Rewrite each group of one-character branches as the character class it is.
+
+    ``(?:\r|\n|.)`` matches any character, as ``[\s\S]`` does; ``(?:\r|\t)`` matches what
+    ``[\r\t]`` does. The text a pattern matches is the same, but a repetition of the class
+    matches a run in one way only.
+
+    Walks the pattern like :func:`_bound_repeats`, so a group written inside a character class
+    or after an escape is left alone.
+
+    Args:
+        pattern (str): A regex source.
+
+    Returns:
+        str: The same regex with every such group replaced by a character class.
+    """
+    out: list[str] = []
+    i = 0
+    size = len(pattern)
+    while i < size:
+        char = pattern[i]
+        if char == "\\":
+            out.append(pattern[i : i + 2])
+            i += 2
+        elif char == "[":
+            end = _class_end(pattern, i)
+            out.append(pattern[i:end])
+            i = end
+        elif char == "(" and (group := _ONE_CHAR_ALTERNATION.match(pattern, i)) is not None:
+            out.append(_as_class(set(group.group(1).split("|"))))
+            i = group.end()
+        else:
+            out.append(char)
+            i += 1
+    return "".join(out)
+
+
+def _as_class(atoms: set[str]) -> str:
+    """
+    Build the character class that matches what one of a group's branches matches.
+
+    Args:
+        atoms (set[str]): The branches of a group, each matching one character.
+
+    Returns:
+        str: The character class that matches what one of the branches matches.
+    """
+    if "." in atoms:
+        # ``.`` is every character but a line feed; with one too, the group is every character.
+        return r"[\s\S]" if atoms & {"\n", r"\n", r"\s"} else "."
+    return "[" + "".join(sorted(_ATOM_CLASS.get(atom, atom) for atom in atoms)) + "]"
+
+
+def _class_end(pattern: str, start: int) -> int:
+    """
+    Find where a character class ends.
+
+    Args:
+        pattern (str): A regex source.
+        start (int): The index of a ``[`` that opens a character class.
+
+    Returns:
+        int: The index just past the ``]`` that closes it.
+    """
+    j = start + 1
+    size = len(pattern)
+    if j < size and pattern[j] == "^":
+        j += 1
+    if j < size and pattern[j] == "]":
+        j += 1
+    while j < size and pattern[j] != "]":
+        j += 2 if pattern[j] == "\\" else 1
+    return j + 1
 
 
 def _bound_repeats(pattern: str) -> str:

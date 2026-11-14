@@ -18,15 +18,24 @@ import time
 import httpx
 import pytest
 
-from tests.support import make_context, make_page
+from tests.support import HandlerTransport, make_context, make_page
 from webvigil.checks.base import PER_PAGE_FINDINGS_CAP
 from webvigil.checks.content.checks import MixedContentCheck, SriMissingCheck
+from webvigil.checks.cookies.flags import CookieFlagsCheck
 from webvigil.checks.disclosure import redaction
 from webvigil.checks.disclosure.catalogue import _SCAN_MAX, Validator, load_catalogue
 from webvigil.checks.disclosure.leakage import SessionIdInUrlCheck
 from webvigil.checks.injection.detect.redirect import _honoured
-from webvigil.core.findings import Finding
-from webvigil.http.client import Response
+from webvigil.checks.registry import all_checks
+from webvigil.core.config import ScanConfig
+from webvigil.core.context import Page
+from webvigil.core.findings import Finding, Location
+from webvigil.core.orchestrator import FINDINGS_PER_CHECK_CAP, _cap_findings
+from webvigil.core.target import Target
+from webvigil.crawler.forms import extract_forms
+from webvigil.http import tls_probe
+from webvigil.http.client import HttpClient, Response
+from webvigil.http.tls_probe import TlsProbeResult, _unreachable
 
 # Seconds one call may take. The bounded code finishes these inputs in well under a second.
 _BUDGET_S = 5.0
@@ -167,6 +176,112 @@ async def test_session_identifiers_in_links_are_capped_per_page() -> None:
     html = "".join(f'<a href="/item/{i}?sid=abc{i}">x</a>' for i in range(_LISTED))
     ctx = make_context(make_page(url="https://shop.example/", text=html))
     _assert_capped(await SessionIdInUrlCheck().run(ctx))
+
+
+async def test_weak_cookies_are_capped_per_page() -> None:
+    """A page that sets many cookies with no attributes yields the cap, and says there are more."""
+    page = make_page(url="https://shop.example/", set_cookies=[f"c{i}=v" for i in range(_LISTED)])
+    findings = await CookieFlagsCheck().run(make_context(page))
+    assert len(findings) == PER_PAGE_FINDINGS_CAP
+    notes = [e.content for e in findings[-1].evidence if e.label == "note"]
+    assert notes == [
+        "this page lists more cookies with weak attributes; "
+        f"the first {PER_PAGE_FINDINGS_CAP} are reported"
+    ]
+
+
+def _hostile_page(index: int) -> Page:
+    """
+    Args:
+        index (int): Keeps every item of the page distinct from the other pages' items.
+
+    Returns:
+        Page: An HTTPS page that lists ``_LISTED`` of every kind of item a check reports one
+            finding for: cookies, cross-origin and plain-HTTP resources, links with a session
+            identifier, private addresses, forms.
+    """
+    items = []
+    for i in range(_LISTED):
+        key = f"{index}-{i}"
+        items.append(
+            f'<script src="https://cdn.other/{key}.js"></script>'
+            f'<img src="http://img.other/{key}.png">'
+            f'<a href="/item/{key}?sid=abc{i}">x</a>'
+            f"<p>10.{index}.{i // 250}.{i % 250 + 1}</p>"
+            f'<form method="post" action="/f/{key}"><input name="q"></form>'
+        )
+    cookies = [f"c{index}x{i}=v" for i in range(_LISTED)]
+    cookies += [f"sid{index}x{i}=a{i}" for i in range(_LISTED)]
+    return make_page(
+        url=f"https://shop.example/p{index}",
+        set_cookies=cookies,
+        text="<html><body>" + "".join(items) + "</body></html>",
+    )
+
+
+async def test_no_check_keeps_one_finding_per_listed_item(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Every registered check, on pages that list many items of every kind, stays within the cap.
+
+    A check that sends its own request gets the same hostile page back; the TLS handshake is the
+    one thing not played (its findings are about the one certificate, not a listed item).
+    """
+
+    async def _offline(*_args: object, **_kwargs: object) -> TlsProbeResult:
+        return _unreachable(OSError("offline test"))
+
+    monkeypatch.setattr(tls_probe, "probe", _offline)
+    pages = tuple(_hostile_page(i) for i in range(3))
+    target = Target.parse("https://shop.example/")
+
+    def _answer(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, headers=list(pages[0].headers.multi_items()), text=pages[0].text)
+
+    config = ScanConfig()
+    http = HttpClient(target, config, transport=HandlerTransport(_answer))
+    ctx = make_context(
+        pages[0], pages=pages, http=http, config=config, forms=extract_forms(pages, target)
+    )
+    ceiling = PER_PAGE_FINDINGS_CAP * len(pages)
+    over: dict[str, int] = {}
+    async with http:
+        for check_cls in all_checks():
+            findings = await check_cls().run(ctx)
+            if len(findings) > ceiling:
+                over[check_cls.id] = len(findings)
+    assert over == {}
+
+
+def test_a_check_keeps_at_most_the_cap_of_distinct_findings() -> None:
+    """Past ``FINDINGS_PER_CHECK_CAP`` distinct findings the rest are dropped, and that is said."""
+    many = [_finding(i) for i in range(FINDINGS_PER_CHECK_CAP + 10)]
+    kept, cut = _cap_findings(many)
+    assert len(kept) == FINDINGS_PER_CHECK_CAP and cut
+    assert kept == many[:FINDINGS_PER_CHECK_CAP]
+
+
+def test_duplicates_do_not_count_against_the_cap() -> None:
+    """Exactly the cap of distinct findings, each repeated, is kept whole and nothing is cut."""
+    distinct = [_finding(i) for i in range(FINDINGS_PER_CHECK_CAP)]
+    kept, cut = _cap_findings(distinct + distinct)
+    assert kept == distinct and not cut
+
+
+def _finding(index: int) -> Finding:
+    """
+    Args:
+        index (int): Makes the finding's fingerprint distinct.
+
+    Returns:
+        Finding: A minimal finding of the cookie check.
+    """
+    return CookieFlagsCheck().finding(
+        title="t",
+        description="d",
+        remediation="r",
+        location=Location(url=f"https://shop.example/{index}"),
+        dedup_key=str(index),
+    )
 
 
 async def test_a_page_under_the_cap_carries_no_note() -> None:

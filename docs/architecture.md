@@ -107,7 +107,10 @@ Persistence       webvigil.api.db  (SQLite via SQLModel + Alembic, web only)
    checks whose `mode` is allowed and that are not in `checks.disabled`, and runs them
    concurrently against a shared `ScanContext` that carries what the passes observed.
 6. Findings are collected, deduplicated by fingerprint, ordered deterministically, and
-   returned in a `ScanResult` alongside per-check errors and warnings.
+   returned in a `ScanResult` alongside per-check errors and warnings. A check that reports
+   one finding per item a page lists (a resource, a link, a cookie) reports at most 20 per
+   page, and no check keeps more than 5,000 distinct findings in a scan; a scan warning says
+   when one reached that limit.
 7. A reporter renders the result (JSON is canonical; SARIF / HTML / Markdown are pure
    functions of it, so `webvigil report` re-renders any format offline). What the scanned
    site sent (titles, evidence, names) is text in every format: the HTML template escapes

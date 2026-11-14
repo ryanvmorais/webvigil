@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from webvigil.checks.base import Check
+from webvigil.checks.base import PER_PAGE_FINDINGS_CAP, Check, note_more_on_page
 from webvigil.checks.headers._parsing import is_https, mask_set_cookie, parse_set_cookie
 from webvigil.checks.registry import register
 from webvigil.core.context import Page, ScanContext
@@ -33,14 +33,33 @@ class CookieFlagsCheck(Check):
                 headers are inspected.
 
         Returns:
-            list[Finding]: One finding per weak attribute per cookie.
+            list[Finding]: One finding per weak attribute per cookie, at most
+                ``PER_PAGE_FINDINGS_CAP`` per page.
         """
         findings: list[Finding] = []
         for page in ctx.pages:
-            if not page.ok:
-                continue
-            for raw in page.headers.get_list("set-cookie"):
-                findings.extend(self._inspect(page, raw))
+            if page.ok:
+                findings.extend(self._page_findings(page))
+        return findings
+
+    def _page_findings(self, page: Page) -> list[Finding]:
+        """
+        Collect one page's weak-cookie findings, up to the per-page cap.
+
+        Args:
+            page (Page): A page whose ``Set-Cookie`` lines to inspect.
+
+        Returns:
+            list[Finding]: The page's findings, at most ``PER_PAGE_FINDINGS_CAP``; the last
+                one notes when the page sets more weak cookies.
+        """
+        findings: list[Finding] = []
+        for raw in page.headers.get_list("set-cookie"):
+            for finding in self._inspect(page, raw):
+                if len(findings) >= PER_PAGE_FINDINGS_CAP:
+                    note_more_on_page(findings, "cookies with weak attributes")
+                    return findings
+                findings.append(finding)
         return findings
 
     def _inspect(self, page: Page, raw: str) -> list[Finding]:

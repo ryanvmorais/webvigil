@@ -176,7 +176,8 @@ alphabet, an estimated number of bits and the rule that fired.
 | `session.logout.not-invalidated` | a login and a logout endpoint | `--test-logout` / `[session] test_logout`, Active Mode only |
 
 **Weak or predictable ids** (`session.id.weak`, CWE-330/331/340). Each cookie name is judged once,
-on the first value the crawl saw. The rules measure the *capacity* of the alphabet the id uses, so
+on the first value the crawl saw, for at most 50 names in a scan (a scan warning says when the
+target set more). The rules measure the *capacity* of the alphabet the id uses, so
 a finding means "this cannot be good", never "this is a bit short of ideal": shorter than 16
 characters, fewer than 64 bits even at the alphabet's full capacity (16 lower-case hex characters
 pass), digits only, one character or block repeated, a small number (a counter) or an epoch

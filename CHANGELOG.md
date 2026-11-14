@@ -38,6 +38,15 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 ### Security
 
+- A scanned site that sets many cookies can no longer fill the scan's memory with findings
+  (GHSA-gf8g-gcvm-28m9). `http.cookies.flags` reports at most 20 findings per page, the last one
+  noting that the page sets more, and `session.id.weak` judges at most 50 session cookie names in
+  a scan, with a warning past that. No check keeps more than 5,000 distinct findings in a scan;
+  the rest are dropped with a warning.
+- A script the scanned site serves can no longer stall the dependency fingerprinting
+  (GHSA-gf8g-gcvm-28m9). A Retire.js pattern that repeats a group of one-character alternatives
+  (a line break or any character) cost time exponential in the run it read; the group is now
+  compiled as the character class it matches, which finds the same libraries in linear time.
 - The value of a cookie the scanned site sets no longer appears in the report. The response
   headers shown by the header checks, the `http.cookies.flags` evidence and the CRLF injection
   proof keep the cookie's name and attributes and show `***` for its value (`sid=***; Path=/`),

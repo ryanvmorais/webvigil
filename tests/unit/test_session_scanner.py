@@ -23,7 +23,12 @@ import pytest
 
 from tests.support import HandlerTransport, make_page
 from webvigil.auth.login import CookieTransition
-from webvigil.checks.session.scanner import SessionHit, SessionScanner, kinds_for
+from webvigil.checks.session.scanner import (
+    _MAX_SESSION_NAMES,
+    SessionHit,
+    SessionScanner,
+    kinds_for,
+)
 from webvigil.core.config import ScanConfig
 from webvigil.core.findings import Confidence, Severity
 from webvigil.core.target import Scope, Target
@@ -212,6 +217,50 @@ async def test_a_weak_cookie_the_crawl_saw_is_one_hit_with_structural_facts() ->
     assert facts["length"] == "6" and facts["alphabet"] == "lower hex"
     assert facts["estimated bits"] == "24" and "shorter than 16" in facts["rules"]
     assert "samples" not in facts
+
+
+async def test_the_session_names_judged_are_capped_with_a_warning() -> None:
+    """A crawl that sees more weak session names than the cap judges the first ones only."""
+    over = _MAX_SESSION_NAMES * 3
+    pages = (
+        _page(f"{_BASE}/", *(f"sid{i}=a{i}" for i in range(over))),
+        _page(f"{_BASE}/b", *(f"sess{i}=b{i}" for i in range(over))),
+    )
+    scanner, http = _scanner(_Site(), kinds={"weak"}, pages=pages)
+    async with http:
+        hits = await scanner.run()
+
+    assert [hit.name for hit in hits] == sorted(f"sid{i}" for i in range(_MAX_SESSION_NAMES))
+    assert any(
+        f"more than {_MAX_SESSION_NAMES} session cookie names" in w for w in scanner.warnings
+    )
+
+
+async def test_sampling_adds_no_name_past_the_cap() -> None:
+    """Names a sample brings count against the same cap; the names already seen keep sampling."""
+    site = _Site()
+    site.entry_cookies = lambda n: [f"sid{i}={n}" for i in range(_MAX_SESSION_NAMES * 3)]
+    config = _config(sample_ids=True, sample_count=3)
+    pages = (_page(f"{_BASE}/", "session=abc123"),)
+    scanner, http = _scanner(site, kinds={"weak"}, config=config, pages=pages)
+    async with http:
+        hits = await scanner.run()
+
+    assert len(hits) == _MAX_SESSION_NAMES
+    assert "session" in {hit.name for hit in hits}
+    assert any(
+        f"more than {_MAX_SESSION_NAMES} session cookie names" in w for w in scanner.warnings
+    )
+
+
+async def test_a_crawl_under_the_cap_has_no_cap_warning() -> None:
+    """Below the cap nothing is dropped and nothing is said."""
+    pages = (_page(f"{_BASE}/", "sid=abc123", "session=zzz999"),)
+    scanner, http = _scanner(_Site(), kinds={"weak"}, pages=pages)
+    async with http:
+        hits = await scanner.run()
+    assert len(hits) == 2
+    assert not any("session cookie names" in w for w in scanner.warnings)
 
 
 async def test_nothing_is_sent_without_the_sampling_switch() -> None:

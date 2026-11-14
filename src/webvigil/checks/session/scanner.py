@@ -40,6 +40,9 @@ from webvigil.http.session import Session
 
 # At most this many unchanged cookies are confirmed (one request each).
 _MAX_FIXATION_CANDIDATES = 3
+# Session cookie names the weak-id step judges in one scan. The names come from the scanned
+# site, which can set as many as its response headers hold.
+_MAX_SESSION_NAMES = 50
 _LOGOUT_SENTINEL = "wvlogout"
 
 
@@ -118,6 +121,7 @@ class SessionScanner:
         self._auth = authenticator
         self._kinds = kinds
         self.warnings: list[str] = []
+        self._names_over_cap = False
 
     async def run(self) -> list[SessionHit]:
         """
@@ -149,16 +153,27 @@ class SessionScanner:
         """
         Returns:
             list[SessionHit]: One hit per weak session cookie name, from the ids the crawl saw
-                and (with ``[session] sample_ids``) from fresh anonymous visits.
+                and (with ``[session] sample_ids``) from fresh anonymous visits; at most
+                ``_MAX_SESSION_NAMES`` names are judged.
         """
         observed: dict[str, _Observed] = {}
         for page in self._pages:
             if not page.ok:
                 continue
             for name, value in session_cookies(page.headers):
-                observed.setdefault(name, _Observed(url=page.url, first=value))
+                if name in observed:
+                    continue
+                if len(observed) >= _MAX_SESSION_NAMES:
+                    self._names_over_cap = True
+                    continue
+                observed[name] = _Observed(url=page.url, first=value)
         if self._config.session.sample_ids:
             await self._sample(observed)
+        if self._names_over_cap:
+            self.warnings.append(
+                f"session checks: the target set more than {_MAX_SESSION_NAMES} session cookie "
+                f"names; the first {_MAX_SESSION_NAMES} are judged"
+            )
         hits: list[SessionHit] = []
         for name in sorted(observed):
             hit = self._judge(name, observed[name])
@@ -176,6 +191,7 @@ class SessionScanner:
         count = self._config.session.sample_count
         entry = self._target.entry_url
         series: dict[str, list[str]] = {}
+        new_names = 0
         for _ in range(count):
             try:
                 async with self._http.anonymous():
@@ -184,6 +200,11 @@ class SessionScanner:
                 self.warnings.append(f"session sampling stopped: {exc}")
                 break
             for name, value in session_cookies(response.headers):
+                if name not in series and name not in observed:
+                    if len(observed) + new_names >= _MAX_SESSION_NAMES:
+                        self._names_over_cap = True
+                        continue
+                    new_names += 1
                 series.setdefault(name, []).append(value)
         if not series:
             self.warnings.append(

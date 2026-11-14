@@ -13,6 +13,8 @@ on the same input, so a slow CI runner cannot fail it and a regression cannot pa
 from __future__ import annotations
 
 import re
+import re._constants as sre_constants
+import re._parser as sre_parser
 import time
 from datetime import date
 
@@ -26,6 +28,7 @@ from webvigil.checks.deps.rules import (
     RetireJsRules,
     _bound_repeats,
     _Chain,
+    _merge_one_char_alternations,
     _split_chain,
 )
 
@@ -83,6 +86,113 @@ def test_the_bounded_form_matches_what_the_original_matched() -> None:
     assert original is not None
     assert bounded is not None
     assert bounded.group(1) == original.group(1) == "4.3.0"
+
+
+# ---------------------------------------------------------------------------
+# _merge_one_char_alternations: a group of one-character branches becomes a class
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("raw", "merged"),
+    [
+        pytest.param("(?:\r|\n|.)+", r"[\s\S]+", id="line-breaks-and-any"),
+        pytest.param("(?:.|\r|\n)+", r"[\s\S]+", id="any-first"),
+        pytest.param(r"(?:\r|\n|.)", r"[\s\S]", id="escapes"),
+        pytest.param(r"(?:\r|.)*", ".*", id="any-without-line-feed"),
+        pytest.param(r"(?:\r|\t)*", r"[\r\t]*", id="no-any"),
+        pytest.param(r"(?:[\s]|\n)+", r"[\n\s]+", id="space-class"),
+        pytest.param(r"[\]](?:\r|.)", r"[\]].", id="after-a-class"),
+    ],
+)
+def test_a_group_of_one_character_branches_becomes_a_class(raw: str, merged: str) -> None:
+    """The group is replaced by the class that matches what one of its branches matches."""
+    assert _merge_one_char_alternations(raw) == merged
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        pytest.param(r"\(?:\r|\n)", id="escaped-paren"),
+        pytest.param("[(?:\r|\n)]", id="inside-a-class"),
+        pytest.param(r"((?:ab|c))", id="longer-branch"),
+        pytest.param(r"(\r|\n)+", id="capturing"),
+    ],
+)
+def test_other_groups_are_left_alone(raw: str) -> None:
+    """A group that is escaped, inside a class, capturing or with a longer branch is kept."""
+    assert _merge_one_char_alternations(raw) == raw
+
+
+@pytest.mark.parametrize("text", ["a\r\nb", "\r\r\n\n", "x" * 10, "\n"])
+def test_the_merged_group_matches_what_the_group_matched(text: str) -> None:
+    """On any text, the class and the group match the same span."""
+    for raw in ("(?:\r|\n|.)+", "(?:.|\r|\n)+", r"(?:\r|.)+", r"(?:\r|\t)+"):
+        original = re.search(raw, text)
+        merged = re.search(_merge_one_char_alternations(raw), text)
+        assert (original and original.span()) == (merged and merged.span())
+
+
+def _repeats_an_alternation(pattern: str) -> bool:
+    """
+    Tell whether a regex repeats a group of alternatives.
+
+    Args:
+        pattern (str): A compiled regex source.
+
+    Returns:
+        bool: ``True`` when a repetition's body is an alternation, the shape whose cost can grow
+            exponentially with the run it repeats over.
+    """
+
+    def walk(items: list[tuple[object, object]]) -> bool:
+        for op, value in items:
+            if op in (sre_constants.MAX_REPEAT, sre_constants.MIN_REPEAT):
+                body = list(value[2])  # type: ignore[index]
+                if len(body) == 1 and body[0][0] is sre_constants.SUBPATTERN:
+                    body = list(body[0][1][-1])  # type: ignore[index]
+                if len(body) == 1 and body[0][0] is sre_constants.BRANCH:
+                    return True
+                if walk(list(value[2])):  # type: ignore[index]
+                    return True
+            elif op is sre_constants.SUBPATTERN:
+                if walk(list(value[-1])):  # type: ignore[index]
+                    return True
+            elif op is sre_constants.BRANCH:
+                if any(walk(list(branch)) for branch in value[1]):  # type: ignore[index]
+                    return True
+        return False
+
+    return walk(list(sre_parser.parse(pattern)))
+
+
+def test_no_vendored_pattern_repeats_an_alternation() -> None:
+    """After the rewrite, no compiled pattern or piece repeats a group of alternatives."""
+    offending = []
+    for component in RetireJsRules.load()._components.values():
+        for matcher in (*component.filecontent, *component.filename, *component.uri):
+            pieces = matcher._pieces if isinstance(matcher, _Chain) else (matcher,)
+            offending += [p.pattern for p in pieces if _repeats_an_alternation(p.pattern)]
+    assert offending == []
+
+
+def test_a_library_header_followed_by_a_long_run_of_line_breaks_is_read_quickly() -> None:
+    """The easyXDM header, then line breaks up to the head, costs time proportional to it."""
+    head = " * easyXDM\n * http://easyxdm.net/"
+    text = head + "\r" * (_BODY_MAX - len(head))
+    started = time.perf_counter()
+    RetireJsRules.load().identify(body=text)
+    assert time.perf_counter() - started < _BUDGET_S
+
+
+def test_easyxdm_is_still_identified() -> None:
+    """The rewritten easyXDM pattern still reads the version below its header."""
+    body = (
+        "/**\n * easyXDM\n * http://easyxdm.net/\n * Copyright(c) 2009-2011\n */\n"
+        '(function(){var easyXDM={version:"2.4.19"};})();'
+    )
+    found = RetireJsRules.load().identify(body=body)
+    assert ("easyXDM", "2.4.19") in [(d.name, d.version) for d in found]
 
 
 # ---------------------------------------------------------------------------

@@ -62,6 +62,10 @@ _STORED_CHECK_ID = "injection.xss.stored"
 _ENVELOPE_CHECK_IDS = frozenset({"injection.host-header", "http.methods.unsafe"})
 _UPLOAD_CHECK_ID = "upload.unrestricted"
 _CSRF_CHECK_ID = "csrf.form.token-not-enforced"
+# Distinct findings one check keeps in one scan. A check that reports one finding per item the
+# scanned site lists limits itself per page; this bounds the report and the stored scan when a
+# check does not, or when many pages each reach their own limit.
+FINDINGS_PER_CHECK_CAP = 5_000
 
 
 class Orchestrator:
@@ -820,7 +824,9 @@ class Orchestrator:
         Instantiate and run every selected check concurrently over one shared context.
 
         Each check runs in its own task; one that raises is recorded as a
-        :class:`~webvigil.core.result.CheckError` instead of failing the group.
+        :class:`~webvigil.core.result.CheckError` instead of failing the group. A check keeps
+        at most ``FINDINGS_PER_CHECK_CAP`` distinct findings; past it the rest are dropped and
+        the scan warns.
 
         Args:
             check_types (Sequence[type[Check]]): The check classes to run.
@@ -845,12 +851,41 @@ class Orchestrator:
                     )
                 )
                 return
-            findings.extend(produced)
+            kept, cut = _cap_findings(produced)
+            if cut:
+                context.observations.add_warning(
+                    f"check {check_cls.id} reported more than {FINDINGS_PER_CHECK_CAP} findings; "
+                    f"the first {FINDINGS_PER_CHECK_CAP} are kept"
+                )
+            findings.extend(kept)
 
         async with asyncio.TaskGroup() as group:
             for check_cls in check_types:
                 group.create_task(_run_one(check_cls))
         return findings, errors
+
+
+def _cap_findings(findings: Sequence[Finding]) -> tuple[list[Finding], bool]:
+    """
+    Keep one check's findings up to ``FINDINGS_PER_CHECK_CAP`` distinct ones, in order.
+
+    Args:
+        findings (Sequence[Finding]): What one check returned.
+
+    Returns:
+        tuple[list[Finding], bool]: The findings, duplicates removed, cut after the
+            ``FINDINGS_PER_CHECK_CAP``-th distinct one; and whether a distinct finding was cut.
+    """
+    seen: set[str] = set()
+    kept: list[Finding] = []
+    for finding in findings:
+        if finding.fingerprint in seen:
+            continue
+        if len(kept) >= FINDINGS_PER_CHECK_CAP:
+            return kept, True
+        seen.add(finding.fingerprint)
+        kept.append(finding)
+    return kept, False
 
 
 def _dedupe(findings: Sequence[Finding]) -> tuple[Finding, ...]:
