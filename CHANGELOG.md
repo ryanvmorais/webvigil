@@ -11,6 +11,12 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 ## [Unreleased]
 
+## [1.4.2] - 2026-11-14
+
+A patch release with a round of hardening of the crawler and of the cookie and sitemap parsers.
+It is backward compatible with [docs/stability.md](docs/stability.md): no CLI option, exit code,
+configuration key, check id or JSON report field changes.
+
 ### Fixed
 
 - The stored-XSS re-crawl counts the page text it keeps against the same 256 MiB allowance as the
@@ -661,7 +667,8 @@ confirmed against a per-request baseline)
 - A security policy with private vulnerability reporting, a code of conduct, and the
   [stability policy](docs/stability.md).
 
-[Unreleased]: https://github.com/ryanvmorais/webvigil/compare/v1.4.1...HEAD
+[Unreleased]: https://github.com/ryanvmorais/webvigil/compare/v1.4.2...HEAD
+[1.4.2]: https://github.com/ryanvmorais/webvigil/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/ryanvmorais/webvigil/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/ryanvmorais/webvigil/compare/v1.3.1...v1.4.0
 [1.3.1]: https://github.com/ryanvmorais/webvigil/compare/v1.3.0...v1.3.1
