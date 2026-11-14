@@ -14,7 +14,7 @@ Ordered, small, each tagged with the requirement / ADR it satisfies. The last ta
 the quality gate (`ruff check .` → `black --check .` → `mypy src` → `lint-imports` → `pytest`; the
 suite's config hides the summary line, so the result recorded is the exit code and the count from
 `--co -q`). Engine and CLI only: no `web/` gate, no API migration, no `web/openapi.json` change
-(RNF-06). Tests follow `specs/README.md`, "Testes de uma spec": logic in unit, integration attached to the
+(RNF-06). Tests follow `specs/README.md`, "Testing a spec": logic in unit, integration attached to the
 shared full scan, no determinism test of its own, about one test line per `src/` line.
 
 Work happens on a branch cut from `main` **after** the spec PR (#185) is merged: `feat/har-import`, one

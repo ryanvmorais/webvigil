@@ -307,7 +307,7 @@ leaves the process.
 
 #### RF-13 — Tests, within the suite's budget
 
-Follows [`specs/README.md`, "Testes de uma spec"](../README.md#testes-de-uma-spec).
+Follows [`specs/README.md`, "Testing a spec"](../README.md#testing-a-spec).
 
 - **Unit** (the bulk): form detection and overrides, body building with hidden fields, the
   redirect-chain cookie handling, the verification order (marker, `check_url`, heuristic),

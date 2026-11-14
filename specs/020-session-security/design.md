@@ -423,7 +423,7 @@ No retry. The injection `request_budget` is not touched (these are separate pass
 
 ## Test strategy
 
-Follows [`specs/README.md`, "Testes de uma spec"](../README.md#testes-de-uma-spec).
+Follows [`specs/README.md`, "Testing a spec"](../README.md#testing-a-spec).
 
 **Unit** (`tests/unit/`)
 

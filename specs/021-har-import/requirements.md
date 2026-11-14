@@ -288,7 +288,7 @@ tools in RF-02 (trimmed, real-shaped); every filter of RF-03 / RF-04 / RF-09; th
 on an adversarial file (a session cookie, a bearer token, a `?token=` in a URL, a password in a body);
 the gates of RF-10 (Passive sends no `POST`; a foreign host is never requested); the merge with
 `--openapi`; the caps; and the Web API refusal of RF-12. Integration attaches to the shared scan of
-`tests/integration/test_scan_fixture_app.py` (`specs/README.md`, "Testes de uma spec").
+`tests/integration/test_scan_fixture_app.py` (`specs/README.md`, "Testing a spec").
 
 ## Non-functional requirements
 
