@@ -11,6 +11,15 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-11-14
+
+A patch release with a security fix for what a scanned site can make the checks cost
+(GHSA-gf8g-gcvm-28m9) and a round of hardening of the checks. It is backward compatible with
+[docs/stability.md](docs/stability.md): no CLI option, exit code, configuration key, check id or
+JSON report field changes. As part of the security fix, `http.cookies.flags` reports at most 20
+findings per page, `session.id.weak` judges at most 50 session cookie names in a scan, and a
+check keeps at most 5,000 distinct findings in a scan.
+
 ### Fixed
 
 - A malformed value from the scanned site no longer costs more than the result it belongs to.
@@ -638,7 +647,8 @@ confirmed against a per-request baseline)
 - A security policy with private vulnerability reporting, a code of conduct, and the
   [stability policy](docs/stability.md).
 
-[Unreleased]: https://github.com/ryanvmorais/webvigil/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/ryanvmorais/webvigil/compare/v1.4.1...HEAD
+[1.4.1]: https://github.com/ryanvmorais/webvigil/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/ryanvmorais/webvigil/compare/v1.3.1...v1.4.0
 [1.3.1]: https://github.com/ryanvmorais/webvigil/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/ryanvmorais/webvigil/compare/v1.2.1...v1.3.0
