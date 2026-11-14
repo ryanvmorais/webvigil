@@ -123,3 +123,18 @@ async def test_revealing_headers() -> None:
 
     quiet = make_context(make_page(headers={"server": "cloudflare"}))
     assert await RevealingHeadersCheck().run(quiet) == []
+
+
+async def test_a_max_age_past_the_int_limit_reads_as_long_enough() -> None:
+    """A 5000-digit ``max-age`` does not raise; it is far above the minimum, so no finding."""
+    header = "max-age=" + "9" * 5000 + "; includeSubDomains"
+    ctx = make_context(make_page(headers={"strict-transport-security": header}))
+    assert await HstsCheck().run(ctx) == []
+
+
+async def test_leading_zeros_do_not_inflate_max_age() -> None:
+    """Zeros before the value are not significant digits: ``max-age=000...0100`` is still low."""
+    header = "max-age=" + "0" * 40 + "100; includeSubDomains"
+    ctx = make_context(make_page(headers={"strict-transport-security": header}))
+    titles = [f.title for f in await HstsCheck().run(ctx)]
+    assert titles == ["Strict-Transport-Security max-age is too low"]

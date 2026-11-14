@@ -20,6 +20,8 @@ still stands (RF-09).
 
 from __future__ import annotations
 
+import asyncio
+import json as jsonlib
 import math
 import re
 from collections.abc import Mapping, Sequence
@@ -42,6 +44,23 @@ _ECOSYSTEM = "npm"
 _QUERYBATCH_CAP = 1000
 _OSV_URL = "https://osv.dev/vulnerability/{}"
 _CWE_RE = re.compile(r"CWE-(\d+)", re.IGNORECASE)
+
+# The OSV response is a third party's data (or a self-hosted ``osv_base_url``): it is read in a
+# stream and refused past this size, after decompression. The largest real ``/v1/query`` answer
+# for an npm package is well under 1 MiB.
+_MAX_RESPONSE_BYTES = 16 * 1024 * 1024
+# ``osv_timeout_s`` is httpx's per-operation timeout, which a slow drip of bytes never trips; a
+# whole request (connect to last byte) gets this many times that budget, 30 s by default.
+_TOTAL_TIMEOUT_FACTOR = 3
+# Records kept per package, aliases and references kept per record, and the longest ``fixed``
+# version read: far above what OSV publishes for one npm package, low enough that the merge and
+# the version sort stay cheap. A longer version is not a version (Retire.js caps them at 65).
+_MAX_RECORDS_PER_PACKAGE = 200
+_MAX_LIST_ITEMS = 32
+_MAX_VERSION_CHARS = 64
+# ``details`` only feeds the first sentence of a summary; a CVSS v3 vector is under 50 characters.
+_MAX_DETAILS_CHARS = 4096
+_MAX_VECTOR_CHARS = 256
 
 # Retire.js component name -> npm package name, for the cases where they differ (RF-05).
 # Anything not listed is used verbatim.
@@ -117,7 +136,7 @@ def _cvss3_base(vector: str) -> float | None:
             ``vector`` is not a v3 vector or a required metric is missing or
             unknown.
     """
-    if not vector.startswith(("CVSS:3.0/", "CVSS:3.1/")):
+    if len(vector) > _MAX_VECTOR_CHARS or not vector.startswith(("CVSS:3.0/", "CVSS:3.1/")):
         return None
     parts: dict[str, str] = {}
     for token in vector.split("/")[1:]:
@@ -213,7 +232,7 @@ def _summary(record: Mapping[str, Any]) -> str:
     summary = str(record.get("summary") or "").strip()
     if summary:
         return summary
-    details = str(record.get("details") or "").strip()
+    details = str(record.get("details") or "")[:_MAX_DETAILS_CHARS].strip()
     if not details:
         return ""
     first_sentence = re.split(r"(?<=[.!?])\s", details, maxsplit=1)[0]
@@ -232,7 +251,7 @@ def _info_urls(record: Mapping[str, Any], osv_id: str) -> tuple[str, ...]:
             strings become links in the reports and the dashboard (issue #161).
     """
     urls: list[str] = []
-    for reference in record.get("references") or []:
+    for reference in list(record.get("references") or [])[:_MAX_LIST_ITEMS]:
         if isinstance(reference, Mapping) and reference.get("url"):
             url = str(reference["url"])
             if is_http_url(url):
@@ -270,7 +289,8 @@ def _first_safe(record: Mapping[str, Any], npm_name: str, detected_version: str)
 
     Returns:
         str | None: The lowest ``fixed`` version greater than
-            ``detected_version``, or ``None`` when none is listed.
+            ``detected_version``, or ``None`` when none is listed. A ``fixed``
+            value longer than ``_MAX_VERSION_CHARS`` is not a version and is skipped.
     """
     fixed: list[str] = []
     for affected in record.get("affected") or []:
@@ -284,7 +304,9 @@ def _first_safe(record: Mapping[str, Any], npm_name: str, detected_version: str)
         for version_range in affected.get("ranges") or []:
             for event in (version_range or {}).get("events") or []:
                 if isinstance(event, Mapping) and event.get("fixed"):
-                    fixed.append(str(event["fixed"]))
+                    version = str(event["fixed"])
+                    if len(version) <= _MAX_VERSION_CHARS:
+                        fixed.append(version)
     safe = sorted({v for v in fixed if _lt(detected_version, v)}, key=numeric_version_key)
     return safe[0] if safe else None
 
@@ -308,7 +330,7 @@ def _to_advisory(
         osv_id = str(record["id"])
     except (KeyError, TypeError):
         return None
-    aliases = [str(alias) for alias in record.get("aliases") or []]
+    aliases = [str(alias) for alias in list(record.get("aliases") or [])[:_MAX_LIST_ITEMS]]
     severity, from_upstream = _severity(record)
     return Advisory(
         identifiers=tuple(dict.fromkeys([osv_id, *aliases])),
@@ -394,16 +416,18 @@ class OsvProvider:
                 except OsvLookupError as exc:
                     warnings.append(f"OSV.dev lookup for {npm}@{version} failed: {exc}")
                     continue
-                found = tuple(
-                    advisory
-                    for record in records
-                    if (
-                        advisory := _to_advisory(
-                            record, npm_name=npm, detected_version=str(version)
-                        )
+                if len(records) > _MAX_RECORDS_PER_PACKAGE:
+                    warnings.append(
+                        f"OSV.dev returned {len(records)} records for {npm}@{version}; "
+                        f"kept the first {_MAX_RECORDS_PER_PACKAGE}"
                     )
-                    is not None
-                )
+                    records = records[:_MAX_RECORDS_PER_PACKAGE]
+                found, malformed = _convert(records, npm_name=npm, detected_version=str(version))
+                if malformed:
+                    warnings.append(
+                        f"OSV.dev returned {malformed} malformed record(s) for {npm}@{version}; "
+                        "skipped"
+                    )
                 if found:
                     advisories[(name, version)] = found
 
@@ -498,17 +522,77 @@ class OsvProvider:
             Mapping[str, Any]: The decoded response object.
 
         Raises:
-            OsvLookupError: On any transport error, a non-2xx status, a JSON
-                decode failure, or a non-object payload.
+            OsvLookupError: On any transport error, a non-2xx status, a body
+                over ``_MAX_RESPONSE_BYTES``, a request past its total deadline,
+                a JSON decode failure, or a non-object payload.
         """
         try:
-            response = await client.post(path, json=json)
-            response.raise_for_status()
-            data = response.json()
+            async with asyncio.timeout(self._timeout_s * _TOTAL_TIMEOUT_FACTOR):
+                raw = await self._read(client, path, json)
+        except TimeoutError as exc:
+            raise OsvLookupError(f"{path} timed out") from exc
         except httpx.HTTPError as exc:
             raise OsvLookupError(str(exc) or exc.__class__.__name__) from exc
-        except ValueError as exc:  # JSON decode
+        try:
+            data = jsonlib.loads(raw)
+        except (ValueError, RecursionError) as exc:  # not JSON, or nested past the parser
             raise OsvLookupError(f"invalid JSON from {path}") from exc
         if not isinstance(data, Mapping):
             raise OsvLookupError(f"unexpected {path} payload")
         return data
+
+    @staticmethod
+    async def _read(client: httpx.AsyncClient, path: str, json: dict[str, Any]) -> bytes:
+        """
+        POST a JSON body and read the response in a stream, up to the size cap.
+
+        Args:
+            client (httpx.AsyncClient): The OSV client.
+            path (str): The API path.
+            json (dict[str, Any]): The request body.
+
+        Returns:
+            bytes: The decoded (decompressed) response body.
+
+        Raises:
+            httpx.HTTPError: On a transport error or a non-2xx status.
+            OsvLookupError: When the body passes ``_MAX_RESPONSE_BYTES``.
+        """
+        async with client.stream("POST", path, json=json) as response:
+            response.raise_for_status()
+            body = bytearray()
+            async for chunk in response.aiter_bytes():
+                body += chunk
+                if len(body) > _MAX_RESPONSE_BYTES:
+                    raise OsvLookupError(f"{path} response is over {_MAX_RESPONSE_BYTES} bytes")
+            return bytes(body)
+
+
+def _convert(
+    records: Sequence[Mapping[str, Any]], *, npm_name: str, detected_version: str
+) -> tuple[tuple[Advisory, ...], int]:
+    """
+    Convert OSV records, skipping the ones whose fields have the wrong shape.
+
+    A record is a third party's JSON: ``database_specific`` may be a list, ``affected`` a
+    number. Such a record is dropped and counted; it never aborts the lookup.
+
+    Args:
+        records (Sequence[Mapping[str, Any]]): The vulnerability records of one package.
+        npm_name (str): The npm package name, for the fixed-version lookup.
+        detected_version (str): The version in use.
+
+    Returns:
+        tuple[tuple[Advisory, ...], int]: The advisories, and how many records were malformed.
+    """
+    found: list[Advisory] = []
+    malformed = 0
+    for record in records:
+        try:
+            advisory = _to_advisory(record, npm_name=npm_name, detected_version=detected_version)
+        except (AttributeError, TypeError, ValueError, RecursionError):
+            malformed += 1
+            continue
+        if advisory is not None:
+            found.append(advisory)
+    return tuple(found), malformed

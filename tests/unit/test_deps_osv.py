@@ -10,13 +10,15 @@ path. ``_Transport`` records the call paths and the ``querybatch`` body so the
 
 from __future__ import annotations
 
+import asyncio
 import json
+from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
 import pytest
 
-from webvigil.checks.deps import _data
+from webvigil.checks.deps import _data, osv
 from webvigil.checks.deps.osv import (
     OsvLookupError,
     OsvProvider,
@@ -429,3 +431,118 @@ async def test_partial_query_failure_keeps_the_rest_and_warns() -> None:
     assert ("jquery", "3.4.1") in result.advisories
     assert ("lodash", "4.17.20") not in result.advisories
     assert result.warnings and "lodash" in result.warnings[0]
+
+
+# ---------------------------------------------------------------------------
+# A hostile or broken OSV answer
+# ---------------------------------------------------------------------------
+
+
+def _batch_then(query: httpx.Response) -> httpx.MockTransport:
+    """
+    Args:
+        query (httpx.Response): The answer to every ``/v1/query``.
+
+    Returns:
+        httpx.MockTransport: A transport whose querybatch reports one hit for the first query.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/querybatch":
+            return httpx.Response(200, json={"results": [{"vulns": [{"id": "GHSA-x"}]}]})
+        return query
+
+    return httpx.MockTransport(handler)
+
+
+async def test_a_body_over_the_size_cap_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The response is read in a stream and refused past ``_MAX_RESPONSE_BYTES``."""
+    monkeypatch.setattr(osv, "_MAX_RESPONSE_BYTES", 1024)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=b"[" + b" " * 4096 + b"]")
+
+    with pytest.raises(OsvLookupError, match="over 1024 bytes"):
+        await _provider(httpx.MockTransport(handler)).lookup([_det("jquery", "3.4.1")])
+
+
+async def test_a_response_that_drips_past_the_total_deadline_raises() -> None:
+    """A body that keeps arriving never trips httpx's per-read timeout; the total one stops it."""
+
+    async def drip() -> AsyncIterator[bytes]:
+        while True:
+            await asyncio.sleep(0.01)
+            yield b" "
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=drip())
+
+    provider = OsvProvider(
+        "http://osv.test", 0.02, user_agent="WebVigil/test", transport=httpx.MockTransport(handler)
+    )
+    with pytest.raises(OsvLookupError, match="timed out"):
+        await provider.lookup([_det("jquery", "3.4.1")])
+
+
+async def test_json_nested_past_the_parser_raises_a_lookup_error() -> None:
+    """``RecursionError`` from the JSON parser is a lookup error, not a crash."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=b"[" * 200_000)
+
+    with pytest.raises(OsvLookupError, match="invalid JSON"):
+        await _provider(httpx.MockTransport(handler)).lookup([_det("jquery", "3.4.1")])
+
+
+async def test_a_malformed_record_is_skipped_and_the_rest_kept() -> None:
+    """A record whose fields have the wrong type is dropped with a warning; the good one stays."""
+    bad = {"id": "GHSA-bad", "database_specific": ["not", "an", "object"]}
+    worse = {"id": "GHSA-worse", "affected": 7}
+    transport = _batch_then(httpx.Response(200, json={"vulns": [bad, _GHSA_RECORD, worse]}))
+    result = await _provider(transport).lookup([_det("jquery", "3.4.1")])
+    (advisory,) = result.advisories[("jquery", "3.4.1")]
+    assert advisory.identifiers[0] == "GHSA-gxr4-xjj5-5px2"
+    assert result.warnings == ("OSV.dev returned 2 malformed record(s) for jquery@3.4.1; skipped",)
+
+
+async def test_records_past_the_per_package_cap_are_dropped_with_a_warning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Only the first ``_MAX_RECORDS_PER_PACKAGE`` records of one package are converted."""
+    monkeypatch.setattr(osv, "_MAX_RECORDS_PER_PACKAGE", 2)
+    records = [{**_GHSA_RECORD, "id": f"GHSA-{n}", "aliases": []} for n in range(3)]
+    transport = _batch_then(httpx.Response(200, json={"vulns": records}))
+    result = await _provider(transport).lookup([_det("jquery", "3.4.1")])
+    assert len(result.advisories[("jquery", "3.4.1")]) == 2
+    assert result.warnings == ("OSV.dev returned 3 records for jquery@3.4.1; kept the first 2",)
+
+
+def test_first_safe_skips_a_fixed_value_too_long_to_be_a_version() -> None:
+    """A ``fixed`` past ``_MAX_VERSION_CHARS`` (here past the int-string limit) is ignored."""
+    record = {
+        "affected": [
+            {
+                "package": {"ecosystem": "npm", "name": "jquery"},
+                "ranges": [{"events": [{"fixed": "9" * 5000}, {"fixed": "3.5.0"}]}],
+            }
+        ]
+    }
+    assert _first_safe(record, "jquery", "3.4.1") == "3.5.0"
+
+
+def test_to_advisory_caps_aliases_and_references() -> None:
+    """An alias or reference list past ``_MAX_LIST_ITEMS`` is cut, not copied whole."""
+    record = {
+        **_GHSA_RECORD,
+        "aliases": [f"CVE-2020-{n}" for n in range(1000)],
+        "references": [{"url": f"https://example.com/{n}"} for n in range(1000)],
+    }
+    advisory = _to_advisory(record, npm_name="jquery", detected_version="3.4.1")
+    assert advisory is not None
+    assert len(advisory.identifiers) == 1 + osv._MAX_LIST_ITEMS
+    assert len(advisory.info_urls) == osv._MAX_LIST_ITEMS + 1  # plus the osv.dev page
+
+
+def test_cvss3_base_rejects_an_overlong_vector() -> None:
+    """A vector past ``_MAX_VECTOR_CHARS`` is not parsed."""
+    assert _cvss3_base("CVSS:3.1/" + "X:Y/" * 1000) is None

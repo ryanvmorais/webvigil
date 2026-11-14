@@ -82,13 +82,15 @@ def _json_env(body: str) -> str:
     Returns:
         str: The re-serialised JSON with secret-named keys masked and token
             shapes scrubbed from string values; falls back to generic masking
-            when the body is not valid JSON.
+            when the body is not valid JSON or is nested too deep to walk.
     """
     try:
         data = json.loads(body)
-    except ValueError:
+        # _scrub and json.dumps recurse too: a body just inside the parser's depth limit can
+        # still exhaust the stack here.
+        return json.dumps(_scrub(data, [_JSON_LIMIT]), indent=2)[:_JSON_LIMIT]
+    except (ValueError, RecursionError):
         return _SECRET_RE.sub(_MASK, body[:_LIMIT])
-    return json.dumps(_scrub(data, [_JSON_LIMIT]), indent=2)[:_JSON_LIMIT]
 
 
 def _scrub(node: Any, budget: list[int]) -> Any:

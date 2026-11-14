@@ -169,6 +169,25 @@ async def test_osv_lookup_failure_is_a_warning_not_a_crash(
     assert any(f.check_id == "deps.js.vulnerable-library" for f in result.findings)
 
 
+async def test_an_unexpected_osv_exception_is_a_warning_not_a_crash(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Any other exception from the lookup also degrades to a warning, without its message."""
+
+    class _Boom:
+        def __init__(self, *_a: object, **_k: object) -> None: ...
+
+        async def lookup(self, _detections: object) -> OsvResult:
+            raise KeyError("third-party text")
+
+    monkeypatch.setattr(orch_mod, "OsvProvider", _Boom)
+    cfg = ScanConfig.model_validate({"deps": {"osv_online": True}})
+    result = await Orchestrator(cfg, check_types=[VulnerableLibraryCheck]).run(_TARGET)
+    assert any("OSV.dev lookup failed (KeyError)" in w for w in result.warnings)
+    assert not any("third-party text" in w for w in result.warnings)
+    assert any(f.check_id == "deps.js.vulnerable-library" for f in result.findings)
+
+
 async def test_a_raising_fingerprint_pass_becomes_a_warning_not_a_crash(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

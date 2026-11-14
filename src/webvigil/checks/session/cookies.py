@@ -50,7 +50,7 @@ def is_jwt(value: str) -> bool:
     try:
         decoded = base64.urlsafe_b64decode(header + "=" * (-len(header) % 4))
         return isinstance(json.loads(decoded), dict)
-    except (ValueError, UnicodeDecodeError):
+    except (ValueError, UnicodeDecodeError, RecursionError):
         return False
 
 

@@ -451,6 +451,12 @@ class Orchestrator:
                 "database only"
             )
             return {}
+        except Exception as exc:  # a third party's answer must not abort the whole scan
+            warnings.append(
+                f"OSV.dev lookup failed ({type(exc).__name__}); reported advisories are from "
+                "the offline database only"
+            )
+            return {}
         warnings.extend(report.warnings)
         return report.advisories
 

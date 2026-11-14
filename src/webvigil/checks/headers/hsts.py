@@ -12,6 +12,10 @@ from webvigil.core.findings import Category, EvidenceItem, Finding, Location, Se
 
 _MIN_MAX_AGE_SECONDS = 15_552_000  # 180 days
 _MAX_AGE_RE = re.compile(r"max-age\s*=\s*\"?(\d+)\"?", re.IGNORECASE)
+# Eighteen significant digits are already billions of years, far above the minimum; int() on
+# a run past Python's 4300-digit limit would raise.
+_MAX_AGE_DIGITS = 18
+_LONG_ENOUGH: int = 10**_MAX_AGE_DIGITS
 
 
 @register
@@ -68,7 +72,7 @@ class HstsCheck(Check):
         evidence = [EvidenceItem.of("Strict-Transport-Security", value)]
         findings: list[Finding] = []
         match = _MAX_AGE_RE.search(value)
-        max_age = int(match.group(1)) if match else 0
+        max_age = _max_age(match.group(1)) if match else 0
         if max_age < _MIN_MAX_AGE_SECONDS:
             findings.append(
                 self.finding(
@@ -102,3 +106,20 @@ class HstsCheck(Check):
                 )
             )
         return findings
+
+
+def _max_age(digits: str) -> int:
+    """
+    Read a ``max-age`` value, without converting a digit run too long to matter.
+
+    Args:
+        digits (str): The ``max-age`` digits, as sent.
+
+    Returns:
+        int: The value in seconds; a value with more than ``_MAX_AGE_DIGITS`` significant digits
+            reads as ``_LONG_ENOUGH``, which is all the comparison needs.
+    """
+    significant = digits.lstrip("0") or "0"
+    if len(significant) > _MAX_AGE_DIGITS:
+        return _LONG_ENOUGH
+    return int(significant)

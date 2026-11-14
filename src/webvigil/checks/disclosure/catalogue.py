@@ -134,7 +134,7 @@ class Validator:
         if self.json_keys:
             try:
                 data = json.loads(body)
-            except ValueError:
+            except (ValueError, RecursionError):  # not JSON, or nested past the parser
                 data = None
             if isinstance(data, dict) and any(key in data for key in self.json_keys):
                 return True

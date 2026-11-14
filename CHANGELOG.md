@@ -11,6 +11,19 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 ## [Unreleased]
 
+### Fixed
+
+- A malformed value from the scanned site no longer costs more than the result it belongs to.
+  An injection detector that fails on one point now loses only that point's result, with one
+  warning per detector, instead of every injection finding of the scan. An HSTS `max-age` or a
+  session id with thousands of digits, a JSON body nested past the parser, and a TLS certificate
+  that loads but has an unknown signature algorithm or a bad extension no longer stop their
+  check: the certificate is reported as `cert-unparseable`.
+- The `--osv-online` lookup reads at most 16 MiB per response, gives each request a total
+  deadline of three times `[deps] osv_timeout_s`, keeps at most 200 records per package, and
+  skips a malformed record with a warning. Any failure falls back to the offline database with a
+  warning instead of aborting the scan.
+
 ## [1.4.0] - 2026-11-13
 
 A minor release with two security fixes for what a scanned site can make the checks do

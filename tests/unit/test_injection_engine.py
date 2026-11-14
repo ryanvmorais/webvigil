@@ -16,6 +16,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 import httpx
+import pytest
 
 from tests.support import make_page
 from webvigil.checks.injection.engine import (
@@ -327,3 +328,40 @@ def test_ordered_kinds_runs_the_detector_entry_that_matches_the_selected_checks(
     assert _scanner(http, kinds={"xss", "ssti"})._ordered_kinds(point) == ["xss", "ssti"]
     assert _scanner(http, kinds={"xss", "el"})._ordered_kinds(point) == ["xss", "el"]
     assert _scanner(http, kinds={"xss"})._ordered_kinds(point) == ["xss"]
+
+
+# ---------------------------------------------------------------------------
+# A detector that raises loses only its own result
+# ---------------------------------------------------------------------------
+
+
+async def test_a_detector_that_raises_keeps_the_other_hits_and_warns_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One raising detector is skipped per point; the pass goes on and warns once per kind."""
+
+    async def _boom(*_args: object) -> list[object]:
+        raise ValueError("hostile response")
+
+    monkeypatch.setitem(_DETECTORS, "traversal", _boom)
+    reflected = "<div>{}</div>"
+    http = _FakeHttp(lambda url, p: _resp(reflected.format(p.get("x", p.get("y", "")))))
+    page1 = make_page(url="https://example.com/a?x=1")
+    page2 = make_page(url="https://example.com/b?y=1")
+    scanner = InjectionScanner(
+        http,  # type: ignore[arg-type]
+        _TARGET,
+        InjectionSection(),
+        (page1, page2),
+        (),
+        {"traversal", "xss"},
+    )
+    report = await scanner.run()
+    assert report.points_tested == 2
+    assert {hit.kind for hit in report.hits} == {"xss"}
+    failed = [w for w in report.warnings if "'traversal'" in w]
+    assert failed == [
+        "injection detector 'traversal' failed on 2 point(s) (ValueError); "
+        "its results for those points are missing"
+    ]
+    assert not any("hostile response" in w for w in report.warnings)

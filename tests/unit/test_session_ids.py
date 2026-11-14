@@ -121,3 +121,19 @@ def test_series_rules_are_marked_as_needing_samples() -> None:
     """Every rule from ``judge_samples`` says it is sampled; the value rules never do."""
     assert all(rule.sampled for rule in judge_samples(["1001", "1002", "1003"]))
     assert not any(rule.sampled for rule in judge_value("42"))
+
+
+# ---------------------------------------------------------------------------
+# An all-digit id past Python's int-string limit
+# ---------------------------------------------------------------------------
+
+
+def test_a_digit_run_past_the_int_limit_is_numeric_but_not_a_number() -> None:
+    """5000 digits are flagged as digits only; no epoch or counter rule, and no exception."""
+    value = "1234567890" * 500
+    codes = {rule.code for rule in judge_value(value)}
+    assert "numeric" in codes
+    assert not codes & {"timestamp", "counter"}
+    assert {rule.code for rule in judge_samples([value, value + "1", value + "2"])} <= {
+        "low-variance"
+    }
