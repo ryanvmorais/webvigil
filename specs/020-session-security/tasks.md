@@ -15,7 +15,7 @@ stage is the quality gate (`ruff → black --check → mypy src → lint-imports
 suite: it runs in about 10 minutes since the test audit, issue #101). Engine and CLI only — no
 `web` gate, no API migration (RNF-01, RNF-02).
 
-Tests follow [`specs/README.md`, "Testes de uma spec"](../README.md#testes-de-uma-spec): logic in
+Tests follow [`specs/README.md`, "Testing a spec"](../README.md#testing-a-spec): logic in
 unit, integration attached to the shared scans, about 1.0 test line per source line.
 
 Baseline before 020 (clean `main` after #109): **967 passed**. At 020 close: **1090 passed** (+123) in about 10.5 minutes.

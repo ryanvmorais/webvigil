@@ -16,7 +16,7 @@ Persistence       webvigil.api.db  (SQLite via SQLModel + Alembic, web only)
 
 - `webvigil.core` and the other engine packages (`http`, `crawler`, `checks`, `reporting`)
   are a pure library. They must not import Typer, Rich, FastAPI, SQLModel, Alembic, PyJWT,
-  or argon2 — a CI `import-linter` contract enforces this. `webvigil.cli` and
+  argon2 or Uvicorn — a CI `import-linter` contract enforces this. `webvigil.cli` and
   `webvigil.api` do not import each other.
 - The CLI and the Web API are thin clients of the same `Orchestrator`.
 - `webvigil.checks.deps` adds passive dependency fingerprinting: the orchestrator runs a
@@ -140,4 +140,6 @@ dependency fingerprint), `011-rce-injection` (command injection, SSTI),
 `014-file-upload` (LDAP / XPath / SSI injection, file upload), `015-web-toolchain-modernization`
 (Node 24, Tailwind 4, Next 16) and `016-el-injection` (expression-language injection) and `017-csrf-confirmation` (active
 CSRF confirmation) and `018-post-form-crawl` (the crawler's opt-in `POST` phase) and `019-automated-login`
-(form login with re-login) and `020-session-security` (weak ids, fixation, logout).
+(form login with re-login) and `020-session-security` (weak ids, fixation, logout) and
+`021-har-import` (HAR import for single-page apps) and `022-dashboard-csp` (the dashboard's
+nonce-based Content-Security-Policy).

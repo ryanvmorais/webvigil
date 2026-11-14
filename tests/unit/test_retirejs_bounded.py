@@ -158,9 +158,10 @@ def _repeats_an_alternation(pattern: str) -> bool:
             elif op is sre_constants.SUBPATTERN:
                 if walk(list(value[-1])):  # type: ignore[index]
                     return True
-            elif op is sre_constants.BRANCH:
-                if any(walk(list(branch)) for branch in value[1]):  # type: ignore[index]
-                    return True
+            elif op is sre_constants.BRANCH and any(
+                walk(list(branch)) for branch in value[1]  # type: ignore[index]
+            ):
+                return True
         return False
 
     return walk(list(sre_parser.parse(pattern)))

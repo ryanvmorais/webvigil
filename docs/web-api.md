@@ -18,7 +18,7 @@ docker compose up --build          # http://localhost:8000
 ```
 
 On first start the database is created and migrated automatically. Open `/docs` (or the
-future dashboard) and you will be asked to create the single account.
+dashboard, see [web-ui.md](web-ui.md)) and you will be asked to create the single account.
 
 ## Commands
 

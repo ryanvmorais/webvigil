@@ -450,7 +450,7 @@ through the rate limiter. No change to `request_budget` or the per-point cap.
 
 ## Test strategy
 
-Follows [`specs/README.md`, "Testes de uma spec"](../README.md#testes-de-uma-spec): logic in
+Follows [`specs/README.md`, "Testing a spec"](../README.md#testing-a-spec): logic in
 unit, integration attached to a shared scan, budget about 1.0 test line per source line.
 
 **Unit** (`tests/unit/`)

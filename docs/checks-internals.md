@@ -1,206 +1,206 @@
 # Checks internals
 
-Internal reference for contributors and agents, moved out of `CLAUDE.md` so that file stays small (it is loaded into every Claude Code request). The prose is in Portuguese, as it was in `CLAUDE.md`. For how to write a check, see [writing-checks.md](writing-checks.md).
+Internal reference for contributors and agents, moved out of `CLAUDE.md` so that file stays small (it is loaded into every Claude Code request). For how to write a check, see [writing-checks.md](writing-checks.md).
 
 ## Checks and orchestrator steps
 
-**Checks** (`webvigil.checks`) — plugins `PASSIVE`/`ACTIVE`, registrados por decorator +
-entry points. Contrato: `Check.run(ctx: ScanContext) -> list[Finding]`. `webvigil.checks.deps`
-(spec 004) faz fingerprint passivo de libs JS do front + match com uma base Retire.js
-vendorada (offline); o passo de fingerprint roda no `Orchestrator`, não como check.
-`OsvProvider` (spec 010): provider de advisory online opt-in (`--osv-online` /
-`[deps] osv_online`, default off) — único ponto do engine que fala com host que não é o
-alvo. Um passo `_osv_lookup` no `Orchestrator` (depois do fingerprint) faz um
-`POST /v1/querybatch` + um `POST /v1/query` por pacote com match na `api.osv.dev`, normaliza
-pro `Advisory` nativo e entrega via `ScanContext.observations`; o check mescla
-(`merge_advisories`, dedup por identificador) com o match offline. Falha de rede vira
-warning, não erro. Sem cache em disco.
-Detalhes em [`docs/dependency-fingerprinting.md`](docs/dependency-fingerprinting.md).
-`webvigil.checks.disclosure` (spec 005): dois checks passivos (stack traces, directory
-listing) + um passo de sondagem opt-in no `Orchestrator` (`--probe` / `[disclosure]
-probe`, GET-only, sem portão Active) que testa um catálogo curado de paths sensíveis
-(`.git`, `.env`, backups, endpoints de debug) e alimenta seis checks probe-fed.
-Detalhes em [`docs/information-disclosure.md`](docs/information-disclosure.md).
-`webvigil.checks.injection` (spec 006): os primeiros checks `ACTIVE` — reflected XSS,
-SQLi (error/boolean/time; o boolean semeia um campo vazio com um valor plausível e aceita uma
-divisão de classe de status como evidência), path traversal, open redirect. O `Orchestrator` roda um passo
-`InjectionScanner` (enumera injection points a partir de query params + `<form>`s
-parseados dos corpos já baixados — campos de texto e `<select>`, este testado por último e nunca
-alvo do stored XSS —, baseline por ponto, detectores sob um orçamento de
-requests compartilhado); checks finos viram findings a partir de
-`ctx.observations.injection_hits`. Portão `--mode active --authorized-by`; só GET/POST;
-detecção in-band (sem browser headless, sem coletor OAST). `[injection]` afina orçamento
-e time-based. `injection.ssrf.metadata` (CRITICAL) / `injection.ssrf.internal` (HIGH)
-(spec 009): SSRF **in-band** — um detector `ssrf` na mesma passada que envia payloads de
-URL e prova o fetch server-side pelo response do alvo (marcador de metadata de nuvem,
-assinatura de `file://`, banner de serviço interno, ou erro de conexão ecoando a URL).
-`is_urllike` prioriza params com cara de URL. Sem flag, sem config (payloads só leem).
-SSRF cega não está no roadmap — exige coletor OAST hospedado, o que cruza "o engine só
-fala com o alvo" e a distribuição repo-only; quem precisar pareia com um colaborador
-externo próprio. `injection.cmdi.os` (CRITICAL) / `injection.ssti` (HIGH) (spec 011):
-RCE server-side **in-band** — dois detectores novos na mesma passada. `cmdi` tem um
-estágio echo (quebra de shell + `echo <marcador>=$((a*b))` → produto calculado colado ao
-marcador, ausente do baseline; na variante Windows o produto tem de vir impresso **depois** do
-marcador, como número inteiro) e um estágio time-based (`sleep`/`ping -n`, confirmado
-contra controle de delay 0, gate `[injection] time_based_cmdi` / `--no-time-based-cmdi`,
-default on, sub-orçamento de sleep compartilhado com `sqli-time`). `ssti` faz polyglot →
-assinatura de erro do engine, depois payloads aritméticos por engine → produto avaliado
-colado ao marcador; identifica o engine (`{{7*'7'}}` → `7777777` Jinja2, `49` Twig).
-`is_commandlike` prioriza params com nome de comando/template; o `_SHELL_NAMES` mais
-estrito destrava o set completo de echo e o estágio time-based do `cmdi`. Command
-injection cega (sem output, sem timing) fica de fora — mesmo motivo da SSRF cega.
-`_PER_POINT_REQUEST_CAP` subiu de 30 → 35 e `request_budget` de 500 → 600 (mais
-famílias de detector por ponto).
+**Checks** (`webvigil.checks`) — `PASSIVE`/`ACTIVE` plugins, registered by decorator +
+entry points. Contract: `Check.run(ctx: ScanContext) -> list[Finding]`. `webvigil.checks.deps`
+(spec 004) passively fingerprints the front end's JS libraries and matches them against a vendored
+(offline) Retire.js database; the fingerprint step runs in the `Orchestrator`, not as a check.
+`OsvProvider` (spec 010): opt-in online advisory provider (`--osv-online` /
+`[deps] osv_online`, default off) — the only place in the engine that talks to a host that is not
+the target. An `_osv_lookup` step in the `Orchestrator` (after the fingerprint) sends one
+`POST /v1/querybatch` + one `POST /v1/query` per matched package to `api.osv.dev`, normalizes
+the result into the native `Advisory` and hands it over through `ScanContext.observations`; the check merges
+(`merge_advisories`, dedup by identifier) it with the offline match. A network failure becomes a
+warning, not an error. No on-disk cache.
+Details in [`docs/dependency-fingerprinting.md`](dependency-fingerprinting.md).
+`webvigil.checks.disclosure` (spec 005): two passive checks (stack traces, directory
+listing) + an opt-in probing step in the `Orchestrator` (`--probe` / `[disclosure]
+probe`, GET-only, no Active gate) that tests a curated catalog of sensitive paths
+(`.git`, `.env`, backups, debug endpoints) and feeds six probe-fed checks.
+Details in [`docs/information-disclosure.md`](information-disclosure.md).
+`webvigil.checks.injection` (spec 006): the first `ACTIVE` checks — reflected XSS,
+SQLi (error/boolean/time; the boolean one seeds an empty field with a plausible value and accepts a
+status-class split as evidence), path traversal, open redirect. The `Orchestrator` runs an
+`InjectionScanner` step (it enumerates injection points from query params + `<form>`s
+parsed from the bodies already downloaded — text fields and `<select>`, the latter tested last and never
+a target of stored XSS —, a baseline per point, detectors under a shared request
+budget); thin checks turn `ctx.observations.injection_hits` into findings.
+Gate `--mode active --authorized-by`; GET/POST only; in-band detection (no headless browser,
+no OAST collaborator). `[injection]` tunes the budget and time-based detection.
+`injection.ssrf.metadata` (CRITICAL) / `injection.ssrf.internal` (HIGH)
+(spec 009): **in-band** SSRF — an `ssrf` detector in the same pass that sends URL
+payloads and proves the server-side fetch through the target's response (a cloud metadata marker,
+a `file://` signature, an internal service banner, or a connection error echoing the URL).
+`is_urllike` prioritizes URL-looking params. No flag, no config (the payloads only read).
+Blind SSRF is not on the roadmap — it requires a hosted OAST collaborator, which crosses "the engine only
+talks to the target" and the repo-only distribution; whoever needs it pairs the scan with their own
+external collaborator. `injection.cmdi.os` (CRITICAL) / `injection.ssti` (HIGH) (spec 011):
+**in-band** server-side RCE — two new detectors in the same pass. `cmdi` has an
+echo stage (shell break + `echo <marker>=$((a*b))` → computed product glued to the
+marker, absent from the baseline; in the Windows variant the product must be printed **after** the
+marker, as an integer) and a time-based stage (`sleep`/`ping -n`, confirmed
+against a delay-0 control, gate `[injection] time_based_cmdi` / `--no-time-based-cmdi`,
+default on, sleep sub-budget shared with `sqli-time`). `ssti` does a polyglot →
+engine error signature, then per-engine arithmetic payloads → evaluated product
+glued to the marker; it identifies the engine (`{{7*'7'}}` → `7777777` Jinja2, `49` Twig).
+`is_commandlike` prioritizes params named after a command/template; the stricter `_SHELL_NAMES`
+unlocks the full echo set and the time-based stage of `cmdi`. Blind command
+injection (no output, no timing) is left out — same reason as blind SSRF.
+`_PER_POINT_REQUEST_CAP` went from 30 → 35 and `request_budget` from 500 → 600 (more
+detector families per point).
 `injection.crlf` (HIGH) / `injection.host-header` (MEDIUM) / `injection.xxe` (HIGH) /
-`http.methods.unsafe` (MEDIUM, `Category.HTTP` nova) (spec 012): request-envelope
-injection **in-band**. `crlf` é detector novo no `InjectionScanner` (payload `%0d%0a` →
-header/cookie/body injetado que o `httpx` parseia de volta, não reflexão de texto).
-`xxe` é detector opt-in (`[injection] xxe` / `--xxe`, default off, só POST points,
-re-envia o body como XML com entidade externa → assinatura de arquivo ou erro de parser).
-`host-header` + `http.methods.unsafe` vêm de uma passada nova `EnvelopeScanner`
-(`webvigil.checks.envelope`, modelo do `DisclosureProbe`) que re-pede uma amostra de URLs
-crawleadas com `Host`/`X-Forwarded-*` = `webvigil.invalid` (sentinela em URL absoluta /
-`Location` / `<base>` / canonical) e com `OPTIONS`/`TRACE` (XST, verbos perigosos
-anunciados). Nunca envia verbo destrutivo. XXE cega e HTTP request smuggling ficam fora
-(colaborador / raw socket). `TRACE` entrou em `_IDEMPOTENT`; `HttpClient.request` ganhou
+`http.methods.unsafe` (MEDIUM, new `Category.HTTP`) (spec 012): **in-band**
+request-envelope injection. `crlf` is a new detector in the `InjectionScanner` (`%0d%0a` payload →
+injected header/cookie/body that `httpx` parses back, not text reflection).
+`xxe` is an opt-in detector (`[injection] xxe` / `--xxe`, default off, POST points only,
+re-sends the body as XML with an external entity → file signature or parser error).
+`host-header` + `http.methods.unsafe` come from a new `EnvelopeScanner` pass
+(`webvigil.checks.envelope`, modeled on `DisclosureProbe`) that re-requests a sample of crawled URLs
+with `Host`/`X-Forwarded-*` = `webvigil.invalid` (sentinel in an absolute URL /
+`Location` / `<base>` / canonical) and with `OPTIONS`/`TRACE` (XST, advertised dangerous
+verbs). It never sends a destructive verb. Blind XXE and HTTP request smuggling are left out
+(collaborator / raw socket). `TRACE` was added to `_IDEMPOTENT`; `HttpClient.request` gained
 `content=`.
 `injection.xss.stored` (spec 008):
-passada `StoredXssScanner` separada
-(depois da refletida, opt-in `--stored-xss` / `[injection] stored_xss`, default off —
-grava marcadores `<wvstored…>` que o alvo mantém). Fase A injeta um marcador por injection
-point; Fase B faz um re-crawl de 1 hop (`Crawler.recrawl`) a partir da fronteira do 1º
-crawl e correlaciona por token. Location do finding = o injection point (fingerprint
-estável); página(s) de render vão na evidência. Detalhes em
-[`docs/active-injection.md`](docs/active-injection.md).
-`webvigil.checks.csrf` (spec 007): checks passivos — `csrf.form.no-token` marca form
-`POST` state-changing sem token anti-CSRF, confiança ponderada pelo `SameSite` do cookie
-de sessão (também vê o form `POST` que é só um botão, que o parser agora mantém no inventário), e
-`csrf.form.state-change-over-get` (MEDIUM, CWE-352/650) marca form `GET` sem token que troca senha ou
-leva verbo destrutivo, sem nunca submetê-lo. Lê `ScanContext.forms` (o crawler agora parseia `<form>`s durante `discover()`
-e submete forms `GET` seguros para ampliar a superfície). Scan autenticado por cookie
-estático: `--cookie "name=value"` / `[auth] cookies`, anexado só a requests do host alvo,
-nunca em relatório/log/metadata; `webvigil.crawler.safety` guarda o crawl de links
-logout/destrutivos. Detalhes em [`docs/authenticated-scanning.md`](docs/authenticated-scanning.md).
-`webvigil.checks.content` (spec 013, `Category.CONTENT` nova): dois checks passivos —
-`content.sri.missing` (subresource cross-origin sem `integrity`, MEDIUM) e `content.mixed`
-(página `https` puxando subrecurso `http://`, MEDIUM/LOW). `webvigil.checks.disclosure`
-ganhou `disclosure.session-id-in-url` (token de sessão / API key numa URL que o alvo
-produziu — link, form action, `Location`; MEDIUM) e `disclosure.private-ip` (IP RFC-1918 /
-loopback / link-local num corpo; LOW). Auth por header/bearer (spec 013): `--header
-"Name: Value"` / `[auth] headers`, mesma disciplina do cookie da 007 (só host alvo, nunca
-em relatório/log/metadata, não sobrescreve header que o caller setou). Import de OpenAPI
-(spec 013): `--openapi <path|url>` / `[scan] openapi` — `webvigil.crawler.openapi` parseia
-um doc JSON OpenAPI 3.x / Swagger 2.0 (só `$ref` locais, cycle guard), o orquestrador
-carrega antes do crawl (falha = fatal), URLs de operações GET viram seeds do `Crawler`
-(`extra_seeds=`), e query/path params + campos de body form-urlencoded viram
-`InjectionPoint`s (`source="openapi"` / `"openapi-path"`) via `enumerate_points`. JSON só,
-sem fuzz de folha de body JSON, GET/POST só. Detalhes em
-[`docs/api-scanning.md`](docs/api-scanning.md) e
-[`docs/content-checks.md`](docs/content-checks.md).
+separate `StoredXssScanner` pass
+(after the reflected one, opt-in `--stored-xss` / `[injection] stored_xss`, default off —
+it writes `<wvstored…>` markers that the target keeps). Phase A injects one marker per injection
+point; Phase B does a 1-hop re-crawl (`Crawler.recrawl`) from the frontier of the 1st
+crawl and correlates by token. The finding's location = the injection point (stable
+fingerprint); the render page(s) go in the evidence. Details in
+[`docs/active-injection.md`](active-injection.md).
+`webvigil.checks.csrf` (spec 007): passive checks — `csrf.form.no-token` flags a state-changing
+`POST` form without an anti-CSRF token, with confidence weighted by the session cookie's `SameSite`
+(it also sees the `POST` form that is just a button, which the parser now keeps in the inventory), and
+`csrf.form.state-change-over-get` (MEDIUM, CWE-352/650) flags a `GET` form without a token that changes a password or
+carries a destructive verb, without ever submitting it. It reads `ScanContext.forms` (the crawler now parses `<form>`s during `discover()`
+and submits safe `GET` forms to widen the surface). Authenticated scan with a static
+cookie: `--cookie "name=value"` / `[auth] cookies`, attached only to requests to the target host,
+never in a report/log/metadata; `webvigil.crawler.safety` guards the crawl against
+logout/destructive links. Details in [`docs/authenticated-scanning.md`](authenticated-scanning.md).
+`webvigil.checks.content` (spec 013, new `Category.CONTENT`): two passive checks —
+`content.sri.missing` (cross-origin subresource without `integrity`, MEDIUM) and `content.mixed`
+(`https` page pulling an `http://` subresource, MEDIUM/LOW). `webvigil.checks.disclosure`
+gained `disclosure.session-id-in-url` (session token / API key in a URL that the target
+produced — link, form action, `Location`; MEDIUM) and `disclosure.private-ip` (RFC-1918 /
+loopback / link-local IP in a body; LOW). Header/bearer auth (spec 013): `--header
+"Name: Value"` / `[auth] headers`, same discipline as the cookie of 007 (target host only, never
+in a report/log/metadata, does not override a header the caller set). OpenAPI import
+(spec 013): `--openapi <path|url>` / `[scan] openapi` — `webvigil.crawler.openapi` parses
+an OpenAPI 3.x / Swagger 2.0 JSON document (local `$ref`s only, cycle guard), the orchestrator
+loads it before the crawl (failure = fatal), the URLs of GET operations become `Crawler` seeds
+(`extra_seeds=`), and query/path params + form-urlencoded body fields become
+`InjectionPoint`s (`source="openapi"` / `"openapi-path"`) through `enumerate_points`. JSON only,
+no fuzzing of JSON body leaves, GET/POST only. Details in
+[`docs/api-scanning.md`](api-scanning.md) and
+[`docs/content-checks.md`](content-checks.md).
 `injection.ldap` (HIGH, CWE-90) / `injection.xpath` (HIGH, CWE-643) / `injection.ssi`
-(HIGH, CWE-97) (spec 014): três detectores novos na passada do `InjectionScanner`,
-forma do `sqli` — assinatura de erro do parser (LDAP/XPath) ou diretiva `#echo` avaliada
-(SSI), mais um diferencial (`two_sided_split` do `sqli`, extraído pra `detect/_diff.py`;
-`wider_then_same` pro result-set do LDAP). `ssi` só prova avaliação, nunca `#exec` /
+(HIGH, CWE-97) (spec 014): three new detectors in the `InjectionScanner` pass,
+in the shape of `sqli` — a parser error signature (LDAP/XPath) or an evaluated `#echo` directive
+(SSI), plus a differential (`two_sided_split` from `sqli`, extracted to `detect/_diff.py`;
+`wider_then_same` for the LDAP result set). `ssi` only proves evaluation, never `#exec` /
 `#include`. `_PER_POINT_REQUEST_CAP` 35→38, `request_budget` 600→650.
-`webvigil.checks.upload` (spec 014, `Category.UPLOAD` nova): `upload.unrestricted`
-(CRITICAL→MEDIUM, CWE-434) de uma passada `UploadScanner` nova no orquestrador (modelo do
-`EnvelopeScanner`), opt-in `--file-upload` / `[injection] file_upload` (grava arquivos no
-alvo, sem cleanup — disciplina do `--stored-xss`). Sobe marcadores benignos (`<?php echo
-6*7;?>`, `<script>` HTML/SVG, spoof de extensão/content-type, nome `../`) por form de
-upload descoberto, busca de volta e prova in-band: executado, servido inline, ou escrito
-fora do diretório de upload. Um probe `PUT` de marcador no diretório de entrada — único
-verbo destrutivo, só sob o opt-in (a 012 recusava `PUT`; a 014 o reabre aqui).
-`HttpClient.request` ganhou `files=` (multipart). Fronteiras de cobertura ativa
-documentadas em [`docs/active-injection.md`](docs/active-injection.md) ("Coverage
-boundaries"): `eval()`, NoSQLi, HPP, RFI, DOM XSS, cega/OAST, smuggling e
-testes que exigem login stateful ficam de fora.
-`injection.el` (HIGH, CRITICAL quando o type system é alcançável; CWE-917) (spec 016):
-expression-language injection **in-band** (SpEL / OGNL / JEXL / MVEL / Unified EL), sem flag
-e sem config. O detector mora em `detect/el.py` e roda **junto** com o `ssti` num passo único
-(`ssti+el`, `_merge_el` no engine) quando os dois checks estão selecionados, para que a mesma
-prova nunca vire dois findings nem mande o mesmo payload duas vezes; só `injection.ssti`
-selecionado roda o `ssti.detect` de sempre. Prova: marcador colado ao produto de `a*b` em
-`${}` / `#{}` / `*{}` / `%{}` (OGNL) e na forma nua `'marker'+(a*b)`; a classificação vem da
-evidência, nunca do delimitador (sonda pura `T(java.lang.Math).abs(-n)` /
-`@java.lang.Math@abs(-n)` → CRITICAL; um `${}` ambíguo sem evidência de EL continua
-`injection.ssti`). `is_exprlike` é estreito de propósito (sem `q` / `message` / `title`).
-`_PER_POINT_REQUEST_CAP` 38 → 42. Detalhes em
-[`docs/active-injection.md`](docs/active-injection.md#expression-language-injection).
-`csrf.form.token-not-enforced` (MEDIUM, CWE-352) (spec 017): confirmação **ativa** do CSRF,
-opt-in `--confirm-csrf` / `[injection] csrf_confirm` (default off — **grava no alvo**, até 3
-submissões por form, como `--stored-xss` / `--file-upload`). `CsrfScanner`
-(`webvigil.checks.csrf.scanner`) é a **última** passada do orquestrador: por form candidato
-(POST urlencoded, sem arquivo, fora de auth/busca/destrutivo; teto 20 forms × 5 requests) refaz o
-GET da página (token fresco), submete o **controle** (valores default, `Origin` do alvo) e depois
-**replays** com `Origin`/`Referer` estrangeiros (`webvigil.invalid`) e o token removido / alterado
-(form sem token: um replay). Só **confirma** se o controle foi aceito e o replay é equivalente
-(mesma classe de status, mesmo path final, corpo ≥ 95 % similar); rejeitado = refutado; resto =
-inconclusivo; nunca chuta. A confirmação **substitui** o `csrf.form.no-token` do mesmo form
-(o check passivo lê `observations.csrf_hits`). Confiança = `SameSite` da 007, limitada a MEDIUM
-sem `--cookie`. Sem cookie jar por experimento: token preso a sessão que o scan não tem → inconclusivo.
-Detalhes em [`docs/authenticated-scanning.md`](docs/authenticated-scanning.md#active-csrf-confirmation----confirm-csrf-opt-in).
-Crawler com fase **POST** (spec 018, `v0.18`): opt-in `--submit-post-forms` / `[scan]
-submit_post_forms` + `max_post_submissions` (25), **só Active Mode** (default off — **grava no alvo**).
-Roda **dentro** de `Crawler.discover()`, depois que a fila de GETs esvazia: submete uma vez cada form
-candidato (POST urlencoded ou multipart **sem** arquivo, mesmo filtro `is_candidate` /
-`is_destructive_form` da 017) e cada operação `POST` do `--openapi` (corpo JSON / urlencoded que a 013 já
-sintetiza; JSON só vem do OpenAPI), com valores default e o marcador `wvcrawl<token>`; nunca payload,
-nunca arquivo. Cada resposta vira `Page(method="POST")`, seus links/forms realimentam o mesmo BFS
-(`_drain`). `Page.fetched_by_get` faz quatro passes ignorarem páginas de POST (re-crawl do stored-XSS,
-pontos GET da injeção, amostra do envelope, pastas do probe). `form_body` (em `crawler/forms.py`) é o
-construtor de corpo compartilhado com a 017; `is_candidate` mora em `crawler/safety.py`.
-Detalhes em [`docs/authenticated-scanning.md`](docs/authenticated-scanning.md#post-forms----submit-post-forms-opt-in).
-Login automático (spec 019, `v0.19`): opt-in `--login-url` + `--username` + `--password-env` /
-`[auth.login]`, **só Active Mode** (é um POST real que cria sessão). `webvigil.auth.login.Authenticator`
-faz o handshake **pelo `HttpClient`** (scope guard, rate limiter, loop de redirects): GET da página,
-escolhe o form com campo de senha, monta o corpo com `form_body` (hidden/CSRF), POST **uma única vez**
-(nunca retry, nunca outra credencial), segue a cadeia e **verifica** (marcadores → `check_url` →
-heurística; form de login de volta = falha, nada a concluir = "não confirmado" com aviso). Falha =
-`LoginFailedError`, exit 4, antes do crawl. A sessão é um `webvigil.http.session.Session`: um
-`SessionJar` sobre `httpx.Cookies` (modo handshake aceita todo `Set-Cookie` de todo hop; modo vivo só a
-rotação de nomes que já tem; só o host alvo) que o `HttpClient` consulta — `handshake()` / `quiet()`
-são `ContextVar`s (o re-login de uma task não vaza pras outras). Queda de sessão = `401`, redirect pro
-login a partir de página que não é de login (aprendida uma vez, ADR-6), ou `logged_out_marker`; **`403`
-e `5xx` nunca** (payload bloqueado não gasta login); `check_url` confirma antes. Re-login serializado
-por número de geração, 1 retry, teto `max_relogins` (3), depois a sessão fica "perdida" com aviso. A
-senha **não é campo do `ScanConfig`** (vai como `Credentials`, vinda do env ou de prompt; chave
-`password` no TOML é erro); `scrub_result` limpa senha, cookies e headers fixos (o token do
-`Bearer` também sozinho) e valores de sessão (grafias cru, JSON, HTML e percent maiúsculo/minúsculo)
-dos campos de texto livre no fim do scan, com ou sem login, e avisa quantos campos mudou; valor
-emitido pelo alvo só entra se parecer id de sessão (`looks_like_session_value`: 8+ chars, 2
-classes), e segredo do usuário < 4 chars fica, com aviso. `metadata.login` guarda `relogins` /
-`session_lost` / `confirmed`, nunca o usuário. Sem login configurado o cliente é byte a byte o de antes
-(a regra da 007 de descartar `Set-Cookie` continua). Detalhes em
-[`docs/authenticated-scanning.md`](docs/authenticated-scanning.md#automated-login----login-url-opt-in).
-Checks de sessão (spec 020, `v0.20`, `Category.SESSION`): `session.id.weak` (PASSIVE),
-`session.fixation` e `session.logout.not-invalidated` (ACTIVE). Uma passada `SessionScanner`
-(`webvigil.checks.session.scanner`) roda por **último** (depois do `CsrfScanner`, porque o logout
-encerra a sessão) e entrega `SessionHit`s sem nenhum valor de cookie (`facts` = números e palavras;
-ADR-8) em `observations.session_hits`; os três checks só formatam. Passos: (1) ids que o crawl já viu,
-regras de valor em `checks/session/ids.py` (capacidade do alfabeto, não Shannon: 16 hex = 64 bits
-passa; numérico, contador, timestamp e repetido são HIGH); (2) `--sample-sessions` /
-`[session] sample_ids`, `sample_count` 3..20: N GETs do entry URL em `HttpClient.anonymous()` (sem
-cookie nem header estático nem jar), GET-only, vale em qualquer modo, e regras de série (duplicados,
-sequência, série de timestamps, baixa variância); (3) fixação: `Authenticator.transition` guarda os
-cookies antes/depois do login (de graça, sem 2º login), candidato = cookie de sessão igual nos dois,
-confirmado com 1 GET da página de referência (`check_url` ou a de pouso) sem esse cookie; (4)
-`--test-logout` / `[session] test_logout` (só Active + login): acha o logout (`logout_url` > 1º link >
-1º form POST do crawl, nunca chuta `/logout`), checa que a página de referência anônima parece
-deslogada (oráculo), tira o snapshot dos cookies, faz o logout e reenvia o snapshot anônimo;
-`Session.close()` impede re-login depois. `anonymous()` é um `ContextVar` como `handshake()`. O jar
-passou a recusar cookie `Secure` vindo de resposta `http` (como o navegador). Detalhes em
-[`docs/authenticated-scanning.md`](docs/authenticated-scanning.md#session-security-checks).
-Import de HAR (spec 021, `v0.21`): `--har PATH` / `[scan] har` + `har_max_operations` (150) semeiam o
-crawl e os injection points de SPAs a partir de tráfego gravado no navegador ou num proxy. Segunda
-fonte de sementes ao lado do `--openapi`: `webvigil.crawler.har.load_har` (síncrono, arquivo local, não
-envia nada) devolve `ApiOperation`s com `source="har"`; o orquestrador faz `merge_operations(openapi,
-har)` (a OpenAPI ganha o empate) e as sementes GET usam `ApiOperation.seed_url` (a do HAR leva a query
-gravada; a do OpenAPI continua só o path). Só indexa os campos de que precisa: **nunca lê valor de
-header, cookie nem corpo de resposta** (o aviso "a gravação parece autenticada" usa só o nome do header),
-valor de parâmetro com nome de segredo ou acima de 256 caracteres vira `wv`, corpo JSON entra só como
-forma tipada, multipart entra como campos urlencoded (como no `--openapi`). Escopo = `Target.in_scope`
-+ o esquema do alvo; a entrada mantém a própria origem. Filtra asset estático, método ≠ GET/POST e
-caminho de login/destrutivo; arquivo ruim é `HarError` (exit 4), entrada ruim é contagem no resumo
-(`HAR import: N entries read, …`). POST só sai da fase da 018 (Active + `--submit-post-forms`). A Web API
-não expõe o campo. Detalhes em [`docs/har-import.md`](docs/har-import.md).
+`webvigil.checks.upload` (spec 014, new `Category.UPLOAD`): `upload.unrestricted`
+(CRITICAL→MEDIUM, CWE-434) from a new `UploadScanner` pass in the orchestrator (modeled on
+`EnvelopeScanner`), opt-in `--file-upload` / `[injection] file_upload` (writes files to the
+target, no cleanup — the discipline of `--stored-xss`). It uploads benign markers (`<?php echo
+6*7;?>`, HTML/SVG `<script>`, extension/content-type spoofing, a `../` name) through each discovered
+upload form, fetches them back and proves it in-band: executed, served inline, or written
+outside the upload directory. A marker `PUT` probe in the entry directory — the only
+destructive verb, only under the opt-in (012 refused `PUT`; 014 reopens it here).
+`HttpClient.request` gained `files=` (multipart). The boundaries of active coverage are
+documented in [`docs/active-injection.md`](active-injection.md) ("Coverage
+boundaries"): `eval()`, NoSQLi, HPP, RFI, DOM XSS, blind/OAST, smuggling and
+tests that require a stateful login are left out.
+`injection.el` (HIGH, CRITICAL when the type system is reachable; CWE-917) (spec 016):
+**in-band** expression-language injection (SpEL / OGNL / JEXL / MVEL / Unified EL), no flag
+and no config. The detector lives in `detect/el.py` and runs **together** with `ssti` in a single step
+(`ssti+el`, `_merge_el` in the engine) when both checks are selected, so that the same
+proof never becomes two findings nor sends the same payload twice; with only `injection.ssti`
+selected, the usual `ssti.detect` runs. Proof: a marker glued to the product of `a*b` in
+`${}` / `#{}` / `*{}` / `%{}` (OGNL) and in the bare form `'marker'+(a*b)`; the classification comes from the
+evidence, never from the delimiter (a pure probe `T(java.lang.Math).abs(-n)` /
+`@java.lang.Math@abs(-n)` → CRITICAL; an ambiguous `${}` without EL evidence stays
+`injection.ssti`). `is_exprlike` is deliberately narrow (no `q` / `message` / `title`).
+`_PER_POINT_REQUEST_CAP` 38 → 42. Details in
+[`docs/active-injection.md`](active-injection.md#expression-language-injection).
+`csrf.form.token-not-enforced` (MEDIUM, CWE-352) (spec 017): **active** CSRF confirmation,
+opt-in `--confirm-csrf` / `[injection] csrf_confirm` (default off — **writes to the target**, up to 3
+submissions per form, like `--stored-xss` / `--file-upload`). `CsrfScanner`
+(`webvigil.checks.csrf.scanner`) is the **last** pass of the orchestrator: for each candidate form
+(urlencoded POST, no file, outside auth/search/destructive; cap of 20 forms × 5 requests) it re-fetches
+the page with GET (fresh token), submits the **control** (default values, the target's `Origin`) and then
+**replays** with foreign `Origin`/`Referer` (`webvigil.invalid`) and the token removed / altered
+(form without a token: one replay). It only **confirms** if the control was accepted and the replay is equivalent
+(same status class, same final path, body ≥ 95 % similar); rejected = refuted; the rest =
+inconclusive; it never guesses. The confirmation **replaces** the `csrf.form.no-token` of the same form
+(the passive check reads `observations.csrf_hits`). Confidence = the `SameSite` of 007, capped at MEDIUM
+without `--cookie`. No cookie jar per experiment: a token tied to a session the scan does not have → inconclusive.
+Details in [`docs/authenticated-scanning.md`](authenticated-scanning.md#active-csrf-confirmation----confirm-csrf-opt-in).
+Crawler with a **POST** phase (spec 018, `v0.18`): opt-in `--submit-post-forms` / `[scan]
+submit_post_forms` + `max_post_submissions` (25), **Active Mode only** (default off — **writes to the target**).
+It runs **inside** `Crawler.discover()`, after the GET queue empties: it submits once each candidate
+form (urlencoded or multipart POST **without** a file, same `is_candidate` /
+`is_destructive_form` filter as 017) and each `POST` operation of the `--openapi` (JSON / urlencoded body that 013
+already synthesizes; JSON only comes from the OpenAPI), with default values and the `wvcrawl<token>` marker; never a payload,
+never a file. Each response becomes a `Page(method="POST")`, and its links/forms feed back into the same BFS
+(`_drain`). `Page.fetched_by_get` makes four passes ignore POST pages (the stored-XSS re-crawl, the
+GET points of the injection, the envelope sample, the probe folders). `form_body` (in `crawler/forms.py`) is the
+body builder shared with 017; `is_candidate` lives in `crawler/safety.py`.
+Details in [`docs/authenticated-scanning.md`](authenticated-scanning.md#post-forms----submit-post-forms-opt-in).
+Automated login (spec 019, `v0.19`): opt-in `--login-url` + `--username` + `--password-env` /
+`[auth.login]`, **Active Mode only** (it is a real POST that creates a session). `webvigil.auth.login.Authenticator`
+does the handshake **through the `HttpClient`** (scope guard, rate limiter, redirect loop): GET the page,
+pick the form with a password field, build the body with `form_body` (hidden/CSRF), POST **exactly once**
+(never a retry, never another credential), follow the chain and **verify** (markers → `check_url` →
+heuristic; login form back = failure, nothing conclusive = "not confirmed" with a warning). Failure =
+`LoginFailedError`, exit 4, before the crawl. The session is a `webvigil.http.session.Session`: a
+`SessionJar` over `httpx.Cookies` (handshake mode accepts every `Set-Cookie` from every hop; live mode only the
+rotation of names it already has; target host only) that the `HttpClient` consults — `handshake()` / `quiet()`
+are `ContextVar`s (one task's re-login does not leak into the others). Session drop = `401`, a redirect to the
+login from a page that is not a login page (learned once, ADR-6), or `logged_out_marker`; **never `403`
+or `5xx`** (a blocked payload does not spend a login); `check_url` confirms first. Re-login is serialized
+by generation number, 1 retry, cap `max_relogins` (3), then the session is marked "lost" with a warning. The
+password is **not a `ScanConfig` field** (it travels as `Credentials`, taken from the env or a prompt; a `password`
+key in the TOML is an error); `scrub_result` clears the password, cookies and fixed headers (the `Bearer` token
+alone too) and session values (raw, JSON, HTML and percent-encoded upper/lower case spellings)
+from the free-text fields at the end of the scan, with or without login, and warns how many fields it changed; a value
+emitted by the target is only included if it looks like a session id (`looks_like_session_value`: 8+ chars, 2
+classes), and a user secret < 4 chars stays, with a warning. `metadata.login` keeps `relogins` /
+`session_lost` / `confirmed`, never the username. With no login configured the client is byte for byte the one from before
+(the 007 rule of discarding `Set-Cookie` still holds). Details in
+[`docs/authenticated-scanning.md`](authenticated-scanning.md#automated-login----login-url-opt-in).
+Session checks (spec 020, `v0.20`, `Category.SESSION`): `session.id.weak` (PASSIVE),
+`session.fixation` and `session.logout.not-invalidated` (ACTIVE). A `SessionScanner` pass
+(`webvigil.checks.session.scanner`) runs **last** (after the `CsrfScanner`, because the logout
+ends the session) and delivers `SessionHit`s with no cookie value at all (`facts` = numbers and words;
+ADR-8) in `observations.session_hits`; the three checks only format. Steps: (1) ids the crawl has already seen,
+value rules in `checks/session/ids.py` (alphabet capacity, not Shannon: 16 hex = 64 bits
+passes; numeric, counter, timestamp and repeated are HIGH); (2) `--sample-sessions` /
+`[session] sample_ids`, `sample_count` 3..20: N GETs of the entry URL in `HttpClient.anonymous()` (no
+cookie, no static header, no jar), GET-only, valid in any mode, and series rules (duplicates,
+sequence, timestamp series, low variance); (3) fixation: `Authenticator.transition` keeps the
+cookies before/after the login (for free, no 2nd login), candidate = a session cookie equal in both,
+confirmed with 1 GET of the reference page (`check_url` or the landing one) without that cookie; (4)
+`--test-logout` / `[session] test_logout` (Active + login only): finds the logout (`logout_url` > 1st link >
+1st POST form of the crawl, never guesses `/logout`), checks that the anonymous reference page looks
+logged out (oracle), takes the cookie snapshot, performs the logout and re-sends the anonymous snapshot;
+`Session.close()` prevents a re-login afterwards. `anonymous()` is a `ContextVar` like
+`handshake()`. The jar now refuses a `Secure` cookie coming from an `http` response (like the browser). Details in
+[`docs/authenticated-scanning.md`](authenticated-scanning.md#session-security-checks).
+HAR import (spec 021, `v0.21`): `--har PATH` / `[scan] har` + `har_max_operations` (150) seed the
+crawl and the injection points of SPAs from traffic recorded in the browser or in a proxy. A second
+source of seeds next to `--openapi`: `webvigil.crawler.har.load_har` (synchronous, local file, sends
+nothing) returns `ApiOperation`s with `source="har"`; the orchestrator does `merge_operations(openapi,
+har)` (the OpenAPI wins the tie) and the GET seeds use `ApiOperation.seed_url` (the HAR one carries the
+recorded query; the OpenAPI one stays path-only). It only indexes the fields it needs: **it never reads a header
+value, cookie or response body** (the "the recording looks authenticated" warning uses only the header name),
+a parameter value with a secret-like name or longer than 256 characters becomes `wv`, a JSON body enters only
+as a typed shape, multipart enters as urlencoded fields (as in `--openapi`). Scope = `Target.in_scope`
++ the target's scheme; the entry keeps its own origin. It filters out static assets, methods other than GET/POST and
+login/destructive paths; a bad file is `HarError` (exit 4), a bad entry is a count in the summary
+(`HAR import: N entries read, …`). POST only goes out in the 018 phase (Active + `--submit-post-forms`). The Web API
+does not expose the field. Details in [`docs/har-import.md`](har-import.md).

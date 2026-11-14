@@ -16,7 +16,7 @@ only — no `web` gate, no API migration (RNF-01, RNF-02).
 
 Since the test audit (#101) the whole suite runs in about 10 minutes, so every stage gate runs
 the **full** `pytest`; the unit suite alone (`pytest tests/unit tests/api`) is the quick check
-inside a stage. Tests follow [`specs/README.md`, "Testes de uma spec"](../README.md#testes-de-uma-spec):
+inside a stage. Tests follow [`specs/README.md`, "Testing a spec"](../README.md#testing-a-spec):
 logic in unit, integration attached to the shared scans, about 1.0 test line per source line.
 
 Baseline before 019 (clean `main` after #108): **878 passed**. At 019 close: **967 passed** (+89) in 10 min 33 s, with 6 new unit files, rows in four existing ones and one extra integration scan.

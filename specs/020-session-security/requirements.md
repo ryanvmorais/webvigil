@@ -289,7 +289,7 @@ entropy estimate**, never the value, never a prefix of it.
 
 #### RF-13 — Tests, within the suite's budget
 
-Follows [`specs/README.md`, "Testes de uma spec"](../README.md#testes-de-uma-spec).
+Follows [`specs/README.md`, "Testing a spec"](../README.md#testing-a-spec).
 
 - **Unit** (the bulk): the value rules (a table of values → rule fired), the entropy
   estimator, the sample analysers (duplicates, sequence, low variance, timestamps), cookie
