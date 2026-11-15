@@ -1,6 +1,6 @@
 ---
 feature: Dashboard Content-Security-Policy — a per-request nonce policy for the Next.js dashboard (issue #138, step 2)
-status: approved
+status: done
 date: 2026-10-09
 related:
   - 003-web-ui/requirements.md
