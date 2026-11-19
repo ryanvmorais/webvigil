@@ -5,14 +5,10 @@
 <!-- The logo is an HTML <img> with an absolute URL: the PyPI rewrite in pyproject.toml covers only Markdown images. -->
 
 ![Python](https://img.shields.io/badge/Python-3.12+-3776AB?logo=python&logoColor=white)
-![deps](https://img.shields.io/badge/deps-uv-DE5FE9?logo=uv&logoColor=white)
 [![CI](https://img.shields.io/github/actions/workflow/status/ryanvmorais/webvigil/ci.yml?label=CI&logo=githubactions&logoColor=white)](https://github.com/ryanvmorais/webvigil/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/webvigil?logo=pypi&logoColor=white)](https://pypi.org/project/webvigil/)
 [![Release](https://img.shields.io/github/v/release/ryanvmorais/webvigil?logo=github&logoColor=white)](https://github.com/ryanvmorais/webvigil/releases)
 [![Image](https://img.shields.io/badge/ghcr.io-webvigil-2496ED?logo=docker&logoColor=white)](https://github.com/ryanvmorais/webvigil/pkgs/container/webvigil)
-![lint](https://img.shields.io/badge/lint-ruff-261230?logo=ruff&logoColor=white)
-![style](https://img.shields.io/badge/style-black-000000?logo=black&logoColor=white)
-![types](https://img.shields.io/badge/types-mypy%20strict-2A6DB2)
 ![license](https://img.shields.io/badge/license-Apache%202.0-blue?logo=apache&logoColor=white)
 
 **WebVigil is an open-source web application vulnerability scanner (DAST) for developers.**
@@ -31,6 +27,8 @@ optional **web dashboard** built on top of the same engine.
 > [Semantic Versioning](docs/stability.md); what each release changed is in the [changelog](CHANGELOG.md). [Scope and limitations](#scope-and-limitations) says what
 > WebVigil deliberately does not do.
 
+**Install:** `pipx install webvigil` (or `uv tool install webvigil`, or the `ghcr.io/ryanvmorais/webvigil` image). Then `webvigil scan https://your-app.example`.
+
 **Website:** [webvigil.ryanmorais.com.br/en/](https://webvigil.ryanmorais.com.br/en/)
 
 ![WebVigil: a scan of the bundled test app in Active Mode: the authorization banner, the severity-count table and one coloured line per finding](assets/cli-scan-demo.svg)
@@ -40,21 +38,32 @@ is typed for the recording and the wait in the middle is cut (the test app has s
 cases, so the real scan takes about a minute and a half). The source is
 [`assets/cli-scan-demo.cast`](assets/cli-scan-demo.cast); play it with `asciinema play`.*
 
-## WebVigil vs. other scanners
+## Install
 
-| | WebVigil | OWASP ZAP | Nuclei |
-|---|---|---|---|
-| Distribution | Library + CLI + optional dashboard | GUI + daemon (Docker/desktop) | CLI + YAML templates |
-| Safe by default | Passive-only unless `--mode active` is explicit | Active scan is a common default workflow | Mostly read-only, template-dependent |
-| Confirmed findings | Every active finding is proven against a per-request baseline | Signature + active-scan rules | Signature/template match |
-| Best for | CI-native, in-band checks on your own app | Deep manual pentesting with a GUI/proxy | Fast sweeps against thousands of known CVE/misconfig templates |
-| License | Apache-2.0 | Apache-2.0 | MIT |
+Python 3.12 or newer. The package has the engine and the CLI; the dashboard and the bundled
+test app live in this repository only.
 
-WebVigil isn't a replacement for either — pair it with [Nuclei](https://github.com/projectdiscovery/nuclei)
-for known-CVE template matching, or ZAP for manual, proxy-driven testing. See
-[Scope and limitations](#scope-and-limitations) for the full boundary.
+```bash
+# Install it (or: uv tool install webvigil, or: pip install webvigil)
+pipx install webvigil
 
----
+# Check that it runs
+webvigil version
+
+# or, without installing Python packages:
+docker run --rm ghcr.io/ryanvmorais/webvigil scan https://your-app.example
+
+# keep a report: with --format it goes to stdout, so redirect it on the host
+docker run --rm ghcr.io/ryanvmorais/webvigil scan https://your-app.example \
+  --format html > report.html
+
+# re-render a saved scan: mount the folder that holds it
+docker run --rm -v "$PWD:/work" ghcr.io/ryanvmorais/webvigil \
+  report /work/scan.json --format html > report.html
+```
+
+The image is built for `linux/amd64` and `linux/arm64` and carries signed build provenance and
+an SBOM (see [releasing](docs/releasing.md#every-release)). `webvigil[web]` adds the Web API.
 
 ## What it checks
 
@@ -94,7 +103,7 @@ with an `Origin` header, used to detect reflective CORS — still a read-only GE
 restricted to the target scope.
 
 **Active Mode** (payload injection: XSS, SQLi, SSRF, etc.) is opt-in, requires an explicit
-authorization flag, and is intended for development and staging environments only.
+authorization flag (`--authorized-by`), and is intended for development and staging environments only.
 
 ### The switches that are off by default
 
@@ -143,96 +152,6 @@ Found a vulnerability **in WebVigil**? Report it privately, see [SECURITY.md](SE
 Found one in someone else's system with it? Tell its owner, and follow their disclosure policy.
 
 ---
-
-## Scope and limitations
-
-WebVigil is deliberately bounded. It is an **in-band** scanner: the engine talks only to the
-target, sends a small static set of payloads, and confirms every active finding against a
-per-request baseline. That line keeps it fast, low-noise, and safe to distribute as a
-open-source tool with no hosted service — at the cost of the classes below. For each, the thing
-to reach for instead.
-
-- **JavaScript-rendered apps.** The crawler parses HTML; it runs no headless browser, so a
-  SPA that builds its DOM in JS exposes almost no surface to the crawl (the scan warns when
-  the entry page looks like one). *Instead:* browse the app once with the network panel open,
-  save the traffic as a HAR file and give it with `--har` ([docs](docs/har-import.md)), or point
-  `--openapi` at the app's schema; either seeds the crawl and the injection pass directly.
-
-- **Blind / out-of-band vulnerabilities.** Blind SSRF, blind command injection, blind /
-  OOB XXE, blind stored XSS with no reflected marker, and HTTP request smuggling all need
-  either a collaborator server the scanner hosts (public domain, DNS/HTTP listeners) or
-  raw-socket control of request framing. Both cross the "engine talks only to the target"
-  rule. *Instead:* pair WebVigil with your own collaborator — Burp Collaborator,
-  [interactsh](https://github.com/projectdiscovery/interactsh). Background:
-  [why blind SSRF is the one thing WebVigil won't do](docs/notes/why-not-oast.md).
-
-- **Some active-scan classes.** `eval()` code
-  injection, NoSQL injection, HTTP parameter pollution, remote file inclusion, DOM XSS,
-  and verb-based auth bypass are out — each is either deferred, has no reliable in-band
-  oracle, or needs a browser. The full table of what is covered and what is not, with the
-  reason for each, is in
-  [`docs/active-injection.md`](docs/active-injection.md#coverage-boundaries).
-
-- **Authentication.** WebVigil authenticates with a **static** cookie (`--cookie`) or
-  header (`--header`) you supply, or — in Active Mode — logs in to a **form** itself
-  (`--login-url`) and re-logs in when the session drops. It does not drive CAPTCHA, MFA,
-  an SSO / OAuth flow or a JSON token login. It checks session security (weak ids,
-  fixation, a logout that does not invalidate) but never guesses an id. *Instead:* log in
-  with your browser and paste the session cookie. See
-  [authenticated scanning](docs/authenticated-scanning.md).
-
-- **Not a template scanner.** There is no Nuclei-style CVE-template database, no CMS or
-  plugin enumeration, no exploit matching beyond the vendored Retire.js data and the
-  opt-in OSV.dev lookup. *Instead:* run [Nuclei](https://github.com/projectdiscovery/nuclei)
-  alongside it.
-
-- **Not a fuzzer.** Payloads are a small, documented, in-repository set with no mutation
-  engine and no WAF-evasion tuning; WebVigil tests the parameters a target actually
-  exposes, not guessed ones. *Instead:* a dedicated fuzzer (ffuf, wfuzz) for parameter
-  mining and brute force.
-
-- **Not an exploitation framework.** A confirmed SQLi is proved with one bounded marker,
-  not by dumping the database; a confirmed traversal reads one known file, not the whole
-  disk. WebVigil stops at proof.
-
-- **API-scanning edges.** `--openapi` reads **JSON** only (convert a YAML document first)
-  and fuzzes query / path / form-urlencoded-body parameters — not individual fields of a
-  JSON request body. See [API scanning](docs/api-scanning.md).
-
-- **Network boundaries.** A scan of a public target never connects to a loopback, private or
-  link-local address, even for a subdomain in scope whose DNS answers with one (split-horizon
-  DNS); each host name is resolved once per scan. Through an HTTP proxy set in the environment
-  the proxy resolves the names, so this check is the proxy's. *Instead:* scan the internal host
-  directly, as its own target.
-
----
-
-## Install
-
-Python 3.12 or newer. The package has the engine and the CLI; the dashboard and the bundled
-test app live in this repository only.
-
-```bash
-# Install it (or: uv tool install webvigil, or: pip install webvigil)
-pipx install webvigil
-
-# Check that it runs
-webvigil version
-
-# or, without installing Python packages:
-docker run --rm ghcr.io/ryanvmorais/webvigil scan https://your-app.example
-
-# keep a report: with --format it goes to stdout, so redirect it on the host
-docker run --rm ghcr.io/ryanvmorais/webvigil scan https://your-app.example \
-  --format html > report.html
-
-# re-render a saved scan: mount the folder that holds it
-docker run --rm -v "$PWD:/work" ghcr.io/ryanvmorais/webvigil \
-  report /work/scan.json --format html > report.html
-```
-
-The image is built for `linux/amd64` and `linux/arm64` and carries signed build provenance and
-an SBOM (see [releasing](docs/releasing.md#every-release)). `webvigil[web]` adds the Web API.
 
 ## Quick start
 
@@ -424,6 +343,87 @@ involved. Every page is sent with a nonce-based Content-Security-Policy and the 
 
 The dashboard lives in this repository only; it is **not** in the PyPI package. `pip install
 webvigil` gives the engine and the CLI, and `webvigil[web]` adds the Web API.
+
+---
+
+## WebVigil vs. other scanners
+
+| | WebVigil | OWASP ZAP | Nuclei |
+|---|---|---|---|
+| Distribution | Library + CLI + optional dashboard | GUI + daemon (Docker/desktop) | CLI + YAML templates |
+| Safe by default | Passive-only unless `--mode active` is explicit | Baseline is passive-only; Automated Scan, full and API scans attack | Excludes DoS and fuzz templates by default; intrusive templates run |
+| Confirmed findings | Every active finding is proven against a per-request baseline | Passive and active scan rules | Template matchers; OAST for some templates |
+| Best for | CI-native, in-band checks on your own app | Manual testing through a proxy, and CI automation | Fast sweeps against thousands of known CVE/misconfig templates |
+| License | Apache-2.0 | Apache-2.0 | MIT |
+
+_Comparison checked against the official documentation in November 2026._
+
+WebVigil isn't a replacement for either — pair it with [Nuclei](https://github.com/projectdiscovery/nuclei)
+for known-CVE template matching, or ZAP for manual, proxy-driven testing. See
+[Scope and limitations](#scope-and-limitations) for the full boundary.
+
+---
+
+## Scope and limitations
+
+WebVigil is deliberately bounded. It is an **in-band** scanner (it draws every conclusion from the target's own responses, with no external server waiting for a callback): the engine talks only to the
+target, sends a small static set of payloads, and confirms every active finding against a
+per-request baseline. That line keeps it fast, low-noise, and safe to distribute as an
+open-source tool with no hosted service — at the cost of the classes below. For each, the thing
+to reach for instead.
+
+- **JavaScript-rendered apps.** The crawler parses HTML; it runs no headless browser, so a
+  SPA that builds its DOM in JS exposes almost no surface to the crawl (the scan warns when
+  the entry page looks like one). *Instead:* browse the app once with the network panel open,
+  save the traffic as a HAR file and give it with `--har` ([docs](docs/har-import.md)), or point
+  `--openapi` at the app's schema; either seeds the crawl and the injection pass directly.
+
+- **Blind / out-of-band vulnerabilities.** Blind SSRF, blind command injection, blind /
+  OOB XXE, blind stored XSS with no reflected marker, and HTTP request smuggling all need
+  either a collaborator server the scanner hosts (public domain, DNS/HTTP listeners) or
+  raw-socket control of request framing. Both cross the "engine talks only to the target"
+  rule. *Instead:* pair WebVigil with your own collaborator — Burp Collaborator,
+  [interactsh](https://github.com/projectdiscovery/interactsh). Background:
+  [why blind SSRF is the one thing WebVigil won't do](docs/notes/why-not-oast.md).
+
+- **Some active-scan classes.** `eval()` code
+  injection, NoSQL injection, HTTP parameter pollution, remote file inclusion, DOM XSS,
+  and verb-based auth bypass are out — each is either deferred, has no reliable in-band
+  oracle, or needs a browser. The full table of what is covered and what is not, with the
+  reason for each, is in
+  [`docs/active-injection.md`](docs/active-injection.md#coverage-boundaries).
+
+- **Authentication.** WebVigil authenticates with a **static** cookie (`--cookie`) or
+  header (`--header`) you supply, or — in Active Mode — logs in to a **form** itself
+  (`--login-url`) and re-logs in when the session drops. It does not drive CAPTCHA, MFA,
+  an SSO / OAuth flow or a JSON token login. It checks session security (weak ids,
+  fixation, a logout that does not invalidate) but never guesses an id. *Instead:* log in
+  with your browser and paste the session cookie. See
+  [authenticated scanning](docs/authenticated-scanning.md).
+
+- **Not a template scanner.** There is no Nuclei-style CVE-template database, no CMS or
+  plugin enumeration, no exploit matching beyond the vendored Retire.js data and the
+  opt-in OSV.dev lookup. *Instead:* run [Nuclei](https://github.com/projectdiscovery/nuclei)
+  alongside it.
+
+- **Not a fuzzer.** Payloads are a small, documented, in-repository set with no mutation
+  engine and no WAF-evasion tuning; WebVigil tests the parameters a target actually
+  exposes, not guessed ones. *Instead:* a dedicated fuzzer (ffuf, wfuzz) for parameter
+  mining and brute force.
+
+- **Not an exploitation framework.** A confirmed SQLi is proved with one bounded marker,
+  not by dumping the database; a confirmed traversal reads one known file, not the whole
+  disk. WebVigil stops at proof.
+
+- **API-scanning edges.** `--openapi` reads **JSON** only (convert a YAML document first)
+  and fuzzes query / path / form-urlencoded-body parameters — not individual fields of a
+  JSON request body. See [API scanning](docs/api-scanning.md).
+
+- **Network boundaries.** A scan of a public target never connects to a loopback, private or
+  link-local address, even for a subdomain in scope whose DNS answers with one (split-horizon
+  DNS); each host name is resolved once per scan. Through an HTTP proxy set in the environment
+  the proxy resolves the names, so this check is the proxy's. *Instead:* scan the internal host
+  directly, as its own target.
 
 ---
 
