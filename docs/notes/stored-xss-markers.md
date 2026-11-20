@@ -34,8 +34,10 @@ stored-XSS marker.
 
 ## 2. The marker is inert, and it is signed
 
-The payload is `<wvstored{token}>`. It is a made-up HTML tag: no script, no event handler,
-no `javascript:` URL, no attributes. In a browser it does nothing — it is not an XSS payload
+The marker is `<wvstored{token}>`, sent bare and once more behind a `">` that closes an
+attribute (`"><wvstored{token}>`), so a field that lands inside an attribute value is
+tested too. It is a made-up HTML tag: no script, no event handler, no `javascript:` URL, no
+attributes. In a browser it does nothing — it is not an XSS payload
 in the exploit sense. But if the application failed to escape it, it renders as a DOM
 element, and "an element that should not exist now exists in the page" is unambiguous proof
 that unescaped user input reached the HTML.
@@ -52,17 +54,21 @@ Two more properties matter:
 
 ## 3. The documentation says it without euphemism
 
-The docs for the feature say: "this pass submits marker payloads the target stores and does
-not remove them." Not "may leave test artifacts." Not "is minimally invasive." It writes
-data to your application and it does not clean up, and the sentence that says so is short
-and direct.
+The docs for the feature say: "WebVigil does not know the target's data model, so it does
+not delete the `wvstored…` rows it wrote. Run `--stored-xss` against dev / staging, never a
+shared production database." Not "may leave test artifacts." Not "is minimally invasive."
+It writes data to your application and it does not clean up, and the sentences that say so
+are short and direct.
 
 ## The mechanic, briefly
 
 The pass has two phases. Phase A enumerates the same injection points the reflected-XSS pass
-uses (form fields first, then query parameters) and submits one marker through each. Phase B
-is a **depth-1 re-crawl**: it re-fetches every page from the first crawl's frontier, follows
-one hop of newly discovered links, and looks for the markers — correlating by token.
+uses (form fields first, then query parameters) and submits its small marker set through
+each. A `<select>` is left out: a marker is not one of the options the page offers, and
+this pass should not write a value the form could never send. Phase B is a **depth-1
+re-crawl**: it re-fetches every page from the first crawl's frontier, follows one hop of
+newly discovered links, and looks for the markers — correlating by token. Both phases share
+the injection request budget, and the re-crawl stops at 120 pages.
 
 It is deliberately not a second full crawl. "Re-fetch what we already saw, plus one hop"
 is cheaper and matches how stored XSS actually surfaces: you post to `/guestbook`, and the
@@ -84,3 +90,7 @@ The responsible move is not to skip it. It is to make the invasion **opt-in and 
 to **minimise and sign** what you leave behind, and to **tell the truth about it** in the
 documentation. A tool that quietly writes to your database is worse than one that asks first
 and leaves its name on everything it touched.
+
+The file-upload pass added in spec 014 faced the same problem and took the same shape: its
+own opt-in flag (`--file-upload`) on top of Active Mode, benign marker files instead of
+working exploits, and documentation that says plainly the uploads are not deleted.

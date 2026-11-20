@@ -384,7 +384,7 @@ to reach for instead.
   raw-socket control of request framing. Both cross the "engine talks only to the target"
   rule. *Instead:* pair WebVigil with your own collaborator — Burp Collaborator,
   [interactsh](https://github.com/projectdiscovery/interactsh). Background:
-  [why blind SSRF is the one thing WebVigil won't do](docs/notes/why-not-oast.md).
+  [why WebVigil does no blind, out-of-band detection](docs/notes/why-not-oast.md).
 
 - **Some active-scan classes.** `eval()` code
   injection, NoSQL injection, HTTP parameter pollution, remote file inclusion, DOM XSS,
@@ -464,7 +464,7 @@ See [docs/](docs/) for architecture, [the stack and why each piece was chosen](d
 Short essays on the reasoning behind specific decisions — the *why* behind a spec's ADRs,
 written up on their own. Full index in [docs/notes/](docs/notes/).
 
-- [The OAST problem: why blind SSRF is the one thing WebVigil won't do](docs/notes/why-not-oast.md)
+- [The OAST problem: why WebVigil does no blind, out-of-band detection](docs/notes/why-not-oast.md)
 - [False-positive discipline in an active scanner](docs/notes/false-positive-discipline.md)
 - [Detecting stored XSS means writing data you can't take back](docs/notes/stored-xss-markers.md)
 - [Keeping a security engine honest with import-linter](docs/notes/engine-boundaries.md)

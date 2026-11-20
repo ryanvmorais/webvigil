@@ -1,7 +1,9 @@
-# The OAST problem: why blind SSRF is the one thing WebVigil won't do
+# The OAST problem: why WebVigil does no blind, out-of-band detection
 
 > Design note for [WebVigil](https://github.com/ryanvmorais/webvigil). Background for
-> [spec 009 — in-band SSRF](../../specs/009-ssrf/design.md), ADR-1.
+> [spec 009 — in-band SSRF](../../specs/009-ssrf/design.md), ADR-1, and the blind-case
+> limits of [spec 011](../../specs/011-rce-injection/design.md) and
+> [spec 012](../../specs/012-protocol-injection/design.md).
 
 WebVigil `v0.9` ships SSRF detection. It finds a parameter that makes the server fetch a
 URL and reach the cloud instance metadata service (and its IAM credentials), a loopback
@@ -9,8 +11,12 @@ admin panel, an internal service, or the filesystem via `file://`. It does this 
 — from the target's own responses — with no external infrastructure.
 
 It stops there. It does not detect *blind* SSRF, and that is not a gap that a future
-version will close. This note explains why a capability every serious scanner is "supposed"
-to have is one WebVigil deliberately declines.
+version will close. The same holds for every other class that can only be proven out of
+band: blind OS command injection, out-of-band XXE, and stored XSS whose marker is never
+rendered where the scan can see it. Blind SSRF is the case that forced the decision, so it
+is the one this note follows, but the reasoning is the same for all of them. This note
+explains why a capability every serious scanner is "supposed" to have is one WebVigil
+deliberately declines.
 
 ## What blind SSRF needs
 
@@ -48,8 +54,9 @@ is a service accepting connections from anywhere, indefinitely. Adding it would 
 
 ### The infrastructure is exactly what the project chose not to have
 
-WebVigil is distributed as a repository. You clone it, or `pipx install` it, or run the
-Docker image. There is no hosted WebVigil, and there never will be — running a public
+WebVigil is distributed as software you run yourself. You install it from PyPI (with `pipx`
+or `uv tool`), run the image from the GitHub Container Registry, or clone the repository.
+There is no hosted WebVigil, and there never will be — running a public
 "scan any URL" service is an attractive nuisance that a solo maintainer should not operate,
 and the liability if someone points it at a system they don't own lands on the operator.
 
@@ -59,7 +66,7 @@ uptime. It is itself an attack surface — a callback relay that a third party c
 project would be right back to operating an internet-facing service, which is the thing it
 decided not to do.
 
-### The free alternative moves the privacy problem, it doesn't solve it
+### The free alternative moves the privacy problem instead of solving it
 
 WebVigil could point payloads at a public `interactsh` instance instead of hosting its own.
 That is what several tools do. But `interactsh`'s public servers are operated by a third
@@ -78,11 +85,11 @@ maintained by one person, that is a permanent tax that dwarfs every check in the
 
 ### It does not fit the test suite
 
-WebVigil's ~610 tests run offline and deterministically. A real OAST flow is asynchronous
-and network-dependent: inject now, callback arrives some seconds later, maybe. Making that
-reliable in CI means either mocking the collaborator so thoroughly that the test proves
-nothing, or accepting a flaky suite. Neither is acceptable in a tool whose value proposition
-is "when it reports something, it's real."
+WebVigil's suite of some 2,000 tests runs offline and deterministically. A real OAST flow
+is asynchronous and network-dependent: inject now, callback arrives some seconds later,
+maybe. Making that reliable in CI means either mocking the collaborator so thoroughly that
+the test proves nothing, or accepting a flaky suite. Neither is acceptable in a tool whose
+value proposition is "when it reports something, it's real."
 
 ## What honest coverage looks like instead
 
@@ -92,16 +99,15 @@ back. Loopback services and `file://` reads reflect back. A server that fetches 
 attacker-controlled URL and errors out often echoes the URL in the error, which WebVigil
 treats as proof (at MEDIUM confidence) that the parameter reaches a fetcher.
 
+Command injection has an in-band substitute for most of its blind cases: timing. A
+`sleep` that delays the response, confirmed against a zero-delay control and a half-delay
+probe, proves execution without any output coming back. What stays out of reach is the
+command that neither prints nor waits, such as a lone outbound `curl`.
+
 For the genuinely blind case, the documentation says plainly what WebVigil does not do, and
 what to do instead: run the active scan alongside your own collaborator — Burp Collaborator
 on an engagement, your own `interactsh` — and inject its domain by hand into the parameters
 WebVigil flagged as URL-shaped.
-
-A lighter future option exists on paper: a *bring-your-own-collaborator* mode where you pass
-`--oast-domain your.instance` and WebVigil fans `http://<token>.your.instance/` payloads
-through the injection points, hosting nothing and storing nothing, leaving correlation to
-you. It is not planned, but it is the shape any blind-SSRF support would take — the user's
-infrastructure, not the project's.
 
 ## The broader point
 

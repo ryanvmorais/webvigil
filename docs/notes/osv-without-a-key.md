@@ -22,9 +22,10 @@ decisions, almost all of them about defaults and failure modes rather than the h
 
 Every other WebVigil feature talks only to the target. OSV is the deliberate exception: with
 `--osv-online`, the **names and versions** of the detected libraries are sent to
-`api.osv.dev`. That is all that leaves the machine — no target URL, no hostname, no cookie,
-no finding — and the documentation says so explicitly. It is off by default. A dependency
-scan without the flag behaves exactly as it did in `v0.4`.
+`api.osv.dev` (or to the self-hosted mirror set in `[deps] osv_base_url`). That is all
+that leaves the machine — no target URL, no hostname, no cookie, no finding — and the
+documentation says so explicitly. It is off by default. A dependency scan without the flag
+behaves exactly as it did in `v0.4`.
 
 ## Keep the seam synchronous
 
@@ -68,7 +69,7 @@ GHSA-sourced OSV records carry a qualitative severity string, which maps cleanly
 (`MODERATE -> MEDIUM`, and so on). Pure-CVE records often carry only a CVSS vector.
 
 Rather than add a `cvss` library as a dependency, WebVigil computes the CVSS 3.0/3.1 base
-score itself — a roughly fifty-line pure function implementing the published formula. It is
+score itself — a roughly forty-line pure function implementing the published formula. It is
 deterministic, it is easy to unit-test against the specification's own worked examples, and
 it covers the overwhelming majority of `npm` advisories. A vector it can't parse (CVSS v2,
 malformed, a future v4-only record) falls back to the same `MEDIUM` default the offline
@@ -80,6 +81,12 @@ OSV unreachable, request timed out, HTTP 429, unparseable response — any of th
 single scan warning and the scan continues with the offline results. The exit code is
 unaffected. Opting into an online source must not be able to make the scan *worse* than not
 opting in; the worst case is that OSV adds nothing this run.
+
+The same goes for an answer that arrives but should not be trusted. The response is a third
+party's data, so it is read with a size cap, the number of records kept per package is
+bounded, a malformed record is skipped with a warning instead of failing the lookup, and a
+reference is kept only if it is an absolute `http` or `https` URL. A misbehaving or
+compromised mirror can make the lookup add less; it cannot make the report unsafe to open.
 
 ## No persistent cache
 
@@ -95,5 +102,5 @@ Adding an online data source to an offline-first tool is mostly not about the AP
 happy path — send request, parse response, map to internal types — is the easy part. The
 design is in the answers to "what happens when the service is down, slow, or wrong," "what
 does the user give up by opting in," and "can this ever make things worse than leaving it
-off." Get those right and the feature is safe to ship on by nobody and useful to everyone
+off." Get those right and the feature is safe to ship off by default and useful to everyone
 who turns it on.

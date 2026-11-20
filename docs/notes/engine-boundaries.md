@@ -1,8 +1,8 @@
 # Keeping a security engine honest with import-linter
 
 > Design note for [WebVigil](https://github.com/ryanvmorais/webvigil). Background for
-> [spec 001 — foundation](../../specs/001-foundation/design.md) and the architecture
-> summary in [CLAUDE.md](../../CLAUDE.md).
+> [spec 001 — foundation](../../specs/001-foundation/design.md) and the
+> [architecture overview](../architecture.md).
 
 WebVigil is four things in one repository: a scan **engine**, a **CLI**, an optional **web
 API**, and a **Next.js dashboard**. The engine — `webvigil.core`, `webvigil.http`,
@@ -12,7 +12,8 @@ It is what you would `import` to build your own tool on top of WebVigil's scanni
 For that to be true and stay true, the engine has to keep its distance from everything
 else. The rule is:
 
-- the engine never imports Typer, Rich, FastAPI, SQLModel, Alembic, `pyjwt`, or `argon2`;
+- the engine never imports Typer, Rich, FastAPI, SQLModel, Alembic, `pyjwt`, `argon2`, or
+  Uvicorn, and never imports the CLI or the web API packages;
 - the CLI and the web API never import each other;
 - the dashboard only ever talks to the API over HTTP.
 
@@ -27,8 +28,9 @@ A security engine you cannot reason about is a liability. If `webvigil.checks.in
 could reach into a FastAPI request object or a SQLModel session, then reviewing what the
 SQL-injection detector actually does means reviewing a slice of a web framework and an ORM
 along with it. Keeping the engine's dependency surface small — `httpx`, `pydantic`,
-`selectolax`, the standard library — keeps the trust boundary small. You can read the engine
-and know what it can and cannot do.
+`selectolax`, `jinja2` for the HTML report, `cryptography` for certificate parsing,
+`packaging` for version ranges, and the standard library — keeps the trust boundary small.
+You can read the engine and know what it can and cannot do.
 
 ### Reusability
 
@@ -45,7 +47,7 @@ in one client stays in that client.
 
 ## Making the rule real
 
-The enforcement is about fifteen lines of configuration. Two contracts:
+The enforcement is about thirty lines of TOML in `pyproject.toml`. Two contracts:
 
 1. **"Engine stays independent of UI and persistence."** A forbidden-modules contract:
    the engine packages are declared, the forbidden imports are listed, and any path from one
@@ -70,9 +72,14 @@ is the exact coupling the guard exists to prevent.
 
 The contract did not forbid that specifically. But the habit the contract builds — keep the
 boundaries clean, don't reach across a layer for convenience — pointed at the right answer:
-a separate `httpx.AsyncClient`, restricted to the OSV host, that the target-scoped client
+a separate `httpx.AsyncClient`, bound to the OSV base URL, that the target-scoped client
 knows nothing about. "The engine talks only to the target" stays literally true, and the
 one deliberate exception is visibly separate.
+
+The target-scoped client has only grown stricter since. The scope guard now checks the port
+as well as the host, each hostname resolves once per scan and the connection goes to the
+address that was checked, and credentials go only to the target's own origin. Every one of
+those rules would be wrong for a third-party API, which is why the two never share a client.
 
 ## The broader point
 
