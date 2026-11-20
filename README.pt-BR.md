@@ -390,7 +390,7 @@ usar no lugar.
   socket bruto sobre o enquadramento da requisição. Os dois cruzam a regra de que "o engine fala
   só com o alvo". *Em vez disso:* use o WebVigil junto do seu próprio colaborador, como o Burp
   Collaborator ou o [interactsh](https://github.com/projectdiscovery/interactsh). Contexto:
-  [por que o SSRF cego é a única coisa que o WebVigil não fará](docs/notes/why-not-oast.md).
+  [por que o WebVigil não faz detecção cega, fora de banda](docs/notes/why-not-oast.md).
 
 - **Algumas classes de scan ativo.** Injeção de código por `eval()`, NoSQL injection, HTTP
   parameter pollution, remote file inclusion, DOM XSS e bypass de autenticação por verbo ficam de
@@ -470,7 +470,7 @@ e um guia para escrever seus próprios checks.
 Ensaios curtos sobre o raciocínio por trás de decisões específicas: o *porquê* dos ADRs de uma
 spec, escrito à parte. Índice completo em [docs/notes/](docs/notes/).
 
-- [O problema do OAST: por que o SSRF cego é a única coisa que o WebVigil não fará](docs/notes/why-not-oast.md)
+- [O problema do OAST: por que o WebVigil não faz detecção cega, fora de banda](docs/notes/why-not-oast.md)
 - [Disciplina contra falsos positivos em um scanner ativo](docs/notes/false-positive-discipline.md)
 - [Detectar XSS armazenado significa escrever dados que você não pode desfazer](docs/notes/stored-xss-markers.md)
 - [Manter um engine de segurança honesto com o import-linter](docs/notes/engine-boundaries.md)

@@ -2,7 +2,7 @@
 
 > Design note for [WebVigil](https://github.com/ryanvmorais/webvigil). Background for
 > [spec 006 — active injection](../../specs/006-active-injection/design.md) and the
-> detectors added in specs 008 and 009.
+> detectors added after it, from spec 008 (stored XSS) to spec 017 (CSRF confirmation).
 
 An active vulnerability scanner sends crafted input to an application and decides, from the
 response, whether something is wrong. The failure mode that matters is not missing a bug —
@@ -46,28 +46,36 @@ response by five seconds is suggestive, but a slow endpoint delays every respons
 detector also sends a `SLEEP(0)` control that must return fast, and a half-length `SLEEP(2)`
 probe whose delay must land *near two seconds* — the delay has to scale with what was asked
 for. A real time injection is linear in the requested delay; a coincidentally slow endpoint
-is not.
+is not. Time-based OS command injection gets the same control and the same scaled probe.
+The delay is configurable (`[injection] time_based_delay_s`, five seconds by default), and
+the confirmation probe always asks for half of it, rounded down.
 
 ## 3. The proof must be in an executable context
 
 A payload coming back in the response is not XSS. It is XSS only if it comes back **verbatim**
 — so `<`, `>` and `"` were not entity- or percent-encoded — **and** in a position where a
 browser would run it. WebVigil's reflected-XSS detector sends a plain probe first (is the
-parameter reflected at all?) and only escalates to context-breaking payloads if it is, then
-checks the payload survived intact in an HTML response.
+parameter reflected at all?) and only escalates to up to three context-breaking payloads if
+it is, then checks the payload survived intact in an HTML response.
 
 Stored XSS raises the bar again. The marker must render with its markup intact on a
 **different page** than the one it was submitted to — found by a re-crawl, not in the
-submission's own response. A form that echoes your input back on the same response is
-reflected XSS, a different (and differently-remediated) bug; calling it stored would be
+submission's own response. A form that echoes your input back in the same response is
+reflected XSS, a different (and differently remediated) bug; calling it stored would be
 wrong.
 
-SSRF is the newest example. An SSRF-shaped connection error — `Connection refused`,
-`getaddrinfo failed`, a Python `requests.exceptions` traceback — is a real signal that the
+SSRF is a good example of the same rule applied to an error message. An SSRF-shaped
+connection error — `Connection refused`, `getaddrinfo failed`, a Python
+`requests.exceptions` traceback — is a real signal that the
 server tried to fetch something. But servers throw those errors for many reasons. So the
 error only counts as SSRF if the response **also echoes the injected URL**. "The server
 failed to connect, and it told me the URL it failed to connect to, and that URL is the one
 I injected" is a server-side fetch of attacker-controlled input. "The server 500'd" is not.
+
+The detectors added later follow the same three rules. Command injection, template and
+expression-language injection, CRLF, XXE, and LDAP, XPath, and SSI injection all require a
+signature that the baseline lacks, a differential that reproduces, or a proof in a context
+that executes, and usually more than one of these.
 
 ## A concrete near-miss
 
@@ -79,9 +87,10 @@ responds `you asked for <url>` would have matched the signature and produced a f
 "AWS instance metadata service is reachable — CRITICAL."
 
 The fix was to restrict the signatures to markers that appear in a metadata *response body*
-and never in a URL path: `AccessKeyId`, `computeMetadata`, `vmId`, `ami-launch-index`. The
-principle — a signature must distinguish "the server fetched this" from "the server echoed
-this" — is the same principle as rules 1 through 3, applied to which regexes go in the list.
+and never in a URL path: `AccessKeyId` and `ami-launch-index` for AWS, `machineType` for
+GCP, `vmId` for Azure. The principle — a signature must distinguish "the server fetched
+this" from "the server echoed this" — is the same principle as rules 1 through 3, applied
+to which regexes go in the list.
 
 ## What it costs
 
