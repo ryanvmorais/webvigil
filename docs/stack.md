@@ -77,6 +77,15 @@ The Web UI is TypeScript in `strict` mode — every value has a checked type.
 `pnpm typecheck` runs `tsc --noEmit` (type-check only, no output; Next and Vitest
 do the actual compiling).
 
+The compiler is TypeScript 7, the native one. TypeScript 7.0 ships without the
+JavaScript API that tools load with `require("typescript")` (a new API is planned for
+7.1), so `web/package.json` installs it side by side with TypeScript 6, the way the
+Next.js ESLint docs describe: `@typescript/native` is an alias of `typescript@7` and
+provides `tsc`, and `typescript` is an alias of `@typescript/typescript6`, the
+compatibility package that re-exports the TypeScript 6 API and provides `tsc6`.
+`typescript-eslint` (inside `eslint-config-next`), `openapi-typescript` and the type
+check of `next build` load the TypeScript 6 API; `pnpm typecheck` runs TypeScript 7.
+
 **Why not** plain JavaScript: the UI is a typed client of a typed API (see
 *openapi-typescript* below); losing types there would defeat the point.
 

@@ -11,6 +11,14 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 ## [Unreleased]
 
+### Changed
+
+- The dashboard is type-checked with TypeScript 7 (7.0.2, the native compiler), up from 5.9
+  (#235). TypeScript 7.0 has no JavaScript API yet, so the tools that need one (the ESLint
+  config and `openapi-typescript`) keep TypeScript 6 through the `@typescript/typescript6`
+  compatibility package, as the Next.js docs describe. Nothing changes for the engine, the CLI or
+  the Web API.
+
 ## [1.4.2] - 2026-11-14
 
 A patch release with a round of hardening of the crawler and of the cookie and sitemap parsers.
