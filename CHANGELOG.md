@@ -11,6 +11,14 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 ## [Unreleased]
 
+### Changed
+
+- The container image (the CLI) moves to Typer 0.29.1, up from 0.28.0, the release an install
+  from PyPI already resolves (#302). Typer 0.29 validates option values with Pydantic, so the
+  message for an invalid value reads differently: `--max-pages abc` now reports
+  `Input should be a valid integer, unable to parse string as an integer`. The exit code stays 2.
+  Only the lockfile changed: an install from PyPI resolves the same ranges as before.
+
 ## [1.4.4] - 2026-11-21
 
 A patch release that moves the Web API of the Docker Compose stack to FastAPI 0.163.0. It is
