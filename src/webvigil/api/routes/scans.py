@@ -13,7 +13,14 @@ from sqlmodel import col, select
 
 from webvigil.api.db import TERMINAL_STATUSES, Scan, ScanStatus
 from webvigil.api.db import Finding as FindingRow
-from webvigil.api.deps import MAX_ROW_ID, CurrentUser, RunnerDep, ScanId, SessionDep
+from webvigil.api.deps import (
+    HTTP_422_UNPROCESSABLE,
+    MAX_ROW_ID,
+    CurrentUser,
+    RunnerDep,
+    ScanId,
+    SessionDep,
+)
 from webvigil.api.schemas import (
     CheckCount,
     FindingOut,
@@ -251,7 +258,7 @@ def _finding_conditions(
         try:
             threshold = int(Severity.from_name(severity))
         except KeyError as exc:
-            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "unknown severity") from exc
+            raise HTTPException(HTTP_422_UNPROCESSABLE, "unknown severity") from exc
         conditions.append(col(FindingRow.severity) >= threshold)
     if q is not None and q.strip():
         pattern = f"%{_escape_like(q.strip())}%"
@@ -300,7 +307,7 @@ def _decode_offset(cursor: str) -> int:
             raise ValueError("cursor offset out of range")
         return offset
     except (binascii.Error, ValueError) as exc:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "invalid cursor") from exc
+        raise HTTPException(HTTP_422_UNPROCESSABLE, "invalid cursor") from exc
 
 
 def _encode_cursor(scan: Scan) -> str:
@@ -334,4 +341,4 @@ def _decode_cursor(cursor: str) -> tuple[datetime, int]:
             raise ValueError("cursor id out of range")
         return datetime.fromisoformat(created_at), position
     except (binascii.Error, ValueError) as exc:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "invalid cursor") from exc
+        raise HTTPException(HTTP_422_UNPROCESSABLE, "invalid cursor") from exc

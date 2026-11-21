@@ -120,3 +120,9 @@ MAX_ROW_ID = 2**63 - 1
 # The scan id in a route path, checked before the database is asked: one definition so every route
 # that takes it refuses the same range with the same 422.
 ScanId = Annotated[int, Path(ge=1, le=MAX_ROW_ID)]
+
+# A query value the route itself refuses (an unknown format, severity or cursor). Starlette 0.48
+# renamed `status.HTTP_422_UNPROCESSABLE_ENTITY` to `HTTP_422_UNPROCESSABLE_CONTENT` and deprecates
+# the old name, while the `fastapi` floor still allows a Starlette without the new one: the number
+# works on both.
+HTTP_422_UNPROCESSABLE = 422

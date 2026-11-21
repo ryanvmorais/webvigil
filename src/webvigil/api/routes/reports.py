@@ -7,7 +7,7 @@ from sqlmodel import select
 
 from webvigil.api.db import Finding as FindingRow
 from webvigil.api.db import Scan, ScanStatus
-from webvigil.api.deps import CurrentUser, ScanId, SessionDep
+from webvigil.api.deps import HTTP_422_UNPROCESSABLE, CurrentUser, ScanId, SessionDep
 from webvigil.api.mapping import rows_to_result
 from webvigil.reporting import get_reporter
 
@@ -43,9 +43,7 @@ def download_report(
     rows. ``download=false`` serves it inline. 409 when the scan has no results.
     """
     if report_format not in _FORMATS:
-        raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_ENTITY, f"unknown format: {report_format!r}"
-        )
+        raise HTTPException(HTTP_422_UNPROCESSABLE, f"unknown format: {report_format!r}")
     scan = session.get(Scan, scan_id)
     if scan is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "scan not found")

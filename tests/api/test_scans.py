@@ -297,6 +297,7 @@ def test_finding_checks_count_each_check(auth_client: TestClient) -> None:
     ]
 
 
+@pytest.mark.filterwarnings("error::starlette.exceptions.StarletteDeprecationWarning")
 @pytest.mark.parametrize(
     "query",
     [
@@ -379,6 +380,7 @@ def test_largest_scan_id_is_still_a_404(auth_client: TestClient) -> None:
     assert auth_client.get(f"/api/scans/{2**63 - 1}").status_code == 404
 
 
+@pytest.mark.filterwarnings("error::starlette.exceptions.StarletteDeprecationWarning")
 def test_cursor_with_an_out_of_range_id_is_a_422(auth_client: TestClient) -> None:
     """A cursor that carries an id outside the row range is an invalid cursor, not a 500."""
     raw = f"2026-01-01T00:00:00|{2**70}"
