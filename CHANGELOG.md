@@ -18,6 +18,10 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
   config and `openapi-typescript`) keep TypeScript 6 through the `@typescript/typescript6`
   compatibility package, as the Next.js docs describe. Nothing changes for the engine, the CLI or
   the Web API.
+- The locked dependencies move to their latest releases older than seven days. The container
+  image gets `markdown-it-py` 4.3.0 and `annotated-doc` 0.0.6, and the Web API of the Docker
+  Compose stack also gets FastAPI 0.162.7, SQLModel 0.0.50 and `argon2-cffi-bindings` 26.2.0.
+  Only the lockfile changed: an install from PyPI resolves the same ranges as before.
 
 ## [1.4.2] - 2026-11-14
 
