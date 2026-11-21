@@ -11,6 +11,13 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 ## [Unreleased]
 
+### Changed
+
+- The Web API of the Docker Compose stack moves to FastAPI 0.163.0, up from 0.162.7, the latest
+  release older than seven days. The release adds a concurrency limit for dependencies and
+  changes nothing the Web API uses. The container image (the CLI) does not include FastAPI. Only
+  the lockfile changed: an install from PyPI resolves the same ranges as before.
+
 ## [1.4.3] - 2026-11-21
 
 A patch release that refreshes the locked dependencies and type-checks the dashboard with
