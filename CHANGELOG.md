@@ -11,6 +11,13 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 ## [Unreleased]
 
+## [1.4.5] - 2026-11-21
+
+A patch release that moves the CLI to Typer 0.29.1 and makes a `ScanResult` built with its
+constructor recompute its severity counts. It is backward compatible with
+[docs/stability.md](docs/stability.md): no CLI option, exit code, configuration key, check id or
+JSON report field changes.
+
 ### Changed
 
 - The container image (the CLI) moves to Typer 0.29.1, up from 0.28.0, the release an install
@@ -713,7 +720,8 @@ confirmed against a per-request baseline)
 - A security policy with private vulnerability reporting, a code of conduct, and the
   [stability policy](docs/stability.md).
 
-[Unreleased]: https://github.com/ryanvmorais/webvigil/compare/v1.4.4...HEAD
+[Unreleased]: https://github.com/ryanvmorais/webvigil/compare/v1.4.5...HEAD
+[1.4.5]: https://github.com/ryanvmorais/webvigil/compare/v1.4.4...v1.4.5
 [1.4.4]: https://github.com/ryanvmorais/webvigil/compare/v1.4.3...v1.4.4
 [1.4.3]: https://github.com/ryanvmorais/webvigil/compare/v1.4.2...v1.4.3
 [1.4.2]: https://github.com/ryanvmorais/webvigil/compare/v1.4.1...v1.4.2
