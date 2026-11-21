@@ -19,6 +19,13 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
   `Input should be a valid integer, unable to parse string as an integer`. The exit code stays 2.
   Only the lockfile changed: an install from PyPI resolves the same ranges as before.
 
+### Fixed
+
+- A `ScanResult` built with its constructor (`ScanResult(...)`, as code using the Python API
+  may do) now recomputes severity counts that disagree with its findings, as reading a report
+  file already did (#313). The recount was dropped there without an error. The scan engine and
+  the Web API never pass counts that disagree, so no report they produced changes.
+
 ## [1.4.4] - 2026-11-21
 
 A patch release that moves the Web API of the Docker Compose stack to FastAPI 0.163.0. It is

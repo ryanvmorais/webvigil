@@ -232,6 +232,10 @@ addopts = "-ra -q"
 testpaths = ["tests"]
 asyncio_mode = "auto"
 pythonpath = ["."]
+filterwarnings = [
+    # A model validator that returns another object is dropped by `Model(...)` (#313).
+    "error:A custom validator is returning a value other than:UserWarning",
+]
 
 # --- Architecture contract (import-linter — RNF-01 / ADR-1) ---------------
 [tool.importlinter]

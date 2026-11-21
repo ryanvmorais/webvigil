@@ -163,14 +163,18 @@ class ScanResult(BaseModel):
         its findings: a file that showed a clean table over real findings would mislead.
 
         Returns:
-            ScanResult: ``self``, or a copy whose ``metadata.counts`` is recomputed when the
-                stored counts disagree with the findings.
+            ScanResult: ``self``, its ``metadata.counts`` recomputed when the stored counts
+                disagree with the findings.
         """
         counts = self.severity_counts(self.findings)
-        if self.metadata.counts == counts:
-            return self
-        metadata = self.metadata.model_copy(update={"counts": counts})
-        return self.model_copy(update={"metadata": metadata})
+        if self.metadata.counts != counts:
+            # Pydantic keeps only ``self`` when the model is built with ``ScanResult(...)``, so
+            # a returned copy would be dropped there. The model is frozen: set the field
+            # directly, before anything can hash or share the instance.
+            object.__setattr__(
+                self, "metadata", self.metadata.model_copy(update={"counts": counts})
+            )
+        return self
 
     @staticmethod
     def severity_counts(findings: tuple[Finding, ...]) -> dict[str, int]:

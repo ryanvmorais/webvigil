@@ -1,7 +1,8 @@
-"""ScanResult JSON round-trip — RF-21."""
+"""ScanResult JSON round-trip — RF-21 — and the counts it keeps in step with its findings."""
 
 from __future__ import annotations
 
+import warnings
 from datetime import UTC, datetime
 
 from webvigil.core import (
@@ -67,3 +68,22 @@ def test_severity_counts_has_all_buckets() -> None:
     """Every severity name is present in the counts, at zero, even with no findings."""
     counts = ScanResult.severity_counts(())
     assert counts == {"INFO": 0, "LOW": 0, "MEDIUM": 0, "HIGH": 0, "CRITICAL": 0}
+
+
+def test_constructor_recomputes_counts_that_disagree_with_the_findings() -> None:
+    """
+    ``ScanResult(...)`` gets the same recount as ``model_validate``, without a Pydantic warning.
+
+    A model validator that returns a copy is dropped when the model is built through its
+    constructor (#313), so the recount has to land on the instance itself.
+    """
+    findings = _result().findings
+    stale = _result().metadata.model_copy(update={"counts": ScanResult.severity_counts(())})
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        built = ScanResult(metadata=stale, findings=findings)
+
+    assert built.metadata.counts[Severity.MEDIUM.name] == 1
+    assert built == ScanResult.model_validate({"metadata": stale, "findings": findings})
+    assert stale.counts[Severity.MEDIUM.name] == 0, "the caller's metadata is not changed"
