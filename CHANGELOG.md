@@ -11,6 +11,12 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 ## [Unreleased]
 
+## [1.4.3] - 2026-11-21
+
+A patch release that refreshes the locked dependencies and type-checks the dashboard with
+TypeScript 7. It is backward compatible with [docs/stability.md](docs/stability.md): no CLI
+option, exit code, configuration key, check id or JSON report field changes.
+
 ### Changed
 
 - The dashboard is type-checked with TypeScript 7 (7.0.2, the native compiler), up from 5.9
@@ -679,7 +685,8 @@ confirmed against a per-request baseline)
 - A security policy with private vulnerability reporting, a code of conduct, and the
   [stability policy](docs/stability.md).
 
-[Unreleased]: https://github.com/ryanvmorais/webvigil/compare/v1.4.2...HEAD
+[Unreleased]: https://github.com/ryanvmorais/webvigil/compare/v1.4.3...HEAD
+[1.4.3]: https://github.com/ryanvmorais/webvigil/compare/v1.4.2...v1.4.3
 [1.4.2]: https://github.com/ryanvmorais/webvigil/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/ryanvmorais/webvigil/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/ryanvmorais/webvigil/compare/v1.3.1...v1.4.0
