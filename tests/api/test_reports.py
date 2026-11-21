@@ -110,6 +110,7 @@ def test_json_report_is_byte_identical_to_the_reporter(auth_client: TestClient) 
     assert scan["status"] == "completed"
 
 
+@pytest.mark.filterwarnings("error::starlette.exceptions.StarletteDeprecationWarning")
 def test_unknown_format_is_422(auth_client: TestClient) -> None:
     """An unknown ``format`` query value is a 422."""
     scan_id = _completed_scan(auth_client)
