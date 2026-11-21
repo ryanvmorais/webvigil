@@ -174,6 +174,7 @@ def test_a_token_without_an_issue_time_is_not_accepted(
     auth_client: TestClient, web_config: WebConfig
 ) -> None:
     """A token that cannot say when it was minted cannot be compared with the last change."""
+    auth_client.cookies.clear()  # the request carries this token only, not the login cookie too
     auth_client.cookies.set(SESSION_COOKIE, _token(web_config, issued_ago=0, with_iat=False))
     assert auth_client.get("/api/auth/me").status_code == 401
 

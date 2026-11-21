@@ -106,6 +106,9 @@ dev = [
     "pytest-cov>=7.1.0",
     # Starlette: the insecure/hardened fixture app for the integration test (RF-27).
     "starlette>=1.10.0",
+    # httpx2: the HTTP client of `starlette.testclient` (and FastAPI's `TestClient`), which deprecates
+    # `httpx` for it. Tests only: the engine keeps `httpx` as its HTTP client.
+    "httpx2>=2.16.0",
     # jsonschema: validates the SARIF reporter output against the bundled 2.1.0 schema (ADR-7).
     "jsonschema>=4.26.0",
     # trustme: mints throwaway TLS certificates for the TLS-check tests (RF-19).

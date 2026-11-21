@@ -137,6 +137,9 @@ def test_expired_cookie_is_rejected(auth_client: TestClient, web_config: object)
         web_config.session_secret,  # type: ignore[attr-defined]
         algorithm="HS256",
     )
+    # Replace the login cookie rather than add a second one: with both, the outcome would depend on
+    # the order the client sends them in.
+    auth_client.cookies.clear()
     auth_client.cookies.set("webvigil_session", stale)
     assert auth_client.get("/api/auth/me").status_code == 401
 
