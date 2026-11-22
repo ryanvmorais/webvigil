@@ -11,6 +11,7 @@ from collections.abc import Callable
 
 import httpx
 
+from webvigil.checks.injection import payloads
 from webvigil.checks.injection.detect import DetectCtx, normalize_body, ssi
 from webvigil.checks.injection.models import Baseline, InjectionPoint
 from webvigil.checks.injection.points import is_ssilike
@@ -108,3 +109,42 @@ def test_is_ssilike_matches_page_parameter_names() -> None:
     assert is_ssilike(_POINT) is True
     other = InjectionPoint("GET", "https://example.com/x", "colour", "red", (("colour", "red"),))
     assert is_ssilike(other) is False
+
+
+async def test_a_denied_request_at_each_stage_stops_the_detector() -> None:
+    """A ``None`` on any echo directive or on the marker: nothing is sent after it."""
+    stages = len(payloads.SSI_ECHO) + 1
+    for deny_at in range(1, stages + 1):
+        seen: list[str] = []
+
+        def render(value: str, n: int = deny_at, sent: list[str] = seen) -> Response | None:
+            return None if len(sent) == n else _resp(_BASE_BODY)
+
+        assert await ssi.detect(_POINT, _baseline(), _ctx(render, seen=seen)) == []
+        assert len(seen) == deny_at, deny_at
+    seen = []
+    await ssi.detect(_POINT, _baseline(), _ctx(lambda v: _resp(_BASE_BODY), seen=seen))
+    assert len(seen) == stages  # control: with no refusal, every stage is sent
+
+
+async def test_a_reflected_directive_beside_a_new_date_is_not_a_hit() -> None:
+    """A search page that echoes the directive and stamps the time did not evaluate anything."""
+
+    def render(value: str) -> Response:
+        return _resp(f"<div>results for {value}, 2026-11-22 10:00</div>")
+
+    assert await ssi.detect(_POINT, _baseline(), _ctx(render)) == []
+
+
+async def test_evaluated_output_already_in_the_baseline_is_not_a_hit() -> None:
+    """A date the page carried before injection is not the directive's output."""
+    page = "<div>Mon, 08 Sep 2026 12:00:00 UTC</div>"
+    assert await ssi.detect(_POINT, _baseline(), _ctx(lambda v: _resp(page)))  # control
+    assert await ssi.detect(_POINT, _baseline(page), _ctx(lambda v: _resp(page))) == []
+
+
+async def test_an_ssi_error_already_in_the_baseline_is_not_a_hit() -> None:
+    """The undefined-variable error must be new to the page."""
+    page = "<div>[an error occurred while processing this directive]</div>"
+    assert await ssi.detect(_POINT, _baseline(), _ctx(lambda v: _resp(page)))  # control
+    assert await ssi.detect(_POINT, _baseline(page), _ctx(lambda v: _resp(page))) == []

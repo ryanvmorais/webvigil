@@ -15,6 +15,7 @@ from collections.abc import Callable
 
 import httpx
 
+from webvigil.checks.injection import payloads
 from webvigil.checks.injection.detect import DetectCtx, normalize_body, ssrf
 from webvigil.checks.injection.models import Baseline, InjectionPoint
 from webvigil.core.findings import Confidence, Severity
@@ -225,3 +226,142 @@ async def test_first_hit_wins_and_stops_the_scan() -> None:
     hits = await ssrf.detect(_POINT, _baseline(), _ctx(render))
     assert len(hits) == 1
     assert len(seen) == 1
+
+
+_NOTE = InjectionPoint("GET", "https://example.com/fetch", "note", "hi", (("note", "hi"),))
+
+
+def _recording(seen: list[str], body: str = "preview") -> Callable[[str], Response]:
+    """
+    Args:
+        seen (list[str]): Every value sent is appended to it.
+        body (str): What the target answers to every value.
+
+    Returns:
+        Callable[[str], Response]: A render function that records the values.
+    """
+
+    def render(value: str) -> Response:
+        seen.append(value)
+        return _resp(body)
+
+    return render
+
+
+def _full_set() -> list[str]:
+    """
+    Returns:
+        list[str]: Every payload a URL-shaped point gets, in order, before ``{host}`` is filled.
+    """
+    return [*payloads.SSRF_METADATA, *payloads.SSRF_FILE, *payloads.SSRF_INTERNAL]
+
+
+async def test_a_point_that_does_not_look_like_a_url_gets_only_the_canary() -> None:
+    """Two metadata, one ``file://`` and two loopback payloads, and nothing else."""
+    seen: list[str] = []
+    assert await ssrf.detect(_NOTE, _baseline(), _ctx(_recording(seen))) == []
+    assert seen == [
+        payloads.SSRF_METADATA[0],
+        payloads.SSRF_METADATA[1],
+        payloads.SSRF_FILE[0],
+        payloads.SSRF_INTERNAL[0],
+        payloads.SSRF_INTERNAL[1],
+    ]
+
+
+async def test_a_url_shaped_point_gets_every_payload() -> None:
+    """The full set, in order, with the target host in the ``user@host`` slots."""
+    seen: list[str] = []
+    assert await ssrf.detect(_POINT, _baseline(), _ctx(_recording(seen))) == []
+    assert seen == [t.replace("{host}", "example.com") for t in _full_set()]
+
+
+async def test_an_ipv6_target_skips_the_payloads_with_the_host_as_userinfo() -> None:
+    """A host that cannot be userinfo leaves out the ``{host}@`` payloads, never sending None."""
+    seen: list[str] = []
+    assert await ssrf.detect(_POINT, _baseline(), _ctx(_recording(seen), host="[::1]")) == []
+    assert seen == [t.replace("{host}", "[::1]") for t in _full_set() if "{host}@" not in t]
+    assert len(seen) == len(_full_set()) - 2
+
+
+async def test_a_file_signature_answering_a_non_file_payload_is_not_a_file_read() -> None:
+    """The ``file://`` proof counts only for a ``file:`` payload."""
+
+    def render(value: str) -> Response:
+        return _resp("preview" if value.lower().startswith("file:") else _PASSWD)
+
+    assert await ssrf.detect(_POINT, _baseline(), _ctx(render)) == []
+
+
+async def test_each_proof_already_in_the_baseline_is_suppressed() -> None:
+    """The file, service and error proofs each need to be absent from the baseline."""
+
+    def file_read(value: str) -> Response:
+        return _resp(_PASSWD if value.lower().startswith("file:") else "preview")
+
+    def redis(value: str) -> Response:
+        return _resp(_REDIS if "127.0.0.1" in value else "preview")
+
+    def refused(value: str) -> Response:
+        return _resp(f"failed to fetch {value}: Connection refused")
+
+    for render, baseline in (
+        (file_read, _PASSWD),
+        (redis, _REDIS),
+        (refused, "Connection refused"),
+    ):
+        assert await ssrf.detect(_POINT, _baseline(), _ctx(render)), render.__name__  # control
+        assert await ssrf.detect(_POINT, _baseline(baseline), _ctx(render)) == [], render.__name__
+
+
+async def test_an_error_that_does_not_echo_the_injected_url_is_not_a_hit() -> None:
+    """A connection error that names no URL of ours is not tied to the payload (ADR-4)."""
+    hits = await ssrf.detect(_POINT, _baseline(), _ctx(lambda v: _resp("Connection refused")))
+    assert hits == []
+
+
+async def test_a_file_payload_has_no_host_to_echo_for_the_error_proof() -> None:
+    """``file:///...`` has an empty authority, so an error after it proves nothing."""
+
+    def render(value: str) -> Response:
+        if value.startswith("file:///"):
+            return _resp(f"{value}: Connection refused")
+        return _resp("preview")
+
+    assert await ssrf.detect(_POINT, _baseline(), _ctx(render)) == []
+
+
+async def test_each_gateway_status_that_echoes_the_url_is_a_hit() -> None:
+    """502, 503 and 504 are each a gateway error; a status the baseline also had is not new."""
+    for status in (502, 503, 504):
+
+        def render(value: str, code: int = status) -> Response:
+            return _resp(f"upstream error for {value}", status=code)
+
+        hits = await ssrf.detect(_POINT, _baseline(), _ctx(render))
+        assert hits and hits[0].confidence is Confidence.MEDIUM, status
+        same = Baseline(status, "preview", "preview", 7, 1.0)
+        assert await ssrf.detect(_POINT, same, _ctx(render)) == [], status
+
+
+def test_the_authority_is_the_host_the_server_connects_to() -> None:
+    """``user@`` and a ``#@host`` fragment are not the host the request goes to."""
+    assert ssrf._authority("http://example.com@127.0.0.1/") == "127.0.0.1"
+    assert ssrf._authority("http://169.254.169.254#@example.com/latest/") == "169.254.169.254"
+    assert ssrf._authority("http://127.0.0.1:8080/x") == "127.0.0.1:8080"
+
+
+async def test_the_evidence_is_the_one_line_that_holds_the_marker() -> None:
+    """The lines around the match stay out of the evidence; the last line keeps its end."""
+    body = f"<pre>start\n{_AWS_CREDS}\nend</pre>"
+    (hit,) = await ssrf.detect(_POINT, _baseline(), _ctx(lambda v: _resp(body)))
+    assert hit.evidence[2][1] == _AWS_CREDS
+    (hit,) = await ssrf.detect(_POINT, _baseline(), _ctx(lambda v: _resp("start\n" + _AWS_CREDS)))
+    assert hit.evidence[2][1] == _AWS_CREDS
+
+
+def test_the_evidence_line_is_cut_at_200_characters() -> None:
+    """A line of exactly 200 characters is whole; one more is cut there and marked."""
+    line = "x" * 200
+    assert ssrf._snippet(line, 0) == line
+    assert ssrf._snippet(line + "y", 0) == line + "…"

@@ -146,3 +146,10 @@ def test_a_hidden_input_is_dropped_and_a_visible_one_is_kept() -> None:
         '<input name="t" value="abc" type="hidden"><input type="text" name="q"><input TYPE=hidden>'
     )
     assert normalize_body(body) == '<input type="text" name="q">'
+
+
+def test_the_normaliser_masks_tokens_from_20_characters_and_trims_whitespace() -> None:
+    """A 20-character token is a nonce and becomes ``*``; 19 stay; runs of space become one."""
+    assert normalize_body("  <p>\n" + "a" * 20 + "\t\t" + "b" * 19 + "</p>\n ") == (
+        "<p> * " + "b" * 19 + "</p>"
+    )

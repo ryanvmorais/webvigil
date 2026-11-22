@@ -12,6 +12,7 @@ from collections.abc import Callable
 
 import httpx
 
+from webvigil.checks.injection import payloads
 from webvigil.checks.injection.detect import DetectCtx, normalize_body, xpath
 from webvigil.checks.injection.models import Baseline, InjectionPoint
 from webvigil.checks.injection.points import is_xpathlike
@@ -106,3 +107,79 @@ def test_is_xpathlike_matches_only_distinctly_xpath_names() -> None:
     assert is_xpathlike(_POINT) is True
     other = InjectionPoint("GET", "https://example.com/x", "id", "1", (("id", "1"),))
     assert is_xpathlike(other) is False
+
+
+def _split(value: str) -> Response:
+    """
+    Args:
+        value (str): The injected value.
+
+    Returns:
+        Response: The baseline page for a TRUE payload, an empty node set for a FALSE one.
+    """
+    if "1'='2" in value or "1=2" in value:
+        return _resp(_FALSE_BODY)
+    return _resp(_BASE_BODY)
+
+
+def _counting(render: Callable[[str], Response], seen: list[str], deny_at: int = 0) -> DetectCtx:
+    """
+    Args:
+        render (Callable[[str], Response]): The target.
+        seen (list[str]): Every value sent is appended to it.
+        deny_at (int): The 1-based request that ``send`` refuses (``None``); 0 refuses none.
+
+    Returns:
+        DetectCtx: A context that records the values and refuses one request.
+    """
+    return _ctx(lambda v: None if seen.append(v) or len(seen) == deny_at else render(v))
+
+
+_ERRORS = len(payloads.XPATH_ERROR)
+
+
+async def test_a_denied_request_at_each_stage_stops_the_detector() -> None:
+    """An error probe, either side of a pair or of its repeat: nothing goes out after that pair."""
+    for deny_at, sent in (
+        (2, 2),
+        (_ERRORS + 1, _ERRORS + 2),  # the two sides of a pair go out together
+        (_ERRORS + 2, _ERRORS + 2),
+        (_ERRORS + 3, _ERRORS + 4),
+        (_ERRORS + 4, _ERRORS + 4),
+    ):
+        seen: list[str] = []
+        assert await xpath.detect(_POINT, _baseline(), _counting(_split, seen, deny_at)) == []
+        assert len(seen) == sent, deny_at
+    seen = []
+    assert await xpath.detect(_POINT, _baseline(), _counting(_split, seen))  # control
+    assert len(seen) == _ERRORS + 4
+
+
+async def test_a_page_with_no_split_sends_each_pair_once() -> None:
+    """The repeat runs only after a split: a flat page costs the probes and one pass of pairs."""
+    seen: list[str] = []
+    assert (
+        await xpath.detect(_POINT, _baseline(), _counting(lambda v: _resp(_BASE_BODY), seen)) == []
+    )
+    assert len(seen) == _ERRORS + 2 * len(payloads.XPATH_BOOLEAN_PAIRS)
+
+
+async def test_a_split_that_does_not_reproduce_is_not_a_hit() -> None:
+    """FALSE answering an empty node set once, then the baseline page, is noise."""
+    falses = {"n": 0}
+
+    def render(value: str) -> Response:
+        if "1'='2" in value or "1=2" in value:
+            falses["n"] += 1
+            return _resp(_FALSE_BODY if falses["n"] % 2 else _BASE_BODY)
+        return _resp(_BASE_BODY)
+
+    assert await xpath.detect(_POINT, _baseline(), _ctx(render)) == []
+    assert falses["n"] == 2 * len(payloads.XPATH_BOOLEAN_PAIRS)
+
+
+async def test_an_error_signature_already_in_the_baseline_is_not_a_hit() -> None:
+    """The parser error must be new; the same page before injection does not count."""
+    error = "lxml.etree.XPathEvalError: Invalid expression"
+    assert await xpath.detect(_POINT, _baseline(), _ctx(lambda v: _resp(error)))  # control
+    assert await xpath.detect(_POINT, _baseline(error), _ctx(lambda v: _resp(error))) == []
