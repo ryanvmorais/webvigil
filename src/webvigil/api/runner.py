@@ -177,8 +177,8 @@ class ScanRunner:
                 await asyncio.sleep(_RETRY_AFTER_ERROR_S)
                 continue
             if started is None:
-                if self._should_stop():
-                    return
+                # ``stop()`` sets the event right after the flag, with no await in between, so
+                # this never waits once the runner is stopping: the ``while`` above then ends it.
                 await self._event.wait()
                 continue
             scan_id, task = started
