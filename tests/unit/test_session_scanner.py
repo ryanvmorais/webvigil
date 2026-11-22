@@ -273,16 +273,18 @@ async def test_nothing_is_sent_without_the_sampling_switch() -> None:
 
 
 async def test_sampling_visits_the_entry_url_anonymously_and_finds_a_counter() -> None:
-    """``sample_count`` cookie-less visits; a counter id is a HIGH, high-confidence hit."""
+    """``sample_count`` cookie-less visits beside a live session; a counter id is a HIGH hit."""
     site = _Site()
     site.entry_cookies = lambda n: [f"sid={1000 + n}; Path=/"]
     config = _config(sample_ids=True, sample_count=5)
-    scanner, http = _scanner(site, kinds={"weak"}, config=config)
+    session = _committed_session("sid=ok; Path=/")
+    scanner, http = _scanner(site, kinds={"weak"}, config=config, session=session)
     async with http:
         hits = await scanner.run()
 
     assert [path for _m, path, _c in site.log] == ["/"] * 5
     assert all(cookie == "" for _m, _p, cookie in site.log)  # no state carried between visits
+    assert session.jar.pairs_for(_REF, handshake=False) == [("sid", "ok")]
     (hit,) = hits
     assert hit.severity is Severity.HIGH and hit.confidence is Confidence.HIGH
     facts = dict(hit.facts)

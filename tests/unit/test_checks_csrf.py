@@ -344,16 +344,18 @@ async def test_a_token_field_suppresses_the_get_finding() -> None:
     assert await _run_get([form]) == []
 
 
-async def test_search_login_and_post_forms_are_not_get_findings() -> None:
+async def test_search_auth_and_post_forms_are_not_get_findings() -> None:
     """The other form kinds are left to their own checks, or to none."""
     forms = [
         _form("q", method="GET", action="https://example.com/search"),
+        # two password fields, the shape of a password change: only the auth action spares it
         _form(
             "username",
             "password",
+            "password_confirm",
             method="GET",
-            action="https://example.com/login",
-            types={"password": "password"},
+            action="https://example.com/register",
+            types={"password": "password", "password_confirm": "password"},
         ),
         _form(*_PASSWORD_CHANGE, action="https://example.com/csrf/", types=_PASSWORD_CHANGE),
     ]

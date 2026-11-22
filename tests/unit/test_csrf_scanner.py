@@ -11,6 +11,7 @@ but the token. No network, no fixture app (that is ``test_scan_fixture_app.py``)
 from __future__ import annotations
 
 import difflib
+import itertools
 from collections.abc import Callable
 from typing import Any
 from urllib.parse import parse_qsl
@@ -391,14 +392,19 @@ async def test_a_redirect_after_post_is_described_and_compared() -> None:
     assert hits[0].attack == hits[0].control
 
 
-async def test_echoed_sentinel_and_token_do_not_make_responses_differ() -> None:
-    """Each submission echoes its own sentinel; normalising it keeps the pages equivalent."""
+async def test_echoed_sentinel_and_volatile_values_do_not_make_responses_differ() -> None:
+    """Echoed sentinels, times and request ids are normalised: the pages stay equivalent."""
+    served = itertools.count()
 
     def echoing(fields: dict[str, str], headers: dict[str, str]) -> Response:
-        return _resp(f"<p>hello {fields['display_name']} at 2026-10-06T12:00:01Z</p>")
+        n = next(served)
+        return _resp(
+            f"<p>hello {fields['display_name']} at 2026-10-06T12:00:{n:02d}Z, "
+            f"request {n:016x}</p>"
+        )
 
-    _, _, hits = await _run(_TOKEN_FORM, echoing)
-    assert len(hits) == 1
+    _, http, hits = await _run(_TOKEN_FORM, echoing)
+    assert len(hits) == 1 and len(http.posts) == 2
 
 
 async def test_no_post_form_means_no_summary_line() -> None:
