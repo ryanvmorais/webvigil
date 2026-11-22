@@ -158,8 +158,9 @@ async def test_a_three_octet_version_string_is_not_a_match() -> None:
 
 
 async def test_the_targets_own_host_is_not_flagged() -> None:
-    """Scanning ``http://10.0.0.5/`` does not report ``10.0.0.5`` from its own body."""
-    assert await _ip_addresses("bound to 10.0.0.5 ok", target="http://10.0.0.5/") == []
+    """Scanning ``http://10.0.0.5/`` does not report ``10.0.0.5``; another address still is."""
+    body = "bound to 10.0.0.5, peer 10.0.0.6"
+    assert await _ip_addresses(body, target="http://10.0.0.5/") == ["10.0.0.6"]
 
 
 async def test_more_than_the_cap_is_truncated_with_a_note() -> None:

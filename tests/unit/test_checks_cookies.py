@@ -54,8 +54,8 @@ async def test_host_prefix_violation() -> None:
 async def test_samesite_none_without_secure() -> None:
     """``SameSite=None`` without ``Secure`` is a MEDIUM finding (browsers reject the pair)."""
     findings = await _run("t=1; HttpOnly; SameSite=None; Path=/")
-    assert any("SameSite=None" in f.title for f in findings)
-    assert any(f.severity is Severity.MEDIUM for f in findings)
+    (finding,) = [f for f in findings if "SameSite=None" in f.title]
+    assert finding.severity is Severity.MEDIUM
 
 
 async def test_http_site_does_not_require_secure() -> None:

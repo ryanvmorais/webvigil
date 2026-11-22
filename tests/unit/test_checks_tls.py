@@ -12,12 +12,16 @@ from collections.abc import Callable
 from contextlib import AbstractContextManager
 from datetime import UTC, datetime, timedelta
 
+import pytest
 import trustme
 
 from tests.support import make_context, make_page
+from webvigil.checks.tls import _cert
 from webvigil.checks.tls.check import TlsHttpsCheck
 from webvigil.core.config import ScanConfig
+from webvigil.core.findings import Severity
 from webvigil.core.target import Target
+from webvigil.http import tls_probe
 from webvigil.http.client import HttpClient
 
 _ServerFactory = Callable[..., AbstractContextManager]
@@ -41,11 +45,24 @@ def _ctx(port: int, *, scheme: str = "https", text: str = "<html></html>"):
 
 
 async def test_healthy_certificate_produces_no_cert_findings(
-    tls_server: _ServerFactory, tls_ca: trustme.CA
+    tls_server: _ServerFactory, tls_ca: trustme.CA, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A valid, in-name certificate yields no ``certificate`` findings."""
+    """A valid, in-name certificate is analysed and yields no ``certificate`` findings."""
+    verdicts: list[list[_cert.CertIssue]] = []
+    real_analyze = _cert.analyze
+
+    def _recording(
+        cert_der: bytes, host: str, *, now: datetime | None = None
+    ) -> list[_cert.CertIssue]:
+        issues = real_analyze(cert_der, host, now=now)
+        verdicts.append(issues)
+        return issues
+
+    monkeypatch.setattr(_cert, "analyze", _recording)
     with tls_server(cert=tls_ca.issue_cert("127.0.0.1")) as server:
         findings = await TlsHttpsCheck().run(_ctx(server.port))
+    # the handshake read the certificate and the analysis ran: "no finding" is its verdict
+    assert verdicts == [[]]
     assert [f.fingerprint for f in findings if "cert" in f.location.key] == []
 
 
@@ -67,11 +84,18 @@ async def test_hostname_mismatch_is_flagged(tls_server: _ServerFactory, tls_ca: 
     assert any("does not cover" in f.title for f in findings)
 
 
-async def test_http_only_site_is_flagged() -> None:
+async def test_http_only_site_is_flagged(monkeypatch: pytest.MonkeyPatch) -> None:
     """A plaintext entry page with no HTTPS redirect is a page-level HIGH finding."""
-    # Nothing listens on this port; the entry page is plain HTTP.
+
+    # The finding comes from the entry page alone; no TLS endpoint answers.
+    async def _offline(*_args: object, **_kwargs: object) -> tls_probe.TlsProbeResult:
+        return tls_probe._unreachable(OSError("offline test"))
+
+    monkeypatch.setattr(tls_probe, "probe", _offline)
     findings = await TlsHttpsCheck().run(_ctx(59999, scheme="http"))
-    assert any(f.location.key == "" and "HTTP" in f.title for f in findings)
+    (finding,) = findings
+    assert finding.title == "Site is served over HTTP with no redirect to HTTPS"
+    assert finding.location.key == "" and finding.severity is Severity.HIGH
 
 
 async def test_mixed_content_is_flagged(tls_server: _ServerFactory, tls_ca: trustme.CA) -> None:

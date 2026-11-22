@@ -13,7 +13,12 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from webvigil.http.session import SessionJar
+from webvigil.http.session import (
+    _MAX_JAR_COOKIES,
+    _MAX_SCRUB_VALUES,
+    _MAX_VARIANTS_PER_NAME,
+    SessionJar,
+)
 
 _URL = "http://demo.test/signin"
 
@@ -187,7 +192,7 @@ def test_a_held_name_keeps_a_bounded_number_of_path_variants() -> None:
     _committed(jar, _URL, "sid=one; Path=/")
     for i in range(200):
         jar.absorb(_response(_URL, f"sid=v{i}; Path=/p{i}"), handshake=False)
-    assert sum(1 for _ in jar._live.jar) <= 4
+    assert sum(1 for _ in jar._live.jar) == _MAX_VARIANTS_PER_NAME
 
 
 def test_a_handshake_keeps_a_bounded_number_of_cookies() -> None:
@@ -196,7 +201,7 @@ def test_a_handshake_keeps_a_bounded_number_of_cookies() -> None:
     jar.begin()
     jar.absorb(_response(_URL, *(f"c{i}=x{i}; Path=/" for i in range(300))), handshake=True)
     jar.commit()
-    assert len(jar.names) <= 64
+    assert len(jar.names) == _MAX_JAR_COOKIES
 
 
 def test_endless_rotation_gives_the_session_up() -> None:
@@ -207,7 +212,7 @@ def test_endless_rotation_gives_the_session_up() -> None:
         jar.absorb(_response(_URL, f"sid=value{i}; Path=/"), handshake=False)
     assert jar.overflowed
     assert jar.pairs_for(_URL, handshake=False) == []
-    assert len(jar.values) <= 1_026
+    assert len(jar.values) == _MAX_SCRUB_VALUES + 1  # the value that went past the limit
     _committed(jar, _URL, "sid=again; Path=/")  # a re-login does not bring it back
     assert jar.pairs_for(_URL, handshake=False) == []
 
