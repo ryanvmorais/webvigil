@@ -28,6 +28,12 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
   on that parameter. The scanner now reads the value itself, as it does for every redirect: a
   target that honours the `https:\\webvigil.invalid` probe is reported as
   `injection.redirect.open`.
+- `[injection] time_based_delay_s` must be at least 2. A time-based hit needs the delayed answer to
+  arrive `delay - 1` seconds after the slower of the control and the baseline; with a delay of 1
+  or less that margin was zero or negative, so an Active scan reported a time-based SQL injection
+  and a time-based command injection on parameters of a target that never waits. A
+  configuration with a smaller value is now a configuration error (exit code 4) that names the
+  setting.
 
 ## [1.4.5] - 2026-11-21
 
