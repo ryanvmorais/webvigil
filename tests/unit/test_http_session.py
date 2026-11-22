@@ -42,6 +42,7 @@ class _App:
         self.cookie_seen: list[str] = []  # the Cookie header of every non-login request
         self.status_for: dict[str, int] = {}  # path -> forced status (403, 500 ...)
         self.bounce: set[str] = set()  # paths that always redirect to /signin
+        self.rotate: dict[str, str] = {}  # path -> a new sid value its answer sets
         self.honour = True  # False: /signin issues a cookie the pages never accept
 
     def expire(self) -> None:
@@ -64,6 +65,22 @@ class _App:
                 self.valid.add(token)
             return httpx.Response(200, headers={"set-cookie": f"sid={token}; Path=/"}, text="form")
         self.cookie_seen.append(request.headers.get("cookie", ""))
+        response = self._page(request)
+        if path in self.rotate:
+            response.headers["set-cookie"] = f"sid={self.rotate[path]}; Path=/"
+        return response
+
+    def _page(self, request: httpx.Request) -> httpx.Response:
+        """
+        Answer a page request, before any cookie rotation is added.
+
+        Args:
+            request (httpx.Request): A request for any path but ``/signin``.
+
+        Returns:
+            httpx.Response: The forced status, the bounce, or 200 / 401 by the ``sid`` sent.
+        """
+        path = request.url.path
         if path in self.status_for:
             return httpx.Response(self.status_for[path], text="blocked")
         if path in self.bounce:
@@ -436,21 +453,35 @@ async def test_an_anonymous_request_carries_only_the_callers_own_headers() -> No
     assert explicit["cookie"] == "sid=explicit" and "x-api-key" not in explicit
 
 
-async def test_an_anonymous_request_neither_absorbs_cookies_nor_triggers_a_relogin() -> None:
-    """A 401 inside ``anonymous()`` is returned as it is, and the jar is untouched."""
+async def test_a_live_request_takes_a_rotated_session_cookie() -> None:
+    """The control for the anonymous test below: outside ``anonymous()`` a new ``sid`` is kept."""
     app = _App()
+    app.rotate["/page"] = "anon"
     async with _client(app) as http:
         session = _session(http)
         await _login(http, session)
-        before = session.jar.pairs_for(f"{_BASE}/page", handshake=False)
+
+        await http.get(f"{_BASE}/page")
+
+    assert session.jar.pairs_for(f"{_BASE}/page", handshake=False) == [("sid", "anon")]
+
+
+async def test_an_anonymous_request_neither_absorbs_cookies_nor_triggers_a_relogin() -> None:
+    """A 401 that sets a new ``sid`` inside ``anonymous()`` is returned as it is; the jar stays."""
+    app = _App()
+    app.rotate["/page"] = "anon"
+    async with _client(app) as http:
+        session = _session(http)
+        await _login(http, session)
         app.expire()
 
         async with http.anonymous():
             response = await http.get(f"{_BASE}/page", headers={"cookie": "sid=tok1"})
         assert response.status_code == 401
+        assert response.headers["set-cookie"] == "sid=anon; Path=/"
 
     assert (app.issued, session.relogins) == (1, 0)
-    assert session.jar.pairs_for(f"{_BASE}/page", handshake=False) == before
+    assert session.jar.pairs_for(f"{_BASE}/page", handshake=False) == [("sid", "tok1")]
 
 
 async def test_anonymous_is_scoped_to_its_task() -> None:
