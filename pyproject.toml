@@ -231,6 +231,8 @@ skip_covered = true
 addopts = "-ra -q"
 testpaths = ["tests"]
 asyncio_mode = "auto"
+# A wider loop is an explicit `loop_scope=` on the fixture, never inherited from its scope (#312).
+asyncio_default_fixture_loop_scope = "function"
 pythonpath = ["."]
 filterwarnings = [
     # A model validator that returns another object is dropped by `Model(...)` (#313).
