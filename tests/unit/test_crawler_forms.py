@@ -83,6 +83,22 @@ def test_fields_from_input_textarea_and_select() -> None:
     assert "" not in by_name  # the unnamed submit button is skipped
 
 
+def test_attribute_values_are_read_whatever_their_case() -> None:
+    """``ENCTYPE="Multipart/Form-Data"`` and ``type="HIDDEN"`` mean what their lowercase does."""
+    (form,) = _forms(
+        '<form method="POST" enctype="Multipart/Form-Data">'
+        '<input type="HIDDEN" name="h" value="v"></form>'
+    )
+    assert (form.method, form.enctype) == ("POST", "multipart/form-data")
+    assert form.fields[0].type == "hidden"
+
+
+def test_an_option_without_a_value_submits_its_text() -> None:
+    """``<option>Blue</option>`` sends ``Blue``, as a browser does."""
+    (form,) = _forms('<form><select name="c"><option> Blue </option></select></form>')
+    assert form.fields[0].value == "Blue"
+
+
 def test_identical_forms_across_pages_are_deduplicated() -> None:
     """The same form seen on two pages is inventoried once."""
     html = '<form action="/s" method="get"><input name="q"></form>'
@@ -258,6 +274,8 @@ def test_form_body_field_table() -> None:
         '<input name="t"><input type="email" name="e"><input type="url" name="u">'
         '<input type="number" name="n"><input type="password" name="p">'
         '<input type="checkbox" name="on" value="1" checked><input type="checkbox" name="off">'
+        '<input type="checkbox" name="agree" checked>'
+        '<input type="reset" name="r" value="Clear"><input type="file" name="f">'
         '<textarea name="body">typed</textarea>'
         '<input type="submit" name="go" value="Save"><input type="submit" name="other" value="x">'
         "</form>"
@@ -271,7 +289,8 @@ def test_form_body_field_table() -> None:
         ("n", "1"),
         ("p", ""),
         ("on", "1"),
-        ("body", "typed"),
+        ("agree", "on"),  # a checked box with no value sends "on", like a browser
+        ("body", "typed"),  # no reset and no file input
         ("go", "Save"),  # document order, as a browser sends it
     ]
 

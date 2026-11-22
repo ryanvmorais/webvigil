@@ -11,6 +11,7 @@ assert exactly what the crawler sent, and in which order relative to the ``GET``
 
 from __future__ import annotations
 
+import re
 from typing import Any
 from urllib.parse import parse_qsl
 
@@ -292,6 +293,31 @@ async def test_a_robots_disallowed_action_is_skipped() -> None:
     assert crawler.post_summary is not None and crawler.post_summary.skipped == 1
 
 
+async def test_robots_does_not_gate_a_submission_when_it_is_not_followed() -> None:
+    """With ``follow_robots`` off, a disallowed action is submitted like any other."""
+    http = _FakeHttp(
+        {
+            _ROOT: _form("/private/save", "x"),
+            f"{_ROOT}robots.txt": "User-agent: *\nDisallow: /private/\n",
+        }
+    )
+    crawler, _ = await _crawl(http, _config(follow_robots=False))
+    assert _posted(http) == ["/private/save"]
+    assert crawler.post_summary is not None and crawler.post_summary.skipped == 0
+
+
+async def test_a_robots_disallowed_operation_is_skipped() -> None:
+    """``robots.txt`` gates an ``--openapi`` operation as it gates a form."""
+    http = _FakeHttp(
+        {_ROOT: "<p>home</p>", f"{_ROOT}robots.txt": "User-agent: *\nDisallow: /api/private/\n"}
+    )
+    ops = (_operation("/api/private/notes"), _operation("/api/notes"))
+    crawler, _ = await _crawl(http, _config(follow_robots=True), operations=ops)
+    assert _posted(http) == ["/api/notes"]
+    assert crawler.post_summary is not None
+    assert (crawler.post_summary.operations, crawler.post_summary.skipped) == (1, 1)
+
+
 async def test_post_operations_follow_the_forms_and_unsafe_ones_are_skipped() -> None:
     """Forms first, then operations in document order; an auth operation is skipped."""
     http = _FakeHttp({_ROOT: _form("/contact", "msg")})
@@ -379,6 +405,9 @@ async def test_max_pages_also_stops_the_phase() -> None:
     crawler, pages = await _crawl(http, _config(max_pages=1))
     assert http.posts == [] and len(pages) == 1
     assert crawler.post_summary is not None and crawler.post_summary.over_cap == 2
+    assert crawler.post_summary.warning() == (
+        "POST crawl: 0 submitted — 0 forms, 0 API operations, 0 skipped, 2 not submitted (cap)"
+    )
 
 
 async def test_a_failed_submission_is_a_failed_post_page_and_counts() -> None:
@@ -418,7 +447,17 @@ async def test_an_urlencoded_form_sends_defaults_and_the_marker() -> None:
     assert sent["headers"] == {"Content-Type": "application/x-www-form-urlencoded"}
     fields = dict(parse_qsl(sent["content"], keep_blank_values=True))
     assert fields["csrf_token"] == "tok" and fields["n"] == "1" and fields["p"] == ""
-    assert fields["msg"].startswith("wvcrawl") and "files" not in sent
+    assert re.fullmatch(r"wvcrawl[0-9a-f]{8}", fields["msg"]) and "files" not in sent
+
+
+async def test_each_crawl_draws_its_own_marker() -> None:
+    """The marker carries a per-crawl token, so one scan's records are told from another's."""
+    markers = []
+    for _ in range(2):
+        http = _FakeHttp({_ROOT: _form("/contact", "msg")})
+        await _crawl(http)
+        markers.append(dict(parse_qsl(http.posts[0]["content"]))["msg"])
+    assert markers[0] != markers[1]
 
 
 async def test_a_multipart_form_sends_text_parts_and_no_file() -> None:

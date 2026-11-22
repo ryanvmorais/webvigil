@@ -199,6 +199,42 @@ async def test_json_that_is_not_an_openapi_document_is_an_error(tmp_path: Path) 
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.parametrize(
+    "word",
+    [
+        "login",
+        "log-in",
+        "logout",
+        "logoff",
+        "signin",
+        "signout",
+        "signup",
+        "register",
+        "delete",
+        "remove",
+        "destroy",
+        "drop",
+        "password",
+        "passwd",
+        "reset",
+        "checkout",
+        "pay",
+        "purchase",
+        "order",
+        "transfer",
+        "unsubscribe",
+        "deactivate",
+        "revoke",
+    ],
+)
+async def test_every_skip_word_keeps_an_operation_out(tmp_path: Path, word: str) -> None:
+    """Each word of the skip vocabulary, as a path segment, leaves the operation out."""
+    ops, _ = await _load(
+        _op3(**{f"/api/{word}": {"post": {}}, "/api/notes": {"post": {}}}), tmp_path
+    )
+    assert [o.url_template for o in ops] == ["https://api.example.com/api/notes"]
+
+
 async def test_login_and_destructive_operations_are_not_seeded(tmp_path: Path) -> None:
     """A login path, a delete path, and a ``deleteUser`` operationId are excluded."""
     doc = _op3(
@@ -218,6 +254,17 @@ async def test_put_and_delete_methods_are_not_acted_on(tmp_path: Path) -> None:
     doc = _op3(**{"/thing": {"get": {}, "put": {}, "patch": {}}})
     ops, _ = await _load(doc, tmp_path)
     assert [o.method for o in ops] == ["GET"]
+
+
+async def test_operations_come_out_sorted_whatever_the_document_order(tmp_path: Path) -> None:
+    """Paths sort by template, then GET before POST, so the cap always keeps the same ones."""
+    doc = _op3(**{"/b": {"post": {}, "get": {}}, "/a": {"get": {}}})
+    ops, _ = await _load(doc, tmp_path)
+    assert [(o.url_template.rsplit("/", 1)[1], o.method) for o in ops] == [
+        ("a", "GET"),
+        ("b", "GET"),
+        ("b", "POST"),
+    ]
 
 
 async def test_max_operations_cap_warns_and_truncates(tmp_path: Path) -> None:
@@ -323,11 +370,27 @@ async def test_path_param_fills_the_url_and_keeps_the_template(tmp_path: Path) -
 
 async def test_an_out_of_scope_url_source_is_an_error() -> None:
     """A ``--openapi`` URL outside the target scope is refused before any request."""
-    http = HttpClient(_TARGET, ScanConfig())
-    with pytest.raises(OpenApiError):
+    http = HttpClient(_TARGET, ScanConfig())  # never entered: a request would fail otherwise
+    with pytest.raises(OpenApiError, match=r"^--openapi URL is out of scope"):
         await load_openapi(
             "https://evil.test/openapi.json", http=http, target=_TARGET, max_operations=150
         )
+
+
+async def test_an_in_scope_url_source_that_is_not_a_200_is_an_error(httpx_mock: object) -> None:
+    """A ``404`` page is not the document, whatever its body says."""
+    doc = _op3(**{"/search": {"get": {}}})
+    httpx_mock.add_response(  # type: ignore[attr-defined]
+        url="https://api.example.com/openapi.json", status_code=404, json=doc
+    )
+    async with HttpClient(_TARGET, ScanConfig()) as http:
+        with pytest.raises(OpenApiError, match="returned HTTP 404"):
+            await load_openapi(
+                "https://api.example.com/openapi.json",
+                http=http,
+                target=_TARGET,
+                max_operations=150,
+            )
 
 
 async def test_an_in_scope_url_source_is_fetched_and_parsed(httpx_mock: object) -> None:

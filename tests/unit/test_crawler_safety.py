@@ -84,6 +84,27 @@ def test_is_destructive_matches_state_changing_urls(url: str) -> None:
 
 
 @pytest.mark.parametrize(
+    "verb",
+    [
+        "delete",
+        "remove",
+        "destroy",
+        "drop",
+        "revoke",
+        "deactivate",
+        "disable",
+        "unsubscribe",
+        "cancel",
+        "purge",
+        "wipe",
+    ],
+)
+def test_every_destructive_verb_is_recognised(verb: str) -> None:
+    """Each word of the vocabulary, alone in a path segment, marks the URL destructive."""
+    assert is_destructive(f"https://example.com/items/5/{verb}") is True
+
+
+@pytest.mark.parametrize(
     "url",
     [
         "https://example.com/deleted-items",  # word-boundary: "deleted" != "delete"
@@ -103,6 +124,13 @@ def test_is_auth_form_matches_login_and_registration() -> None:
     assert is_auth_form(_form("/users", "email", "password", "password_confirm")) is True
     assert is_auth_form(_form("/register", "email")) is True
     assert is_auth_form(_form("/comment", "body")) is False
+
+
+@pytest.mark.parametrize("word", ["search", "query", "find", "filter"])
+def test_every_search_word_in_the_action_marks_a_search_form(word: str) -> None:
+    """Each word of the search vocabulary is enough, with an ordinary field name."""
+    assert looks_like_search(_form(f"/{word}", "term", method="GET")) is True
+    assert looks_like_search(_form("/catalog", "term", method="GET")) is False
 
 
 def test_looks_like_search_matches_search_forms() -> None:
@@ -193,6 +221,7 @@ def test_login_url() -> None:
     assert is_login_url("https://example.com/login?next=/x") is True
     assert is_login_url("https://example.com/users/sign-in") is True
     assert is_login_url("https://example.com/panel") is False
+    assert is_login_url("https://example.com/panel?next=/login") is False  # the path, not the query
 
 
 # ---------------------------------------------------------------------------
@@ -237,6 +266,43 @@ def test_one_password_field_named_like_a_change_is_a_state_change() -> None:
         "password change"
     )
     assert state_change_signal(_typed_form(action, ("password", "password"))) is None
+
+
+def test_two_password_fields_over_get_are_a_state_change_whatever_their_names() -> None:
+    """Two password inputs are a change even when neither name says so."""
+    form = _typed_form("https://example.com/account", ("pw1", "password"), ("pw2", "password"))
+    assert state_change_signal(form) == "password change"
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "new_password",
+        "password_conf",
+        "repeat_password",
+        "retype_password",
+        "current_password",
+        "old_password",
+    ],
+)
+def test_every_change_word_in_one_password_name_is_a_state_change(name: str) -> None:
+    """A single password input named like the new, confirmed or current one is half a change."""
+    assert state_change_signal(_typed_form("https://example.com/account", (name, "password"))) == (
+        "password change"
+    )
+
+
+def test_a_search_form_is_never_a_state_change() -> None:
+    """A search over ``GET`` with a destructive-looking filter name stays a search."""
+    form = _typed_form(
+        "https://example.com/search", ("q", "text"), ("remove_duplicates", "checkbox")
+    )
+    assert state_change_signal(form) is None
+    assert state_change_signal(
+        _typed_form("https://example.com/items", ("remove_duplicates", "checkbox"))
+    ) == (
+        "destructive verb"
+    )  # the control: the same field off a search form
 
 
 def test_a_destructive_verb_over_get_is_a_state_change() -> None:
