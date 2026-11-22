@@ -11,6 +11,21 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 ## [Unreleased]
 
+## [1.4.6] - 2026-11-22
+
+A patch release that reads a backslash in a link or a redirect the way a browser does, keeps a
+redirect the HTTP library cannot parse from failing the request, and refuses a time-based delay too
+short to tell a delayed answer from a slow one. It is backward compatible with
+[docs/stability.md](docs/stability.md): no CLI option, exit code, check id or JSON report field
+changes, and no configuration key is renamed or removed; `[injection] time_based_delay_s` now
+refuses a value below 2.
+
+### Changed
+
+- The locked dependencies move to their latest releases older than seven days. The Docker Compose
+  stack gets FastAPI 0.163.1 in its Web API and Next.js 16.4.6 in its dashboard. Only the
+  lockfiles changed: an install from PyPI resolves the same ranges as before.
+
 ### Fixed
 
 - A backslash in a link or a redirect is read the way a browser reads it: in an `http` or
@@ -744,7 +759,8 @@ confirmed against a per-request baseline)
 - A security policy with private vulnerability reporting, a code of conduct, and the
   [stability policy](docs/stability.md).
 
-[Unreleased]: https://github.com/ryanvmorais/webvigil/compare/v1.4.5...HEAD
+[Unreleased]: https://github.com/ryanvmorais/webvigil/compare/v1.4.6...HEAD
+[1.4.6]: https://github.com/ryanvmorais/webvigil/compare/v1.4.5...v1.4.6
 [1.4.5]: https://github.com/ryanvmorais/webvigil/compare/v1.4.4...v1.4.5
 [1.4.4]: https://github.com/ryanvmorais/webvigil/compare/v1.4.3...v1.4.4
 [1.4.3]: https://github.com/ryanvmorais/webvigil/compare/v1.4.2...v1.4.3
