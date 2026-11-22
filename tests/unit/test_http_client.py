@@ -429,6 +429,65 @@ async def test_a_malformed_url_is_refused_before_anything_is_sent(
     assert httpx_mock.get_requests() == []  # type: ignore[attr-defined]
 
 
+async def test_a_location_httpx_cannot_parse_leaves_scope_as_a_browser_reads_it(
+    httpx_mock: object,
+) -> None:
+    r"""``https:\\evil.test/`` (httpx refuses it) is a redirect to ``evil.test``, not a failure."""
+    location = "https:\\\\evil.test/"
+    httpx_mock.add_response(  # type: ignore[attr-defined]
+        url="https://example.com/", status_code=302, headers={"location": location}
+    )
+    async with _http() as http:
+        response = await http.get("https://example.com/")
+    assert response.status_code == 302
+    assert response.redirected_out_of_scope is True
+    assert response.final_location == "https://evil.test/"
+    assert response.headers["location"] == location  # what the server sent, for the checks
+
+
+async def test_a_location_httpx_cannot_parse_is_followed_when_it_stays_in_scope(
+    httpx_mock: object,
+) -> None:
+    r"""``https:\\example.com/b`` is the target's own ``/b``: the hop is followed."""
+    httpx_mock.add_response(  # type: ignore[attr-defined]
+        url="https://example.com/a",
+        status_code=302,
+        headers={"location": "https:\\\\example.com/b"},
+    )
+    httpx_mock.add_response(url="https://example.com/b", text="done")  # type: ignore[attr-defined]
+    async with _http() as http:
+        response = await http.get("https://example.com/a")
+    assert (response.status_code, response.text) == (200, "done")
+    assert [hop.to_url for hop in response.history] == ["https://example.com/b"]
+
+
+async def test_a_redirect_to_another_scheme_is_out_of_scope_not_a_failure(
+    httpx_mock: object,
+) -> None:
+    """``Location: mailto:x`` (httpx cannot build a request from it) leaves scope, nothing more."""
+    httpx_mock.add_response(  # type: ignore[attr-defined]
+        url="https://example.com/", status_code=302, headers={"location": "mailto:x"}
+    )
+    async with _http() as http:
+        response = await http.get("https://example.com/")
+    assert (response.status_code, response.final_location) == (302, "mailto:x")
+    assert response.headers["location"] == "mailto:x"
+
+
+async def test_a_location_on_a_response_that_is_not_a_redirect_is_not_followed(
+    httpx_mock: object,
+) -> None:
+    """A ``201 Created`` names the new resource in ``Location``; the client stays where it is."""
+    httpx_mock.add_response(  # type: ignore[attr-defined]
+        url="https://example.com/items", status_code=201, headers={"location": "/items/7"}
+    )
+    async with _http() as http:
+        response = await http.request("POST", "https://example.com/items", data={"x": "1"})
+    assert (response.status_code, response.history) == (201, ())
+    assert response.headers["location"] == "/items/7"
+    assert len(httpx_mock.get_requests()) == 1  # type: ignore[attr-defined]
+
+
 @pytest.mark.parametrize("location", ["http://[::1", "https://example.com:70000/next"])
 async def test_a_location_that_is_not_a_url_fails_the_request(
     httpx_mock: object, location: str
@@ -436,8 +495,8 @@ async def test_a_location_that_is_not_a_url_fails_the_request(
     """
     A redirect to a malformed ``Location`` is a failed request, not an exception.
 
-    ``httpx`` itself refuses the unclosed bracket (a ``RemoteProtocolError``, retried like any
-    transport error); the port out of range gets past it and is refused by the client.
+    ``httpx`` never parses a redirect's ``Location`` (the client takes it away first); the
+    client's own ``resolve_url`` refuses the unclosed bracket and the port out of range.
     """
     httpx_mock.add_response(  # type: ignore[attr-defined]
         status_code=302, headers={"location": location}, is_reusable=True

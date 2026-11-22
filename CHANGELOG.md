@@ -21,6 +21,13 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
   resolve every link the same way, so `/\other.example/` is a link to `other.example`, out of
   scope, and no longer a page of the target. A backslash in the query or the fragment, or in a
   `mailto:` or `javascript:` link, is kept.
+- A redirect whose `Location` the HTTP library could not turn into a request, such as
+  `https:\\other.example/` (a browser reads it as `https://other.example/`) or `mailto:x`, no
+  longer fails the request. The scanner never let the library follow redirects, but the library
+  still parsed the `Location` and raised, so the page was lost and the open-redirect probe stopped
+  on that parameter. The scanner now reads the value itself, as it does for every redirect: a
+  target that honours the `https:\\webvigil.invalid` probe is reported as
+  `injection.redirect.open`.
 
 ## [1.4.5] - 2026-11-21
 
