@@ -11,6 +11,7 @@ tiny local stand-ins that emit canned findings or raise.
 from __future__ import annotations
 
 import asyncio
+import os
 from typing import ClassVar
 
 import httpx
@@ -127,12 +128,50 @@ class Boom(_Base):
 async def test_findings_are_deduped_by_fingerprint() -> None:
     """Findings with the same fingerprint collapse to one; distinct ones are kept."""
     result = await Orchestrator(ScanConfig(), check_types=[PassiveOne, PassiveTwo]).run(_TARGET)
-    # PassiveOne("a"), PassiveTwo("a") once (deduped from 2), PassiveTwo("b") -> 3 total.
+    # The fingerprint carries the check id, so PassiveOne("a") and PassiveTwo("a") are two
+    # findings; PassiveTwo's own repeat of "a" collapses -> one("a"), two("a"), two("b").
     assert len(result.findings) == 3
     assert sorted(f.fingerprint for f in result.findings) == sorted(
         {f.fingerprint for f in result.findings}
     )
     assert result.metadata.pages_scanned == 1
+
+
+async def test_the_same_finding_from_two_checks_is_reported_once() -> None:
+    """Two check classes that share an id (a subclass, a plugin) report one finding, not two."""
+
+    class PassiveOneAgain(PassiveOne):
+        pass
+
+    result = await Orchestrator(ScanConfig(), check_types=[PassiveOne, PassiveOneAgain]).run(
+        _TARGET
+    )
+    assert [f.check_id for f in result.findings] == ["test.passive.one"]
+
+
+class _Many(_Base):
+    """A check that reports ``count`` distinct findings."""
+
+    id = "test.many"
+    count: ClassVar[int] = 0
+
+    async def run(self, ctx: ScanContext) -> list[object]:
+        return [self._finding(str(n)) for n in range(type(self).count)]
+
+
+@pytest.mark.parametrize(("count", "cut"), [(3, False), (4, True)])
+async def test_a_check_keeps_at_most_the_cap_of_distinct_findings(
+    monkeypatch: pytest.MonkeyPatch, count: int, cut: bool
+) -> None:
+    """At the cap every finding stays; one past it, the first ``cap`` stay and the scan says so."""
+    monkeypatch.setattr(orch_mod, "FINDINGS_PER_CHECK_CAP", 3)
+    monkeypatch.setattr(_Many, "count", count)
+    result = await Orchestrator(ScanConfig(), check_types=[_Many]).run(_TARGET)
+    assert len(result.findings) == 3
+    warned = [w for w in result.warnings if "reported more than 3 findings" in w]
+    assert warned == (
+        ["check test.many reported more than 3 findings; the first 3 are kept"] if cut else []
+    )
 
 
 async def test_a_raising_check_is_isolated() -> None:
@@ -153,6 +192,9 @@ async def test_a_check_traceback_carries_no_local_path() -> None:
     assert str(Path(__file__).resolve().parents[2]) not in traceback
     assert str(Path.home()) not in traceback
     assert "test_orchestrator.py" in traceback  # the frame is still named
+    # a frame inside the package keeps its path in it: only an absolute path is cut short
+    package_frame = os.path.join("webvigil", "core", "orchestrator.py")
+    assert f'File "{package_frame}", line ' in traceback
 
 
 @pytest.mark.parametrize(
@@ -289,14 +331,49 @@ async def test_javascript_app_becomes_a_warning(monkeypatch: pytest.MonkeyPatch)
     assert not any("JavaScript" in w for w in quiet.warnings)
 
 
+async def test_the_javascript_app_warning_knows_whether_a_har_was_given(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With a HAR the advice differs (the recording is already the way in), so the flag matters."""
+    seen: list[bool] = []
+
+    def warning(pages: object, *, har: bool) -> None:
+        seen.append(har)
+
+    monkeypatch.setattr(orch_mod, "script_app_warning", warning)
+    monkeypatch.setattr(Orchestrator, "_load_har", lambda self, *_a: ())
+    await Orchestrator(ScanConfig(), check_types=[PassiveOne]).run(_TARGET)
+    with_har = ScanConfig.model_validate({"scan": {"har": "recording.har"}})
+    await Orchestrator(with_har, check_types=[PassiveOne]).run(_TARGET)
+    assert seen == [False, True]
+
+
 async def test_truncated_bodies_become_a_warning(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Responses cut at the body limit are reported, and only then."""
-    monkeypatch.setattr(orch_mod, "truncated_warning", lambda stats, limit: "bodies were cut")
-    result = await Orchestrator(ScanConfig(), check_types=[PassiveOne]).run(_TARGET)
+    """Responses cut at the body limit are reported, and only then, with the configured limit."""
+    limits: list[int] = []
+
+    def truncated(stats: object, limit: int) -> str:
+        limits.append(limit)
+        return "bodies were cut"
+
+    monkeypatch.setattr(orch_mod, "truncated_warning", truncated)
+    config = ScanConfig.model_validate({"http": {"max_body_bytes": 123_456}})
+    result = await Orchestrator(config, check_types=[PassiveOne]).run(_TARGET)
     assert "bodies were cut" in result.warnings
+    assert limits == [123_456]  # the warning names the limit the scan ran with
     monkeypatch.setattr(orch_mod, "truncated_warning", lambda stats, limit: None)
     quiet = await Orchestrator(ScanConfig(), check_types=[PassiveOne]).run(_TARGET)
     assert not any("cut" in w for w in quiet.warnings)
+
+
+async def test_a_blocked_address_becomes_a_warning(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A name that resolved to an address the scan refuses is reported, and only then."""
+    monkeypatch.setattr(orch_mod, "blocked_address_warning", lambda stats: "an address was refused")
+    result = await Orchestrator(ScanConfig(), check_types=[PassiveOne]).run(_TARGET)
+    assert "an address was refused" in result.warnings
+    monkeypatch.setattr(orch_mod, "blocked_address_warning", lambda stats: None)
+    quiet = await Orchestrator(ScanConfig(), check_types=[PassiveOne]).run(_TARGET)
+    assert not any("refused" in w for w in quiet.warnings)
 
 
 async def test_unreachable_target_becomes_a_warning(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -317,16 +394,38 @@ async def test_registry_selection_filters_by_mode_and_reports_unknown_disabled(
     """
     With no explicit check types, selection comes from the registry and an unknown
     disabled id is surfaced as a warning.
-    """
-    monkeypatch.setattr(orch_mod, "load_plugins", lambda: None)
-    monkeypatch.setattr(orch_mod, "iter_checks", lambda *, mode, disabled: [PassiveOne])
-    monkeypatch.setattr(orch_mod, "unknown_check_ids", lambda disabled: ["ghost"])
 
-    config = ScanConfig.model_validate({"checks": {"disabled": ["ghost"]}})
+    The registry is asked with the scan's own mode and ``disabled`` list: a Passive scan that
+    asked for the Active checks, or dropped the list, would run what the user turned off.
+    """
+    asked: list[tuple[ScanMode, list[str]]] = []
+    unknown_asked: list[list[str]] = []
+
+    def iter_checks(*, mode: ScanMode, disabled: list[str]) -> list[type[Check]]:
+        asked.append((mode, list(disabled)))
+        return [PassiveOne]
+
+    def unknown_check_ids(disabled: list[str]) -> list[str]:
+        unknown_asked.append(list(disabled))
+        return ["ghost"]
+
+    monkeypatch.setattr(orch_mod, "load_plugins", lambda: None)
+    monkeypatch.setattr(orch_mod, "iter_checks", iter_checks)
+    monkeypatch.setattr(orch_mod, "unknown_check_ids", unknown_check_ids)
+
+    config = ScanConfig.model_validate({"checks": {"disabled": ["ghost", "http.headers.csp"]}})
     result = await Orchestrator(config).run(_TARGET)
 
+    assert asked == [(ScanMode.PASSIVE, ["ghost", "http.headers.csp"])]
+    assert unknown_asked == [["ghost", "http.headers.csp"]]
     assert result.warnings == ("unknown disabled check id: ghost",)
     assert len(result.findings) == 1
+
+    active = ScanConfig.model_validate(
+        {"scan": {"mode": "active"}, "active": {"authorized_by": "Jane / #7"}}
+    )
+    await Orchestrator(active).run(_TARGET)
+    assert asked[1] == (ScanMode.ACTIVE, [])
 
 
 # ---------------------------------------------------------------------------
@@ -467,6 +566,50 @@ async def test_the_password_a_target_reflected_is_scrubbed_from_the_result(
     assert result.findings[0].description == "the page echoed [redacted]"
 
 
+# Long and mixed-case, as a generated session id is: the scrubber treats it as a secret.
+_ISSUED_ID = "Ab12Cd34Ef56Gh78Ij90"
+
+
+class _IssuingAuth(_StubAuth):
+    """A login whose answer sets a session cookie, as a real one does."""
+
+    async def login(self) -> LoginResult:
+        jar = self.session.jar
+        jar.begin()
+        request = httpx.Request("POST", "https://example.com/signin")
+        jar.absorb(
+            httpx.Response(200, headers={"set-cookie": f"sid={_ISSUED_ID}"}, request=request),
+            handshake=True,
+        )
+        jar.commit()
+        return await super().login()
+
+
+class _EchoesTheSession(_Base):
+    """A check whose finding quotes the session id the login was issued."""
+
+    id = "test.echoes-session"
+    mode = ScanMode.ACTIVE
+
+    async def run(self, ctx: ScanContext) -> list[object]:
+        finding = self._finding("session")
+        return [finding.model_copy(update={"description": f"the page echoed {_ISSUED_ID}"})]
+
+
+async def test_the_session_id_the_login_was_issued_is_scrubbed_from_the_result(
+    _stub_auth: type[_StubAuth], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The jar's values are secrets too: a page that quotes the session id does not leak it."""
+    monkeypatch.setattr(orch_mod, "Authenticator", _IssuingAuth)
+    result = await Orchestrator(
+        _login_config(), check_types=[_EchoesTheSession], credentials=Credentials("s", _PASSWORD)
+    ).run(_TARGET)
+
+    assert _IssuingAuth.instances[0].session.jar.values == {_ISSUED_ID}  # the login set it
+    assert _ISSUED_ID not in result.model_dump_json()
+    assert result.findings[0].description == "the page echoed [redacted]"
+
+
 # ---------------------------------------------------------------------------
 # The session-security pass (spec 020)
 # ---------------------------------------------------------------------------
@@ -590,15 +733,23 @@ _ACTIVE_RAW = {"scan": {"mode": "active"}, "active": {"authorized_by": "x"}}
         ({"session": {"test_logout": True}}, True),  # Passive
         ({**_ACTIVE_RAW, "session": {"test_logout": True}}, True),  # Active but no login
         (_ACTIVE_RAW, False),
+        # every precondition met: the switch, Active Mode and a login (the case a warning
+        # on the switch alone would get wrong)
+        ({**_ACTIVE_RAW, "auth": {"login": _LOGIN_CFG}, "session": {"test_logout": True}}, False),
     ],
 )
 async def test_the_logout_test_warns_when_its_preconditions_are_missing(
-    _stub_session_scanner: type[_StubSessionScanner], raw: dict[str, object], warned: bool
+    _stub_session_scanner: type[_StubSessionScanner],
+    _stub_auth: type[_StubAuth],
+    raw: dict[str, object],
+    warned: bool,
 ) -> None:
     """``test_logout`` outside Active Mode, or without a login, says it did not run."""
-    result = await Orchestrator(ScanConfig.model_validate(raw), check_types=[PassiveOne]).run(
-        _TARGET
-    )
+    result = await Orchestrator(
+        ScanConfig.model_validate(raw),
+        check_types=[PassiveOne],
+        credentials=Credentials("scanner", _PASSWORD),
+    ).run(_TARGET)
     assert any("logout test requires" in w for w in result.warnings) is warned
 
 
@@ -620,3 +771,117 @@ async def test_a_scan_past_its_deadline_reports_what_it_has_and_says_so() -> Non
     result = await Orchestrator(config, check_types=[_LateRequest]).run(_TARGET)
     assert not result.errors
     assert any("max_duration_s" in line for line in result.warnings)
+
+
+# ---------------------------------------------------------------------------
+# The opt-in passes: each runs only in Active Mode, opted in, with its check selected
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("section", "switch", "warning"),
+    [
+        ("injection", "stored_xss", "stored-XSS testing requires --mode active"),
+        ("injection", "file_upload", "file-upload testing requires --mode active"),
+        ("injection", "csrf_confirm", "CSRF confirmation requires --mode active"),
+        ("scan", "submit_post_forms", "POST crawling requires --mode active"),
+    ],
+)
+async def test_an_opt_in_says_it_did_not_run_only_in_a_passive_scan(
+    section: str, switch: str, warning: str
+) -> None:
+    """In Active Mode the switch takes effect, so the "did not run" line would be false."""
+    raw: dict[str, object] = {section: {switch: True}}
+    passive = await Orchestrator(ScanConfig.model_validate(raw), check_types=[PassiveOne]).run(
+        _TARGET
+    )
+    assert any(w.startswith(warning) for w in passive.warnings)
+
+    sections: dict[str, dict[str, object]] = {"scan": {"mode": "active"}}
+    sections.setdefault(section, {})[switch] = True
+    active = ScanConfig.model_validate({**sections, "active": {"authorized_by": "x"}})
+    assert active.scan.mode is ScanMode.ACTIVE
+    result = await Orchestrator(active, check_types=[PassiveOne]).run(_TARGET)
+    assert not any(w.startswith(warning) for w in result.warnings)
+
+
+class _Counted:
+    """A stand-in pass that records each construction and finds nothing."""
+
+    built: ClassVar[list[str]] = []
+
+    def __init__(self, *_args: object, **_kwargs: object) -> None:
+        type(self).built.append(type(self).__name__)
+        self.warnings: list[str] = []
+
+    async def run(self) -> list[object]:
+        return []
+
+
+def _count(monkeypatch: pytest.MonkeyPatch, name: str) -> list[str]:
+    """
+    Replace an orchestrator pass with one that counts its constructions.
+
+    A stand-in that raised would not do: the orchestrator turns a pass's exception into a
+    warning, so a pass that ran when it should not would still leave the scan green.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): The fixture that undoes the patch.
+        name (str): The pass class name in ``webvigil.core.orchestrator``.
+
+    Returns:
+        list[str]: One entry per construction.
+    """
+    counted = type(name, (_Counted,), {"built": []})
+    monkeypatch.setattr(orch_mod, name, counted)
+    return counted.built
+
+
+@pytest.mark.parametrize(
+    ("raw", "runs"),
+    [
+        ({}, False),  # Passive: no TRACE / PUT / forged Host, whatever the selection
+        (_ACTIVE_RAW, True),
+    ],
+    ids=["passive", "active"],
+)
+async def test_the_envelope_pass_needs_active_mode(
+    monkeypatch: pytest.MonkeyPatch, raw: dict[str, object], runs: bool
+) -> None:
+    """Even when a caller of the engine selects the envelope checks by hand."""
+    from webvigil.checks.envelope.checks import HostHeaderCheck, HttpMethodsCheck
+
+    built = _count(monkeypatch, "EnvelopeScanner")
+    config = ScanConfig.model_validate(raw)
+    for check in (HostHeaderCheck, HttpMethodsCheck):
+        await Orchestrator(config, check_types=[check]).run(_TARGET)
+    assert len(built) == (2 if runs else 0)
+
+
+async def test_the_envelope_pass_needs_one_of_its_checks(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Active Mode alone sends nothing: the pass is for its two checks only."""
+    built = _count(monkeypatch, "EnvelopeScanner")
+    await Orchestrator(ScanConfig.model_validate(_ACTIVE_RAW), check_types=[ActiveOne]).run(_TARGET)
+    assert built == []
+
+
+@pytest.mark.parametrize(
+    ("raw", "selected", "runs"),
+    [
+        ({"injection": {"file_upload": True}}, True, False),  # Passive
+        (_ACTIVE_RAW, True, False),  # not opted in
+        ({**_ACTIVE_RAW, "injection": {"file_upload": True}}, False, False),  # not selected
+        ({**_ACTIVE_RAW, "injection": {"file_upload": True}}, True, True),
+    ],
+    ids=["passive", "no-opt-in", "not-selected", "all-three"],
+)
+async def test_the_upload_pass_needs_active_mode_the_opt_in_and_its_check(
+    monkeypatch: pytest.MonkeyPatch, raw: dict[str, object], selected: bool, runs: bool
+) -> None:
+    """It leaves files on the target, so each of the three conditions is enough to stop it."""
+    from webvigil.checks.upload.checks import UnrestrictedUploadCheck
+
+    built = _count(monkeypatch, "UploadScanner")
+    checks: list[type[Check]] = [UnrestrictedUploadCheck] if selected else [ActiveOne]
+    await Orchestrator(ScanConfig.model_validate(raw), check_types=checks).run(_TARGET)
+    assert len(built) == (1 if runs else 0)

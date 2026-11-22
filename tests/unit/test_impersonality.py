@@ -6,7 +6,8 @@ Claude Code guidance (``CLAUDE.md``, ``.claude/``) and the specs do not depend o
 (skills) that exist only on the maintainer's machine. Steps only the maintainer runs
 (accounts, tokens, announcements) live outside the repository; the role ("the maintainer")
 takes the place of the name. The tests read ``git ls-files``, so they skip outside a clone
-(a source tarball, for example).
+(a source archive, which has no ``.git``); inside one, a ``git`` that fails is a failure, never a
+skip.
 """
 
 from __future__ import annotations
@@ -53,23 +54,25 @@ def _tracked_files() -> list[str]:
     List the files git tracks.
 
     Returns:
-        list[str]: Paths relative to the repository root. Empty when there is no git
-        repository to ask.
+        list[str]: Paths relative to the repository root. Empty outside a clone (no ``.git``);
+        inside one, a ``git`` that is missing or fails raises, so the tests fail instead of
+        skipping.
     """
-    try:
-        out = subprocess.run(
-            ["git", "ls-files", "-z"],
-            cwd=_ROOT,
-            capture_output=True,
-            check=True,
-        ).stdout
-    except (OSError, subprocess.CalledProcessError):
+    if not (_ROOT / ".git").exists():
         return []
+    out = subprocess.run(
+        ["git", "ls-files", "-z"],
+        cwd=_ROOT,
+        capture_output=True,
+        check=True,
+    ).stdout
     return [name for name in out.decode("utf-8").split("\0") if name]
 
 
+# A source archive has no .git and is skipped; inside a clone a failing git is a failure.
+_INSIDE_A_CLONE = (_ROOT / ".git").exists()
 _TRACKED = _tracked_files()
-pytestmark = pytest.mark.skipif(not _TRACKED, reason="not inside a git clone")
+pytestmark = pytest.mark.skipif(not _INSIDE_A_CLONE, reason="not inside a git clone")
 
 
 def _matches(paths: list[str], pattern: re.Pattern[str]) -> list[str]:
@@ -121,6 +124,37 @@ def test_claude_guidance_and_specs_do_not_cite_personal_skills() -> None:
     assert "CLAUDE.md" in paths
 
     assert _matches(paths, _PERSONAL_COMMAND) == []
+
+
+# Written out apart from the pattern on purpose: a word dropped from the pattern fails its case.
+_EVERY_COMMAND = [
+    "spec",
+    "idioma",
+    "estilo-arquivos",
+    "fechar-sessao",
+    "atualizar-docs",
+    "atualizar-dependencias",
+    "revisar-dependabot",
+    "nova-interface",
+    "stack",
+    "novo-projeto",
+    "preparar-release",
+    "atualizar-ferramentas",
+    "qualidade-python",
+    "limpar-branches",
+    "enxugar-memoria",
+    "auditoria-testes",
+    "auditoria-seguranca",
+]
+
+
+@pytest.mark.parametrize("skill", _EVERY_COMMAND)
+def test_the_skill_pattern_catches_each_command_and_not_the_same_word_in_a_path(
+    skill: str,
+) -> None:
+    """Guard the guard, one command at a time: a word left out of the pattern fails here."""
+    assert _PERSONAL_COMMAND.search(f"run `/{skill}` first"), skill
+    assert not _PERSONAL_COMMAND.search(f"see docs/{skill}.md and https://example.com/{skill}")
 
 
 def test_the_skill_pattern_matches_a_command_and_not_a_path() -> None:

@@ -24,12 +24,15 @@ import pytest
 from typer.testing import CliRunner
 
 from tests.support import make_finding, make_result
+from webvigil import __version__
 from webvigil.checks.registry import all_checks, load_plugins
 from webvigil.cli import app as app_mod
 from webvigil.cli._exit import ExitCode
+from webvigil.core.config import ScanConfig
 from webvigil.core.errors import HarError, LoginFailedError
 from webvigil.core.findings import ScanMode, Severity
 from webvigil.core.result import LoginSummary, ScanResult
+from webvigil.core.target import Scope
 from webvigil.core.technology import DetectionMethod, Technology
 from webvigil.reporting import get_reporter
 
@@ -101,16 +104,21 @@ def test_output_file_leaves_stdout_empty(tmp_path: Path) -> None:
     result = runner.invoke(app_mod.app, [*_SCAN, "--format", "sarif", "--output", str(target)])
     assert result.exit_code == ExitCode.OK
     assert result.stdout == ""
-    assert target.read_text("utf-8").strip().startswith("{")
+    assert json.loads(target.read_text("utf-8"))["version"] == "2.1.0"  # SARIF, not JSON
 
 
 def test_fail_on_controls_the_exit_code() -> None:
-    """``--fail-on high`` exits FINDINGS on a HIGH finding; ``--fail-on none`` exits OK."""
+    """``--fail-on`` exits FINDINGS at or above its severity, OK below it, and never on ``none``."""
     _StubOrchestrator.result = make_result(
         make_finding(check_id="tls.https", severity=Severity.HIGH)
     )
     assert runner.invoke(app_mod.app, [*_SCAN, "--fail-on", "high"]).exit_code == ExitCode.FINDINGS
     assert runner.invoke(app_mod.app, [*_SCAN, "--fail-on", "none"]).exit_code == ExitCode.OK
+    _StubOrchestrator.result = make_result(make_finding(severity=Severity.MEDIUM))
+    assert runner.invoke(app_mod.app, [*_SCAN, "--fail-on", "high"]).exit_code == ExitCode.OK
+    assert (
+        runner.invoke(app_mod.app, [*_SCAN, "--fail-on", "medium"]).exit_code == ExitCode.FINDINGS
+    )
 
 
 def test_unknown_format_is_a_usage_error() -> None:
@@ -138,6 +146,50 @@ def test_active_mode_with_authorization_runs_and_shows_banner() -> None:
     )
     assert result.exit_code == ExitCode.OK
     assert "Active Mode" in result.stderr
+
+
+def test_an_authorization_of_blanks_is_no_authorization() -> None:
+    """Spaces attest nothing: the gate refuses them as it refuses a missing value."""
+    result = runner.invoke(app_mod.app, [*_SCAN, "--mode", "active", "--authorized-by", "   "])
+    assert result.exit_code == ExitCode.NOT_AUTHORIZED
+    assert _StubOrchestrator.last_config is None
+
+
+def test_a_passive_scan_shows_no_active_banner_even_with_an_authorization() -> None:
+    """The attestation alone changes nothing: no banner, and the scan stays Passive."""
+    result = runner.invoke(app_mod.app, [*_SCAN, "--authorized-by", "Jane / #9"])
+    assert result.exit_code == ExitCode.OK
+    assert "Active Mode" not in result.stderr
+    # _config() is typed object: the stub records whatever config it was handed
+    assert _config().scan.mode is ScanMode.PASSIVE  # type: ignore[attr-defined]
+
+
+@pytest.mark.parametrize(
+    ("answer", "authorized"),
+    [("Jane / #9", True), ("   ", False), (None, False)],
+    ids=["typed", "blank", "aborted"],
+)
+def test_on_a_terminal_active_mode_asks_for_the_authorization(
+    monkeypatch: pytest.MonkeyPatch, answer: str | None, authorized: bool
+) -> None:
+    """A typed attestation runs the scan with it; a blank or aborted prompt is refused."""
+
+    def prompt(*_args: object, **_kwargs: object) -> str:
+        if answer is None:
+            raise app_mod.typer.Abort
+        return answer
+
+    monkeypatch.setattr(app_mod, "_interactive", lambda: True)
+    monkeypatch.setattr(app_mod.typer, "prompt", prompt)
+    result = runner.invoke(app_mod.app, [*_SCAN, "--mode", "active"])
+    if authorized:
+        assert result.exit_code == ExitCode.OK
+        # _config() is typed object: the stub records whatever config it was handed
+        assert _config().active.authorized_by == "Jane / #9"  # type: ignore[attr-defined]
+        assert "Active Mode" in result.stderr
+    else:
+        assert result.exit_code == ExitCode.NOT_AUTHORIZED
+        assert _StubOrchestrator.last_config is None
 
 
 # ---------------------------------------------------------------------------
@@ -209,14 +261,67 @@ def test_flags_override_the_config_file(tmp_path: Path) -> None:
     cfg = tmp_path / "webvigil.toml"
     for flag, toml, path, expected in _FLAG_CASES:
         cfg.write_text(toml, "utf-8")
+        # a flag that stopped the scan early must not be judged by the previous flag's config
+        _StubOrchestrator.last_config = None
         args = [*_SCAN, "--config", str(cfg), flag]
         result = runner.invoke(app_mod.app, args)
+        # every one of them runs in a Passive scan (--probe is GET-only, the rest only warn)
+        assert result.exit_code == ExitCode.OK, flag
         value = _config()
         for part in path.split("."):
             value = getattr(value, part)
         assert value is expected, f"{flag}: {path} is {value!r}, expected {expected!r}"
-        if flag == "--probe":
-            assert result.exit_code == 0  # GET-only: it does not trip the Active-mode gate
+
+
+# (flag and value, TOML that sets another value, the config attribute path, the value the flag
+# gives)
+_VALUE_FLAG_CASES = [
+    (["--scope", "host"], "[scan]\nscope = 'subdomains'\n", "scan.scope", Scope.HOST),
+    (["--max-pages", "7"], "[scan]\nmax_pages = 3\n", "scan.max_pages", 7),
+    (["--max-duration", "90"], "[scan]\nmax_duration_s = 30\n", "scan.max_duration_s", 90.0),
+    (["--openapi", "cli.json"], "[scan]\nopenapi = 'file.json'\n", "scan.openapi", "cli.json"),
+    (["--delay", "250"], "[http]\ndelay_ms = 10\n", "http.delay_ms", 250),
+    (["--fail-on", "low"], "[report]\nfail_on = 'high'\n", "report.fail_on", "low"),
+]
+
+
+def test_value_flags_override_the_config_file(tmp_path: Path) -> None:
+    """Each flag that takes a value wins over the file, and the file's value stays without it."""
+    cfg = tmp_path / "webvigil.toml"
+    for args, toml, path, expected in _VALUE_FLAG_CASES:
+        cfg.write_text(toml, "utf-8")
+        for given, wanted in ((args, expected), ([], None)):
+            _StubOrchestrator.last_config = None
+            result = runner.invoke(app_mod.app, [*_SCAN, "--config", str(cfg), *given])
+            value = _config()
+            for part in path.split("."):
+                value = getattr(value, part)
+            if wanted is None:  # without the flag: the file's value, not the default
+                default = ScanConfig()
+                for part in path.split("."):
+                    default = getattr(default, part)
+                assert value != default, f"{path}: the file's value was not read"
+            else:
+                assert value == wanted, f"{args[0]}: {path} is {value!r}"
+            assert result.exit_code in (ExitCode.OK, ExitCode.FINDINGS), args[0]
+
+
+@pytest.mark.parametrize(
+    ("args", "option"),
+    [
+        ([*_SCAN, "--fail-on", "urgent"], "--fail-on"),
+        ([*_SCAN, "--format", "pdf"], "--format"),
+        (["report", "scan.json", "--format", "pdf"], "--format"),
+    ],
+)
+def test_an_unknown_choice_is_a_usage_error_that_names_the_choices(
+    args: list[str], option: str
+) -> None:
+    """A typo is caught before anything runs, with the list to pick from."""
+    result = runner.invoke(app_mod.app, args)
+    assert result.exit_code == ExitCode.USAGE
+    assert f"unknown {option} " in result.stderr and "choose from" in result.stderr
+    assert _StubOrchestrator.last_config is None  # the scan never started
 
 
 # ---------------------------------------------------------------------------
@@ -295,6 +400,11 @@ def test_write_pass_notes_appear_only_with_their_flag_in_active_mode() -> None:
         )
         assert note in runner.invoke(app_mod.app, [*_ACTIVE, flag]).stderr, flag
         assert note not in runner.invoke(app_mod.app, _ACTIVE).stderr, flag
+        # a Passive scan never runs the pass, so the flag alone must not claim it wrote anything
+        _StubOrchestrator.result = make_result(
+            make_finding(check_id=check_id, severity=Severity.MEDIUM)
+        )
+        assert note not in runner.invoke(app_mod.app, [*_SCAN, flag]).stderr, flag
     # the confirmed-CSRF line needs a confirming finding, not the flag
     _StubOrchestrator.result = make_result(
         make_finding(check_id="csrf.form.token-not-enforced", severity=Severity.MEDIUM),
@@ -370,20 +480,38 @@ def test_version_warns_only_when_the_advisory_database_is_stale(
     )
     stale = runner.invoke(app_mod.app, ["version"])
     assert stale.exit_code == 0
-    assert "webvigil" in stale.stdout
-    assert "advisory data is 200 days old" in stale.stderr
+    assert stale.stdout == f"webvigil {__version__}\n"
+    assert "warning: advisory data is 200 days old" in stale.stderr
     monkeypatch.setattr(app_mod, "staleness_warning", lambda _rules: [])
-    assert "warning:" not in runner.invoke(app_mod.app, ["version"]).stderr
+    fresh = runner.invoke(app_mod.app, ["version"])
+    assert fresh.stdout == f"webvigil {__version__}\n"
+    assert fresh.stderr == ""
 
 
 def test_report_re_renders_offline_in_every_format(tmp_path: Path) -> None:
-    """``report`` re-renders a saved scan JSON into any format without a network."""
+    """``report`` re-renders a saved scan JSON into any format, the one asked for, offline."""
+    saved = make_result(make_finding())
     scan_json = tmp_path / "scan.json"
-    scan_json.write_text(make_result(make_finding()).model_dump_json(), "utf-8")
+    scan_json.write_text(saved.model_dump_json(), "utf-8")
     for fmt in ("json", "sarif", "html", "md"):
         result = runner.invoke(app_mod.app, ["report", str(scan_json), "--format", fmt])
         assert result.exit_code == 0, fmt
-        assert result.stdout.strip(), fmt
+        # the output is exactly what that reporter writes (and a newline), not another format
+        assert result.stdout == get_reporter(fmt).render(saved) + "\n", fmt
+
+
+def test_report_writes_to_the_output_file_and_leaves_stdout_empty(tmp_path: Path) -> None:
+    """``report --output`` puts the report in the file, as ``scan --output`` does."""
+    saved = make_result(make_finding())
+    scan_json = tmp_path / "scan.json"
+    scan_json.write_text(saved.model_dump_json(), "utf-8")
+    target = tmp_path / "out.md"
+    result = runner.invoke(
+        app_mod.app, ["report", str(scan_json), "--format", "md", "--output", str(target)]
+    )
+    assert result.exit_code == ExitCode.OK
+    assert result.stdout == ""
+    assert target.read_text("utf-8") == get_reporter("md").render(saved)
 
 
 # ---------------------------------------------------------------------------
@@ -529,7 +657,8 @@ def test_the_session_checks_summary_line_says_what_was_asked_for() -> None:
     ]
     for args, line in cases:
         result = runner.invoke(app_mod.app, args, env=_PASSWORD_ENV)
-        assert line in result.stderr, line
+        # the whole line: "fixation checked" is also the start of "..., logout tested"
+        assert line in result.stderr.splitlines(), line
     assert "Session checks" not in runner.invoke(app_mod.app, _SCAN).stderr
     # logout is not "tested" in a Passive scan even with the switch
     passive = runner.invoke(app_mod.app, [*_SCAN, *_LOGIN, "--test-logout"])

@@ -69,6 +69,17 @@ def test_register_rejects_missing_metadata() -> None:
         registry.register(_make_check(check_id=None))
 
 
+@pytest.mark.parametrize("attribute", ["id", "name", "category", "default_severity"])
+@pytest.mark.parametrize("value", [None, ""])
+def test_register_rejects_each_missing_or_empty_attribute(attribute: str, value: object) -> None:
+    """Every attribute the SARIF rules, ``list-checks`` and ``--fail-on`` read is required."""
+    cls = _make_check("x.complete")
+    setattr(cls, attribute, value)
+    with pytest.raises(WebVigilError, match=rf"missing required check metadata: '{attribute}'"):
+        registry.register(cls)
+    assert registry.all_checks() == []
+
+
 def test_duplicate_id_raises() -> None:
     """Registering two different classes under one id raises :class:`DuplicateCheckId`."""
     registry.register(_make_check("dup.id"))

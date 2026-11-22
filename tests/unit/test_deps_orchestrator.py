@@ -189,6 +189,29 @@ async def test_osv_lookup_checks_for_a_deps_check_even_when_given_detections(
     assert counting_osv.built == 1
 
 
+async def test_osv_lookup_asks_only_about_detections_with_a_version(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A library without a version has no advisories to ask about; none at all asks nothing."""
+    asked: list[tuple[Detection, ...]] = []
+
+    class _Recording(_CountingOsv):
+        async def lookup(self, detections: tuple[Detection, ...]) -> OsvResult:
+            asked.append(tuple(detections))
+            return OsvResult(advisories={})
+
+    monkeypatch.setattr(orch_mod, "OsvProvider", _Recording)
+    cfg = ScanConfig.model_validate({"deps": {"osv_online": True}})
+    versioned = Detection("jquery", "3.4.1", DetectionMethod.FILENAME, _TARGET, "jquery.js")
+    bare = Detection("react", None, DetectionMethod.URI, _TARGET, "react.js")
+    orchestrator = Orchestrator(cfg, check_types=[VulnerableLibraryCheck])
+
+    await orchestrator._osv_lookup([VulnerableLibraryCheck], (versioned, bare), [])
+    assert asked == [(versioned,)]
+    assert await orchestrator._osv_lookup([VulnerableLibraryCheck], (bare,), []) == {}
+    assert asked == [(versioned,)]  # nothing with a version: no lookup at all
+
+
 async def test_osv_lookup_runs_and_merges_into_the_finding(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

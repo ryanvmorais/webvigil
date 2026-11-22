@@ -113,11 +113,15 @@ def test_hostile_values_are_rendered_as_plain_text() -> None:
     finding = _hostile(
         title=title,
         description="see ![x](http://evil.test/p.png) and <script>alert(1)</script>",
-        remediation="<a href=javascript:alert(1)>fix</a> [here](javascript:alert(1))",
+        remediation="<a href=javascript:alert(1)>fix</a> [here](https://evil.test/fix)",
         evidence=[
             EvidenceItem.of("</summary><img src=x onerror=1>", "```\n</details>\n<b>x</b>\n````")
         ],
-        references=("<javascript:alert(1)>", "[r](javascript:alert(1))"),
+        references=(
+            "<javascript:alert(1)>",
+            "[r](https://evil.test/r)",
+            "<https://evil.test/autolink>",
+        ),
     )
     md = _render(make_result(finding))
     tokens = _tokens(md)
@@ -197,7 +201,9 @@ def test_a_table_cell_survives_a_pipe_in_a_library_name() -> None:
 
 def test_check_error_text_is_plain() -> None:
     """An error message, which can echo the target, cannot break out of its list item."""
-    error = CheckError(check_id="x`y", message="boom <b>\n## h\n[l](javascript:1)", traceback="")
+    error = CheckError(
+        check_id="x`y", message="boom <b>\n## h\n[l](https://evil.test/l)", traceback=""
+    )
     md = _render(make_result(make_finding(references=()), errors=[error]))
     tokens = _tokens(md)
     assert _heading_texts(md, "h2")[-1] == "Check errors"
@@ -205,11 +211,12 @@ def test_check_error_text_is_plain() -> None:
     assert not [t for t in tokens if t.type in ("link_open", "html_inline")]
 
 
-def test_a_location_key_cannot_end_its_code_span() -> None:
-    """A parameter name with backticks is wrapped in a longer delimiter."""
-    finding = make_finding(url="https://example.com/p", param="q`<script>`z")
+@pytest.mark.parametrize("param", ["q`<script>`z", "`q", "q`"])
+def test_a_location_key_cannot_end_its_code_span(param: str) -> None:
+    """A parameter name with backticks is wrapped in a longer delimiter, padded at an edge."""
+    finding = make_finding(url="https://example.com/p", param=param)
     tokens = _tokens(_render(make_result(finding)))
-    assert "q`<script>`z" in [t.content for t in tokens if t.type == "code_inline"]
+    assert param in [t.content for t in tokens if t.type == "code_inline"]
     assert not [t for t in tokens if t.type == "html_inline"]
 
 
@@ -257,3 +264,28 @@ def test_severity_and_counts_are_untouched() -> None:
     md = _render(result)
     assert "| HIGH | 1 |" in md
     assert "## [HIGH] http.headers.csp finding" in md
+
+
+def test_the_optional_lines_appear_only_with_their_value() -> None:
+    """The attestation, "No findings.", a sub-location, the CWEs, a version and the advisories."""
+    assert "- CWE: CWE-693" in _render(make_result(make_finding())).splitlines()
+    lines = _render(make_result(authorized_by="Jane, ticket 7")).splitlines()
+    assert "- Authorized by: Jane, ticket 7" in lines
+    assert "No findings." in lines
+    assert not any(
+        line.startswith("- Authorized by") for line in _render(make_result()).splitlines()
+    )
+
+    bare = make_finding(header=None).model_copy(update={"cwe": ()})
+    library = Technology(
+        name="lib",
+        version=None,
+        detection=DetectionMethod.URI,
+        source_url="https://example.com/lib.js",
+        vulnerable=True,
+    )
+    lines = _render(make_result(bare, technologies=(library,))).splitlines()
+    assert "- Location: https:&#8203;//example.com/" in lines  # no "(`None`)" after it
+    assert not any(line.startswith("- CWE:") for line in lines)
+    assert "No findings." not in lines
+    assert "| lib | unknown | uri | **Vulnerable** |" in lines  # no advisory, no "()"

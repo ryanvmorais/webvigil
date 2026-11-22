@@ -101,6 +101,28 @@ def test_the_echo_redaction_masks_credential_lines_and_keeps_the_rest() -> None:
 
 
 @pytest.mark.parametrize(
+    "header",
+    [
+        "Authorization",
+        "Cookie",
+        "Proxy-Authorization",
+        "X-API-Key",
+        "X-Auth-Token",
+        "Api-Key",
+        "X-Amz-Security-Token",
+        "X-CSRF-Token",
+    ],
+)
+@pytest.mark.parametrize("indent", ["", "  ", "\t"])
+def test_each_credential_header_of_an_echo_is_masked(header: str, indent: str) -> None:
+    """One case per header name: a name dropped from the list would leave its value in a report."""
+    echo = f"TRACE / HTTP/1.1\n{indent}{header}: s3cret-value\nAccept: */*\n"
+    masked = _SECRET_HEADER_LINE.sub(r"\1: ***redacted***", echo)
+    assert "s3cret-value" not in masked
+    assert "Accept: */*" in masked
+
+
+@pytest.mark.parametrize(
     "markup",
     [
         '<base href="https://webvigil.invalid/">',
@@ -131,6 +153,38 @@ def test_a_reflected_url_in_the_body_is_still_found() -> None:
 def test_a_rejection_page_is_still_recognised(text: str) -> None:
     """The phrases a framework puts on a rejected form."""
     assert _REJECTION_RE.search(text)
+
+
+# One phrase per word of the pattern, each matched by that word alone: a word dropped from the
+# pattern fails its own case.
+_REJECTION_WORDS = [
+    "csrf check",
+    "xsrf check",
+    "cross-site request refused",
+    "cross site request refused",
+    "forbidden",
+    "invalid token",
+    "missing token",
+    "expired token",
+    "bad token",
+    "mismatched token",
+    "bad origin",
+    "bad referer",
+    "token invalid",
+    "token missing",
+    "token expired",
+    "token required",
+    "token mismatch",
+    "origin required",
+    "referer required",
+    "session expired",
+]
+
+
+@pytest.mark.parametrize("text", _REJECTION_WORDS)
+def test_each_word_of_a_rejection_is_recognised(text: str) -> None:
+    """A replayed form the site refused, read as a refusal: the confirmation reports nothing."""
+    assert _REJECTION_RE.search(f"Request failed: {text}.")
 
 
 def test_an_ordinary_page_is_not_a_rejection() -> None:

@@ -656,24 +656,27 @@ _LOGIN = {"url": "https://example.com/signin", "username": "u"}
 
 
 @pytest.mark.parametrize(
-    ("auth", "warns"),
+    ("auth", "session", "warns"),
     [
-        ({}, True),
-        ({"cookies": ["s=1"]}, False),
-        ({"headers": ["Authorization: Bearer x"]}, False),
-        ({"login": _LOGIN}, False),
+        ({}, True, True),
+        ({"cookies": ["s=1"]}, True, False),
+        ({"headers": ["Authorization: Bearer x"]}, True, False),
+        ({"login": _LOGIN}, True, False),
+        # a recording without a session has nothing to warn about, credentials or not
+        ({}, False, False),
     ],
-    ids=["no-credentials", "cookie", "header", "login"],
+    ids=["no-credentials", "cookie", "header", "login", "anonymous-recording"],
 )
 def test_an_authenticated_recording_warns_only_when_the_scan_is_not(
-    tmp_path: Path, auth: dict[str, object], warns: bool
+    tmp_path: Path, auth: dict[str, object], session: bool, warns: bool
 ) -> None:
     """RF-08: the warning names the options, never a value, and goes away with any credential."""
     config = ScanConfig.model_validate(
-        {"scan": {"har": _har_file(tmp_path, session=True)}, "auth": auth}
+        {"scan": {"har": _har_file(tmp_path, session=session)}, "auth": auth}
     )
     warnings: list[str] = []
     Orchestrator(config, check_types=[HstsCheck])._load_har(Target.parse(_TARGET), warnings)
+    assert any("HAR" in w for w in warnings)  # the recording was loaded and summarised
     looks = [w for w in warnings if "looks authenticated" in w]
     assert bool(looks) is warns
     assert "SECRETVALUE" not in " ".join(warnings)
