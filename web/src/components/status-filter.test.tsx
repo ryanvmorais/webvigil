@@ -33,6 +33,23 @@ vi.mock("@/components/field-select", () => ({
 }));
 
 describe("StatusFilter", () => {
+  it("shows the status from the URL, and every status in words", () => {
+    searchParams.set("status", "failed");
+    render(<StatusFilter />);
+    const select = screen.getByRole("combobox", { name: "Filter by status" });
+    expect(select).toHaveValue("failed");
+    expect([...select.querySelectorAll("option")].map((o) => o.textContent)).toEqual([
+      "All statuses",
+      "Queued",
+      "Running",
+      "Completed",
+      "Failed",
+      "Cancelled",
+      "Interrupted",
+    ]);
+    searchParams.delete("status");
+  });
+
   it("writes the chosen status into the URL and clears it for 'all'", async () => {
     const user = userEvent.setup();
     const { unmount } = render(<StatusFilter />);

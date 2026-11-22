@@ -32,10 +32,12 @@ function mockSetup(needsSetup: boolean) {
 }
 
 describe("AuthGuard", () => {
-  it("redirects to /setup when the instance needs setup", async () => {
+  it("redirects to /setup when the instance needs setup, without asking who is signed in", async () => {
+    // no handler for /api/auth/me: asking it would fail the test (vitest.setup.ts)
     server.use(mockSetup(true));
     renderWithClient(<AuthGuard>secret</AuthGuard>);
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/setup"));
+    expect(screen.queryByText("secret")).not.toBeInTheDocument();
   });
 
   it("redirects to /login with the requested path when unauthenticated", async () => {
@@ -45,6 +47,40 @@ describe("AuthGuard", () => {
     );
     renderWithClient(<AuthGuard>secret</AuthGuard>);
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/login?next=%2Fscans%2F7"));
+    expect(screen.queryByText("secret")).not.toBeInTheDocument();
+    // a spinner until the redirect lands: a 401 is expected here, not a failure to report
+    expect(screen.queryByText("Could not verify your session.")).not.toBeInTheDocument();
+  });
+
+  it("keeps the page hidden until the session check answers", async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const asked = vi.fn();
+    server.use(
+      mockSetup(false),
+      http.get("*/api/auth/me", async () => {
+        asked();
+        await gate;
+        return HttpResponse.json(user);
+      }),
+    );
+    renderWithClient(<AuthGuard>secret content</AuthGuard>);
+    await waitFor(() => expect(asked).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText("secret content")).not.toBeInTheDocument();
+    release();
+    await screen.findByText("secret content");
+  });
+
+  it("shows a retry state, not the sign-in page, when the session check fails otherwise", async () => {
+    server.use(
+      mockSetup(false),
+      http.get("*/api/auth/me", () => HttpResponse.json({ detail: "boom" }, { status: 500 })),
+    );
+    renderWithClient(<AuthGuard>secret</AuthGuard>);
+    await screen.findByText("Could not verify your session.");
+    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+    expect(router.replace).not.toHaveBeenCalled();
+    expect(screen.queryByText("secret")).not.toBeInTheDocument();
   });
 
   it("renders children for a valid session", async () => {

@@ -106,9 +106,49 @@ describe("LoginPage", () => {
     await user.click(screen.getByRole("button", { name: "Sign in" }));
 
     await screen.findByText("Invalid username or password.");
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
     expect(screen.getByLabelText("Username")).toHaveValue("ana");
     expect(screen.getByLabelText("Password")).toHaveValue("");
     expect(router.replace).not.toHaveBeenCalled();
+  });
+
+  it("sends what was typed", async () => {
+    const user = userEvent.setup();
+    let body: unknown;
+    server.use(
+      http.post("*/api/auth/login", async ({ request }) => {
+        body = await request.json();
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    renderWithClient(<LoginPage />);
+    await user.type(await screen.findByLabelText("Username"), "ana");
+    await user.type(screen.getByLabelText("Password"), "supersecret");
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await waitFor(() => expect(router.replace).toHaveBeenCalled());
+    expect(body).toEqual({ username: "ana", password: "supersecret" });
+  });
+
+  it("tells a server failure apart from a wrong password", async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.post("*/api/auth/login", () => HttpResponse.json({ detail: "boom" }, { status: 500 })),
+    );
+    renderWithClient(<LoginPage />);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    await user.type(await screen.findByLabelText("Username"), "ana");
+    await user.type(screen.getByLabelText("Password"), "supersecret");
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not sign in. Try again.");
+    expect(screen.queryByText("Invalid username or password.")).not.toBeInTheDocument();
+  });
+
+  it("renders the account-created notice after setup", async () => {
+    searchParams.set("setup", "done");
+    renderWithClient(<LoginPage />);
+    expect(await screen.findByText("Account created. Sign in to continue.")).toBeInTheDocument();
+    searchParams.delete("setup");
   });
 
   it("renders the expired-session notice", async () => {

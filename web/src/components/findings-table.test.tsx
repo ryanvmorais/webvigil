@@ -100,6 +100,118 @@ describe("FindingsTable", () => {
     expect(document.body.textContent).not.toContain(zwsp);
   });
 
+  it("escapes them in every field the site can reach, not only the title and the evidence", async () => {
+    const user = userEvent.setup();
+    const rlo = String.fromCodePoint(0x202e);
+    render(
+      <FindingsTable
+        findings={[
+          makeFinding({
+            fingerprint: "all",
+            description: `desc${rlo}`,
+            remediation: `fix${rlo}`,
+            location: {
+              url: `https://example.com/${rlo}`,
+              method: "GET",
+              param: `p${rlo}`,
+              header: null,
+              cookie: null,
+            },
+            references: [`urn:${rlo}x`],
+          }),
+          makeFinding({
+            fingerprint: "cookie",
+            location: {
+              url: "https://example.com/",
+              method: "GET",
+              param: null,
+              header: null,
+              cookie: `sid${rlo}`,
+            },
+          }),
+        ]}
+      />,
+    );
+    for (const button of screen.getAllByRole("button", { name: /^Expand finding:/ })) {
+      await user.click(button);
+    }
+    expect(screen.getByText("desc\\u202e")).toBeInTheDocument();
+    expect(screen.getByText("fix\\u202e")).toBeInTheDocument();
+    expect(screen.getByText("urn:\\u202ex")).toBeInTheDocument();
+    expect(screen.getAllByText("https://example.com/\\u202e · param p\\u202e")).toHaveLength(2);
+    expect(screen.getAllByText("https://example.com/ · cookie sid\\u202e")).toHaveLength(2);
+    expect(document.body.textContent).not.toContain(rlo);
+  });
+
+  it("keeps the one-line fields on one line, and lets a description and evidence break", async () => {
+    const user = userEvent.setup();
+    render(
+      <FindingsTable
+        findings={[
+          makeFinding({
+            fingerprint: "nl",
+            title: "Title\nforged second line",
+            description: "first\nsecond",
+            location: {
+              url: "https://example.com/a\nb",
+              method: "GET",
+              param: null,
+              header: null,
+              cookie: null,
+            },
+            evidence: [{ label: "Label\nforged", content: "line 1\nline 2" }],
+            references: ["urn:a\nb"],
+          }),
+        ]}
+      />,
+    );
+    expect(screen.getByText("Title\\x0aforged second line")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /^Expand finding:/ }));
+    expect(screen.getAllByText("https://example.com/a\\x0ab")).toHaveLength(2);
+    expect(screen.getByText("Label\\x0aforged")).toBeInTheDocument();
+    expect(screen.getByText("urn:a\\x0ab")).toBeInTheDocument();
+    // a body keeps its line breaks: only the single-line fields escape them
+    const description = screen.getByText((_, el) => el?.textContent === "first\nsecond");
+    expect(description.tagName).toBe("P");
+    expect(screen.getByText((_, el) => el?.textContent === "line 1\nline 2").tagName).toBe("PRE");
+  });
+
+  it("opens every outside link in a new tab with no opener and no referrer", async () => {
+    const user = userEvent.setup();
+    render(
+      <FindingsTable
+        findings={[
+          makeFinding({ fingerprint: "l", cwe: [79], references: ["https://example.org/ref"] }),
+        ]}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: /^Expand finding:/ }));
+    for (const name of ["CWE-79", "https://example.org/ref"]) {
+      const link = screen.getByRole("link", { name });
+      expect(link).toHaveAttribute("target", "_blank");
+      expect(link).toHaveAttribute("rel", "noreferrer noopener");
+    }
+  });
+
+  it("collapses an open row on a second click", async () => {
+    const user = userEvent.setup();
+    render(<FindingsTable findings={[makeFinding({ title: "One", fingerprint: "x" })]} />);
+    await user.click(screen.getByRole("button", { name: "Expand finding: One" }));
+    expect(screen.getByText("Remediation.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Collapse finding: One" }));
+    expect(screen.queryByText("Remediation.")).not.toBeInTheDocument();
+  });
+
+  it("leaves out the CWE and reference blocks when a finding has none", async () => {
+    const user = userEvent.setup();
+    render(
+      <FindingsTable findings={[makeFinding({ fingerprint: "e", cwe: [], references: [] })]} />,
+    );
+    await user.click(screen.getByRole("button", { name: /^Expand finding:/ }));
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+    expect(screen.queryByRole("list")).not.toBeInTheDocument();
+  });
+
   it("names each expand button after its finding, so a screen reader can tell them apart", () => {
     render(
       <FindingsTable

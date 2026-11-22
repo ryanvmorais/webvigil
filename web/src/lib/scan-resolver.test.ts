@@ -82,4 +82,61 @@ describe("scanResolver", () => {
     const at = await validate({ ...valid, max_pages: "10000", delay_ms: "60000" });
     expect(at.errors).toEqual({});
   });
+
+  it.each([
+    ["max_pages", "0", "a page count of zero"],
+    ["max_pages", "1.5", "a fractional page count"],
+    ["delay_ms", "-1", "a negative delay"],
+    ["delay_ms", "2.5", "a fractional delay"],
+  ])("refuses %s = %s (%s)", async (field, value) => {
+    const result = await validate({ ...valid, [field]: value });
+    expect(Object.keys(result.errors)).toEqual([field]);
+  });
+
+  it("accepts the floors: one page, no delay", async () => {
+    const result = await validate({ ...valid, max_pages: "1", delay_ms: "0" });
+    expect(result.errors).toEqual({});
+  });
+
+  it("trims the target, and refuses one that is only spaces", async () => {
+    const trimmed = await validate({ ...valid, target: "  https://example.com  " });
+    expect(trimmed.values).toMatchObject({ target: "https://example.com" });
+    const blank = await validate({ ...valid, target: "   " });
+    expect(blank.errors).toHaveProperty("target.message", "Target is required.");
+  });
+
+  it("refuses a target over 2048 characters and accepts one of 2048", async () => {
+    const base = "https://example.com/";
+    const at = await validate({ ...valid, target: base + "a".repeat(2048 - base.length) });
+    expect(at.errors).toEqual({});
+    const over = await validate({ ...valid, target: base + "a".repeat(2049 - base.length) });
+    expect(over.errors).toHaveProperty("target.message", "At most 2048 characters.");
+  });
+
+  it.each(["https://example.com", "example.com", "http://localhost:8000/app", "http://app:8000/"])(
+    "accepts the target %s",
+    async (target) => {
+      expect((await validate({ ...valid, target })).errors).toEqual({});
+    },
+  );
+
+  it.each(["localhost", "not a url", "ftp:/x"])("refuses the target %j", async (target) => {
+    expect((await validate({ ...valid, target })).errors).toHaveProperty("target");
+  });
+
+  it("accepts both scopes and nothing else", async () => {
+    expect((await validate({ ...valid, scope: "subdomains" })).errors).toEqual({});
+    expect((await validate({ ...valid, scope: "everything" })).errors).toHaveProperty("scope");
+  });
+
+  it("counts an attestation of spaces as none, and caps it at 200 characters", async () => {
+    const active = { ...valid, mode: "active" };
+    expect((await validate({ ...active, authorized_by: "   " })).errors).toHaveProperty(
+      "authorized_by",
+    );
+    expect((await validate({ ...active, authorized_by: "a".repeat(200) })).errors).toEqual({});
+    expect((await validate({ ...active, authorized_by: "a".repeat(201) })).errors).toHaveProperty(
+      "authorized_by",
+    );
+  });
 });

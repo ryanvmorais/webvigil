@@ -9,6 +9,9 @@ const BOM = String.fromCodePoint(0xfeff);
 const ESC = String.fromCodePoint(0x1b);
 const CSI = String.fromCodePoint(0x9b);
 
+/** A code point as a test name shows it: 202E, not 8238. */
+const hex = (code: number) => code.toString(16).toUpperCase().padStart(4, "0");
+
 describe("showControls", () => {
   it("writes bidirectional and zero-width characters as \\u escapes", () => {
     expect(showControls(`a${RLO}b${ZWSP}c${LRI}d${BOM}é`)).toBe(
@@ -26,6 +29,45 @@ describe("showControls", () => {
 
   it("escapes tab and line feed too on one line", () => {
     expect(showControls("a\tb\nc", { oneLine: true })).toBe("a\\x09b\\x0ac");
+  });
+
+  it("keeps both halves of a CRLF on one line: a title has no line endings to normalise", () => {
+    expect(showControls("a\r\nb", { oneLine: true })).toBe("a\\x0d\\x0ab");
+  });
+
+  // Both ends of every range of `INVISIBLE_CHARS` (src/webvigil/core/text.py), so a range that
+  // shrinks by one, or one that goes missing, fails here and not only in a sample.
+  it.each(
+    [
+      [0x00, "\\x00"],
+      [0x08, "\\x08"],
+      [0x0b, "\\x0b"],
+      [0x1f, "\\x1f"],
+      [0x7f, "\\x7f"],
+      [0x9f, "\\x9f"],
+      [0x061c, "\\u061c"],
+      [0x200b, "\\u200b"],
+      [0x200f, "\\u200f"],
+      [0x202a, "\\u202a"],
+      [0x202e, "\\u202e"],
+      [0x2060, "\\u2060"],
+      [0x2064, "\\u2064"],
+      [0x2066, "\\u2066"],
+      [0x2069, "\\u2069"],
+      [0xfeff, "\\ufeff"],
+    ].map(([code, escape]) => [hex(code as number), code, escape] as const),
+  )("escapes U+%s, an end of a hidden range", (_hex, code, escape) => {
+    expect(showControls(`a${String.fromCodePoint(code as number)}b`)).toBe(`a${escape}b`);
+  });
+
+  // ...and the character just outside each end stays as it is.
+  it.each(
+    [0x20, 0x7e, 0xa0, 0x061b, 0x061d, 0x200a, 0x2010, 0x2029, 0x202f, 0x205f, 0x2065, 0x206a].map(
+      (code) => [hex(code), code] as const,
+    ),
+  )("leaves U+%s, just outside a hidden range, alone", (_hex, code) => {
+    const char = String.fromCodePoint(code);
+    expect(showControls(`a${char}b`)).toBe(`a${char}b`);
   });
 
   it("leaves ordinary text alone", () => {
