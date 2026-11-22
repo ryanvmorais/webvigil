@@ -197,6 +197,21 @@ def test_injection_section_defaults_and_round_trips(tmp_path: Path) -> None:
     assert loaded.csrf_confirm is True
 
 
+def test_the_time_based_delay_is_at_least_two_seconds(tmp_path: Path) -> None:
+    """
+    Two seconds is accepted; less is refused.
+
+    A time-based hit needs ``delay - 1`` seconds over the slower of the control and the baseline.
+    At one second or less that margin is zero or negative, so a target that never waits would be
+    reported as injectable.
+    """
+    loaded = ScanConfig.load(_write(tmp_path, "[injection]\ntime_based_delay_s = 2\n"))
+    assert loaded.injection.time_based_delay_s == 2
+    for bad in (1, 0, -3):
+        with pytest.raises(ConfigError):
+            ScanConfig.load(_write(tmp_path, f"[injection]\ntime_based_delay_s = {bad}\n"))
+
+
 def test_deps_section_defaults_and_round_trips(tmp_path: Path) -> None:
     """``[deps]`` OSV settings default off / 10s / api.osv.dev and round-trip through TOML."""
     defaults = ScanConfig().deps

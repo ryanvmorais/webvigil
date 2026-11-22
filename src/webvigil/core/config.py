@@ -453,8 +453,8 @@ class InjectionSection(_Section):
         time_based_cmdi (bool): Send time-delay OS-command-injection payloads
             (spec 011). Slower; shares the time sub-budget with ``time_based_sqli``.
             Defaults to ``True``.
-        time_based_delay_s (int): Delay a positive time-based SQLi payload
-            should induce, in seconds. Defaults to 5.
+        time_based_delay_s (int): Delay a positive time-based SQLi or command-injection
+            payload should induce, in seconds; at least 2. Defaults to 5.
         stored_xss (bool): Run the opt-in stored/persistent-XSS pass. Off by
             default: the pass submits marker payloads the target stores and
             does not remove them (see ``docs/active-injection.md``).
@@ -482,7 +482,9 @@ class InjectionSection(_Section):
     max_injection_points: int = 200
     time_based_sqli: bool = True
     time_based_cmdi: bool = True
-    time_based_delay_s: int = 5
+    # A time-based hit needs `delay - 1` seconds over the floor: below two seconds that margin is
+    # zero or negative, and a target that never waits would look injectable.
+    time_based_delay_s: int = Field(default=5, ge=2)
     stored_xss: bool = False
     xxe: bool = False
     file_upload: bool = False
