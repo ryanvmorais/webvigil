@@ -198,16 +198,28 @@ async def test_a_403_still_counts_when_only_the_git_directory_is_forbidden(
 
 
 async def test_probe_is_deterministic(httpx_mock: object) -> None:
-    """Two identical runs produce the same hits in the same order (RNF-04)."""
+    """
+    Two identical runs produce the same hits in the catalogue's order (RNF-04).
+
+    Three hits, because the order of one cannot change; and the order is pinned to the
+    catalogue, because two runs in one process share the hash seed that a set would follow.
+    """
+    exposed = {
+        "https://example.com/.git/config": (200, _GIT_CONFIG, "text/plain"),
+        "https://example.com/.env": (200, _ENV, "text/plain"),
+        "https://example.com/package.json": (200, _PACKAGE_JSON, "application/json"),
+    }
 
     def make_router() -> _Router:
-        return _Router(
-            {"https://example.com/.git/config": (200, _GIT_CONFIG, "text/plain")},
-            default=(404, "not found", "text/html"),
-        )
+        return _Router(exposed, default=(404, "not found", "text/html"))
 
     first = await _run(make_router(), (_page(),), httpx_mock)
     second = await _run(make_router(), (_page(),), httpx_mock)
+    in_catalogue_order = [
+        f"/{entry.path}" for entry in load_catalogue() if f"{_SEED}{entry.path}" in exposed
+    ]
+    assert len(in_catalogue_order) == 3
+    assert [h.path for h in first.hits] == in_catalogue_order
     assert [(h.family, h.path, h.severity) for h in first.hits] == [
         (h.family, h.path, h.severity) for h in second.hits
     ]

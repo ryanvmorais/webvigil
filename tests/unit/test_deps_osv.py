@@ -101,6 +101,7 @@ class _Transport:
     ) -> None:
         self.calls: list[str] = []
         self.sent_queries: list[dict[str, Any]] = []
+        self.package_queries: list[dict[str, Any]] = []
         self._batch = batch
         self._queries = queries or {}
         self._batch_status = batch_status
@@ -117,6 +118,7 @@ class _Transport:
             self.sent_queries = body.get("queries", [])
             return httpx.Response(self._batch_status, json=self._batch)
         if request.url.path == "/v1/query":
+            self.package_queries.append(body)
             name = body["package"]["name"]
             return httpx.Response(self._query_status, json=self._queries.get(name, {"vulns": []}))
         return httpx.Response(404, json={})
@@ -178,13 +180,23 @@ def test_cvss3_base_rejects_non_v3_vectors() -> None:
     assert _cvss3_base("CVSS:3.1/AV:X/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H") is None  # bad metric
 
 
-def test_band_edges() -> None:
-    """The score-to-severity band boundaries land on the expected side."""
-    assert _band(0.0) is None
-    assert _band(3.9) is Severity.LOW
-    assert _band(4.0) is Severity.MEDIUM
-    assert _band(7.0) is Severity.HIGH
-    assert _band(9.0) is Severity.CRITICAL
+@pytest.mark.parametrize(
+    ("score", "band"),
+    [
+        (0.0, None),
+        (0.1, Severity.LOW),
+        (3.9, Severity.LOW),
+        (4.0, Severity.MEDIUM),
+        (6.9, Severity.MEDIUM),
+        (7.0, Severity.HIGH),
+        (8.9, Severity.HIGH),
+        (9.0, Severity.CRITICAL),
+        (10.0, Severity.CRITICAL),
+    ],
+)
+def test_band_edges(score: float, band: Severity | None) -> None:
+    """Both sides of every score-to-severity boundary land in the right band."""
+    assert _band(score) is band
 
 
 # ---------------------------------------------------------------------------
@@ -265,17 +277,25 @@ def test_first_safe_is_none_with_only_last_affected() -> None:
     assert _first_safe(record, "jquery", "3.0.0") is None
 
 
-def test_first_safe_ignores_a_non_matching_package() -> None:
-    """A range for a different ecosystem/name is not used for the fix version."""
+@pytest.mark.parametrize(
+    "package",
+    [
+        pytest.param({"ecosystem": "PyPI", "name": "jquery"}, id="other-ecosystem"),
+        pytest.param({"ecosystem": "npm", "name": "jquery-ui"}, id="other-name"),
+    ],
+)
+def test_first_safe_ignores_a_non_matching_package(package: dict[str, str]) -> None:
+    """A lower fix listed for a different ecosystem or name is not the fix version."""
     record = {
         "affected": [
+            {"package": package, "ranges": [{"events": [{"fixed": "3.1.0"}]}]},
             {
-                "package": {"ecosystem": "PyPI", "name": "jquery"},
-                "ranges": [{"events": [{"fixed": "9.9.9"}]}],
-            }
+                "package": {"ecosystem": "npm", "name": "jquery"},
+                "ranges": [{"events": [{"fixed": "3.5.0"}]}],
+            },
         ]
     }
-    assert _first_safe(record, "jquery", "3.0.0") is None
+    assert _first_safe(record, "jquery", "3.0.0") == "3.5.0"
 
 
 # ---------------------------------------------------------------------------
@@ -363,6 +383,50 @@ async def test_one_hit_triggers_exactly_one_query() -> None:
     assert mock.calls == ["/v1/querybatch", "/v1/query"]
     assert set(result.advisories) == {("jquery", "3.4.1")}
     assert result.advisories[("jquery", "3.4.1")][0].identifiers[0] == "GHSA-gxr4-xjj5-5px2"
+    # OSV answers for the version it is asked about: a wrong or missing one returns every advisory.
+    assert mock.package_queries == [
+        {"package": {"name": "jquery", "ecosystem": "npm"}, "version": "3.4.1"}
+    ]
+
+
+async def test_the_batch_asks_for_the_npm_name_and_the_detected_version() -> None:
+    """Each detection becomes one ``querybatch`` query: its npm name, ecosystem and version."""
+    mock = _Transport(batch={"results": [{}, {}]})
+    await _provider(mock.transport).lookup([_det("angularjs", "1.5.0"), _det("jquery", "3.4.1")])
+    assert mock.sent_queries == [
+        {"package": {"name": "angular", "ecosystem": "npm"}, "version": "1.5.0"},
+        {"package": {"name": "jquery", "ecosystem": "npm"}, "version": "3.4.1"},
+    ]
+
+
+async def test_a_long_batch_is_sent_in_chunks_and_read_back_in_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Past ``_QUERYBATCH_CAP`` queries the batch is split, and each answer stays with its query."""
+    monkeypatch.setattr(osv, "_QUERYBATCH_CAP", 2)
+    batches: list[list[str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        if request.url.path == "/v1/querybatch":
+            names = [query["package"]["name"] for query in body["queries"]]
+            batches.append(names)
+            hits = [{"vulns": [{"id": "GHSA-x"}]} if n == "lodash" else {} for n in names]
+            return httpx.Response(200, json={"results": hits})
+        return httpx.Response(200, json={"vulns": [{**_GHSA_RECORD, "id": "GHSA-lodash"}]})
+
+    result = await _provider(httpx.MockTransport(handler)).lookup(
+        [_det("jquery", "3.4.1"), _det("vue", "2.0.0"), _det("lodash", "4.17.20")]
+    )
+    assert batches == [["jquery", "vue"], ["lodash"]]
+    assert set(result.advisories) == {("lodash", "4.17.20")}
+
+
+async def test_a_batch_answer_that_does_not_line_up_with_the_queries_raises() -> None:
+    """One result for two queries cannot say which package it is about: a lookup error."""
+    mock = _Transport(batch={"results": [{"vulns": [{"id": "GHSA-x"}]}]})
+    with pytest.raises(OsvLookupError, match="shape unexpected"):
+        await _provider(mock.transport).lookup([_det("jquery", "3.4.1"), _det("vue", "2.0.0")])
 
 
 async def test_repeated_detection_is_sent_and_queried_once() -> None:

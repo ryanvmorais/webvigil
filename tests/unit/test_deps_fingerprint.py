@@ -34,20 +34,21 @@ _RULES = RetireJsRules.from_raw(
 )
 
 
-def _page(html: str, url: str = _SEED) -> Page:
+def _page(html: str, url: str = _SEED, content_type: str = "text/html; charset=utf-8") -> Page:
     """
     Args:
         html (str): The page body.
         url (str): The page URL. Defaults to the seed.
+        content_type (str): The page's ``Content-Type``. Defaults to HTML.
 
     Returns:
-        Page: A 200 HTML page.
+        Page: A 200 page.
     """
     return Page(
         requested_url=url,
         url=url,
         status_code=200,
-        headers=httpx.Headers({"content-type": "text/html; charset=utf-8"}),
+        headers=httpx.Headers({"content-type": content_type}),
         text=html,
         elapsed_ms=0.0,
     )
@@ -99,6 +100,19 @@ def _router(routes: dict[str, tuple[int, str]]):
     return handler
 
 
+async def test_detects_library_from_the_body_of_a_fetched_in_scope_script(
+    httpx_mock: object,
+) -> None:
+    """A script whose name carries no version is fetched, and its banner names the library."""
+    html = '<html><body><script src="/static/app.js"></script></body></html>'
+    router = _router({"https://example.com/static/app.js": (200, "/*! jQuery v3.4.1 */ x();")})
+    result, stats = await _run((_page(html),), router, httpx_mock)
+    assert [(d.name, d.version, d.method) for d in result.detections] == [
+        ("jquery", "3.4.1", DetectionMethod.FILECONTENT)
+    ]
+    assert stats.requests == 1
+
+
 async def test_detects_library_from_a_fetched_in_scope_filename(httpx_mock: object) -> None:
     """An in-scope ``<script src>`` is fetched and its filename version is captured."""
     html = '<html><body><script src="/static/jquery-1.12.4.min.js"></script></body></html>'
@@ -144,11 +158,23 @@ async def test_fetch_cap_truncates_and_warns(httpx_mock: object) -> None:
     assert any("stopped at 2 resource fetches" in w for w in result.warnings)
 
 
-async def test_non_html_and_failed_pages_are_skipped(httpx_mock: object) -> None:
+async def test_a_failed_page_is_skipped(httpx_mock: object) -> None:
     """A failed page contributes no detections and triggers no fetches."""
     failed = Page.failed("https://example.com/x", "boom")
-    result, _ = await _run((failed,), _router({}), httpx_mock)
+    result, stats = await _run((failed,), _router({}), httpx_mock)
     assert result.detections == []
+    assert stats.requests == 0
+
+
+async def test_a_page_that_is_not_html_is_not_read_for_scripts(httpx_mock: object) -> None:
+    """The same markup served as ``text/plain`` is text, not a page: only the HTML copy counts."""
+    html = "<html><body><script>/*! jQuery v3.4.1 */</script></body></html>"
+    pages = (
+        _page(html, "https://example.com/readme.txt", content_type="text/plain"),
+        _page(html.replace("3.4.1", "3.6.0")),
+    )
+    result, _ = await _run(pages, _router({}), httpx_mock)
+    assert [(d.name, d.version) for d in result.detections] == [("jquery", "3.6.0")]
 
 
 # ---------------------------------------------------------------------------
