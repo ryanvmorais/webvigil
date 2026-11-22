@@ -95,6 +95,16 @@ async def test_a_fan_out_schema_gives_a_body_of_bounded_size(tmp_path: Path) -> 
     assert len(operations[0].body_json) < _BODY_CHARS
 
 
+async def test_long_example_strings_do_not_grow_a_body_past_its_allowance(tmp_path: Path) -> None:
+    """The characters of a leaf value are charged too, so long examples buy fewer leaves."""
+    doc = _fan_out_doc(operations=1)
+    doc["components"]["schemas"]["S3"] = {"type": "string", "example": "e" * 256}  # depth 3
+    operations = await _load(doc, tmp_path)
+    assert operations[0].body_json is not None
+    assert "e" * 256 in operations[0].body_json  # the example is used, up to the allowance
+    assert len(operations[0].body_json) < _BODY_CHARS
+
+
 async def test_long_property_names_do_not_grow_a_body_past_its_allowance(tmp_path: Path) -> None:
     """The characters of a key name are charged, so long names buy fewer keys."""
     operations = await _load(_fan_out_doc(operations=1, name_length=2_000), tmp_path)
@@ -208,13 +218,18 @@ async def test_the_kept_operations_are_the_same_as_before(tmp_path: Path) -> Non
     ]
 
 
-async def test_an_operation_whose_url_would_be_huge_is_skipped(tmp_path: Path) -> None:
-    """A path that repeats a long value thousands of times is left out, with a warning."""
+@pytest.mark.parametrize(
+    "path",
+    ["/x" + "/{id}" * 100, "/x" + "/y" * 5_000],
+    ids=["value-repeated-past-the-limit", "template-past-the-limit"],
+)
+async def test_an_operation_whose_url_would_be_huge_is_skipped(tmp_path: Path, path: str) -> None:
+    """A URL past 8192 characters, once filled or already in the template, is left out."""
     param = {"name": "id", "in": "path", "example": "v" * 200}
     doc = {
         "openapi": "3.0.3",
         "paths": {
-            "/x" + "/{id}" * 3_000: {"get": {"parameters": [param]}},
+            path: {"get": {"parameters": [param] if "{id}" in path else []}},
             "/ok/{id}": {"get": {"parameters": [{"name": "id", "in": "path", "example": "7"}]}},
         },
     }
@@ -275,7 +290,7 @@ async def test_a_deeply_nested_document_is_an_import_error(tmp_path: Path) -> No
         await load_openapi(str(path), http=http, target=_TARGET, max_operations=150)
 
 
-@pytest.mark.parametrize("levels", [257, 900])
+@pytest.mark.parametrize("levels", [256, 900])
 async def test_nesting_past_the_explicit_limit_is_an_import_error(
     tmp_path: Path, levels: int
 ) -> None:

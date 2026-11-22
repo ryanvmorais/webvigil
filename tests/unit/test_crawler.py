@@ -160,7 +160,7 @@ async def test_out_of_scope_links_are_not_followed(httpx_mock: object) -> None:
     router = _Router({_SEED: _page(_html("https://evil.test/x", "/local"))})
     router.routes["https://example.com/local"] = _page(_html())
     pages = await _discover(ScanConfig(), router, httpx_mock)
-    assert all("evil.test" not in p.url for p in pages)
+    assert [p.url for p in pages] == [_SEED, "https://example.com/local"]
     assert "https://evil.test/x" not in router.seen
 
 
@@ -234,13 +234,83 @@ async def test_an_extra_seed_blocked_by_robots_is_skipped(httpx_mock: object) ->
     )
     httpx_mock.add_callback(router, is_reusable=True)  # type: ignore[attr-defined]
     async with HttpClient(Target.parse(_SEED), ScanConfig()) as http:
-        pages = await Crawler(
+        crawler = Crawler(
             http,
             Target.parse(_SEED),
             ScanConfig(),
             extra_seeds=["https://example.com/api/hidden"],
-        ).discover()
-    assert all("api/hidden" not in p.url for p in pages)
+        )
+        pages = await crawler.discover()
+    assert [p.url for p in pages] == [_SEED]
+    assert crawler.skipped_by_robots == 1  # the seed was queued, then held back by the rule
+
+
+async def test_extra_seeds_are_crawled_before_the_seed_pages_links(httpx_mock: object) -> None:
+    """With one page left after the seed, the API operation wins over the page's own link."""
+    router = _Router(
+        {
+            _SEED: _page(_html("/a")),
+            "https://example.com/a": _page(_html()),
+            "https://example.com/api/x": _page(_html()),
+        }
+    )
+    httpx_mock.add_callback(router, is_reusable=True)  # type: ignore[attr-defined]
+    config = ScanConfig.model_validate({"scan": {"max_pages": 2}})
+    async with HttpClient(Target.parse(_SEED), config) as http:
+        crawler = Crawler(
+            http, Target.parse(_SEED), config, extra_seeds=["https://example.com/api/x"]
+        )
+        pages = await crawler.discover()
+    assert [p.url for p in pages] == [_SEED, "https://example.com/api/x"]
+
+
+async def test_the_links_of_a_page_that_is_not_html_are_not_followed(httpx_mock: object) -> None:
+    """A JSON answer that happens to hold an ``<a href>`` is not a page to walk."""
+    router = _Router(
+        {
+            _SEED: _page(_html("/data")),
+            "https://example.com/data": (200, _html("/hidden"), "application/json"),
+            "https://example.com/hidden": _page(_html()),
+        }
+    )
+    pages = await _discover(ScanConfig(), router, httpx_mock)
+    assert [p.url for p in pages] == [_SEED, "https://example.com/data"]
+    assert "https://example.com/hidden" not in router.seen
+
+
+async def test_each_sitemap_is_fetched_once(httpx_mock: object) -> None:
+    """A sitemap declared twice, or declared at the conventional URL, is asked for once."""
+    declared = (
+        "User-agent: *\n"
+        "Sitemap: https://example.com/a.xml\nSitemap: https://example.com/a.xml\n"
+        "Sitemap: https://example.com/sitemap.xml\n"
+    )
+    router = _Router(
+        {
+            "https://example.com/robots.txt": (200, declared, "text/plain"),
+            _SEED: _page(_html()),
+        }
+    )
+    await _discover(ScanConfig(), router, httpx_mock)
+    assert router.seen.count("https://example.com/a.xml") == 1
+    assert router.seen.count("https://example.com/sitemap.xml") == 1
+
+
+async def test_a_malformed_or_non_http_sitemap_location_is_dropped(httpx_mock: object) -> None:
+    """A sitemap is the site's text: a broken ``<loc>`` or a ``mailto:`` one costs that entry."""
+    locs = "".join(
+        f"<url><loc>{loc}</loc></url>"
+        for loc in ("http://[::1", "mailto:admin@example.com", "https://example.com/ok")
+    )
+    router = _Router(
+        {
+            "https://example.com/sitemap.xml": (200, f"<urlset>{locs}</urlset>", "application/xml"),
+            _SEED: _page(_html()),
+            "https://example.com/ok": _page(_html()),
+        }
+    )
+    pages = await _discover(ScanConfig(), router, httpx_mock)
+    assert [p.url for p in pages] == [_SEED, "https://example.com/ok"]
 
 
 # ---------------------------------------------------------------------------
@@ -304,6 +374,20 @@ async def test_a_post_form_is_recorded_but_never_submitted(httpx_mock: object) -
     assert not any("/comment" in url for url in router.seen)
 
 
+async def test_a_get_login_form_is_never_submitted(httpx_mock: object) -> None:
+    """A sign-in form over ``GET`` is not a search: it is inventoried, never sent."""
+    page = (
+        '<form method="get" action="/signin"><input name="user">'
+        '<input type="password" name="pw"></form>'
+        '<form method="get" action="/search"><input name="q"></form>'
+    )
+    router = _Router({_SEED: _page(page), "https://example.com/search?q=": _page(_html())})
+    crawler = await _crawl(ScanConfig(), router, httpx_mock)
+    assert not any("/signin" in url for url in router.seen)
+    assert "https://example.com/search?q=" in router.seen  # the control: a GET form is sent
+    assert len(crawler.forms) == 2
+
+
 async def test_submit_forms_false_disables_form_submission(httpx_mock: object) -> None:
     """``submit_forms=False`` stops a safe GET form being submitted; it is still inventoried."""
     router = _Router({_SEED: _page('<form method="get" action="/search"><input name="q"></form>')})
@@ -322,6 +406,7 @@ async def test_logout_links_are_never_followed(httpx_mock: object) -> None:
         router.seen.clear()
         await _crawl(config, router, httpx_mock)
         assert "https://example.com/logout" not in router.seen
+        assert "https://example.com/ok" in router.seen
 
 
 async def test_destructive_links_and_get_forms_are_skipped_on_every_crawl(
@@ -449,6 +534,53 @@ async def test_recrawl_stops_when_should_fetch_returns_false(httpx_mock: object)
         limit=1,
     )
     assert len(pages) == 1
+
+
+async def test_recrawl_asks_should_fetch_before_each_hop_page(httpx_mock: object) -> None:
+    """The budget guard is consulted for the one-hop pages too, not only for the frontier."""
+    router = _Router(
+        {
+            _SEED: _page(_html("/a", "/b")),
+            "https://example.com/a": _page(_html()),
+            "https://example.com/b": _page(_html()),
+        }
+    )
+    pages = await _recrawl(ScanConfig(), router, httpx_mock, [_SEED], limit=2)
+    assert [p.url for p in pages] == [_SEED, "https://example.com/a"]
+
+
+async def test_recrawl_caps_the_hop_pages_at_max_fetches(httpx_mock: object) -> None:
+    """``max_fetches`` counts the frontier and the hop together."""
+    router = _Router(
+        {
+            _SEED: _page(_html("/a", "/b")),
+            "https://example.com/a": _page(_html()),
+            "https://example.com/b": _page(_html()),
+        }
+    )
+    pages = await _recrawl(ScanConfig(), router, httpx_mock, [_SEED], max_fetches=2)
+    assert [p.url for p in pages] == [_SEED, "https://example.com/a"]
+
+
+async def test_recrawl_fetches_a_repeated_frontier_url_once(httpx_mock: object) -> None:
+    """Fragment and case variants of one frontier URL are one fetch."""
+    router = _Router({_SEED: _page(_html())})
+    frontier = [_SEED, f"{_SEED}#top", "HTTPS://Example.com/"]
+    pages = await _recrawl(ScanConfig(), router, httpx_mock, frontier)
+    assert [p.url for p in pages] == [_SEED]
+    assert router.seen.count(_SEED) == 1
+
+
+async def test_recrawl_submits_a_safe_get_form_of_the_frontier(httpx_mock: object) -> None:
+    """A search form on a frontier page is one hop, like a link."""
+    router = _Router(
+        {
+            _SEED: _page('<form method="get" action="/search"><input name="q"></form>'),
+            "https://example.com/search?q=": _page(_html()),
+        }
+    )
+    pages = await _recrawl(ScanConfig(), router, httpx_mock, [_SEED])
+    assert [p.url for p in pages] == [_SEED, "https://example.com/search?q="]
 
 
 async def test_recrawl_caps_at_max_fetches(httpx_mock: object) -> None:

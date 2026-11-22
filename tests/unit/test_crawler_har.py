@@ -233,6 +233,15 @@ def test_the_url_loses_its_userinfo_and_fragment_and_keeps_a_custom_port(tmp_pat
     assert "pw" not in repr(result)
 
 
+def test_the_default_port_is_dropped_and_an_ipv6_host_keeps_its_brackets(tmp_path: Path) -> None:
+    """``:443`` on ``https`` is the same origin as none; ``[::1]`` stays a valid URL."""
+    plain = _load(tmp_path, [_entry("https://shop.example.com:443/a")])
+    assert [op.url for op in plain.operations] == [f"{_SITE}/a"]
+    six = Target.parse("https://[::1]:8443")
+    result = _load(tmp_path, [_entry("https://[::1]:8443/a?x=1")], target=six)
+    assert [op.url for op in result.operations] == ["https://[::1]:8443/a"]
+
+
 def test_the_query_keeps_its_order_blank_values_and_repeats(tmp_path: Path) -> None:
     """A query is imported as recorded: in order, with a blank value and a repeated name."""
     result = _load(tmp_path, [_entry(f"{_SITE}/rest/s?b=2&a=&b=3&c=x%20y")])
@@ -318,6 +327,13 @@ def test_a_json_body_is_imported_as_its_shape(tmp_path: Path, body: str, expecte
     post = {"mimeType": "application/json; charset=utf-8", "text": body}
     result = _load(tmp_path, [_entry(f"{_SITE}/api/j", "POST", post=post)])
     assert result.operations[0].body_json == expected
+
+
+def test_a_json_suffix_media_type_is_a_json_body(tmp_path: Path) -> None:
+    """``application/vnd.api+json`` is JSON: its shape is imported."""
+    post = {"mimeType": "application/vnd.api+json", "text": '{"data": {"id": "7"}}'}
+    result = _load(tmp_path, [_entry(f"{_SITE}/api/j", "POST", post=post)])
+    assert result.operations[0].body_json == '{"data": {"id": "wv"}}'
 
 
 @pytest.mark.parametrize(
@@ -413,7 +429,13 @@ def test_a_credential_looking_value_gets_a_placeholder_whatever_its_name(
 
 @pytest.mark.parametrize(
     "value",
-    ["550e8400-e29b-41d4-a716-446655440000", "507f1f77bcf86cd799439011", "running-shoes-2026"],
+    [
+        "550e8400-e29b-41d4-a716-446655440000",
+        "507f1f77bcf86cd799439011",
+        "running-shoes-2026",
+        "SKU2026ABCDEFGHIJKLMNOPQRS",  # no lowercase letter
+        "ProductCategoryElectronics",  # no digit
+    ],
 )
 def test_an_identifier_or_a_slug_keeps_its_value(tmp_path: Path, value: str) -> None:
     """A UUID, an ObjectId or a slug is a baseline, not a credential."""
@@ -427,6 +449,7 @@ def test_an_identifier_or_a_slug_keeps_its_value(tmp_path: Path, value: str) -> 
         f"/reset/{_JWT}",
         "/invite/Zx8Kq2LmN4pR7tVw9yB3cD5fH/accept",
         "/dl/9f86d081884c7d659a2feaa0c55ad015",
+        "/invite/Zx8Kq2LmN4pR7tVw9yB3cD5fH%3D%3D/accept",  # percent-encoded padding
     ],
 )
 def test_an_entry_with_a_token_in_its_path_is_left_out(tmp_path: Path, path: str) -> None:
@@ -517,6 +540,19 @@ def test_the_same_route_recorded_twice_is_one_operation_with_the_first_values(
         (("q", "third"), ("page", "2")),
     ]
     assert result.tally.duplicate == 1
+
+
+def test_one_route_with_different_parameters_sorts_by_their_names(tmp_path: Path) -> None:
+    """Two shapes of one route come out by parameter names, not in recording order."""
+    result = _load(tmp_path, [_entry(f"{_SITE}/rest/s?b=1"), _entry(f"{_SITE}/rest/s?a=1")])
+    assert [op.query for op in result.operations] == [(("a", "1"),), (("b", "1"),)]
+
+
+def test_a_state_changing_verb_outside_the_import_vocabulary_is_unsafe(tmp_path: Path) -> None:
+    """``cancel`` is a destructive verb of the crawler, so the HAR import leaves it out too."""
+    result = _load(tmp_path, [_entry(f"{_SITE}/rest/orders/7/cancel"), _entry(f"{_SITE}/rest/a")])
+    assert [op.url for op in result.operations] == [f"{_SITE}/rest/a"]
+    assert result.tally.unsafe == 1
 
 
 def test_the_order_is_stable_and_independent_of_the_recording_order(tmp_path: Path) -> None:
@@ -704,6 +740,20 @@ def test_a_query_or_form_with_too_many_parameters_is_malformed(tmp_path: Path) -
     post = {"mimeType": _FORM, "text": many}
     result = _load(tmp_path, [_entry(f"{_SITE}/a?{many}"), _entry(f"{_SITE}/b", "POST", post=post)])
     assert (result.operations, result.tally.malformed) == ([], 2)
+
+
+def test_a_parameter_with_no_name_makes_the_entry_malformed(tmp_path: Path) -> None:
+    """``?=x`` names nothing to replay; the entry is skipped, not imported with an empty name."""
+    result = _load(tmp_path, [_entry(f"{_SITE}/a?=x"), _entry(f"{_SITE}/b?q=1")])
+    assert [op.url for op in result.operations] == [f"{_SITE}/b"]
+    assert result.tally.malformed == 1
+
+
+def test_a_form_text_over_the_bound_is_not_read(tmp_path: Path) -> None:
+    """A recorded body past 1 MiB keeps the route with no fields."""
+    post = {"mimeType": _FORM, "text": "a=1&" + "b" * (har._MAX_BODY_TEXT + 1)}
+    result = _load(tmp_path, [_entry(f"{_SITE}/big", "POST", post=post)])
+    assert [op.body_fields for op in result.operations] == [()]
 
 
 def test_a_multipart_body_with_no_boundary_has_no_fields(tmp_path: Path) -> None:

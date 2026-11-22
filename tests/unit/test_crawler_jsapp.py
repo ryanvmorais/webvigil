@@ -98,6 +98,12 @@ def test_a_shell_that_still_yielded_a_surface_is_not_warned_about() -> None:
     assert script_app_warning(pages) is None
 
 
+def test_a_crawl_of_two_pages_is_still_thin() -> None:
+    """Two pages is the most a thin crawl finds; a third means the crawl found a surface."""
+    assert script_app_warning([_page(_ANGULAR), _page("<html></html>")]) is not None
+    assert script_app_warning([_page(_ANGULAR)] + [_page("<html></html>")] * 2) is None
+
+
 def test_an_entry_page_that_is_not_html_or_failed_is_not_warned_about() -> None:
     """A JSON entry point or an error page is not a shell."""
     assert script_app_warning([_page(_ANGULAR, content_type="application/json")]) is None

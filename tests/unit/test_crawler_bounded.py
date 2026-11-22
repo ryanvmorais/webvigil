@@ -106,7 +106,8 @@ async def test_a_robots_file_declaring_many_sitemaps_gets_a_bounded_number_of_re
     )
     crawler, _ = await _crawl(router, httpx_mock)
     fetched = [u for u in router.seen if "/s/" in u or u.endswith("/sitemap.xml")]
-    assert len(fetched) <= sitemap.MAX_SITEMAPS + 1
+    first = [f"{_SEED}s/{i}.xml" for i in range(sitemap.MAX_SITEMAPS)]
+    assert fetched == [*first, f"{_SEED}sitemap.xml"]
     assert crawler.limit_warning is not None
     assert "sitemaps" in crawler.limit_warning
 
@@ -181,6 +182,30 @@ def test_one_page_gives_at_most_the_per_page_link_limit() -> None:
     html = "<html><body>" + '<a href="/same">x</a>' * 50_000 + "</body></html>"
     crawler._enqueue_links(make_page(text=html), set(), deque())
     assert _CountingCrawler.considered == 20_000
+    assert crawler.limit_warning is not None and "links" in crawler.limit_warning
+
+
+def test_the_per_page_link_limit_grows_with_max_pages() -> None:
+    """A crawl allowed more pages than the floor reads that many links from one page."""
+    config = ScanConfig()
+    config.scan.max_pages = 25_000
+    crawler = _CountingCrawler(HttpClient(_TARGET, config), _TARGET, config)
+    _CountingCrawler.considered = 0
+    html = "<html><body>" + '<a href="/same">x</a>' * 30_000 + "</body></html>"
+    crawler._enqueue_links(make_page(text=html), set(), deque())
+    assert _CountingCrawler.considered == 25_000
+
+
+def test_the_set_of_urls_seen_grows_with_max_pages() -> None:
+    """Past the floor, twenty URLs are kept per page the crawl may fetch."""
+    config = ScanConfig()
+    config.scan.max_pages = 1_000
+    crawler = Crawler(HttpClient(_TARGET, config), _TARGET, config)
+    seen: set[str] = set()
+    queue: deque[str] = deque()
+    for i in range(30_000):
+        crawler._maybe_enqueue(f"{_SEED}p/{i}", seen, queue)
+    assert len(queue) == 20_000
 
 
 async def test_the_pages_fetched_are_the_same_with_a_huge_link_list(httpx_mock: object) -> None:
@@ -267,6 +292,59 @@ async def test_only_the_first_500_kib_of_robots_txt_is_parsed(httpx_mock: object
     assert rules.can_fetch("webvigil", f"{_SEED}late/page")
 
 
+async def test_the_robots_cut_drops_the_line_it_falls_in(httpx_mock: object) -> None:
+    """A rule cut in two is not read: a cut ``Disallow: /late/`` leaves no ``Disallow: /``."""
+    from webvigil.crawler import robots
+
+    head = "User-agent: *\nDisallow: /early/\n"
+    cut = "Disallow: /"
+    pad = robots.MAX_ROBOTS_BYTES - len(head) - len(cut)
+    filler = "".join(f"# {'x' * 97}\n" for _ in range(pad // 100)) + "#" * (pad % 100 - 1) + "\n"
+    body = head + filler + "Disallow: /late/\n"
+    assert body.encode()[: robots.MAX_ROBOTS_BYTES].endswith(cut.encode())
+    router = _Router({f"{_SEED}robots.txt": (200, body, "text/plain")})
+    httpx_mock.add_callback(router, is_reusable=True)  # type: ignore[attr-defined]
+    async with HttpClient(_TARGET, ScanConfig()) as http:
+        rules = await robots.load(http, _SEED.rstrip("/"), "webvigil")
+    assert not rules.can_fetch("webvigil", f"{_SEED}early/page")
+    assert rules.can_fetch("webvigil", f"{_SEED}other/page")
+
+
+@pytest.mark.parametrize("status", [404, 500])
+async def test_a_robots_txt_that_is_not_a_200_is_not_read(
+    httpx_mock: object, monkeypatch: pytest.MonkeyPatch, status: int
+) -> None:
+    """An error page is not the site's rules, whatever its body says."""
+    from webvigil.crawler import robots
+    from webvigil.http import client as client_mod
+
+    # the client retries a 5xx GET; the retries still go out, only their backoff is zeroed
+    monkeypatch.setattr(client_mod, "BACKOFF_BASE_S", 0.0)
+    monkeypatch.setattr(client_mod, "BACKOFF_JITTER_S", 0.0)
+
+    body = "User-agent: *\nDisallow: /\nSitemap: https://example.com/s.xml\n"
+    router = _Router({f"{_SEED}robots.txt": (status, body, "text/plain")})
+    httpx_mock.add_callback(router, is_reusable=True)  # type: ignore[attr-defined]
+    async with HttpClient(_TARGET, ScanConfig()) as http:
+        rules = await robots.load(http, _SEED.rstrip("/"), "webvigil")
+    assert rules.can_fetch("webvigil", f"{_SEED}page")
+    assert rules.sitemaps == ()
+
+
+async def test_a_sitemap_that_is_not_a_200_gives_no_urls(httpx_mock: object) -> None:
+    """A ``404`` page that happens to be a sitemap document is not read; the ``200`` one is."""
+    router = _Router(
+        {
+            f"{_SEED}gone.xml": (404, _sitemap_xml(2), "application/xml"),
+            f"{_SEED}live.xml": (200, _sitemap_xml(2), "application/xml"),
+        }
+    )
+    httpx_mock.add_callback(router, is_reusable=True)  # type: ignore[attr-defined]
+    async with HttpClient(_TARGET, ScanConfig()) as http:
+        assert await sitemap.fetch(http, f"{_SEED}gone.xml") == []
+        assert await sitemap.fetch(http, f"{_SEED}live.xml") == [f"{_SEED}p/0", f"{_SEED}p/1"]
+
+
 async def test_a_small_robots_txt_is_read_whole(httpx_mock: object) -> None:
     """The cut changes nothing for an ordinary file."""
     from webvigil.crawler import robots
@@ -335,4 +413,19 @@ async def test_an_ordinary_crawl_keeps_every_page_whole(httpx_mock: object) -> N
         for page in pages
         if page.ok
     )
-    assert crawler.limit_warning is None or "page text" not in crawler.limit_warning
+    assert crawler.limit_warning is None
+
+
+async def test_a_page_shorter_than_the_head_is_kept_whole_past_the_allowance(
+    httpx_mock: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Once the allowance is spent, a page that already fits the head is not cut nor reported."""
+    from webvigil.crawler import crawler as crawler_mod
+
+    monkeypatch.setattr(crawler_mod, "_MAX_RETAINED_TEXT_BYTES", 100)
+    links = "".join(f'<a href="/p{i}">p</a>' for i in range(3))
+    routes = {f"{_SEED}p{i}": (200, "<p>small</p>" * 100, "text/html") for i in range(3)}
+    routes[_SEED] = (200, f"<html><body>{links}</body></html>", "text/html")
+    crawler, pages = await _crawl(_Router(routes), httpx_mock)
+    assert [len(page.text) for page in pages if page.url != _SEED] == [1_200] * 3
+    assert crawler.limit_warning is None
