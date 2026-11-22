@@ -24,6 +24,7 @@ from webvigil.checks.csrf.scanner import CsrfHit
 from webvigil.checks.headers.hsts import HstsCheck
 from webvigil.checks.injection.checks import (
     ExpressionLanguageInjectionCheck,
+    OpenRedirectCheck,
     OsCommandInjectionCheck,
     ReflectedXssCheck,
     SsrfMetadataCheck,
@@ -265,6 +266,22 @@ async def test_active_scan_sends_only_the_payloads_of_the_selected_checks(
         if any(marker.search(value) for value in seen)
     }
     assert found == {(selected, marker.pattern) for marker in _MARKERS.get(selected, ())}
+
+
+async def test_active_scan_reports_a_redirect_httpx_cannot_parse(httpx_mock: object) -> None:
+    r"""A target that honours only ``https:\\webvigil.invalid`` is still an open redirect."""
+    honoured = "https:\\\\webvigil.invalid"
+
+    def router(request: httpx.Request) -> httpx.Response:
+        if request.url.params.get("q", "") == honoured:
+            return httpx.Response(302, headers={"location": honoured})
+        return httpx.Response(200, text="<div>ok</div>", headers={"content-type": "text/html"})
+
+    httpx_mock.add_callback(router, is_reusable=True)  # type: ignore[attr-defined]
+    result = await Orchestrator(_active(), check_types=[OpenRedirectCheck]).run(_TARGET)
+    found = [f for f in result.findings if f.check_id == "injection.redirect.open"]
+    assert [(f.location.param, f.confidence) for f in found] == [("q", Confidence.HIGH)]
+    assert not any("failed" in w for w in result.warnings)
 
 
 async def test_a_raising_pass_becomes_a_warning_not_a_crash(

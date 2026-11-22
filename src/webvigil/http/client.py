@@ -71,6 +71,9 @@ _Files = (
 
 # Marks, on an httpx response, that its body was cut at ``max_body_bytes``.
 _TRUNCATED_EXTENSION = "webvigil_truncated"
+# Holds, on an httpx redirect response, the Location header that _hide_location took away from
+# httpx: the engine follows redirects itself and reads it from here.
+_LOCATION_EXTENSION = "webvigil_location"
 
 # Backoff between retries; module-level so tests can shrink them.
 BACKOFF_BASE_S = 0.5
@@ -271,6 +274,26 @@ def _host_of(url: str) -> str:
     return (urlsplit(url).hostname or "").lower()
 
 
+async def _hide_location(response: httpx.Response) -> None:
+    r"""
+    Take a redirect's ``Location`` away from ``httpx``, which would otherwise parse it.
+
+    ``httpx`` builds the next request of a redirect even with ``follow_redirects=False``, and a
+    ``Location`` it cannot build one from (``https:\\host/``, which a browser reads as
+    ``https://host/``; ``mailto:x``) raises ``InvalidURL`` there: the response never reaches the
+    engine. The engine follows redirects itself, from :func:`~webvigil.core.urls.resolve_url`, so
+    this response hook, which runs before that step, moves the header into the response's
+    extensions: ``httpx`` sees no redirect, and :meth:`HttpClient._send_with_redirects` reads the
+    value from there and puts it back on the :class:`Response` it returns.
+
+    Args:
+        response (httpx.Response): A response, before ``httpx`` looks at its redirect.
+    """
+    if response.status_code in _REDIRECT_STATUS and "location" in response.headers:
+        response.extensions[_LOCATION_EXTENSION] = response.headers["location"]
+        del response.headers["location"]
+
+
 class HttpClient:
     """
     Owns one ``httpx.AsyncClient`` and the shared rate limiter for a scan.
@@ -334,6 +357,7 @@ class HttpClient:
                 "accept-encoding": ACCEPT_ENCODING,
             },
             transport=self._transport,  # type: ignore[arg-type]
+            event_hooks={"response": [_hide_location]},
         )
         if self._max_duration > 0:
             self._deadline = asyncio.get_running_loop().time() + self._max_duration
@@ -663,9 +687,10 @@ class HttpClient:
             crafted,
         )
         for _ in range(_MAX_REDIRECT_HOPS):
-            if raw.status_code not in _REDIRECT_STATUS or "location" not in raw.headers:
+            location = raw.extensions.get(_LOCATION_EXTENSION)  # see _hide_location
+            if location is None:
                 break
-            target_url = resolve_url(current_url, raw.headers["location"])
+            target_url = resolve_url(current_url, location)
             if target_url is None:
                 raise RequestFailed(current_url, "the Location header is not a valid URL")
             if not self._guard.allows(target_url):
@@ -693,11 +718,15 @@ class HttpClient:
                 crafted,
             )
 
+        response_headers = raw.headers
+        if (location := raw.extensions.get(_LOCATION_EXTENSION)) is not None:
+            response_headers = response_headers.copy()
+            response_headers["location"] = location  # what the server sent, for the checks
         return Response(
             url=str(raw.url),
             requested_url=requested_url,
             status_code=raw.status_code,
-            headers=raw.headers,
+            headers=response_headers,
             text=_decode_text(raw),
             content=raw.content,
             elapsed_ms=raw.elapsed.total_seconds() * 1000,

@@ -172,8 +172,8 @@ async def test_a_chain_that_leaves_for_another_host_is_not_a_hit() -> None:
 
 @pytest.mark.parametrize(
     "location",
-    ["/\\webvigil.invalid/x", "\\\\webvigil.invalid/x"],
-    ids=["slash-backslash", "two-backslashes"],
+    ["/\\webvigil.invalid/x", "\\\\webvigil.invalid/x", "https:\\\\webvigil.invalid/x"],
+    ids=["slash-backslash", "two-backslashes", "scheme-backslashes"],
 )
 async def test_a_backslash_location_to_the_sentinel_is_a_hit(location: str) -> None:
     r"""A browser reads ``/\webvigil.invalid/x`` as ``//webvigil.invalid/x``: a HIGH hit."""
