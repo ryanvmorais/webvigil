@@ -11,6 +11,8 @@ prioritise a point for a given detector. A ``<select>`` is a point of its own th
 
 from __future__ import annotations
 
+import dataclasses
+
 from tests.support import make_page
 from webvigil.checks.injection.models import InjectionPoint
 from webvigil.checks.injection.points import (
@@ -273,6 +275,22 @@ def test_build_request_post_uses_a_dict_body_and_keeps_the_action_query() -> Non
     assert (method, url) == ("POST", "https://example.com/c")
     assert params == [("ref", "1")]
     assert data == {"body": "PAY", "csrf": "tok"}
+
+
+def test_a_page_that_failed_to_load_gives_no_point() -> None:
+    """A transport error leaves no response to compare against: its query is not a point."""
+    broken = dataclasses.replace(make_page(url="https://example.com/a?id=1"), error="timed out")
+    loaded = make_page(url="https://example.com/b?q=1")
+    points, _ = enumerate_points((broken, loaded), (), max_points=100)
+    assert [p.param for p in points] == ["q"]
+
+
+def test_exactly_max_points_keeps_them_all_without_a_warning() -> None:
+    """The cap truncates past ``max_points``: as many points as the cap is no truncation."""
+    page = make_page(url="https://example.com/p?" + "&".join(f"a{i}=1" for i in range(4)))
+    points, warnings = enumerate_points((page,), (), max_points=4)
+    assert len(points) == 4
+    assert warnings == []
 
 
 # ---------------------------------------------------------------------------
