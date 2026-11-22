@@ -18,4 +18,4 @@ def test_version_string_is_present() -> None:
 def test_cli_version_command() -> None:
     result = runner.invoke(app, ["version"])
     assert result.exit_code == 0
-    assert "webvigil" in result.stdout
+    assert f"webvigil {__version__}" in result.stdout

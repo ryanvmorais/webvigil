@@ -23,7 +23,7 @@ inspects a result the same one (issue #101: the suite used to run ``("insecure",
 
 ``scan.fresh(...)`` bypasses the cache — a determinism test needs a second, independent run.
 ``scan.holder["app"]`` is the app of the scan the last call returned, so a test can read
-``app.state.requests`` / ``csrf_log`` / ``post_log`` right after the call.
+``app.state.requests`` / ``csrf_log`` / ``post_log`` / ``osv_providers`` right after the call.
 ``_OSV_JQUERY_RECORD`` + ``_osv_up`` / ``_osv_down`` stub the OSV.dev API.
 """
 
@@ -32,12 +32,13 @@ from __future__ import annotations
 import functools
 import json
 import re
+from urllib.parse import quote, quote_plus
 
 import httpx
 import pytest
 from starlette.applications import Starlette
 
-from tests.fixtures.app import SIGNIN_PASSWORD, SIGNIN_USER, make_app
+from tests.fixtures.app import _INSECURE_PAGE, SIGNIN_PASSWORD, SIGNIN_USER, make_app
 from tests.support import make_finding, make_result
 from webvigil.auth.login import Credentials
 from webvigil.checks.deps.osv import OsvProvider
@@ -46,6 +47,7 @@ from webvigil.core.config import ScanConfig
 from webvigil.core.findings import Finding, Severity
 from webvigil.core.orchestrator import Orchestrator
 from webvigil.core.result import LoginSummary, ScanResult
+from webvigil.http import client as client_mod
 from webvigil.http.client import HttpClient
 from webvigil.reporting import get_reporter
 
@@ -289,6 +291,11 @@ def scan(monkeypatch: pytest.MonkeyPatch):
         time_based: bool,
     ) -> tuple[ScanResult, Starlette]:
         app = make_app(profile, session_ttl=session_ttl)
+        # The fixture answers 500 / 502 on purpose (the error-based detectors read those pages),
+        # and the client retries a 5xx GET twice. The retries still go out; only the backoff
+        # between them, about 3 s per probe and three minutes per Active scan, is dropped.
+        monkeypatch.setattr(client_mod, "BACKOFF_BASE_S", 0.0)
+        monkeypatch.setattr(client_mod, "BACKOFF_JITTER_S", 0.0)
         transport = httpx.ASGITransport(app=app)
         monkeypatch.setattr(
             orch_mod, "HttpClient", functools.partial(HttpClient, transport=transport)
@@ -347,12 +354,26 @@ def scan(monkeypatch: pytest.MonkeyPatch):
             }
         if osv_online:
             raw["deps"] = {"osv_online": True, "osv_base_url": "http://osv.test"}
-            handler = _osv_up if osv_up else _osv_down
-            monkeypatch.setattr(
-                orch_mod,
-                "OsvProvider",
-                functools.partial(OsvProvider, transport=httpx.MockTransport(handler)),
-            )
+        # Every scan gets the stub, opted in or not, and counts the providers the engine builds: a
+        # lookup the opt-in should have prevented is counted instead of reaching the real OSV.dev,
+        # where it would pass or fail on the network.
+        osv_transport = httpx.MockTransport(_osv_up if osv_up else _osv_down)
+        app.state.osv_providers = 0
+
+        def _osv_provider(*args: object, **kwargs: object) -> OsvProvider:
+            """
+            Args:
+                *args (object): What the engine passes to ``OsvProvider``.
+                **kwargs (object): Its keyword arguments.
+
+            Returns:
+                OsvProvider: A provider over the stub, counted on ``app.state.osv_providers``.
+            """
+            app.state.osv_providers += 1
+            # forwarded untouched: the engine's own call is what mypy checks against the signature
+            return OsvProvider(*args, transport=osv_transport, **kwargs)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(orch_mod, "OsvProvider", _osv_provider)
         credentials = Credentials(SIGNIN_USER, SIGNIN_PASSWORD) if login else None
         result = await Orchestrator(ScanConfig.model_validate(raw), credentials=credentials).run(
             _TARGET
@@ -439,12 +460,44 @@ def _leaks(secret: str, text: str) -> bool:
         text (str): A rendered report, a finding or a warning.
 
     Returns:
-        bool: ``True`` when ``secret`` appears in ``text`` as a whole token. The insecure
+        bool: ``True`` when ``secret`` appears in ``text`` as a whole token, as typed or
+            percent-encoded (a form body or a URL carries ``correct+horse``). The insecure
             profile issues sequential session ids (``100001``), which can turn up by chance inside
             the random hex marker of another check (``wvb1100001ce3a``); a real leak shows the
             value on its own (``session=100001``).
     """
-    return re.search(rf"(?<![0-9A-Za-z]){re.escape(secret)}(?![0-9A-Za-z])", text) is not None
+    return any(
+        re.search(rf"(?<![0-9A-Za-z]){re.escape(form)}(?![0-9A-Za-z])", text) is not None
+        for form in {secret, quote(secret, safe=""), quote_plus(secret)}
+    )
+
+
+# What a passive crawl of the insecure profile may request with a query: the links its index
+# serves, the GET search form submitted with its empty default, and the link on ``/reset``.
+_LINKED_QUERIES = frozenset(
+    {
+        *(f"GET {href}" for href in re.findall(r'href="(/[^"]*\?[^"]*)"', _INSECURE_PAGE)),
+        "GET /search?q=",
+        "GET /reset/confirm?token=abc123",
+    }
+)
+
+
+def _crafted_gets(log: list[str]) -> list[str]:
+    """
+    Args:
+        log (list[str]): The request lines of a scan of the insecure profile.
+
+    Returns:
+        list[str]: The GET lines with a query that no page links to: what only a payload, a
+            probe or a fuzzed value would request. The lines are percent-encoded, so a search for
+            payload text in them (``1'='1``, ``etc/passwd``) misses most payloads.
+    """
+    return sorted(
+        line
+        for line in set(log)
+        if line.startswith("GET ") and not line.endswith("?") and line not in _LINKED_QUERIES
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -489,9 +542,10 @@ async def test_osv_online_adds_the_osv_reference_to_the_jquery_finding(scan) -> 
     assert not any("OSV.dev lookup failed" in warning for warning in result.warnings)
 
 
-async def test_osv_online_hardened_profile_still_reports_no_deps_findings(scan) -> None:
-    """Even with OSV on, the hardened profile has no vulnerable library to report."""
+async def test_osv_online_with_no_versioned_library_never_contacts_osv(scan) -> None:
+    """The hardened profile serves no library: with OSV on, the engine builds no OSV client."""
     result = await scan("hardened", osv_online=True)
+    assert scan.holder["app"].state.osv_providers == 0
     assert not any(f.check_id.startswith("deps.") for f in result.findings)
 
 
@@ -504,8 +558,9 @@ async def test_osv_outage_warns_and_keeps_the_offline_finding(scan) -> None:
 
 
 async def test_osv_not_queried_without_the_opt_in(scan) -> None:
-    """Without ``osv_online`` the jQuery finding carries no osv.dev reference."""
+    """Without ``osv_online`` OSV.dev is never asked, and the jQuery finding has no osv.dev link."""
     result = await scan("insecure")
+    assert scan.holder["app"].state.osv_providers == 0
     finding = next(f for f in result.findings if f.check_id == "deps.js.vulnerable-library")
     assert not any("osv.dev/vulnerability/" in reference for reference in finding.references)
 
@@ -582,9 +637,8 @@ async def test_passive_scan_sends_nothing_crafted(scan) -> None:
     assert not any(f.check_id.startswith(("injection.", "upload.")) for f in result.findings)
     assert not any(f.check_id == "csrf.form.token-not-enforced" for f in result.findings)
     log = _log(scan)
-    assert all("SLEEP" not in entry and "etc/passwd" not in entry for entry in log)
+    assert _crafted_gets(log) == []
     assert not any(entry.startswith(("OPTIONS ", "TRACE ", "PUT ", "POST ")) for entry in log)
-    assert not any(")(" in entry or "1'='1" in entry or "%23echo" in entry for entry in log)
     app = scan.holder["app"]
     assert app.state.csrf_log == [] and app.state.post_log == []  # type: ignore[attr-defined]
 
@@ -602,6 +656,7 @@ async def test_passive_scan_ignores_every_opt_in_and_says_so(scan) -> None:
     assert not any(w.startswith(("POST crawl:", "CSRF confirmation:")) for w in result.warnings)
     log = _log(scan)
     assert not any(entry.startswith(("POST ", "PUT ")) for entry in log)
+    assert _crafted_gets(log) == []  # nor a stored-XSS re-crawl, nor a probe
     app = scan.holder["app"]
     assert app.state.csrf_log == [] and app.state.post_log == []  # type: ignore[attr-defined]
 
@@ -781,6 +836,7 @@ async def test_crawler_never_submits_post_forms_or_logout(scan) -> None:
     """The crawler never POSTs a form or follows a logout link, even authenticated."""
     await scan("insecure", cookies=["session=abc123"])  # authenticated, passive
     log = _log(scan)
+    assert "GET /account?" in log  # the account page, with its POST form and logout link
     assert not any(e.startswith("POST /profile") for e in log)
     assert not any(e.startswith("POST /comment") for e in log)
     assert not any(e.startswith("POST /login") for e in log)
@@ -801,6 +857,7 @@ async def test_csrf_check_flags_the_tokenless_profile_form(scan) -> None:
 async def test_hardened_authenticated_scan_reports_no_csrf(scan) -> None:
     """The hardened profile's forms carry a token, so the CSRF check stays quiet."""
     result = await scan("hardened", cookies=["__Host-session=abc123"])
+    assert "GET /account/settings?" in _log(scan)  # the crawl reached the forms behind the login
     assert not any(f.check_id == "csrf.form.no-token" for f in result.findings)
 
 

@@ -51,8 +51,10 @@ spec follows this in its `design.md` (testing section) and in its `tasks.md`:
    `POST` page is never re-requested with `GET`.
 7. **Budget: ~1.0 test lines per `src/` line added.** Going well past that, the design
    justifies it or trims it.
-8. **The whole suite runs in ~10 min** (with coverage). A spec that pushes it past ~12 min
-   with no explicit reason reopens the conversation before the merge.
+8. **The whole suite runs in under 2 min** (with coverage; about 10 min until the integration
+   scans stopped waiting out the client's retry backoff, issue #307). A spec that pushes it past
+   ~3 min with no explicit reason reopens the conversation before the merge. Every run lists its
+   15 slowest tests (`--durations=15` in `addopts`).
 
 **Golden rule when trimming tests:** `uv run pytest --cov` before and after, on the **same
 Python**, comparing per file the set of executed lines and branches; nothing covered may stop
