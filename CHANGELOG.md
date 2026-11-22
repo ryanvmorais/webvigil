@@ -11,6 +11,17 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 ## [Unreleased]
 
+### Fixed
+
+- A backslash in a link or a redirect is read the way a browser reads it: in an `http` or
+  `https` URL, a `\` before the query is a `/`. A target that answers the open-redirect probe with
+  `Location: /\webvigil.invalid/` (or `\\webvigil.invalid/`) is now reported as
+  `injection.redirect.open`; before, the scanner took that `Location` for a path on the target,
+  followed it as an in-scope redirect and saw no redirect at all. The crawler and the checks
+  resolve every link the same way, so `/\other.example/` is a link to `other.example`, out of
+  scope, and no longer a page of the target. A backslash in the query or the fragment, or in a
+  `mailto:` or `javascript:` link, is kept.
+
 ## [1.4.5] - 2026-11-21
 
 A patch release that moves the CLI to Typer 0.29.1 and makes a `ScanResult` built with its
