@@ -1505,8 +1505,8 @@ def make_app(profile: str, *, session_ttl: int | None = None) -> Starlette:
 
     Args:
         profile (str): ``"insecure"`` for the vulnerable app (weak headers,
-            reflected/stored sinks, exposed paths), anything else for the
-            hardened equivalent.
+            reflected/stored sinks, exposed paths), ``"hardened"`` for the safe
+            equivalent.
         session_ttl (int | None): How many authenticated requests a session issued by
             ``/signin`` survives (spec 019); ``None`` means it never expires.
 

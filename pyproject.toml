@@ -228,7 +228,8 @@ skip_covered = true
 
 # --- Tests (pytest) --------------------------------------------------------
 [tool.pytest.ini_options]
-addopts = "-ra -q"
+# The 15 slowest tests end every run, so a new slow one shows up in review (#307).
+addopts = "-ra -q --durations=15"
 testpaths = ["tests"]
 asyncio_mode = "auto"
 # A wider loop is an explicit `loop_scope=` on the fixture, never inherited from its scope (#312).
