@@ -15,6 +15,7 @@ import jwt
 from fastapi.testclient import TestClient
 
 from tests.api.conftest import ADMIN
+from webvigil import __version__
 from webvigil.checks.registry import all_checks, load_plugins
 
 # ---------------------------------------------------------------------------
@@ -49,8 +50,7 @@ def test_setup_status_reports_the_session_without_a_401(client: TestClient) -> N
     client.post("/api/auth/login", json=ADMIN)
     assert client.get("/api/setup").json()["authenticated"] is True
 
-    client.post("/api/auth/logout")
-    client.cookies.clear()
+    client.post("/api/auth/logout")  # its answer deletes the cookie
     assert client.get("/api/setup").json()["authenticated"] is False
 
 
@@ -60,16 +60,32 @@ def test_setup_status_treats_a_bad_cookie_as_anonymous(
     """A garbage, expired, or unknown-user cookie is ``authenticated: false``, not an error."""
     client.post("/api/setup", json=ADMIN)
     secret = web_config.session_secret  # type: ignore[attr-defined]
+    now = time.time()  # after the account was created, so no token below predates it
+
+    def token(**claims: object) -> str:
+        """
+        Args:
+            **claims (object): The claims that differ from a valid session for user 1.
+
+        Returns:
+            str: The signed token.
+        """
+        return jwt.encode({"sub": "1", "iat": now, "exp": int(now) + 600, **claims}, secret)
+
+    # Each token differs from the control only in what its name says, so it is refused for that
+    # reason and not for a missing claim.
     bad_cookies = {
         "garbage": "not-a-token",
-        "expired": jwt.encode({"sub": "1", "exp": int(time.time()) - 10}, secret, "HS256"),
-        "unknown user": jwt.encode({"sub": "999", "exp": int(time.time()) + 600}, secret, "HS256"),
+        "expired": token(exp=int(now) - 10),
+        "unknown user": token(sub="999"),
     }
     for name, cookie in bad_cookies.items():
         client.cookies.set("webvigil_session", cookie)
         response = client.get("/api/setup")
         assert response.status_code == 200, name
         assert response.json()["authenticated"] is False, name
+    client.cookies.set("webvigil_session", token())  # control: the same token, valid
+    assert client.get("/api/setup").json()["authenticated"] is True
 
 
 def test_setup_rejects_a_short_password(client: TestClient) -> None:
@@ -98,14 +114,23 @@ def test_protected_route_needs_a_session(client: TestClient) -> None:
 def test_me_returns_the_user(auth_client: TestClient) -> None:
     """``/api/auth/me`` returns the logged-in user's username and id."""
     body = auth_client.get("/api/auth/me").json()
-    assert body["username"] == "admin"
-    assert "id" in body
+    assert (body["id"], body["username"]) == (1, "admin")
 
 
 def test_logout_clears_the_cookie(auth_client: TestClient) -> None:
-    """After logout the session no longer authenticates."""
-    assert auth_client.post("/api/auth/logout").status_code == 204
-    auth_client.cookies.clear()
+    """
+    The logout answer deletes the session cookie, so the browser stops sending it (RF-03).
+
+    The token is a stateless JWT (ADR-4 of spec 002): clearing the cookie is all a logout does, so
+    the jar is left to the answer, never emptied by hand.
+    """
+    assert "webvigil_session" in auth_client.cookies
+    response = auth_client.post("/api/auth/logout")
+    assert response.status_code == 204
+    deletion = response.headers["set-cookie"]
+    assert deletion.startswith("webvigil_session=") and "Max-Age=0" in deletion
+    assert "Path=/" in deletion
+    assert "webvigil_session" not in auth_client.cookies
     assert auth_client.get("/api/auth/me").status_code == 401
 
 
@@ -132,16 +157,26 @@ def test_password_change(auth_client: TestClient) -> None:
 
 def test_expired_cookie_is_rejected(auth_client: TestClient, web_config: object) -> None:
     """A session cookie whose ``exp`` is in the past no longer authenticates."""
-    stale = jwt.encode(
-        {"sub": "1", "exp": int(time.time()) - 10},
-        web_config.session_secret,  # type: ignore[attr-defined]
-        algorithm="HS256",
-    )
+    secret = web_config.session_secret  # type: ignore[attr-defined]
+    now = time.time()  # after the login, so the token does not predate the account
+
+    def token(exp: int) -> str:
+        """
+        Args:
+            exp (int): The expiry, in seconds since the epoch.
+
+        Returns:
+            str: A session token for user 1, issued now.
+        """
+        return jwt.encode({"sub": "1", "iat": now, "exp": exp}, secret, algorithm="HS256")
+
     # Replace the login cookie rather than add a second one: with both, the outcome would depend on
     # the order the client sends them in.
     auth_client.cookies.clear()
-    auth_client.cookies.set("webvigil_session", stale)
+    auth_client.cookies.set("webvigil_session", token(int(now) - 10))
     assert auth_client.get("/api/auth/me").status_code == 401
+    auth_client.cookies.set("webvigil_session", token(int(now) + 600))  # control: not expired
+    assert auth_client.get("/api/auth/me").status_code == 200
 
 
 # ---------------------------------------------------------------------------
@@ -151,9 +186,7 @@ def test_expired_cookie_is_rejected(auth_client: TestClient, web_config: object)
 
 def test_health_needs_no_auth(client: TestClient) -> None:
     """``/api/health`` is reachable without a session and reports status and version."""
-    body = client.get("/api/health").json()
-    assert body["status"] == "ok"
-    assert body["version"]
+    assert client.get("/api/health").json() == {"status": "ok", "version": __version__}
 
 
 def test_checks_matches_the_registry(auth_client: TestClient) -> None:

@@ -100,14 +100,10 @@ def test_json_report_is_byte_identical_to_the_reporter(auth_client: TestClient) 
         make_finding(check_id="tls.https", dedup_key="no-https"),
     )
     scan_id = _completed_scan(auth_client)
-    scan = auth_client.get(f"/api/scans/{scan_id}").json()
-    findings = auth_client.get(f"/api/scans/{scan_id}/findings").json()["items"]
 
     api_json = auth_client.get(f"/api/scans/{scan_id}/report?format=json").text
-    # The API rebuilds the same ScanResult the reporter would render.
-    assert '"target": "https://example.com/"' in api_json
-    assert len(findings) == 2
-    assert scan["status"] == "completed"
+    # The API rebuilds the same ScanResult the reporter would render, findings included.
+    assert api_json == get_reporter("json").render(FakeOrchestrator.result)
 
 
 @pytest.mark.filterwarnings("error::starlette.exceptions.StarletteDeprecationWarning")

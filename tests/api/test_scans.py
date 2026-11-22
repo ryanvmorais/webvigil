@@ -87,10 +87,24 @@ def test_create_refuses_options_over_their_ceiling(
     assert auth_client.post("/api/scans", json=body).status_code == 422
 
 
-def test_create_accepts_options_at_their_ceiling(auth_client: TestClient) -> None:
-    """The ceilings themselves are allowed."""
-    body = {"target": "https://example.com/", "max_pages": 10_000, "delay_ms": 60_000}
-    assert auth_client.post("/api/scans", json=body).status_code == 201
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {"max_pages": 10_000},
+        {"delay_ms": 60_000},
+        {"target": "https://example.com/" + "a" * (2048 - len("https://example.com/"))},
+        {"mode": "active", "authorized_by": "x" * 256},
+        {"disabled_checks": [f"check.{n}" for n in range(200)]},
+        {"disabled_checks": ["c" * 128]},
+    ],
+)
+def test_create_accepts_options_at_their_ceiling(
+    auth_client: TestClient, extra: dict[str, object]
+) -> None:
+    """The ceilings themselves are allowed, one past each is the refusal above."""
+    body = {"target": "https://example.com/", **extra}
+    created = auth_client.post("/api/scans", json=body)
+    assert created.status_code == 201, created.text
 
 
 def test_create_refuses_a_scan_when_the_queue_is_full(auth_client: TestClient) -> None:
@@ -333,8 +347,21 @@ def test_list_pagination_and_status_filter(auth_client: TestClient) -> None:
     assert len(second["items"]) == 2
     assert {i["id"] for i in first["items"]} & {i["id"] for i in second["items"]} == set()
 
-    completed = auth_client.get("/api/scans?status=completed").json()
-    assert len(completed["items"]) == 5
+    # One scan in another state, so a filter that ignored ``status`` would return it too.
+    engine = auth_client.app.state.engine  # type: ignore[attr-defined]  # app is typed as ASGIApp
+    with Session(engine) as session:
+        failed = Scan(
+            target="https://f.example/", mode="passive", scope="host", status=ScanStatus.FAILED
+        )
+        session.add(failed)
+        session.commit()
+        failed_id = failed.id
+
+    completed = auth_client.get("/api/scans?status=completed").json()["items"]
+    assert sorted(i["id"] for i in completed) == sorted(ids)
+    assert [i["id"] for i in auth_client.get("/api/scans?status=failed").json()["items"]] == [
+        failed_id
+    ]
 
 
 def test_delete_requires_a_terminal_scan(auth_client: TestClient) -> None:

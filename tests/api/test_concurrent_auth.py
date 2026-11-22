@@ -60,8 +60,8 @@ def test_parallel_wrong_passwords_get_no_more_than_the_free_attempts(
     codes = _together(
         _PARALLEL, lambda _i: auth_client.post("/api/auth/login", json=wrong).status_code
     )
-    assert codes[401] <= FREE_ATTEMPTS
-    assert codes[429] == _PARALLEL - codes[401]
+    # Counted before the password is checked: exactly the free attempts go through, the rest wait.
+    assert codes == Counter({401: FREE_ATTEMPTS, 429: _PARALLEL - FREE_ATTEMPTS})
 
 
 def test_a_right_password_after_a_wrong_one_still_signs_in(auth_client: TestClient) -> None:
