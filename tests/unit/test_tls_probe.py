@@ -31,7 +31,9 @@ async def test_probe_reports_versions_and_certificate(tls_server: _ServerFactory
 
 async def test_probe_on_dead_port_is_unreachable() -> None:
     """A closed port comes back unreachable, with an error and no negotiated version."""
-    result = await probe("127.0.0.1", 1, timeout=1)
+    # Linux refuses the connection at once; Windows retries a refused loopback connect for about
+    # two seconds, so there the probe ends at its timeout. Unreachable either way.
+    result = await probe("127.0.0.1", 1, timeout=0.2)
     assert result.reachable is False
     assert result.error is not None
     assert result.negotiated_version is None

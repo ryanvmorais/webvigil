@@ -14,7 +14,7 @@ from webvigil.http.policy import RateLimiter
 
 
 async def test_concurrency_is_capped() -> None:
-    """No more than ``concurrency`` workers hold a slot at once."""
+    """Exactly ``concurrency`` workers hold a slot at once: no more, and not one at a time."""
     limiter = RateLimiter(concurrency=3, delay_ms=0)
     active = 0
     peak = 0
@@ -28,7 +28,7 @@ async def test_concurrency_is_capped() -> None:
             active -= 1
 
     await asyncio.gather(*(worker() for _ in range(20)))
-    assert peak <= 3
+    assert peak == 3
 
 
 async def test_delay_spaces_requests_to_the_same_host() -> None:
