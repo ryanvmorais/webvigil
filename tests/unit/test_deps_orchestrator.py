@@ -4,7 +4,7 @@ Orchestrator wiring for the dependency fingerprint pass — RF-12, RF-22, ADR-1,
 The autouse ``_stub_crawler`` fixture replaces the crawler with one that returns
 a single page carrying a jQuery banner, so the tests exercise the orchestrator's
 pass selection without any HTTP. ``OsvProvider`` is monkeypatched per test — to
-a boom stub when it must not run, to a canned-result stub when it must.
+a counting stub when it must not run, to a canned-result stub when it must.
 """
 
 from __future__ import annotations
@@ -18,9 +18,10 @@ from webvigil.checks.deps.osv import OsvLookupError, OsvResult
 from webvigil.checks.headers.hsts import HstsCheck
 from webvigil.core import orchestrator as orch_mod
 from webvigil.core.config import ScanConfig
-from webvigil.core.context import Page
+from webvigil.core.context import Detection, Page
 from webvigil.core.findings import Severity
 from webvigil.core.orchestrator import Orchestrator
+from webvigil.core.technology import DetectionMethod
 
 _TARGET = "https://example.com/"
 _HTML = (
@@ -110,9 +111,35 @@ _OSV_ADVISORY = Advisory(
 )
 
 
-def _osv_boom(*_a: object, **_k: object) -> object:
-    """A stand-in that fails the test if the OSV provider is constructed at all."""
-    raise AssertionError("OsvProvider must not run")
+class _CountingOsv:
+    """
+    An OSV provider that counts how often it is built.
+
+    A provider that raised instead would prove nothing: ``_osv_lookup`` turns any exception from
+    the lookup into a scan warning, so the scan would go on as if the provider had not run.
+    """
+
+    built = 0
+
+    def __init__(self, *_a: object, **_k: object) -> None:
+        type(self).built += 1
+
+    async def lookup(self, _detections: object) -> OsvResult:
+        return OsvResult(advisories={})
+
+
+@pytest.fixture
+def counting_osv(monkeypatch: pytest.MonkeyPatch) -> type[_CountingOsv]:
+    """
+    Args:
+        monkeypatch (pytest.MonkeyPatch): The fixture that installs the stub.
+
+    Returns:
+        type[_CountingOsv]: The provider class installed in the orchestrator, its count at zero.
+    """
+    monkeypatch.setattr(_CountingOsv, "built", 0)
+    monkeypatch.setattr(orch_mod, "OsvProvider", _CountingOsv)
+    return _CountingOsv
 
 
 class _StubOsv:
@@ -124,19 +151,42 @@ class _StubOsv:
         return OsvResult(advisories={("jquery", "3.4.1"): (_OSV_ADVISORY,)}, warnings=("osv note",))
 
 
-async def test_osv_lookup_is_skipped_without_the_opt_in(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_osv_lookup_is_skipped_without_the_opt_in(
+    counting_osv: type[_CountingOsv],
+) -> None:
     """Without ``[deps] osv_online`` the provider is never constructed."""
-    monkeypatch.setattr(orch_mod, "OsvProvider", _osv_boom)
     result = await Orchestrator(ScanConfig(), check_types=[VulnerableLibraryCheck]).run(_TARGET)
     assert any(f.check_id == "deps.js.vulnerable-library" for f in result.findings)
+    assert counting_osv.built == 0
+    # Control: the same scan with the opt-in builds it once.
+    cfg = ScanConfig.model_validate({"deps": {"osv_online": True}})
+    await Orchestrator(cfg, check_types=[VulnerableLibraryCheck]).run(_TARGET)
+    assert counting_osv.built == 1
 
 
-async def test_osv_lookup_is_skipped_when_no_deps_check(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_osv_lookup_is_skipped_when_no_deps_check(counting_osv: type[_CountingOsv]) -> None:
     """The opt-in alone is not enough — with no DEPS check the lookup is still skipped."""
-    monkeypatch.setattr(orch_mod, "OsvProvider", _osv_boom)
     cfg = ScanConfig.model_validate({"deps": {"osv_online": True}})
     result = await Orchestrator(cfg, check_types=[HstsCheck]).run(_TARGET)
     assert result.technologies == ()
+    assert counting_osv.built == 0
+
+
+async def test_osv_lookup_checks_for_a_deps_check_even_when_given_detections(
+    counting_osv: type[_CountingOsv],
+) -> None:
+    """
+    ``_osv_lookup`` keeps its own DEPS-check gate: a scan reaches it with detections only through
+    the fingerprint pass, which has the same gate, so it is called here directly.
+    """
+    cfg = ScanConfig.model_validate({"deps": {"osv_online": True}})
+    detection = Detection("jquery", "3.4.1", DetectionMethod.FILENAME, _TARGET, "jquery.js")
+    warnings: list[str] = []
+    orchestrator = Orchestrator(cfg, check_types=[HstsCheck])
+    assert await orchestrator._osv_lookup([HstsCheck], (detection,), warnings) == {}
+    assert counting_osv.built == 0
+    await orchestrator._osv_lookup([VulnerableLibraryCheck], (detection,), warnings)
+    assert counting_osv.built == 1
 
 
 async def test_osv_lookup_runs_and_merges_into_the_finding(

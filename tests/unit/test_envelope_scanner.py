@@ -121,17 +121,47 @@ async def test_dangerous_methods_in_allow_on_an_app_route_is_a_hit() -> None:
     assert m and "PUT" in m[0].title and "DELETE" in m[0].title
 
 
-async def test_dangerous_methods_on_a_static_asset_is_not_a_hit() -> None:
-    """PUT advertised on a .css file is expected static-host config, not a finding."""
-    page = make_page(url="https://example.com/style.css", content_type="text/css")
+async def _unsafe_method_urls(page_url: str, asset_type: str | None) -> list[str]:
+    """
+    Advertise ``PUT`` on every route and return the URLs flagged for it.
+
+    Args:
+        page_url (str): The crawled asset, sampled after the entry URL.
+        asset_type (str | None): The ``Content-Type`` of the asset's ``OPTIONS`` answer, or
+            ``None`` for an answer with none (the entry URL always answers ``text/html``).
+
+    Returns:
+        list[str]: The URLs of the ``http.methods.unsafe`` hits.
+    """
 
     def route(method: str, url: str, headers: dict[str, str]) -> Response:
-        if method == "OPTIONS":
-            return _resp(headers={"allow": "GET, PUT, OPTIONS", "content-type": "text/css"})
-        return _resp()
+        """Answer ``OPTIONS`` with ``Allow: PUT`` everywhere, typed as the case asks."""
+        if method != "OPTIONS":
+            return _resp()
+        answer = {"allow": "GET, PUT, OPTIONS"}
+        if url == page_url and asset_type is not None:
+            answer["content-type"] = asset_type
+        elif url != page_url:
+            answer["content-type"] = "text/html"
+        return _resp(headers=answer)
 
+    page = make_page(url=page_url, content_type="text/css")
     hits = await _scanner(_FakeHttp(route), pages=(page,)).run()
-    assert not [h for h in hits if h.check_id == "http.methods.unsafe"]
+    return [h.url for h in hits if h.check_id == "http.methods.unsafe"]
+
+
+async def test_dangerous_methods_on_a_static_asset_by_extension_is_not_a_hit() -> None:
+    """PUT on a ``.css`` path is static-host config, even when OPTIONS names no type."""
+    assert await _unsafe_method_urls("https://example.com/style.css", None) == [
+        "https://example.com/"  # control: the HTML entry URL advertising the same is a hit
+    ]
+
+
+async def test_dangerous_methods_on_a_static_asset_by_type_is_not_a_hit() -> None:
+    """PUT on a path with no extension that answers ``text/css`` is static-host config too."""
+    assert await _unsafe_method_urls("https://example.com/assets/bundle", "text/css") == [
+        "https://example.com/"
+    ]
 
 
 async def test_trace_echo_is_an_xst_hit() -> None:
@@ -167,8 +197,7 @@ async def test_pass_never_sends_a_state_changing_verb() -> None:
     http = _FakeHttp(lambda m, u, h: _resp(headers={"allow": "GET, PUT, DELETE, PATCH, CONNECT"}))
     await _scanner(http).run()
     verbs = {method for method, _, _ in http.calls}
-    assert verbs <= {"GET", "OPTIONS", "TRACE"}
-    assert not verbs & {"PUT", "DELETE", "PATCH", "CONNECT"}
+    assert verbs == {"GET", "OPTIONS", "TRACE"}  # every probe ran, with no other verb
 
 
 async def test_budget_cap_warns() -> None:
@@ -182,7 +211,8 @@ async def test_budget_cap_warns() -> None:
         (),
     )
     await scanner.run()
-    assert any("budget" in w for w in scanner.warnings)
+    assert len(http.calls) == 5
+    assert "request-envelope pass stopped at the 5-request budget" in scanner.warnings
 
 
 async def test_form_pages_are_sampled() -> None:

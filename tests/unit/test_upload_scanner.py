@@ -234,9 +234,11 @@ async def test_rejected_dangerous_types_produce_no_hit() -> None:
 
 async def test_budget_cap_records_a_warning() -> None:
     """A tiny budget stops the pass with a warning, not an error."""
-    scanner = _scanner(_FakeHttp(_Store()), budget=3)
+    http = _FakeHttp(_Store())
+    scanner = _scanner(http, budget=3)
     await scanner.run()
-    assert any("budget" in w for w in scanner.warnings)
+    assert len(http.calls) == 3
+    assert scanner.warnings == ["file-upload pass stopped at the 3-request budget"]
 
 
 async def test_put_probe_positive_and_negative() -> None:

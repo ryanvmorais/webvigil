@@ -68,8 +68,12 @@ def test_none_strategy_still_bounds_but_keeps_structure() -> None:
 
 
 def test_json_env_falls_back_to_generic_masking_on_deep_nesting() -> None:
-    """A body too deep to parse or to walk gets the generic, length-bounded masking."""
-    parsed_but_deep = "[" * 5000 + "]" * 5000  # json.loads takes it; the walk would not
-    for body in ("[" * 200_000, parsed_but_deep):
+    """A body too deep to parse or to walk still has its secrets masked, and stays bounded."""
+    head = f'["{_AWS_KEY}", '
+    too_deep_to_parse = head + "[" * 200_000
+    parsed_but_deep = head + "[" * 5000 + "]" * 5000 + "]"  # json.loads takes it; the walk not
+    for body in (too_deep_to_parse, parsed_but_deep):
         out = redaction.apply("json-env", body)
+        assert _AWS_KEY not in out
+        assert "***redacted***" in out
         assert len(out) <= 1024

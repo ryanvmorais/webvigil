@@ -8,6 +8,10 @@ test here made the same assertion).
 
 from __future__ import annotations
 
+import dataclasses
+
+import pytest
+
 from webvigil.core.context import Detection, Observations
 from webvigil.core.technology import DetectionMethod, Technology
 
@@ -55,9 +59,10 @@ def test_observations_warnings_accumulate() -> None:
     assert obs.warnings == ["one", "two"]
 
 
-def test_detection_is_frozen_and_hashable() -> None:
-    """``Detection`` is a frozen, hashable dataclass."""
-    d = Detection(
-        "jquery", "1.12.4", DetectionMethod.FILENAME, "https://x/jquery.js", "jquery-1.12.4.min.js"
-    )
-    assert {d, d} == {d}
+def test_detection_is_frozen_and_hashable_by_value() -> None:
+    """``Detection`` is frozen, and two equal detections are one set member (the dedup needs it)."""
+    fields = ("jquery", "1.12.4", DetectionMethod.FILENAME, "https://x/jquery.js", "jquery.min.js")
+    d = Detection(*fields)
+    assert {d, Detection(*fields)} == {d}
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        d.version = "9.9.9"  # type: ignore[misc]  # writing to a frozen field is the point

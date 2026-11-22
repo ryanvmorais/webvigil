@@ -42,16 +42,22 @@ def _elapsed(body: str) -> float:
 @pytest.mark.parametrize(
     "body",
     [
+        # The Java gap, Rails code tags and ASP.NET brackets rows are sized so that the
+        # unbounded patterns these replaced run well past the budget on them, and the bounded
+        # ones a small fraction of it. The Java message, Django and ASP.NET gap rows guard
+        # their shape only: the old patterns were linear on them, or held under the budget by
+        # the scan cap.
         pytest.param("Error: x" + " " * 4000 + "y", id="node-long-gap"),
         pytest.param(
             "Traceback (most recent call last):" + " " * 20000 + "z", id="python-long-gap"
         ),
         pytest.param("a." * 28, id="java-dotted-name"),
         pytest.param("org.example.FooException: " + "x " * 3000, id="java-long-message"),
+        pytest.param("org.example.FooException:" + " " * 700, id="java-long-gap"),
         pytest.param("a" * 100_000, id="one-long-word"),
-        pytest.param("<code>" + "a" * 290 + "</code>" * 50, id="rails-code-tags"),
+        pytest.param("<code>" * 43_000, id="rails-code-tags"),
         pytest.param('<div id="summary">' + " " * 150 + "<h1>" + "a" * 190 + "</h1>", id="django"),
-        pytest.param("[aException:" * 20000, id="aspnet-bracketed-exceptions"),
+        pytest.param("[aException:" * 40_000, id="aspnet-bracketed-exceptions"),
         pytest.param("<b>" + " " * 100_000, id="aspnet-long-gap"),
     ],
 )
@@ -129,5 +135,6 @@ def test_django_and_rails_chrome_still_match() -> None:
     """The two patterns that lost an unbounded ``.+`` still recognise their pages."""
     django = '<div id="summary">\n  <h1>OperationalError at /accounts/</h1>'
     rails = "<code>/app/app/controllers/users_controller.rb</code>"
-    assert match_error(django) is not None
-    assert match_error(rails) is not None
+    django_hit, rails_hit = match_error(django), match_error(rails)
+    assert django_hit is not None and django_hit.signature.framework == "Django"
+    assert rails_hit is not None and rails_hit.signature.framework == "Ruby on Rails"

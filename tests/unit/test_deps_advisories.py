@@ -55,12 +55,33 @@ def test_below_only_range_matches_old_version(provider: RetireJsProvider) -> Non
     assert any("CVE-2011-4969" in a.identifiers for a in hits)
 
 
+def _ids(provider: RetireJsProvider, name: str, version: str) -> list[tuple[str, ...]]:
+    """
+    Args:
+        provider (RetireJsProvider): The provider under test.
+        name (str): The library name.
+        version (str): The detected version.
+
+    Returns:
+        list[tuple[str, ...]]: The identifiers of every advisory matched, in order.
+    """
+    return [a.identifiers for a in provider.match(name, version)]
+
+
+_OLD_XSS = ("CVE-2011-4969", "GHSA-579v-mp3v-rrw5")  # below 1.6.3
+_HTML_XSS = ("CVE-2020-11022", "CVE-2020-11023")  # [1.0.0, 3.5.0)
+
+
 def test_at_or_above_and_below_range(provider: RetireJsProvider) -> None:
-    """A half-open ``[atOrAbove, below)`` range excludes versions above ``below``."""
-    assert provider.match("jquery", "3.4.1")  # inside [1.0.0, 3.5.0)
-    assert not any(  # 3.6.0 is above every jquery range in the mini DB
-        "CVE-2020-11022" in a.identifiers for a in provider.match("jquery", "3.6.0")
-    )
+    """A half-open ``[atOrAbove, below)`` range holds what is inside it, nothing past ``below``."""
+    assert _ids(provider, "jquery", "3.4.1") == [_HTML_XSS]
+    assert _ids(provider, "jquery", "3.6.0") == []
+
+
+def test_a_version_under_at_or_above_is_outside_the_range(provider: RetireJsProvider) -> None:
+    """The lower bound counts: 0.9.0 is under ``atOrAbove`` 1.0.0, so only the older entry fits."""
+    assert _ids(provider, "jquery", "0.9.0") == [_OLD_XSS]
+    assert _ids(provider, "jquery", "1.0.0") == [_OLD_XSS, _HTML_XSS]  # the bound is inclusive
 
 
 def test_boundary_is_exclusive(provider: RetireJsProvider) -> None:
@@ -75,15 +96,30 @@ def test_first_safe_version(provider: RetireJsProvider) -> None:
     assert provider.match("jquery", "1.4.0")[0].first_safe_version == "1.6.3"
 
 
+def test_first_safe_version_is_the_lowest_bound_of_overlapping_ranges() -> None:
+    """
+    Two ranges of one entry can both hold the version (the vendored ember entries do: a
+    backport fix and a ``below`` for the whole line); the lower ``below`` is the one reported.
+    """
+    raw = json.loads(_MINI.read_text("utf-8"))
+    raw["components"]["lodash"]["vulnerabilities"][0]["ranges"] = [
+        {"below": "1.5.0"},
+        {"atOrAbove": "1.2.0", "below": "1.2.2"},
+    ]
+    provider = RetireJsProvider(RetireJsRules.from_raw(raw, _PROVENANCE))
+    assert [a.first_safe_version for a in provider.match("lodash", "1.2.1")] == ["1.2.2"]
+
+
 def test_unknown_library_and_clean_version(provider: RetireJsProvider) -> None:
     """An unknown library, or a version above every range, yields no advisories."""
     assert provider.match("react", "16.0.0") == []
     assert provider.match("lodash", "5.0.0") == []
 
 
-def test_loose_version_string_does_not_crash(provider: RetireJsProvider) -> None:
-    """A non-PEP-440 version still compares via the numeric fallback."""
-    assert provider.match("jquery", "1.4.0-custom.build")
+def test_loose_version_string_compares_by_its_numbers(provider: RetireJsProvider) -> None:
+    """A non-PEP-440 version compares by its leading numbers, inside a range and past every one."""
+    assert _ids(provider, "jquery", "1.4.0-custom.build") == [_OLD_XSS, _HTML_XSS]
+    assert _ids(provider, "jquery", "9.0.0-custom.build") == []
 
 
 # ---------------------------------------------------------------------------
@@ -100,6 +136,16 @@ def test_severity_maps_and_defaults(provider: RetireJsProvider) -> None:
     lodash = provider.match("lodash", "4.0.0")[0]  # mini DB entry has no severity
     assert lodash.severity is Severity.MEDIUM
     assert lodash.severity_from_upstream is False
+
+
+def test_a_severity_other_than_the_default_is_read_from_the_entry() -> None:
+    """The mini DB only says ``medium``, which is also the default: ``High`` must come out HIGH."""
+    raw = json.loads(_MINI.read_text("utf-8"))
+    raw["components"]["lodash"]["vulnerabilities"][0]["severity"] = "High"
+    provider = RetireJsProvider(RetireJsRules.from_raw(raw, _PROVENANCE))
+    (lodash,) = provider.match("lodash", "4.0.0")
+    assert lodash.severity is Severity.HIGH
+    assert lodash.severity_from_upstream is True
 
 
 # ---------------------------------------------------------------------------

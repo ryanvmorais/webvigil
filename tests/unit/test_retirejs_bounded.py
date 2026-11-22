@@ -24,6 +24,7 @@ from webvigil.checks.deps import rules as rules_module
 from webvigil.checks.deps._data import Provenance, load_raw_db
 from webvigil.checks.deps.rules import (
     _BODY_MAX,
+    _PATH_MAX,
     _REPEAT_MAX,
     RetireJsRules,
     _bound_repeats,
@@ -275,8 +276,26 @@ def test_a_marker_inside_the_head_is_found_and_one_past_it_is_not() -> None:
     assert rules.identify(body=past) == []
 
 
-def test_a_script_url_past_the_path_cap_is_not_read() -> None:
-    """The URI patterns read ``_PATH_MAX`` characters of a path, whatever the URL's length."""
+def test_a_marker_inside_the_path_cap_is_found_and_one_past_it_is_not() -> None:
+    """The URI patterns read ``_PATH_MAX`` characters of a path."""
+    raw = {
+        "components": {
+            "demo": {
+                "extractors": {"uri": [r"/(§§version§§)/demo\.js"]},
+                "vulnerabilities": [],
+            }
+        }
+    }
+    rules = RetireJsRules.from_raw(raw, _PROVENANCE)
+    tail = "/1.2.3/demo.js"
+    inside = "https://example.com/" + "a" * (_PATH_MAX - len(tail) - 1) + tail
+    past = "https://example.com/" + "a" * (_PATH_MAX - len(tail)) + tail
+    assert [(d.name, d.version) for d in rules.identify(url=inside)] == [("demo", "1.2.3")]
+    assert rules.identify(url=past) == []
+
+
+def test_a_script_url_past_the_path_cap_is_read_quickly() -> None:
+    """A URL of any length costs the same as one at the cap."""
     rules = RetireJsRules.load()
     url = "https://example.com/" + "1" * 200_000
     started = time.perf_counter()
