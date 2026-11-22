@@ -79,6 +79,41 @@ def test_resolve_url_joins_like_a_browser(ref: str, expected: str) -> None:
 
 
 @pytest.mark.parametrize(
+    ("ref", "expected"),
+    [
+        ("/\\other.example/x", "https://other.example/x"),
+        ("\\\\other.example/x", "https://other.example/x"),
+        ("\\/other.example/x", "https://other.example/x"),
+        ("https:\\\\other.example/x", "https://other.example/x"),
+        ("HTTPS:\\\\other.example/x", "https://other.example/x"),
+        ("\thttps:\\\\other.example/x", "https://other.example/x"),
+        ("a\\b", "https://example.com/dir/a/b"),
+    ],
+)
+def test_resolve_url_reads_a_backslash_as_a_slash_like_a_browser(ref: str, expected: str) -> None:
+    r"""In an ``http(s)`` URL a backslash before the query is a slash: ``/\host`` is off-site."""
+    assert resolve_url("https://example.com/dir/page", ref) == expected
+
+
+@pytest.mark.parametrize(
+    ("ref", "expected"),
+    [
+        ("/a?q=b\\c", "https://example.com/a?q=b\\c"),
+        ("/a#b\\c", "https://example.com/a#b\\c"),
+        ("/a\\b?q=c\\d#e\\f", "https://example.com/a/b?q=c\\d#e\\f"),
+        ("mailto:a\\b", "mailto:a\\b"),
+        ("javascript:a\\b", "javascript:a\\b"),
+        # the scheme is read as a browser reads it: past a leading space, through a tab
+        (" mailto:a\\b", "mailto:a\\b"),
+        ("mail\tto:a\\b", "mailto:a\\b"),
+    ],
+)
+def test_resolve_url_keeps_a_backslash_where_a_browser_keeps_it(ref: str, expected: str) -> None:
+    """The query and the fragment keep theirs, and so does a URL whose scheme is not ``http(s)``."""
+    assert resolve_url("https://example.com/dir/page", ref) == expected
+
+
+@pytest.mark.parametrize(
     "ref",
     ["http://[::1", "http://[not-an-ip]/", "https://example.com:99999/", "https://example.com:x/"],
 )

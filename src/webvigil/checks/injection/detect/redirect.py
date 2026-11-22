@@ -101,20 +101,13 @@ def _honoured(response: Response) -> tuple[str | None, Confidence]:
 
 
 def _host(url: str) -> str:
-    r"""
+    """
     Args:
-        url (str): A possibly-malformed redirect target (backslashes,
-            scheme-relative).
+        url (str): An absolute URL that :func:`~webvigil.core.urls.resolve_url` produced (the
+            ``Location`` here, the client's for ``final_location``), so a backslash or a
+            scheme-relative target is already read as a browser reads it.
 
     Returns:
-        str: Its lower-cased host, normalising ``\`` to ``/`` and a leading
-            ``//`` to ``http://``; ``""`` when the target does not parse (an
-            unbalanced IPv6 bracket), since it then names no host.
+        str: Its lower-cased host, or ``""`` when it has none.
     """
-    candidate = url.replace("\\", "/").strip()
-    if candidate.startswith("//"):
-        candidate = "http:" + candidate
-    try:
-        return (urlsplit(candidate).hostname or "").lower()
-    except ValueError:
-        return ""
+    return (urlsplit(url).hostname or "").lower()

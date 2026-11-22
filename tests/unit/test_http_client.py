@@ -143,6 +143,26 @@ async def test_redirect_stops_at_cross_scope_hop(httpx_mock: object) -> None:
     assert response.final_location == "https://evil.test/"
 
 
+@pytest.mark.parametrize(
+    "location",
+    ["/\\evil.test/", "\\\\evil.test/"],
+    ids=["slash-backslash", "two-backslashes"],
+)
+async def test_a_backslash_redirect_leaves_scope_as_a_browser_reads_it(
+    httpx_mock: object, location: str
+) -> None:
+    r"""``Location: /\evil.test/`` sends a browser to ``evil.test``: the hop is out of scope."""
+    httpx_mock.add_response(  # type: ignore[attr-defined]
+        url="https://example.com/", status_code=302, headers={"location": location}
+    )
+    async with _http() as http:
+        response = await http.get("https://example.com/")
+    assert response.status_code == 302
+    assert response.history == ()
+    assert response.redirected_out_of_scope is True
+    assert response.final_location == "https://evil.test/"
+
+
 # ---------------------------------------------------------------------------
 # Non-GET verbs and the method-aware retry policy (spec 006 ADR-9, RF-15)
 # ---------------------------------------------------------------------------

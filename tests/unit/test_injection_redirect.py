@@ -13,6 +13,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 import httpx
+import pytest
 
 from webvigil.checks.injection.detect import DetectCtx, normalize_body, redirect
 from webvigil.checks.injection.models import Baseline, InjectionPoint
@@ -167,3 +168,17 @@ async def test_a_chain_that_leaves_for_another_host_is_not_a_hit() -> None:
         _ctx(lambda v: _resp(status=302, final_location="https://cdn.example.net/")),
     )
     assert hits == []
+
+
+@pytest.mark.parametrize(
+    "location",
+    ["/\\webvigil.invalid/x", "\\\\webvigil.invalid/x"],
+    ids=["slash-backslash", "two-backslashes"],
+)
+async def test_a_backslash_location_to_the_sentinel_is_a_hit(location: str) -> None:
+    r"""A browser reads ``/\webvigil.invalid/x`` as ``//webvigil.invalid/x``: a HIGH hit."""
+    hits = await redirect.detect(
+        _POINT, _BASELINE, _ctx(lambda v: _resp(status=302, location=location))
+    )
+    assert [(h.kind, h.confidence.name) for h in hits] == [("redirect", "HIGH")]
+    assert dict(hits[0].evidence)["Redirect"] == f"Location -> {location}"
