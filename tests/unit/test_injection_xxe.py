@@ -13,6 +13,7 @@ from collections.abc import Callable
 
 import httpx
 
+from webvigil.checks.injection import payloads
 from webvigil.checks.injection.detect import DetectCtx, normalize_body, xxe
 from webvigil.checks.injection.models import Baseline, InjectionPoint
 from webvigil.core.findings import Confidence, Severity
@@ -98,14 +99,43 @@ async def test_get_point_is_skipped() -> None:
 
 
 async def test_both_content_types_are_tried() -> None:
-    """A non-matching endpoint gets both application/xml and text/xml."""
+    """Each content type gets the file payload once per file and each other payload once."""
     seen_ct: list[str] = []
     await xxe.detect(_POST, _baseline(), _ctx(lambda v: _resp("ok"), seen_ct=seen_ct))
-    assert "application/xml" in seen_ct
-    assert "text/xml" in seen_ct
+    per_type = len(payloads.XXE_FILES) + len(payloads.XXE_PAYLOADS) - 1
+    assert per_type == 4
+    assert seen_ct == ["application/xml"] * per_type + ["text/xml"] * per_type
 
 
 async def test_signature_already_in_the_baseline_is_suppressed() -> None:
     """A ``root:...:0:0:`` line already in the baseline body is not a new finding."""
     hits = await xxe.detect(_POST, _baseline(_PASSWD), _ctx(lambda v: _resp(_PASSWD)))
     assert hits == []
+
+
+async def test_a_denied_request_stops_the_detector() -> None:
+    """A ``None`` from ``send`` on a later payload ends the loops: nothing is sent after it."""
+    seen_ct: list[str] = []
+    hits = await xxe.detect(
+        _POST,
+        _baseline(),
+        _ctx(lambda v: None if len(seen_ct) == 2 else _resp("ok"), seen_ct=seen_ct),
+    )
+    assert hits == []
+    assert len(seen_ct) == 2
+
+
+async def test_the_evidence_is_the_one_line_that_holds_the_proof() -> None:
+    """The lines around the parser error stay out; a proof on the last line keeps its end."""
+    error = "lxml.etree.XMLSyntaxError: Entity 'xxe' not defined"
+    for body in (f"<pre>trace\n{error}\n  at line 1</pre>", f"trace\n{error}"):
+        (hit,) = await xxe.detect(_POST, _baseline(), _ctx(lambda v, b=body: _resp(b)))
+        assert dict(hit.evidence)["Xml parser error"] == error, body
+
+
+def test_the_evidence_line_is_cut_at_200_characters() -> None:
+    """A line of exactly 200 characters is whole; one more is cut there and marked."""
+    line = "ExpatError" + "x" * 190
+    assert len(line) == 200
+    assert xxe._first_match(payloads.XXE_ERROR_SIGNATURES, line, "") == line
+    assert xxe._first_match(payloads.XXE_ERROR_SIGNATURES, line + "y", "") == line + "…"

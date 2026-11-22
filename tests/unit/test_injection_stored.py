@@ -101,6 +101,13 @@ def test_detect_ignores_a_marker_already_in_the_pre_injection_body() -> None:
     assert _detect({"t3": marker}, [page], {"https://example.com/known": "x <wvstoredt3> y"}) == []
 
 
+def test_detect_a_marker_new_to_a_page_known_before_injection_is_a_hit() -> None:
+    """A page the first crawl saw counts once the marker appears on it after the injection."""
+    marker = _marker("t9")
+    page = _rendered("https://example.com/known", "x <wvstoredt9> y")
+    assert len(_detect({"t9": marker}, [page], {"https://example.com/known": "x y"})) == 1
+
+
 def test_detect_same_url_is_a_hit_only_for_a_posted_point() -> None:
     """A marker echoed on its own URL counts for a POST point but not a GET one (reflection)."""
     get_marker = _marker("t4", method="GET", base="https://example.com/search", param="q")
@@ -239,6 +246,7 @@ async def test_marker_is_found_on_the_per_entry_page_after_a_recrawl(httpx_mock:
     assert (hit.kind, hit.method, hit.param) == ("xss-stored", "POST", "body")
     assert hit.url == "https://example.com/guestbook"
     assert "guestbook/e/0" in dict(hit.evidence)["Rendered on"]
+    assert report.warnings == []  # no budget or page cap was reached
 
 
 async def test_the_recrawl_charges_the_first_crawl_and_says_when_it_cut(
@@ -356,3 +364,190 @@ def test_the_stored_pass_never_writes_into_a_select() -> None:
     )
     query = InjectionPoint("GET", "https://example.com/q", "q", "x", (), source="query")
     assert _stored_order([select, query, text]) == [text, query]
+
+
+# ---------------------------------------------------------------------------
+# _detect: what counts as a render, and how confident it is
+# ---------------------------------------------------------------------------
+
+
+def test_detect_a_get_point_marker_on_another_page_is_a_hit() -> None:
+    """Only the GET point's own URL is reflection; any other page that renders it is storage."""
+    marker = _marker("g1", method="GET", base="https://example.com/search", param="q")
+    page = _rendered("https://example.com/recent", "<div><wvstoredg1></div>")
+    (hit,) = _detect({"g1": marker}, [page], {})
+    assert (hit.method, hit.url) == ("GET", "https://example.com/search")
+
+
+def test_detect_compares_the_point_url_in_its_normal_form() -> None:
+    """A GET point written with an upper-case host is still the page that reflects it."""
+    marker = _marker("g2", method="GET", base="https://EXAMPLE.com:443/search", param="q")
+    page = _rendered("https://example.com/search", "<div><wvstoredg2></div>")
+    assert _detect({"g2": marker}, [page], {}) == []
+
+
+def test_detect_needs_the_payload_itself_not_only_its_tag() -> None:
+    """A page that dropped the ``">`` before the tag did not render the payload verbatim."""
+    marker = _marker("t7", payloads=('"><wvstoredt7>',))
+    page = _rendered("https://example.com/guestbook/e/0", "<div><wvstoredt7></div>")
+    assert _detect({"t7": marker}, [page], {}) == []
+    page = _rendered("https://example.com/guestbook/e/0", '<div>"><wvstoredt7></div>')
+    assert len(_detect({"t7": marker}, [page], {})) == 1  # control
+
+
+def test_detect_a_page_that_carries_both_payloads_is_one_render() -> None:
+    """The second payload holds the first: the page counts once, with no extra pages."""
+    marker = _marker("t8", payloads=("<wvstoredt8>", '"><wvstoredt8>'))
+    page = _rendered("https://example.com/guestbook/e/0", '<div>"><wvstoredt8></div>')
+    (hit,) = _detect({"t8": marker}, [page], {})
+    assert dict(hit.evidence)["Rendered on"] == "https://example.com/guestbook/e/0"
+
+
+def test_detect_confidence_follows_the_context_and_the_page() -> None:
+    """HIGH off the point in the body or an attribute; MEDIUM in a script or on the point itself."""
+    cases = (
+        ("https://example.com/e/0", "<div>{m}</div>", "html body", "HIGH"),
+        ("https://example.com/e/0", '<input value="{m}">', "attribute", "HIGH"),
+        ("https://example.com/e/0", '<script>var x = "{m}";</script>', "script", "MEDIUM"),
+        ("https://example.com/guestbook", "<div>{m}</div>", "html body", "MEDIUM"),
+    )
+    for url, body, context, confidence in cases:
+        # the point is written with an upper-case host: only the normal form matches the page
+        marker = _marker("c1", base="https://EXAMPLE.com/guestbook")
+        (hit,) = _detect({"c1": marker}, [_rendered(url, body.format(m="<wvstoredc1>"))], {})
+        assert dict(hit.evidence)["Reflection context"] == context, body
+        assert hit.confidence.name == confidence, (url, body)
+
+
+# ---------------------------------------------------------------------------
+# StoredXssScanner: what Phase A sends, and when Phase B runs
+# ---------------------------------------------------------------------------
+
+
+async def test_phase_a_sends_every_marker_of_a_point(httpx_mock: object) -> None:
+    """Both marker payloads go to the point, not only the first."""
+    router = _Guestbook({"https://example.com/guestbook": _GB_HTML})
+    pages = (make_page(url="https://example.com/guestbook", text=_GB_HTML),)
+    report = await _run(router, pages, (_GB_FORM,), httpx_mock)
+    posted = [b for m, _, b in router.seen if m == "POST"]
+    assert len(posted) == len(payloads.STORED_MARKERS) == 2
+    assert report.markers_submitted == 1
+
+
+async def test_a_get_marker_counts_as_an_injection_request(httpx_mock: object) -> None:
+    """A GET is idempotent, so only the crafted flag puts a query marker in the counter."""
+    pages = (make_page(url="https://example.com/list?page=1", text="<html></html>"),)
+    httpx_mock.add_callback(_Guestbook({}), is_reusable=True)  # type: ignore[attr-defined]
+    cfg = ScanConfig.model_validate({"injection": {"stored_xss": True}})
+    async with HttpClient(_TARGET, cfg) as http:
+        report = await StoredXssScanner(http, _TARGET, cfg, pages, ()).run()
+        crafted = http.stats.crafted_requests
+    assert report.markers_submitted == 1
+    assert crafted == len(payloads.STORED_MARKERS)
+
+
+async def test_a_point_the_budget_refused_gets_no_marker(httpx_mock: object) -> None:
+    """With one request, the form gets its first marker; the query point after it gets none."""
+    router = _Guestbook({"https://example.com/guestbook": _GB_HTML})
+    pages = (
+        make_page(url="https://example.com/guestbook", text=_GB_HTML),
+        make_page(url="https://example.com/list?page=1", text="<html></html>"),
+    )
+    cfg = ScanConfig.model_validate({"injection": {"stored_xss": True, "request_budget": 1}})
+    report = await _run(router, pages, (_GB_FORM,), httpx_mock, config=cfg)
+    assert report.markers_submitted == 1
+    assert "active injection stopped at the 1-request budget" in report.warnings
+    assert not any("page=" in u and "wvstored" in u for _, u, _ in router.seen)
+
+
+async def test_no_marker_means_no_recrawl(httpx_mock: object) -> None:
+    """With nothing submitted, Phase B does not fetch a single page."""
+    login = Form(
+        "POST",
+        "https://example.com/login",
+        "application/x-www-form-urlencoded",
+        (FormField("q", "text", ""),),
+        "https://example.com/login",
+    )
+    router = _Guestbook({"https://example.com/login": "<html></html>"})
+    pages = (make_page(url="https://example.com/login", text="<html></html>"),)
+    report = await _run(router, pages, (login,), httpx_mock)
+    assert report.markers_submitted == 0
+    assert report.pages_recrawled == 0
+    assert router.seen == []
+
+
+async def test_the_recrawl_frontier_leaves_out_a_page_that_failed(httpx_mock: object) -> None:
+    """A first-crawl page with a transport error is not re-fetched; the pages that loaded are."""
+    router = _Guestbook({"https://example.com/guestbook": _GB_HTML})
+    pages = (
+        make_page(url="https://example.com/guestbook", text=_GB_HTML),
+        Page.failed("https://example.com/gone", "connection reset"),
+    )
+    await _run(router, pages, (_GB_FORM,), httpx_mock)
+    fetched = {u for m, u, _ in router.seen if m == "GET"}
+    assert "https://example.com/guestbook" in fetched  # control
+    assert "https://example.com/gone" not in fetched
+
+
+async def test_the_recrawl_is_capped_at_120_pages_and_at_least_one(
+    httpx_mock: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``scan.max_pages`` sizes the re-crawl, between one page and ``_STORED_REFETCH_CAP``."""
+    caps: list[int] = []
+
+    async def recrawl(
+        self: Crawler, frontier: object, *, should_fetch: object, max_fetches: int
+    ) -> list[Page]:
+        caps.append(max_fetches)
+        return []
+
+    monkeypatch.setattr(Crawler, "recrawl", recrawl)
+    pages = (make_page(url="https://example.com/guestbook", text=_GB_HTML),)
+    httpx_mock.add_callback(_Guestbook({}), is_reusable=True)  # type: ignore[attr-defined]
+    for max_pages in (500, 120, 7, 0):
+        cfg = ScanConfig.model_validate(
+            {"scan": {"max_pages": max_pages}, "injection": {"stored_xss": True}}
+        )
+        async with HttpClient(_TARGET, cfg) as http:
+            await StoredXssScanner(http, _TARGET, cfg, pages, (_GB_FORM,)).run()
+    assert caps == [120, 120, 7, 1]
+
+
+class _Refusing:
+    """An HTTP client stand-in whose marker submissions fail with ``error``."""
+
+    def __init__(self, error: Exception) -> None:
+        """
+        Args:
+            error (Exception): What every request raises.
+        """
+        self.error = error
+        self.calls = 0
+
+    async def request(self, *args: object, **kwargs: object) -> object:
+        """
+        Raises:
+            Exception: The configured error, on every call.
+        """
+        self.calls += 1
+        raise self.error
+
+
+async def test_a_failed_or_out_of_scope_submission_is_skipped() -> None:
+    """A transport error or a redirect out of scope ends that marker set; the pass goes on."""
+    from webvigil.core.errors import OutOfScopeError, RequestFailed
+
+    cfg = ScanConfig.model_validate({"injection": {"stored_xss": True}})
+    pages = (make_page(url="https://example.com/guestbook", text=_GB_HTML),)
+    for error in (
+        RequestFailed("https://example.com/guestbook", "reset"),
+        OutOfScopeError("https://evil.test/"),
+    ):
+        http = _Refusing(error)
+        # a stand-in: Phase A calls only ``request``, and nothing reaches Phase B
+        scanner = StoredXssScanner(http, _TARGET, cfg, pages, (_GB_FORM,))  # type: ignore[arg-type]
+        report = await scanner.run()
+        assert http.calls == 1, error  # the first marker was tried, the second never was
+        assert report.markers_submitted == 0
+        assert report.pages_recrawled == 0

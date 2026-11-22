@@ -13,6 +13,7 @@ from collections.abc import Callable
 
 import httpx
 
+from webvigil.checks.injection import payloads
 from webvigil.checks.injection.detect import DetectCtx, normalize_body, traversal
 from webvigil.checks.injection.models import Baseline, InjectionPoint
 from webvigil.http.client import Response
@@ -54,17 +55,22 @@ def _baseline(body: str = "notes") -> Baseline:
     return Baseline(200, body, normalize_body(body), len(body), 1.0)
 
 
-def _ctx(render: Callable[[str], Response]) -> DetectCtx:
+def _ctx(render: Callable[[str], Response | None], *, seen: list[str] | None = None) -> DetectCtx:
     """
     Args:
-        render (Callable[[str], Response]): Maps an injected value to the response
-            the target would return.
+        render (Callable[[str], Response | None]): Maps an injected value to the response
+            the target would return, or ``None`` to model a denied request.
+        seen (list[str] | None): When given, every value sent is appended to it.
 
     Returns:
         DetectCtx: A detector context whose ``send`` calls ``render``.
     """
 
-    async def send(point: InjectionPoint, value: str, *, time_based: bool = False) -> Response:
+    async def send(
+        point: InjectionPoint, value: str, *, time_based: bool = False
+    ) -> Response | None:
+        if seen is not None:
+            seen.append(value)
         return render(value)
 
     return DetectCtx(send=send, delay_s=5, host="example.com")
@@ -109,3 +115,37 @@ async def test_payload_echoed_without_the_file_is_not_a_hit() -> None:
         _POINT, _baseline(), _ctx(lambda v: _resp(f"File not found: {v}"))
     )
     assert hits == []
+
+
+async def test_a_denied_request_stops_the_detector() -> None:
+    """A ``None`` from ``send`` on a later payload ends the loop: nothing is sent after it."""
+    seen: list[str] = []
+    hits = await traversal.detect(
+        _POINT,
+        _baseline(),
+        _ctx(lambda v: None if len(seen) == 2 else _resp("notes"), seen=seen),
+    )
+    assert hits == []
+    assert seen == list(payloads.TRAVERSAL[:2])
+
+
+async def test_the_evidence_is_the_one_line_that_holds_the_signature() -> None:
+    """The lines before and after the match stay out of the evidence."""
+    body = "<pre>listing\nroot:x:0:0:root:/root:/bin/bash\ndaemon:x:1:1::/:/bin/false</pre>"
+    (hit,) = await traversal.detect(_POINT, _baseline(), _ctx(lambda v: _resp(body)))
+    assert dict(hit.evidence)["Leaked content"] == "root:x:0:0:root:/root:/bin/bash"
+
+
+async def test_a_signature_on_the_last_line_keeps_its_last_character() -> None:
+    """With no newline after the match, the line runs to the end of the body."""
+    body = "listing\nroot:x:0:0:root"
+    (hit,) = await traversal.detect(_POINT, _baseline(), _ctx(lambda v: _resp(body)))
+    assert dict(hit.evidence)["Leaked content"] == "root:x:0:0:root"
+
+
+def test_the_evidence_line_is_cut_at_200_characters() -> None:
+    """A line of exactly 200 characters is whole; one more is cut there and marked."""
+    line = "root:x:0:0:" + "a" * 189
+    assert len(line) == 200
+    assert traversal._line_around(line, 0) == line
+    assert traversal._line_around(line + "b", 0) == line + "…"
