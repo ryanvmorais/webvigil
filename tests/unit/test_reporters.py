@@ -16,9 +16,9 @@ import jsonschema
 import pytest
 
 from tests.support import make_finding, make_result
-from webvigil.core.findings import Severity
+from webvigil.core.findings import EvidenceItem, Finding, Severity
 from webvigil.core.result import LoginSummary, ScanResult
-from webvigil.reporting import get_reporter, load_result
+from webvigil.reporting import get_reporter, load_result, sort_findings
 from webvigil.reporting.sarif import SarifReporter
 
 _SARIF_SCHEMA = json.loads(
@@ -105,11 +105,30 @@ def test_sarif_maps_severity_to_level() -> None:
     assert {r["id"] for r in rules} == {"tls.https", "http.headers.csp", "http.headers.hsts"}
 
 
+@pytest.mark.parametrize(
+    ("severity", "level"),
+    [
+        (Severity.CRITICAL, "error"),
+        (Severity.HIGH, "error"),
+        (Severity.MEDIUM, "warning"),
+        (Severity.LOW, "note"),
+        (Severity.INFO, "note"),
+    ],
+)
+def test_every_severity_has_its_sarif_level(severity: Severity, level: str) -> None:
+    """Code scanning sorts and gates on ``level``: each of the five severities, one row each."""
+    document = SarifReporter().to_dict(make_result(make_finding(severity=severity)))
+    (result,) = document["runs"][0]["results"]
+    assert result["level"] == level
+
+
 def test_sarif_carries_partial_fingerprints() -> None:
-    """Every SARIF result carries a ``webvigil/v1`` partial fingerprint for baseline diffing."""
-    document = SarifReporter().to_dict(_result())
-    for result in document["runs"][0]["results"]:
-        assert result["partialFingerprints"]["webvigil/v1"]
+    """Each SARIF result carries its finding's fingerprint, the key a baseline diff matches on."""
+    result = _result()
+    document = SarifReporter().to_dict(result)
+    by_rule = {r["ruleId"]: r["partialFingerprints"] for r in document["runs"][0]["results"]}
+    assert by_rule == {f.check_id: {"webvigil/v1": f.fingerprint} for f in result.findings}
+    assert len({fp["webvigil/v1"] for fp in by_rule.values()}) == 3
 
 
 def test_sarif_logical_location_carries_the_parameter() -> None:
@@ -124,6 +143,10 @@ def test_sarif_logical_location_carries_the_parameter() -> None:
     logical = by_rule["injection.xss.reflected"]["locations"][0]["logicalLocations"][0]
     assert logical["name"] == "q" and logical["kind"] == "parameter"
     assert "logicalLocations" not in by_rule["tls.https"]["locations"][0]
+    # a header (or a cookie) is a member of the response, not a parameter of the request
+    header = SarifReporter().to_dict(make_result(make_finding()))["runs"][0]["results"][0]
+    (member,) = header["locations"][0]["logicalLocations"]
+    assert (member["name"], member["kind"]) == ("Content-Security-Policy", "member")
 
 
 def test_html_is_self_contained() -> None:
@@ -144,10 +167,17 @@ def test_html_header_carries_the_logo_as_inline_svg() -> None:
 
 
 def test_html_escapes_evidence() -> None:
-    """Evidence text is rendered into the HTML report."""
-    finding = make_finding(check_id="x.y")
+    """The site's markup in a title or the evidence is shown as text, never parsed as HTML."""
+    finding = make_finding(check_id="x.y").model_copy(
+        update={
+            "title": "x.y finding <b>bold</b>",
+            "evidence": (EvidenceItem.of("body", '<img src=x onerror="alert(1)">'),),
+        }
+    )
     html = get_reporter("html").render(make_result(finding))
-    assert "x.y finding" in html
+    assert "x.y finding &lt;b&gt;bold&lt;/b&gt;" in html
+    assert "&lt;img src=x onerror=&#34;alert(1)&#34;&gt;" in html
+    assert "<b>bold</b>" not in html and "<img src=x" not in html
 
 
 def test_html_links_only_http_references() -> None:
@@ -179,6 +209,45 @@ def test_reporters_are_deterministic(fmt: str) -> None:
     """Each reporter renders the same result to byte-identical output."""
     reporter = get_reporter(fmt)
     assert reporter.render(_result()) == reporter.render(_result())
+
+
+def _ordering_case() -> tuple[Finding, ...]:
+    """
+    Returns:
+        tuple[Finding, ...]: Findings in their expected display order: severity first (highest
+            first), then check id, then URL, then the sub-location.
+    """
+    return (
+        make_finding(check_id="z.last-id", severity=Severity.CRITICAL, dedup_key="1"),
+        make_finding(check_id="a.first-id", severity=Severity.HIGH, url="https://example.com/b"),
+        # its sub-location ("z") sorts after the next ones' ("a", "b"): only the URL puts it first
+        make_finding(
+            check_id="b.second-id", severity=Severity.HIGH, url="https://example.com/a", param="z"
+        ),
+        make_finding(
+            check_id="b.second-id", severity=Severity.HIGH, url="https://example.com/b", param="a"
+        ),
+        make_finding(
+            check_id="b.second-id", severity=Severity.HIGH, url="https://example.com/b", param="b"
+        ),
+        make_finding(check_id="a.first-id", severity=Severity.INFO, dedup_key="2"),
+    )
+
+
+def test_findings_are_shown_most_severe_first_then_by_check_url_and_location() -> None:
+    """A total order: every tie of the key before it is broken by the next one."""
+    expected = list(_ordering_case())
+    assert sort_findings(tuple(reversed(expected))) == expected
+
+
+@pytest.mark.parametrize("fmt", ["html", "md"])
+def test_the_text_reports_list_findings_in_that_order_whatever_the_input_order(fmt: str) -> None:
+    """The checks finish in any order, so two runs of one scan must still read the same."""
+    findings = _ordering_case()
+    forward = get_reporter(fmt).render(make_result(*findings))
+    assert forward == get_reporter(fmt).render(make_result(*reversed(findings)))
+    # the CRITICAL finding leads although its check id sorts last
+    assert forward.index("z.last-id finding") < forward.index("a.first-id finding")
 
 
 def test_unknown_format_raises() -> None:

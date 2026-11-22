@@ -6,8 +6,9 @@ that nobody carries over leaves Brazilian readers with an older tool than the on
 The tests compare structure, never wording: the order of the headings, the rows of the two tables,
 the commands of the shell blocks (they are not translated, so they must be equal), the cross-links
 between the two files and the repository files the Portuguese links point at.
-Isolation: only the two READMEs and the existence of the files they link are read; when the tests
-run from a tree without them, such as an installed package, they are skipped.
+Isolation: only the two READMEs and the existence of the files they link are read. Every tree that
+holds ``tests/`` holds both READMEs (a clone or a source archive; the sdist and the wheel carry no
+tests), so a missing README fails instead of skipping.
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ import pytest
 
 # The repository root: ``tests/unit/`` is two levels below it.
 _ROOT = Path(__file__).resolve().parents[2]
-# The two files the tests compare; they are skipped when either is missing from the tree.
+# The two files the tests compare.
 _ENGLISH = _ROOT / "README.md"
 _PORTUGUESE = _ROOT / "README.pt-BR.md"
 
@@ -33,12 +34,6 @@ _TARGET = re.compile(r"\]\(([^)\s]+)\)")
 
 # An ATX heading; the run of "#" is its level.
 _HEADING = re.compile(r"^(#{1,6}) ")
-
-# Both READMEs are needed for every test below, so the mark is shared.
-_needs_both = pytest.mark.skipif(
-    not (_ENGLISH.is_file() and _PORTUGUESE.is_file()),
-    reason="the two READMEs are not in this source tree",
-)
 
 
 # ---------------------------------------------------------------------------
@@ -126,37 +121,37 @@ def _table_rows(path: Path, header_start: str) -> int:
 # ---------------------------------------------------------------------------
 
 
-@_needs_both
+@pytest.mark.parametrize("readme", [_ENGLISH, _PORTUGUESE], ids=lambda readme: readme.name)
+def test_both_readmes_are_where_the_tests_read_them(readme: Path) -> None:
+    """A renamed README fails here by name, instead of skipping every comparison."""
+    assert readme.is_file(), f"{readme.name} is missing: update the path in this test"
+
+
 def test_both_readmes_have_the_same_headings_in_the_same_order() -> None:
     """The two files have one heading of the same level at each position."""
     assert _levels(_PORTUGUESE) == _levels(_ENGLISH)
 
 
-@_needs_both
 def test_both_readmes_have_the_same_comparison_rows() -> None:
     """The comparison with ZAP and Nuclei has the same rows in both."""
     assert _table_rows(_PORTUGUESE, "| | WebVigil |") == _table_rows(_ENGLISH, "| | WebVigil |")
 
 
-@_needs_both
 def test_both_readmes_have_the_same_check_rows() -> None:
     """Every area of "What it checks" is in both."""
     assert _table_rows(_PORTUGUESE, "| Área |") == _table_rows(_ENGLISH, "| Area |")
 
 
-@_needs_both
 def test_both_readmes_have_the_same_switch_rows() -> None:
     """Every switch that is off by default is in both."""
     assert _table_rows(_PORTUGUESE, "| Chave |") == _table_rows(_ENGLISH, "| Switch |")
 
 
-@_needs_both
 def test_both_readmes_have_the_same_shell_commands() -> None:
     """Commands are not translated, so a changed flag has to change in both files."""
     assert _commands(_PORTUGUESE) == _commands(_ENGLISH)
 
 
-@_needs_both
 def test_each_readme_links_to_the_other_in_its_first_lines() -> None:
     """The switch of language is below the title of each file."""
     english = "\n".join(_outside_fences(_ENGLISH)[:4])
@@ -166,7 +161,6 @@ def test_each_readme_links_to_the_other_in_its_first_lines() -> None:
     assert "(README.md)" in portuguese
 
 
-@_needs_both
 def test_the_portuguese_readme_links_resolve_inside_the_repository() -> None:
     """Relative links work on GitHub only (PyPI shows README.md), so each must name a real file."""
     text = _PORTUGUESE.read_text(encoding="utf-8")

@@ -3,8 +3,9 @@ The WebVigil logo is one drawing in four files, and the four must stay the same 
 
 The path is written in the README asset, the dashboard's app icon, the dashboard's ``Logo``
 component and the HTML report template. Isolation: the tests only read those four files from the
-source tree (no render, no network); they are skipped when run from a tree without them, such as an
-installed package.
+source tree (no render, no network). Every tree that holds ``tests/`` holds the four files too (a
+clone or a source archive; the sdist and the wheel carry no tests), so a missing file is a failure:
+a rename that the tests did not follow, never a reason to skip.
 """
 
 from __future__ import annotations
@@ -25,11 +26,8 @@ _ASSET = _ROOT / "assets" / "webvigil-web-vulnerability-scanner-logo.svg"
 _ICON = _ROOT / "web" / "src" / "app" / "icon.svg"
 _COMPONENT = _ROOT / "web" / "src" / "components" / "logo.tsx"
 _TEMPLATE = _ROOT / "src" / "webvigil" / "reporting" / "templates" / "report.html.j2"
-
-pytestmark = pytest.mark.skipif(
-    not all(p.is_file() for p in (_ASSET, _ICON, _COMPONENT, _TEMPLATE)),
-    reason="the logo files are not in this source tree",
-)
+# The four files that hold the drawing, each checked for presence by name.
+_FILES = (_ASSET, _ICON, _COMPONENT, _TEMPLATE)
 
 
 # ---------------------------------------------------------------------------
@@ -68,6 +66,12 @@ def _path_of_component() -> str:
 # ---------------------------------------------------------------------------
 # One drawing
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("file", _FILES, ids=lambda file: file.name)
+def test_each_logo_file_is_where_the_tests_read_it(file: Path) -> None:
+    """A moved or renamed file fails here by name, instead of skipping the comparison."""
+    assert file.is_file(), f"{file.relative_to(_ROOT)} is missing: update the path in this test"
 
 
 def test_the_four_files_draw_the_same_path() -> None:

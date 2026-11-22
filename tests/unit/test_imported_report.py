@@ -147,7 +147,7 @@ def test_the_rest_of_a_result_is_bounded() -> None:
         name="n" * 5000,
         version="v" * 5000,
         detection=DetectionMethod.URI,
-        source_url="https://example.com/a.js",
+        source_url="https://example.com/" + "s" * 100_000,
         advisories=("a" * 5000,),
     )
     error = CheckError(check_id="x", message="m" * 50_000, traceback="t" * 100_000)
@@ -155,8 +155,10 @@ def test_the_rest_of_a_result_is_bounded() -> None:
         make_finding(), technologies=(tech,), errors=[error], warnings=["w" * 50_000]
     )
     (tech,) = result.technologies
-    assert tech.name.endswith(TRUNCATION_MARKER) and len(tech.name) < 2 * NAME_MAX_CHARS
-    assert tech.advisories[0].endswith(TRUNCATION_MARKER)
+    assert tech.name == "n" * NAME_MAX_CHARS + TRUNCATION_MARKER
+    assert tech.version == "v" * NAME_MAX_CHARS + TRUNCATION_MARKER
+    assert len(tech.source_url) == URL_MAX_CHARS + len(TRUNCATION_MARKER)
+    assert tech.advisories[0] == "a" * NAME_MAX_CHARS + TRUNCATION_MARKER
     assert result.errors[0].message == "m" * TEXT_MAX_CHARS + TRUNCATION_MARKER
     assert len(result.errors[0].traceback) == URL_MAX_CHARS + len(TRUNCATION_MARKER)
     assert result.warnings[0] == "w" * TEXT_MAX_CHARS + TRUNCATION_MARKER

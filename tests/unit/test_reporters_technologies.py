@@ -9,6 +9,8 @@ only when there is something to show, SARIF still carries the vuln rule.
 
 from __future__ import annotations
 
+import re
+
 from tests.support import make_finding, make_result
 from webvigil.core.findings import Severity
 from webvigil.core.technology import DetectionMethod, Technology
@@ -52,20 +54,23 @@ def test_json_round_trips_the_inventory(tmp_path) -> None:
 
 
 def test_html_has_a_detected_technologies_section() -> None:
-    """The HTML report lists each library, its version, and the vulnerable ones' CVEs."""
+    """The HTML report lists every library, its version, and the vulnerable ones' CVEs."""
     html = get_reporter("html").render(_result())
-    assert "Detected technologies" in html
-    assert "jquery" in html and "1.12.4" in html
-    assert "Vulnerable" in html and "CVE-2020-11022" in html
-    assert "unknown" in html or "18.2.0" in html
+    section = html.split("Detected technologies</h2>")[1].split("</table>")[0]
+    cells = re.findall(r"<td>(.*?)</td>", section)
+    assert cells == [
+        *("jquery", "1.12.4", "filename", "Vulnerable (CVE-2020-11022)"),
+        *("react", "18.2.0", "uri", "—"),  # a clean library is listed too
+    ]
 
 
 def test_markdown_has_a_detected_technologies_section() -> None:
-    """The Markdown report has a technologies table that marks the vulnerable rows."""
+    """The Markdown report lists every library and marks the vulnerable rows."""
     md = get_reporter("md").render(_result())
     assert "## Detected technologies" in md
-    assert "| jquery | 1.12.4 |" in md
-    assert "**Vulnerable**" in md
+    lines = md.splitlines()
+    assert "| jquery | 1.12.4 | filename | **Vulnerable** (CVE-2020-11022) |" in lines
+    assert "| react | 18.2.0 | uri | — |" in lines  # a clean library is listed too
 
 
 def test_no_section_when_inventory_is_empty() -> None:

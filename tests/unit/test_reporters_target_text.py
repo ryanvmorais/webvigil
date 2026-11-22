@@ -130,6 +130,7 @@ def test_only_an_http_reference_becomes_a_link() -> None:
     references = (
         "https://example.org/ref",
         "javascript:alert(1)",
+        "ftp://example.org/file",  # a link a renderer would make, but not an http(s) one
         "https://example.org/<x>",
         f"https://example.org/{_RIGHT_TO_LEFT_OVERRIDE}fdp.exe",
     )
@@ -141,6 +142,8 @@ def test_only_an_http_reference_becomes_a_link() -> None:
         if c.type == "link_open"
     ]
     assert links == ["https://example.org/ref"]
+    # a URL holding "<" stays text: written as an autolink it would end early and leave raw HTML
+    assert not [c for t in _PARSER.parse(md) for c in t.children or [] if c.type == "html_inline"]
 
 
 # ---------------------------------------------------------------------------
