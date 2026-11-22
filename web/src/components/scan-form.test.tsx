@@ -84,6 +84,13 @@ describe("ScanForm", () => {
     await user.selectOptions(screen.getByLabelText("Mode"), "active");
 
     expect(screen.getByRole("alert")).toHaveTextContent(/potentially intrusive traffic/i);
+    const guidance = screen.getByRole("link", { name: "Read the guidance" });
+    expect(guidance).toHaveAttribute(
+      "href",
+      "https://github.com/ryanvmorais/webvigil/blob/main/SECURITY.md",
+    );
+    expect(guidance).toHaveAttribute("target", "_blank");
+    expect(guidance).toHaveAttribute("rel", "noreferrer noopener");
 
     await user.click(screen.getByRole("button", { name: "Start scan" }));
     expect(
@@ -133,7 +140,117 @@ describe("ScanForm", () => {
     await user.click(screen.getByRole("button", { name: "Start scan" }));
 
     await waitFor(() => expect(router.push).toHaveBeenCalledWith("/scans/42"));
-    expect(body).toMatchObject({ target: "https://example.com", mode: "passive", max_pages: 25 });
+    expect(body).toMatchObject({
+      target: "https://example.com",
+      mode: "passive",
+      scope: "host",
+      max_pages: 25,
+    });
     expect(body).not.toHaveProperty("authorized_by");
+  });
+
+  it("sends every field the visitor set, not only the defaults", async () => {
+    const user = userEvent.setup();
+    let body: unknown;
+    server.use(
+      http.post("*/api/scans", async ({ request }) => {
+        body = await request.json();
+        return HttpResponse.json({ id: 43 }, { status: 201 });
+      }),
+    );
+    renderWithClient(<ScanForm />);
+    await screen.findByLabelText("Max pages");
+    await user.type(screen.getByLabelText("Target"), "https://example.com");
+    await user.selectOptions(screen.getByLabelText("Scope"), "subdomains");
+    await user.clear(screen.getByLabelText("Max pages"));
+    await user.type(screen.getByLabelText("Max pages"), "7");
+    await user.clear(screen.getByLabelText("Delay between requests (ms)"));
+    await user.type(screen.getByLabelText("Delay between requests (ms)"), "900");
+    await user.click(screen.getByRole("checkbox", { name: "Follow robots.txt" }));
+    await user.click(screen.getByRole("button", { name: /disabled checks/i }));
+    await user.click(await screen.findByRole("checkbox", { name: /tls\.version/ }));
+    await user.click(screen.getByRole("button", { name: "Start scan" }));
+
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith("/scans/43"));
+    expect(body).toEqual({
+      target: "https://example.com",
+      mode: "passive",
+      scope: "subdomains",
+      max_pages: 7,
+      delay_ms: 900,
+      follow_robots: false,
+      disabled_checks: ["tls.version"],
+    });
+  });
+
+  it("sends the attestation with an active scan", async () => {
+    const user = userEvent.setup();
+    let body: unknown;
+    server.use(
+      http.post("*/api/scans", async ({ request }) => {
+        body = await request.json();
+        return HttpResponse.json({ id: 44 }, { status: 201 });
+      }),
+    );
+    renderWithClient(<ScanForm />);
+    await screen.findByLabelText("Max pages");
+    await user.type(screen.getByLabelText("Target"), "https://example.com");
+    await user.selectOptions(screen.getByLabelText("Mode"), "active");
+    await user.type(screen.getByLabelText("Authorized by"), "ticket SEC-12");
+    await user.click(screen.getByRole("button", { name: "Start scan" }));
+
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith("/scans/44"));
+    expect(body).toMatchObject({ mode: "active", authorized_by: "ticket SEC-12" });
+  });
+
+  it("starts from the server's defaults, active mode and subdomain scope included", async () => {
+    server.use(
+      http.get("*/api/config/defaults", () =>
+        HttpResponse.json({
+          ...defaults,
+          mode: "active",
+          scope: "subdomains",
+          follow_robots: false,
+          fail_on: "high",
+        }),
+      ),
+    );
+    renderWithClient(<ScanForm />);
+    await waitFor(() => expect(screen.getByLabelText("Mode")).toHaveValue("active"));
+    expect(screen.getByLabelText("Scope")).toHaveValue("subdomains");
+    expect(screen.getByRole("checkbox", { name: "Follow robots.txt" })).not.toBeChecked();
+    expect(screen.getByLabelText("Authorized by")).toBeInTheDocument();
+    expect(screen.getByText("high")).toBeInTheDocument();
+  });
+
+  it("shows a generic error when the server refuses without naming a field", async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.post("*/api/scans", () => HttpResponse.json({ detail: "queue full" }, { status: 503 })),
+    );
+    renderWithClient(<ScanForm />);
+    await screen.findByLabelText("Max pages");
+    await user.type(screen.getByLabelText("Target"), "https://example.com");
+    await user.click(screen.getByRole("button", { name: "Start scan" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not start the scan.");
+  });
+
+  it("shows no generic error when the server's 422 names the field", async () => {
+    // the positive control is the test above: same flow, the alert appears
+    const user = userEvent.setup();
+    server.use(
+      http.post("*/api/scans", () =>
+        HttpResponse.json(
+          { detail: [{ loc: ["body", "target"], msg: "unsupported scheme", type: "value_error" }] },
+          { status: 422 },
+        ),
+      ),
+    );
+    renderWithClient(<ScanForm />);
+    await screen.findByLabelText("Max pages");
+    await user.type(screen.getByLabelText("Target"), "https://example.com");
+    await user.click(screen.getByRole("button", { name: "Start scan" }));
+    await screen.findByText("unsupported scheme");
+    expect(screen.queryByText(/could not start the scan/i)).not.toBeInTheDocument();
   });
 });

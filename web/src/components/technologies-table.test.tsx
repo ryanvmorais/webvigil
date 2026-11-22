@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -43,6 +43,9 @@ describe("TechnologiesTable", () => {
     expect(screen.getByText("jquery")).toBeInTheDocument();
     expect(screen.getByText("unknown")).toBeInTheDocument();
     expect(screen.getByText("Vulnerable · 1 advisory")).toBeInTheDocument();
+    const clean = screen.getByText("react").closest("tr") as HTMLElement;
+    expect(within(clean).getByText("—")).toBeInTheDocument();
+    expect(within(clean).queryByRole("button")).not.toBeInTheDocument();
   });
 
   it("keeps the advisory ids out of the badge and in the tooltip", () => {

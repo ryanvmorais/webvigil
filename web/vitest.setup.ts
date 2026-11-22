@@ -51,11 +51,23 @@ if (typeof window !== "undefined") {
   URL.revokeObjectURL = () => {};
 }
 
+// `"error"` only logs and makes the `fetch` reject, so a test that never looks at the outcome
+// would still pass: "blocks the form before calling the API" held even when the form called it.
+// Each unmocked request is collected and fails the test that sent it.
+const unhandled: string[] = [];
+server.events.on("request:unhandled", ({ request }) => {
+  unhandled.push(`${request.method} ${request.url}`);
+});
+
 beforeAll(() => server.listen({ onUnhandledFrame: "error" }));
 
 afterEach(() => {
   cleanup();
   server.resetHandlers();
+  const sent = unhandled.splice(0);
+  if (sent.length > 0) {
+    throw new Error(`Request(s) with no MSW handler: ${sent.join(", ")}`);
+  }
 });
 
 afterAll(() => server.close());

@@ -42,6 +42,12 @@ describe("AppShell", () => {
     expect(brand.firstElementChild?.tagName.toLowerCase()).toBe("svg");
   });
 
+  it("keeps the section marked on a page inside it", () => {
+    pathname.value = "/scans/12";
+    renderShell();
+    expect(screen.getByRole("link", { current: "page" })).toHaveTextContent("Scans");
+  });
+
   it("marks the active route with aria-current", () => {
     pathname.value = "/checks";
     renderShell();

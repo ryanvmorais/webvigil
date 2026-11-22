@@ -14,6 +14,7 @@ describe("safeNext", () => {
     ["//example.com", "protocol-relative"],
     ["///example.com", "protocol-relative with extra slashes"],
     ["/\\example.com", "backslash, which browsers turn into //"],
+    ["/scans\\..\\x", "backslash later in the path"],
     ["/\texample.com", "tab inside the path"],
     ["/\t/example.com", "tab that makes it // once stripped"],
     ["/\n/example.com", "newline that makes it // once stripped"],

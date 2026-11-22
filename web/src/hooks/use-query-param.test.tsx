@@ -30,4 +30,14 @@ describe("useQueryParams.setParams", () => {
     result.current.setParams({ status: null });
     expect(router.replace).toHaveBeenLastCalledWith("/scans");
   });
+
+  it.each([
+    ["an empty string", ""],
+    ["undefined", undefined],
+  ])("removes a key set to %s, as it does one set to null", (_label, value) => {
+    // a cleared search box sends "", a select reset to "all" sends undefined
+    const { result } = renderHook(() => useQueryParams());
+    result.current.setParams({ status: value });
+    expect(router.replace).toHaveBeenLastCalledWith("/scans");
+  });
 });

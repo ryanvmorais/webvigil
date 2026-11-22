@@ -111,6 +111,10 @@ test("setup → login → scan → report → password → logout", async ({ pag
     .first()
     .click();
   await expect(page).toHaveURL(/\/login$/);
+  // The dashboard goes to /login whether or not the API ended the session: only a page that
+  // needs one tells them apart.
+  await page.goto("/scans");
+  await expect(page).toHaveURL(/\/login\?next=%2Fscans$/);
 
   expect(problems).toEqual([]);
 });

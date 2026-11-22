@@ -11,9 +11,21 @@ vi.mock("@/components/ui/dropdown-menu", () => ({
 }));
 
 describe("ReportMenu", () => {
-  it("is disabled until the scan can produce a report", () => {
-    render(<ReportMenu scanId={5} status="running" />);
-    expect(screen.getByRole("button", { name: /report/i })).toBeDisabled();
+  it.each(["queued", "running", "failed", "cancelled"])(
+    "is disabled for a %s scan, which has no report, and says why in a tooltip",
+    (status) => {
+      render(<ReportMenu scanId={5} status={status} />);
+      const button = screen.getByRole("button", { name: /report/i });
+      expect(button).toBeDisabled();
+      expect(button).toHaveAttribute("title", "Available once the scan completes");
+    },
+  );
+
+  it.each(["completed", "interrupted"])("is enabled for a %s scan", (status) => {
+    render(<ReportMenu scanId={5} status={status} />);
+    const button = screen.getByRole("button", { name: "Report" });
+    expect(button).toBeEnabled();
+    expect(button).not.toHaveAttribute("title");
   });
 
   it("says why it is disabled in its name, not only in a tooltip a phone never shows", () => {

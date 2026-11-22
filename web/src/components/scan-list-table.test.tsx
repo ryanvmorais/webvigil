@@ -40,12 +40,16 @@ describe("ScanListTable", () => {
     render(
       <ScanListTable
         scans={[
-          makeScanSummary({ status: "running", counts: {} }),
-          makeScanSummary({ status: "completed", counts: {} }),
+          makeScanSummary({ id: 1, status: "running", counts: {} }),
+          makeScanSummary({ id: 2, status: "completed", counts: {} }),
         ]}
       />,
     );
-    expect(screen.getAllByText("Scan in progress")).toHaveLength(1);
-    expect(screen.getAllByText("No findings")).toHaveLength(1);
+    // per row: two swapped labels would still count one of each
+    const [running, completed] = screen.getAllByRole("row").slice(1);
+    expect(within(running).getByText("Scan in progress")).toBeInTheDocument();
+    expect(within(running).queryByText("No findings")).not.toBeInTheDocument();
+    expect(within(completed).getByText("No findings")).toBeInTheDocument();
+    expect(within(completed).queryByText("Scan in progress")).not.toBeInTheDocument();
   });
 });

@@ -35,6 +35,10 @@ test("a page has exactly one policy, and its nonce is the one on the page's scri
   const nonce = found[0].match(/script-src [^;]*'nonce-([^']+)'/)?.[1];
   expect(nonce, "a nonce in script-src").toBeTruthy();
   expect(found[0]).not.toContain("upgrade-insecure-requests");
+  // `next start` is a production build: what `next dev` needs must not be in its policy (RF-02).
+  expect(found[0]).toContain("script-src 'self' 'nonce-");
+  expect(found[0]).not.toContain("'unsafe-eval'");
+  expect(found[0]).toMatch(/connect-src 'self'(;|$)/);
 
   const scripts = (await page.text()).match(/<script\b[^>]*>/gi) ?? [];
   expect(scripts.length, "scripts in /login").toBeGreaterThan(0);

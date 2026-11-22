@@ -21,6 +21,25 @@ function renderForm(isPending: boolean) {
 }
 
 describe("SubmitButton", () => {
+  it("passes a click on to its own onClick when idle, and not while pending", async () => {
+    const user = userEvent.setup();
+    const onClick = vi.fn();
+    const { rerender } = render(
+      <SubmitButton isPending={false} onClick={onClick}>
+        Go
+      </SubmitButton>,
+    );
+    await user.click(screen.getByRole("button", { name: "Go" }));
+    expect(onClick).toHaveBeenCalledTimes(1);
+    rerender(
+      <SubmitButton isPending onClick={onClick}>
+        Go
+      </SubmitButton>,
+    );
+    await user.click(screen.getByRole("button", { name: "Go" }));
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+
   it("submits the form when idle", async () => {
     const { onSubmit, button } = renderForm(false);
     await userEvent.setup().click(button);

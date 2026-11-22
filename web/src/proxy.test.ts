@@ -9,9 +9,13 @@
  * browser enforces the policy is the e2e suite's job.
  */
 import { NextRequest } from "next/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { config, proxy } from "@/proxy";
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 /**
  * Run the proxy on a page request.
@@ -66,6 +70,21 @@ describe("proxy", () => {
       Array.from({ length: 20 }, () => nonceOf(run().headers.get("Content-Security-Policy"))),
     );
     expect(nonces.size).toBe(20);
+  });
+
+  it("leaves 'unsafe-eval' and the HMR websocket out of a production build's policy", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const policy = run().headers.get("Content-Security-Policy");
+    expect(policy).not.toContain("'unsafe-eval'");
+    expect(policy).not.toContain("ws:");
+  });
+
+  it("adds them under `next dev` only, which needs both", () => {
+    // the positive control of the test above: the same check, with the switch on
+    vi.stubEnv("NODE_ENV", "development");
+    const policy = run().headers.get("Content-Security-Policy");
+    expect(policy).toContain("'unsafe-eval'");
+    expect(policy).toContain("connect-src 'self' ws: wss:");
   });
 
   it("leaves the nonce in the policy alone: no x-nonce header, no other copy", () => {

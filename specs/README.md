@@ -55,6 +55,13 @@ spec follows this in its `design.md` (testing section) and in its `tasks.md`:
    scans stopped waiting out the client's retry backoff, issue #307). A spec that pushes it past
    ~3 min with no explicit reason reopens the conversation before the merge. Every run lists its
    15 slowest tests (`--durations=15` in `addopts`).
+9. **Every new or changed test is seen failing once** before it is committed: break the line
+   it guards in `src/` (or, for a bug fix, run it against `main`) and watch it go red. The pull
+   request says what was broken. A negative test ("X does not happen") also carries a positive
+   control: the same assertion against an input where X does happen, or a check that the path
+   under test ran (the page was visited, the stub was called). Coverage only shows that a line
+   ran, not that a test would notice it changing (issue #307). The same holds for the
+   dashboard's vitest and Playwright suites.
 
 **Golden rule when trimming tests:** `uv run pytest --cov` before and after, on the **same
 Python**, comparing per file the set of executed lines and branches; nothing covered may stop
