@@ -95,29 +95,34 @@ def reset_password(
     cfg = _load(config)
     run_alembic_upgrade(cfg)
     engine = make_engine(cfg)
-    with Session(engine) as session:
-        statement = select(User)
-        if username is not None:
-            statement = statement.where(User.username == username)
-        user = session.exec(statement).first()
-        if user is None:
-            typer.echo("no user found — complete first-run setup in the browser first", err=True)
-            raise typer.Exit(1)
-        new_password = typer.prompt("New password", hide_input=True, confirmation_prompt=True)
-        # The same policy as setup and the password change, so a reset cannot set a password the
-        # dashboard would have refused.
-        if not PASSWORD_MIN_CHARS <= len(new_password) <= PASSWORD_MAX_CHARS:
-            typer.echo(
-                f"error: the password must be {PASSWORD_MIN_CHARS} to {PASSWORD_MAX_CHARS} "
-                "characters long",
-                err=True,
-            )
-            raise typer.Exit(1)
-        user.password_hash = hash_password(new_password)
-        user.updated_at = utcnow()
-        session.add(user)
-        session.commit()
-        typer.echo(f"password updated for {user.username}")
+    try:
+        with Session(engine) as session:
+            statement = select(User)
+            if username is not None:
+                statement = statement.where(User.username == username)
+            user = session.exec(statement).first()
+            if user is None:
+                typer.echo(
+                    "no user found — complete first-run setup in the browser first", err=True
+                )
+                raise typer.Exit(1)
+            new_password = typer.prompt("New password", hide_input=True, confirmation_prompt=True)
+            # The same policy as setup and the password change, so a reset cannot set a password the
+            # dashboard would have refused.
+            if not PASSWORD_MIN_CHARS <= len(new_password) <= PASSWORD_MAX_CHARS:
+                typer.echo(
+                    f"error: the password must be {PASSWORD_MIN_CHARS} to {PASSWORD_MAX_CHARS} "
+                    "characters long",
+                    err=True,
+                )
+                raise typer.Exit(1)
+            user.password_hash = hash_password(new_password)
+            user.updated_at = utcnow()
+            session.add(user)
+            session.commit()
+            typer.echo(f"password updated for {user.username}")
+    finally:
+        engine.dispose()  # also on the refusals, which leave through typer.Exit
 
 
 def main() -> None:

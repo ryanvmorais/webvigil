@@ -287,6 +287,36 @@ async def test_stop_right_after_the_claim_cancels_the_scan(
         await stopping
 
 
+async def test_stop_during_an_empty_claim_ends_the_loop(
+    web_engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    ``stop()`` while the loop is looking at an empty queue does not leave it waiting for a scan.
+
+    The claim is held open until ``stop()`` has started, so the loop finds the queue empty only
+    after the flag is up: it must see the wake-up ``stop()`` sends and end.
+    """
+    claiming = threading.Event()
+    release = threading.Event()
+    original = ScanRunner._claim_next_queued
+
+    def held(self: ScanRunner) -> int | None:
+        claiming.set()
+        release.wait(3.0)
+        return original(self)
+
+    monkeypatch.setattr(ScanRunner, "_claim_next_queued", held)
+    runner = ScanRunner(web_engine, orchestrator_factory=_factory(_FakeOrchestrator()))
+    await runner.start()
+    assert await asyncio.to_thread(claiming.wait, 3.0)
+
+    stopping = asyncio.create_task(runner.stop())
+    await asyncio.sleep(0)  # stop() raises the flag and wakes the loop, then waits for the claim
+    release.set()
+    done, _pending = await asyncio.wait({stopping}, timeout=3.0)
+    assert stopping in done, "the loop kept waiting after stop()"
+
+
 async def test_cancel_a_queued_scan(web_engine: Engine, runner_factory: Callable) -> None:
     """Cancelling a QUEUED scan marks it CANCELLED without ever running it."""
     gate = asyncio.Event()

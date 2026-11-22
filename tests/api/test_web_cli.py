@@ -12,6 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from sqlalchemy import Engine
 from sqlmodel import Session, select
 from typer.testing import CliRunner
 
@@ -101,6 +102,56 @@ def test_reset_password_without_a_user_errors(_config_env: Path) -> None:
     result = runner.invoke(cli.app, ["reset-password"], input="x\nx\n")
     assert result.exit_code == 1
     assert "no user found" in result.output
+
+
+@pytest.mark.parametrize(
+    ("with_user", "password", "exit_code"),
+    [
+        (True, "new-password", 0),  # the password is changed
+        (False, "new-password", 1),  # no user to change
+        (True, "short12", 1),  # a password the API would refuse
+    ],
+)
+def test_reset_password_closes_its_database_on_every_way_out(
+    monkeypatch: pytest.MonkeyPatch, with_user: bool, password: str, exit_code: int
+) -> None:
+    """Success or either refusal, the command disposes the engine it opened."""
+    config = WebConfig.load()
+    run_alembic_upgrade(config)
+    if with_user:
+        seed = make_engine(config)
+        with Session(seed) as session:
+            session.add(User(username="admin", password_hash=hash_password("old-password")))
+            session.commit()
+        seed.dispose()
+
+    opened: list[Engine] = []
+    disposed: list[Engine] = []
+
+    def tracked(cfg: WebConfig) -> Engine:
+        """
+        Args:
+            cfg (WebConfig): The config the command loaded.
+
+        Returns:
+            Engine: The real engine, with ``dispose`` recorded.
+        """
+        engine = make_engine(cfg)
+        opened.append(engine)
+        real_dispose = engine.dispose
+
+        def dispose(close: bool = True) -> None:
+            disposed.append(engine)
+            real_dispose(close)
+
+        monkeypatch.setattr(engine, "dispose", dispose)
+        return engine
+
+    monkeypatch.setattr(cli, "make_engine", tracked)
+    result = runner.invoke(cli.app, ["reset-password"], input=f"{password}\n{password}\n")
+    assert result.exit_code == exit_code, result.output
+    assert len(opened) == 1
+    assert disposed == opened
 
 
 def test_serve_invokes_uvicorn(_config_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
