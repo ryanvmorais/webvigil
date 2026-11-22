@@ -19,6 +19,7 @@ from webvigil.api.db import Scan, ScanStatus
 from webvigil.api.mapping import build_scan_config, rows_to_result, store_result
 from webvigil.api.schemas import ScanCreate
 from webvigil.core.findings import ScanMode, Severity
+from webvigil.core.target import Scope
 from webvigil.reporting import get_reporter
 
 
@@ -120,6 +121,7 @@ def test_build_scan_config_applies_options() -> None:
     )
     config = build_scan_config(scan)
     assert config.scan.mode == ScanMode.ACTIVE
+    assert config.scan.scope == Scope.SUBDOMAINS  # not the default, so an ignored scope shows
     assert config.scan.max_pages == 12
     assert config.http.delay_ms == 50
     assert config.checks.disabled == ["http.headers.hsts"]

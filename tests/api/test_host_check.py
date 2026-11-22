@@ -53,10 +53,19 @@ def test_an_unknown_forwarded_host_is_refused(auth_client: TestClient) -> None:
     assert auth_client.get("/api/auth/me").status_code == 200
 
 
-def test_a_repeated_header_is_checked_in_every_occurrence(client: TestClient) -> None:
-    """One good value does not vouch for a second, unknown one."""
-    headers = [("x-forwarded-host", "localhost:3000"), ("x-forwarded-host", _UNKNOWN)]
+@pytest.mark.parametrize("unknown_first", [False, True])
+def test_a_repeated_header_is_checked_in_every_occurrence(
+    client: TestClient, unknown_first: bool
+) -> None:
+    """One good value does not vouch for an unknown one, before or after it."""
+    values = ["localhost:3000", _UNKNOWN]
+    if unknown_first:
+        values.reverse()
+    headers = [("x-forwarded-host", value) for value in values]
     assert client.get("/api/health", headers=headers).status_code == 400
+    # Control: the same header repeated with two known values passes.
+    known = [("x-forwarded-host", "localhost:3000"), ("x-forwarded-host", "127.0.0.1:3000")]
+    assert client.get("/api/health", headers=known).status_code == 200
 
 
 @pytest.mark.parametrize(

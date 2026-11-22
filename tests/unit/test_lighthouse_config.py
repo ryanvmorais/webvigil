@@ -71,7 +71,9 @@ def _paths(config: dict) -> list[str]:
 @pytest.mark.parametrize("stem", _STEMS)
 def test_every_audited_path_is_a_real_page(stem: str) -> None:
     routes = _routes()
-    missing = [p for p in _paths(_load(stem)) if not any(r.match(p) for r in routes)]
+    paths = _paths(_load(stem))
+    assert paths  # a config that audits nothing would pass the check below
+    missing = [p for p in paths if not any(r.match(p) for r in routes)]
     assert missing == []
 
 
@@ -97,24 +99,51 @@ def test_login_is_audited_without_the_session_and_the_rest_with_it() -> None:
     assert "/login" not in _paths(_load("mobile"))
 
 
+# The audits that fail the run, with their limits: a key that is present but set to ``warn`` or
+# ``off``, or a looser limit, would let the regression it names through.
+_GATES = {
+    "categories:accessibility": {"minScore": 0.95},
+    "categories:best-practices": {"minScore": 0.95},
+    "cumulative-layout-shift": {"maxNumericValue": 0.1},
+    "total-byte-weight": {"maxNumericValue": 500_000},
+    # The accessibility score can pass with a failing contrast or an unsized image, so each has
+    # its own gate (an image without ``width``/``height`` shifts the layout once it loads).
+    "color-contrast": {"minScore": 1},
+    "unsized-images": {"minScore": 1},
+    "target-size": {"minScore": 1},
+    # The missing favicon was a console error on every page. ``/login`` is held to it too: it
+    # learns "am I signed in?" from ``GET /api/setup``, which answers 200 either way, instead of
+    # the 401 of ``GET /api/auth/me`` it used to log for every signed-out visitor.
+    "errors-in-console": {"minScore": 1},
+}
+
+
+def _level_and_limits(stem: str, audit: str) -> tuple[str, dict[str, object]]:
+    """
+    Read one assertion of one Lighthouse CI config.
+
+    Args:
+        stem (str): File name without ``.json``, e.g. ``"mobile-login"``.
+        audit (str): An assertion key, e.g. ``"errors-in-console"``.
+
+    Returns:
+        tuple[str, dict[str, object]]: Its level (``error``, ``warn``, ``off``) and its limits,
+            without the aggregation method.
+    """
+    entry = _load(stem)["assert"]["assertions"][audit]
+    level, options = (entry, {}) if isinstance(entry, str) else (entry[0], dict(entry[1]))
+    options.pop("aggregationMethod", None)
+    return level, options
+
+
 @pytest.mark.parametrize("stem", _STEMS)
-def test_no_audited_page_may_log_a_console_error(stem: str) -> None:
-    """
-    The missing favicon was a console error on every page; keep that class of bug out.
-
-    ``/login`` is included: it used to log the 401 of ``GET /api/auth/me`` for every
-    signed-out visitor, so it could not assert this. It now learns "am I signed in?" from
-    ``GET /api/setup`` (``authenticated``), which answers 200 either way.
-    """
-    assert "errors-in-console" in _load(stem)["assert"]["assertions"]
+@pytest.mark.parametrize("audit", sorted(_GATES))
+def test_each_gate_fails_the_run_at_its_limit(stem: str, audit: str) -> None:
+    """Every gate is an ``error`` with the documented limit, on every page and profile."""
+    assert _level_and_limits(stem, audit) == ("error", _GATES[audit])
 
 
 @pytest.mark.parametrize("stem", _STEMS)
-def test_unsized_images_is_its_own_assertion(stem: str) -> None:
-    """
-    An image without ``width``/``height`` shifts the layout once it loads.
-
-    The accessibility score would still pass with the failure, so the audit needs its own
-    assertion (same reason as ``color-contrast``).
-    """
-    assert "unsized-images" in _load(stem)["assert"]["assertions"]
+def test_performance_only_warns(stem: str) -> None:
+    """The score varies on a shared runner, so it is reported, never a failure."""
+    assert _level_and_limits(stem, "categories:performance")[0] == "warn"

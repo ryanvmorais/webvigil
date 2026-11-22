@@ -52,6 +52,7 @@ def test_migrate_creates_the_schema(_config_env: Path) -> None:
         tables = set(
             conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'")).scalars()
         )
+    engine.dispose()
     assert {"user", "scan", "finding"} <= tables
 
 
@@ -73,6 +74,7 @@ def test_reset_password_updates_the_hash(_config_env: Path) -> None:
         user = session.exec(select(User).where(User.username == "admin")).one()
         assert verify_password("new-password", user.password_hash)
         assert not verify_password("old-password", user.password_hash)
+    engine.dispose()
 
 
 def test_reset_password_refuses_a_password_the_api_would_refuse(_config_env: Path) -> None:
@@ -91,6 +93,7 @@ def test_reset_password_refuses_a_password_the_api_would_refuse(_config_env: Pat
     with Session(engine) as session:
         user = session.exec(select(User).where(User.username == "admin")).one()
         assert verify_password("old-password", user.password_hash)
+    engine.dispose()
 
 
 def test_reset_password_without_a_user_errors(_config_env: Path) -> None:

@@ -107,13 +107,16 @@ def test_resolve_session_secret_generates_then_reuses(tmp_path: Path) -> None:
     with session_scope(engine) as session:
         stored = session.get(Setting, "session_secret")
         assert stored is not None and stored.value == first
+    engine.dispose()
 
 
 def test_resolve_session_secret_prefers_the_pinned_value(tmp_path: Path) -> None:
     """A config-pinned ``session_secret`` is used verbatim, not replaced by a generated one."""
     config = WebConfig(database_path=tmp_path / "webvigil.db", session_secret=_PINNED)
     run_alembic_upgrade(config)
-    assert resolve_session_secret(make_engine(config), config) == _PINNED
+    engine = make_engine(config)
+    assert resolve_session_secret(engine, config) == _PINNED
+    engine.dispose()
 
 
 def test_the_dummy_hash_is_a_real_argon2_hash_with_the_parameters_of_a_real_one() -> None:
