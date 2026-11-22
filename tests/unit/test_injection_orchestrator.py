@@ -93,17 +93,38 @@ def _active(**checks_kw: object) -> ScanConfig:
     )
 
 
-def _boom(*_a: object, **_k: object) -> object:
-    """A stand-in that fails the test if ``InjectionScanner`` is constructed."""
-    raise AssertionError("InjectionScanner must not run")
+def _never(monkeypatch: pytest.MonkeyPatch, name: str) -> list[str]:
+    """
+    Replace a scanner pass with a stand-in that records every construction.
+
+    Raising from the stand-in is not enough: the orchestrator turns any exception of a pass
+    into a warning, so a pass that should not run would still leave the scan green. The
+    test asserts the list stays empty instead.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): The fixture that undoes the patch.
+        name (str): The pass class name in ``webvigil.core.orchestrator``.
+
+    Returns:
+        list[str]: One entry per construction; empty when the pass never ran.
+    """
+    built: list[str] = []
+
+    def construct(*_a: object, **_k: object) -> object:
+        built.append(name)
+        raise AssertionError(f"{name} must not run")
+
+    monkeypatch.setattr(orch_mod, name, construct)
+    return built
 
 
 async def test_passive_scan_never_runs_the_injection_pass(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """In the default Passive mode the injection pass is never constructed."""
-    monkeypatch.setattr(orch_mod, "InjectionScanner", _boom)
+    built = _never(monkeypatch, "InjectionScanner")
     result = await Orchestrator(ScanConfig(), check_types=[ReflectedXssCheck]).run(_TARGET)
+    assert built == []
     assert not any(f.check_id.startswith("injection.") for f in result.findings)
 
 
@@ -111,8 +132,9 @@ async def test_active_scan_with_no_injection_check_selected_does_not_run(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Active mode alone is not enough — with no injection check the pass is skipped."""
-    monkeypatch.setattr(orch_mod, "InjectionScanner", _boom)
+    built = _never(monkeypatch, "InjectionScanner")
     result = await Orchestrator(_active(), check_types=[HstsCheck]).run(_TARGET)
+    assert built == []
     assert not any(f.check_id.startswith("injection.") for f in result.findings)
 
 
@@ -202,10 +224,31 @@ async def test_with_both_checks_selected_one_proof_is_one_finding(httpx_mock: ob
     assert ids == ["injection.el"]
 
 
+# What each check sends to the stub seed (``q=hi``, a canary point) and no other check does.
+# Measured: a marker that the check never sends would prove nothing (the SSTI engine probe
+# ``{{7*'7'}}`` only follows an evaluation, the EL ``T(java`` probe too). The shared polyglot
+# ``${{<%[%'"}}%\\`` goes out with both SSTI and EL, so neither claims ``{{`` or ``<%`` bare.
+_MARKERS: dict[type, tuple[re.Pattern[str], ...]] = {
+    SsrfMetadataCheck: (re.compile(r"^http://169\.254\.169\.254/"), re.compile(r"^file:///")),
+    OsCommandInjectionCheck: (re.compile(r"=\$\(\(\d+\*\d+\)\)"), re.compile(r"&set /a \d+")),
+    TemplateInjectionCheck: (re.compile(r"wv[0-9a-f]+\{\{\d+\*\d+\}\}"), re.compile(r"<%= \d+")),
+    ExpressionLanguageInjectionCheck: (
+        re.compile(r"wv[0-9a-f]+#\{\d+\*\d+\}"),
+        re.compile(r"wv[0-9a-f]+%\{\d+\*\d+\}"),
+        re.compile(r"^'wv[0-9a-f]+'\+\("),
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    "selected",
+    [ReflectedXssCheck, *_MARKERS],
+    ids=["xss", "ssrf", "cmdi", "ssti", "el"],
+)
 async def test_active_scan_sends_only_the_payloads_of_the_selected_checks(
-    httpx_mock: object,
+    httpx_mock: object, selected: type
 ) -> None:
-    """A check that is not selected sends none of its payloads (SSRF, shell, template, EL)."""
+    """Each check's own payloads go out when it is selected, and no other check's do."""
     seen: list[str] = []
 
     def router(request: httpx.Request) -> httpx.Response:
@@ -213,16 +256,15 @@ async def test_active_scan_sends_only_the_payloads_of_the_selected_checks(
         return httpx.Response(200, text="<div>ok</div>", headers={"content-type": "text/html"})
 
     httpx_mock.add_callback(router, is_reusable=True)  # type: ignore[attr-defined]
-    # only XSS selected: no SSRF metadata or file:// payload, no shell-break or template payload
-    await Orchestrator(_active(), check_types=[ReflectedXssCheck]).run(_TARGET)
+    await Orchestrator(_active(), check_types=[selected]).run(_TARGET)
     assert seen
-    assert not any("169.254.169.254" in v or v.lower().startswith("file:") for v in seen)
-    assert not any("$((" in v or "{{7*" in v or ";sleep" in v for v in seen)
-    # only ``injection.ssti`` selected: the SSTI payloads go out, no EL-only form or type probe
-    seen.clear()
-    await Orchestrator(_active(), check_types=[TemplateInjectionCheck]).run(_TARGET)
-    assert seen  # the SSTI payloads were sent
-    assert not any("%{" in v or "T(java" in v or "'+(" in v or "${(" in v for v in seen)
+    found = {
+        (check, marker.pattern)
+        for check, markers in _MARKERS.items()
+        for marker in markers
+        if any(marker.search(value) for value in seen)
+    }
+    assert found == {(selected, marker.pattern) for marker in _MARKERS.get(selected, ())}
 
 
 async def test_a_raising_pass_becomes_a_warning_not_a_crash(
@@ -244,11 +286,6 @@ async def test_a_raising_pass_becomes_a_warning_not_a_crash(
 # ---------------------------------------------------------------------------
 # The stored-XSS pass (spec 008)
 # ---------------------------------------------------------------------------
-
-
-def _stored_boom(*_a: object, **_k: object) -> object:
-    """A stand-in that fails the test if ``StoredXssScanner`` is constructed."""
-    raise AssertionError("StoredXssScanner must not run")
 
 
 class _StoredStub:
@@ -276,8 +313,9 @@ class _StoredStub:
 
 async def test_stored_pass_skipped_without_the_opt_in(monkeypatch: pytest.MonkeyPatch) -> None:
     """Without ``[injection] stored_xss`` the stored pass is never constructed."""
-    monkeypatch.setattr(orch_mod, "StoredXssScanner", _stored_boom)
+    built = _never(monkeypatch, "StoredXssScanner")
     result = await Orchestrator(_active(), check_types=[StoredXssCheck]).run(_TARGET)
+    assert built == []
     assert not any(f.check_id == "injection.xss.stored" for f in result.findings)
 
 
@@ -285,9 +323,10 @@ async def test_stored_pass_skipped_when_check_not_selected(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The opt-in alone is not enough — with no stored-XSS check the pass is skipped."""
-    monkeypatch.setattr(orch_mod, "StoredXssScanner", _stored_boom)
+    built = _never(monkeypatch, "StoredXssScanner")
     config = _active(injection={"stored_xss": True})
     result = await Orchestrator(config, check_types=[HstsCheck]).run(_TARGET)
+    assert built == []
     assert not any(f.check_id == "injection.xss.stored" for f in result.findings)
 
 
@@ -318,20 +357,16 @@ async def test_a_raising_stored_pass_becomes_a_warning(monkeypatch: pytest.Monke
 
 async def test_stored_opt_in_without_active_mode_warns(monkeypatch: pytest.MonkeyPatch) -> None:
     """The stored-XSS opt-in in Passive mode is a no-op that warns it needs ``--mode active``."""
-    monkeypatch.setattr(orch_mod, "StoredXssScanner", _stored_boom)
+    built = _never(monkeypatch, "StoredXssScanner")
     config = ScanConfig.model_validate({"injection": {"stored_xss": True}})
-    result = await Orchestrator(config, check_types=[HstsCheck]).run(_TARGET)
+    result = await Orchestrator(config, check_types=[StoredXssCheck]).run(_TARGET)
+    assert built == []
     assert any("requires --mode active" in w for w in result.warnings)
 
 
 # ---------------------------------------------------------------------------
 # The active CSRF confirmation pass (spec 017, RF-11, ADR-6, ADR-7)
 # ---------------------------------------------------------------------------
-
-
-def _csrf_boom(*_a: object, **_k: object) -> object:
-    """A stand-in that fails the test if ``CsrfScanner`` is constructed."""
-    raise AssertionError("CsrfScanner must not run")
 
 
 class _CsrfStub:
@@ -355,8 +390,9 @@ class _CsrfStub:
 
 async def test_csrf_pass_skipped_without_the_opt_in(monkeypatch: pytest.MonkeyPatch) -> None:
     """Without ``[injection] csrf_confirm`` the CSRF pass is never constructed."""
-    monkeypatch.setattr(orch_mod, "CsrfScanner", _csrf_boom)
+    built = _never(monkeypatch, "CsrfScanner")
     result = await Orchestrator(_active(), check_types=[TokenNotEnforcedCheck]).run(_TARGET)
+    assert built == []
     assert not any(f.check_id == "csrf.form.token-not-enforced" for f in result.findings)
 
 
@@ -364,9 +400,10 @@ async def test_csrf_pass_skipped_when_check_not_selected(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The opt-in alone is not enough — with the check disabled the pass is skipped."""
-    monkeypatch.setattr(orch_mod, "CsrfScanner", _csrf_boom)
+    built = _never(monkeypatch, "CsrfScanner")
     config = _active(injection={"csrf_confirm": True})
     result = await Orchestrator(config, check_types=[HstsCheck]).run(_TARGET)
+    assert built == []
     assert not any(f.check_id == "csrf.form.token-not-enforced" for f in result.findings)
 
 
@@ -397,9 +434,10 @@ async def test_a_raising_csrf_pass_becomes_a_warning(monkeypatch: pytest.MonkeyP
 
 async def test_csrf_opt_in_without_active_mode_warns(monkeypatch: pytest.MonkeyPatch) -> None:
     """The opt-in in Passive mode is a no-op that warns it needs ``--mode active``."""
-    monkeypatch.setattr(orch_mod, "CsrfScanner", _csrf_boom)
+    built = _never(monkeypatch, "CsrfScanner")
     config = ScanConfig.model_validate({"injection": {"csrf_confirm": True}})
-    result = await Orchestrator(config, check_types=[HstsCheck]).run(_TARGET)
+    result = await Orchestrator(config, check_types=[TokenNotEnforcedCheck]).run(_TARGET)
+    assert built == []
     assert any("CSRF confirmation requires --mode active" in w for w in result.warnings)
 
 

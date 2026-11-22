@@ -72,14 +72,10 @@ def _baseline(body: str = "<p>Result: 1</p>") -> Baseline:
     return Baseline(200, body, normalize_body(body), len(body), 1.0)
 
 
-def _ctx(
-    render: Callable[[str], Response | None], *, limit: int | None = None
-) -> tuple[DetectCtx, list[str]]:
+def _ctx(render: Callable[[str], Response | None]) -> tuple[DetectCtx, list[str]]:
     """
     Args:
         render (Callable[[str], Response | None]): Maps a sent value to a response.
-        limit (int | None): After this many sends, ``send`` returns ``None`` (a budget cut).
-            Defaults to no limit.
 
     Returns:
         tuple[DetectCtx, list[str]]: The context and the list every sent value is appended to.
@@ -89,8 +85,6 @@ def _ctx(
     async def send(
         point: InjectionPoint, value: str, *, time_based: bool = False, **_: Any
     ) -> Response | None:
-        if limit is not None and len(sent) >= limit:
-            return None
         sent.append(value)
         return render(value)
 
@@ -296,6 +290,7 @@ async def test_percent_form_stays_high_when_static_access_is_off() -> None:
     evidence = _evidence(hit)
     assert "Type access" not in evidence
     assert evidence["Dialect"] == "OGNL — %{} syntax"
+    assert evidence["Error signature"] in _OGNL_STATIC_OFF  # the refusal names it
 
 
 async def test_bare_form_names_spel_and_is_critical() -> None:
@@ -314,6 +309,7 @@ async def test_bare_escape_form_reaches_a_value_inside_a_string_literal() -> Non
     hit = _only(await el.detect_el(_FULL, _baseline(), ctx))
     assert hit.title.startswith("Expression-language injection (expression language, dialect")
     assert hit.severity is Severity.HIGH
+    assert "Dialect" not in _evidence(hit)  # nothing named it: no dialect line at all
 
 
 @pytest.mark.parametrize("point", [_FULL, _CANARY], ids=["full", "canary"])
@@ -390,9 +386,12 @@ async def test_a_freemarker_dollar_form_is_silent_when_only_el_runs() -> None:
 
 async def test_jinja_is_reported_as_ssti_with_the_engine_named() -> None:
     """A template-only form is left to ``ssti`` exactly as before."""
-    ctx, _ = _ctx(_jinja)
+    ctx, sent = _ctx(_jinja)
     hit = _only(await el.detect_combined(_FULL, _baseline("<p>Hi 1</p>"), ctx))
     assert hit.kind == "ssti" and "Jinja2" in hit.title
+    # the polyglot and {{a*b}}, nothing more: no type-access probe through a template form
+    # (its wrap ignores the probe, so one would resend the arithmetic)
+    assert len(sent) == 2
 
 
 def _shape(hits: list[InjectionHit]) -> list[tuple[object, ...]]:
@@ -510,15 +509,25 @@ async def test_request_counts_per_point_type(
     assert len(sent) == expected
 
 
-@pytest.mark.parametrize("limit", [0, 1, 2, 5, 9])
-@pytest.mark.parametrize("entry", [el.detect_combined, el.detect_el], ids=["combined", "el"])
+@pytest.mark.parametrize(
+    ("entry", "limit"),
+    [(el.detect_combined, n) for n in range(14)] + [(el.detect_el, n) for n in range(9)],
+    ids=[f"combined-{n}" for n in range(14)] + [f"el-{n}" for n in range(9)],
+)
 async def test_the_detector_stops_when_send_returns_none(
     entry: Callable[..., Any], limit: int
 ) -> None:
-    """A budget cut at any stage ends the routine quietly."""
-    ctx, sent = _ctx(_reflect, limit=limit)
+    """A budget cut at any request (polyglot, arithmetic, unterminated) ends the routine there."""
+    attempts = 0
+
+    async def send(point: InjectionPoint, value: str, **_: Any) -> Response | None:
+        nonlocal attempts
+        attempts += 1
+        return None if attempts > limit else _reflect(value)
+
+    ctx = DetectCtx(send=send, delay_s=5, host="example.com")
     assert await entry(_FULL, _baseline(), ctx) == []
-    assert len(sent) <= limit
+    assert attempts == limit + 1  # the granted requests, then the one refused, then nothing
 
 
 @pytest.mark.parametrize(
@@ -553,3 +562,89 @@ def test_the_signature_excerpt_of_a_long_line_is_cut_to_its_cap() -> None:
     found = el._signature(_SPEL_ERROR + "z" * 1_000_000, "", "p")
     assert found is not None
     assert found.excerpt == (_SPEL_ERROR + "z" * el._EXCERPT_MAX)[: el._EXCERPT_MAX]
+
+
+# ---------------------------------------------------------------------------
+# The paths between the stages
+# ---------------------------------------------------------------------------
+
+
+async def test_a_polyglot_signature_on_a_full_point_skips_the_unterminated_probe() -> None:
+    """The polyglot already named SpEL: the unterminated probe is not sent, the hit stays."""
+    ctx, sent = _ctx(_signature_only)
+    hit = _only(await el.detect_combined(_FULL, _baseline(), ctx))
+    assert (hit.severity, hit.confidence) == (Severity.HIGH, Confidence.MEDIUM)
+    assert not any(v.endswith("(") for v in sent)
+
+
+async def test_a_denied_type_access_probe_still_reports_the_arithmetic() -> None:
+    """The arithmetic is proved; a static-call probe the budget refuses only costs the CRITICAL."""
+    sent: list[str] = []
+
+    async def send(point: InjectionPoint, value: str, **_: Any) -> Response | None:
+        sent.append(value)
+        return None if "T(java" in value else _spel_bare(value)
+
+    ctx = DetectCtx(send=send, delay_s=5, host="example.com")
+    hit = _only(await el.detect_combined(_FULL, _baseline(), ctx))
+    assert (hit.kind, hit.severity) == ("el", Severity.HIGH)
+    assert "Type access" not in _evidence(hit)
+    assert sum("T(java" in v for v in sent) == 1
+
+
+async def test_a_type_access_needle_already_in_the_baseline_is_not_credited(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The static call's ``<marker><n>`` on the page before injection proves no type access."""
+    monkeypatch.setattr(el.secrets, "token_hex", lambda _n: "ab12cd")
+    # operands 12 * 12 = 144 for the arithmetic, 500 for the static call
+    monkeypatch.setattr(el.random, "randint", lambda low, high: 12 if high == 99 else 500)
+    ctx, _ = _ctx(_spel_bare)
+    hit = _only(await el.detect_combined(_FULL, _baseline("<p>wvab12cd500</p>"), ctx))
+    assert hit.severity is Severity.HIGH
+    assert "Type access" not in _evidence(hit)
+
+
+async def test_ognl_with_no_error_anywhere_is_high_by_syntax_alone() -> None:
+    """``%{}`` evaluates, the static call neither evaluates nor errors: OGNL, no signature line."""
+    ctx, _ = _ctx(_el_stub(delimiters=("%{",)))
+    hit = _only(await el.detect_combined(_CANARY, _baseline(), ctx))
+    assert (hit.severity, hit.confidence) == (Severity.HIGH, Confidence.HIGH)
+    evidence = _evidence(hit)
+    assert evidence["Dialect"] == "OGNL — %{} syntax"
+    assert "Error signature" not in evidence
+
+
+def _smarty(value: str) -> Response:
+    """
+    A Smarty sink: the polyglot draws its error, only ``<marker>{a*b}`` evaluates.
+
+    Args:
+        value (str): The sent value.
+
+    Returns:
+        Response: The page the sink renders for it.
+    """
+    if "${{<%" in value:
+        return _resp("Smarty error: syntax error in template", status=500)
+    arith = re.search(r"(wv[0-9a-f]+)\{(\d+)\*(\d+)\}", value)
+    if arith:
+        return _resp(f"<p>Hi {arith[1]}{int(arith[2]) * int(arith[3])}</p>")
+    return _resp(f"<p>Hi {value}</p>")
+
+
+async def test_the_engine_the_polyglot_names_is_tried_first_even_on_a_canary_point() -> None:
+    """Smarty sits past the four canary forms; its error moves its form to the front."""
+    ctx, sent = _ctx(_smarty)
+    hit = _only(await el.detect_combined(_CANARY, _baseline(), ctx))
+    assert hit.kind == "ssti" and "Smarty" in hit.title
+    assert re.search(r"wv[0-9a-f]+\{\d+\*\d+\}$", sent[1])  # right after the polyglot
+
+
+async def test_the_canary_set_of_the_combined_entry_ends_with_the_hash_form() -> None:
+    """On a canary point the combined entry ends with ``#{}``, ``%{}`` and the bare form."""
+    ctx, sent = _ctx(_reflect)
+    assert await el.detect_combined(_CANARY, _baseline(), ctx) == []
+    assert re.search(r"wv[0-9a-f]+#\{\d+\*\d+\}$", sent[-3])
+    assert re.search(r"wv[0-9a-f]+%\{\d+\*\d+\}$", sent[-2])
+    assert re.fullmatch(r"'wv[0-9a-f]+'\+\(\d+\*\d+\)", sent[-1])

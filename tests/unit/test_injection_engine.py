@@ -22,6 +22,7 @@ from tests.support import make_page
 from webvigil.checks.injection.engine import (
     _BASE_ORDER,
     _DETECTORS,
+    _TIME_BASED_SLEEP_CAP,
     KIND_BY_CHECK_ID,
     InjectionScanner,
     _merge_el,
@@ -29,6 +30,7 @@ from webvigil.checks.injection.engine import (
 from webvigil.checks.injection.models import InjectionPoint
 from webvigil.checks.registry import all_checks, load_plugins
 from webvigil.core.config import InjectionSection
+from webvigil.core.errors import RequestFailed
 from webvigil.core.findings import Category
 from webvigil.core.target import Target
 from webvigil.crawler.forms import Form, FormField
@@ -365,3 +367,72 @@ async def test_a_detector_that_raises_keeps_the_other_hits_and_warns_once(
         "its results for those points are missing"
     ]
     assert not any("hostile response" in w for w in report.warnings)
+
+
+# ---------------------------------------------------------------------------
+# Budget accounting, a failed baseline and the POST-only xxe
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("sqli", "cmdi", "limit"),
+    [(True, False, _TIME_BASED_SLEEP_CAP), (False, True, _TIME_BASED_SLEEP_CAP), (False, False, 0)],
+    ids=["sqli-only", "cmdi-only", "neither"],
+)
+def test_the_time_sub_budget_follows_either_time_based_switch(
+    sqli: bool, cmdi: bool, limit: int
+) -> None:
+    """Either time-based detector opens the sleep sub-budget; with both off it stays at zero."""
+    http = _FakeHttp(lambda url, p: _resp())
+    config = InjectionSection(time_based_sqli=sqli, time_based_cmdi=cmdi)
+    assert _scanner(http, kinds={"cmdi"}, config=config)._budget.time_based_limit == limit
+
+
+async def test_sleep_requests_are_charged_to_the_time_sub_budget() -> None:
+    """A ``time_based`` send is refused past the sleep cap, while plain sends still go out."""
+    http = _FakeHttp(lambda url, p: _resp())
+    config = InjectionSection(time_based_sqli=False, time_based_cmdi=True)
+    scanner = _scanner(http, kinds={"cmdi"}, config=config, per_point_limit=100)
+    point = InjectionPoint("GET", "https://example.com/s", "q", "x", (("q", "x"),))
+    scanner._budget.start_point()
+    granted = [
+        await scanner._send(point, "v", time_based=True) is not None
+        for _ in range(_TIME_BASED_SLEEP_CAP + 1)
+    ]
+    assert granted == [True] * _TIME_BASED_SLEEP_CAP + [False]
+    assert await scanner._send(point, "v") is not None
+    assert len(http.calls) == _TIME_BASED_SLEEP_CAP + 1
+
+
+async def test_a_point_whose_baseline_fails_is_skipped_quietly() -> None:
+    """No baseline, nothing to compare against: the point is not tested and no detector runs."""
+
+    def render(url: str, p: dict[str, str]) -> Response:
+        if url == "https://example.com/a" and p.get("x") == "1":
+            raise RequestFailed(url, "connection reset")
+        return _resp("<div>{}</div>".format(p.get("x", p.get("y", ""))))
+
+    page1 = make_page(url="https://example.com/a?x=1")
+    page2 = make_page(url="https://example.com/b?y=1")
+    scanner = InjectionScanner(
+        _FakeHttp(render),  # type: ignore[arg-type]  # a fake, not an HttpClient
+        _TARGET,
+        InjectionSection(),
+        (page1, page2),
+        (),
+        {"xss"},
+    )
+    report = await scanner.run()
+    assert report.points_tested == 1
+    assert [(h.kind, h.param) for h in report.hits] == [("xss", "y")]
+    assert report.warnings == []
+
+
+def test_only_a_post_point_front_loads_xxe() -> None:
+    """``xxe`` is moved first for a POST point; on a GET point it keeps its place, last."""
+    http = _FakeHttp(lambda url, p: _resp())
+    scanner = _scanner(http, kinds={"xss", "xxe"}, config=InjectionSection(xxe=True))
+    post = InjectionPoint("POST", "https://example.com/s", "q", "x", (("q", "x"),))
+    get = InjectionPoint("GET", "https://example.com/s", "q", "x", (("q", "x"),))
+    assert scanner._ordered_kinds(post) == ["xxe", "xss"]
+    assert scanner._ordered_kinds(get) == ["xss", "xxe"]

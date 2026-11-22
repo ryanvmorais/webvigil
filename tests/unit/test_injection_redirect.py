@@ -56,17 +56,19 @@ def _resp(
     )
 
 
-def _ctx(render: Callable[[str], Response]) -> DetectCtx:
+def _ctx(render: Callable[[str], Response | None]) -> DetectCtx:
     """
     Args:
-        render (Callable[[str], Response]): Maps an injected value to the response
+        render (Callable[[str], Response | None]): Maps an injected value to the response
             the target would return.
 
     Returns:
         DetectCtx: A detector context whose ``send`` calls ``render``.
     """
 
-    async def send(point: InjectionPoint, value: str, *, time_based: bool = False) -> Response:
+    async def send(
+        point: InjectionPoint, value: str, *, time_based: bool = False
+    ) -> Response | None:
         return render(value)
 
     return DetectCtx(send=send, delay_s=5, host="example.com")
@@ -141,5 +143,27 @@ async def test_a_location_with_an_unbalanced_ipv6_bracket_is_not_a_hit() -> None
     """A ``Location`` that ``urlsplit`` rejects names no host: no hit, and no exception."""
     hits = await redirect.detect(
         _POINT, _BASELINE, _ctx(lambda v: _resp(status=302, location="http://[::1/next"))
+    )
+    assert hits == []
+
+
+async def test_a_denied_request_ends_the_detector() -> None:
+    """A ``None`` from ``send`` stops the routine: no hit, no further payload."""
+    calls: list[str] = []
+
+    def render(value: str) -> Response | None:
+        calls.append(value)
+        return None
+
+    assert await redirect.detect(_POINT, _BASELINE, _ctx(render)) == []
+    assert len(calls) == 1
+
+
+async def test_a_chain_that_leaves_for_another_host_is_not_a_hit() -> None:
+    """Out of scope is not enough: the chain must end on the sentinel host itself."""
+    hits = await redirect.detect(
+        _POINT,
+        _BASELINE,
+        _ctx(lambda v: _resp(status=302, final_location="https://cdn.example.net/")),
     )
     assert hits == []

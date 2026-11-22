@@ -12,7 +12,9 @@ from __future__ import annotations
 from collections.abc import Callable
 
 import httpx
+import pytest
 
+from webvigil.checks.injection import payloads
 from webvigil.checks.injection.detect import DetectCtx, ldap, normalize_body
 from webvigil.checks.injection.models import Baseline, InjectionPoint
 from webvigil.checks.injection.points import is_ldaplike
@@ -108,6 +110,70 @@ async def test_error_signature_already_in_the_baseline_is_suppressed() -> None:
 async def test_send_returning_none_stops_the_detector() -> None:
     """When the budget denies a send the detector returns no hits."""
     assert await ldap.detect(_POINT, _baseline(), _ctx(lambda v: None)) == []
+
+
+def _widens(v: str) -> bool:
+    """
+    Args:
+        v (str): A sent value.
+
+    Returns:
+        bool: ``True`` for the always-true probes of ``payloads.LDAP_BOOLEAN``.
+    """
+    return v == "*" or "uid=*" in v
+
+
+async def test_a_widen_that_does_not_reproduce_is_not_a_hit() -> None:
+    """The confirmation repeats the pair: a widen seen once (a flaky page) is not a hit."""
+    seen: list[str] = []
+
+    def render(v: str) -> Response:
+        seen.append(v)
+        return _resp(_WIDE_BODY if _widens(v) and seen.count(v) == 1 else _BASE_BODY)
+
+    assert await ldap.detect(_POINT, _baseline(), _ctx(render)) == []
+    assert seen.count("*)(uid=*))(|(uid=*") == 2  # the first pair widened and was repeated
+
+
+async def test_a_widen_seen_only_on_the_repeat_is_not_a_hit() -> None:
+    """The first answer of a pair is judged too: a widen that only the repeat shows is not one."""
+    seen: list[str] = []
+
+    def render(v: str) -> Response:
+        seen.append(v)
+        return _resp(_WIDE_BODY if _widens(v) and seen.count(v) > 1 else _BASE_BODY)
+
+    assert await ldap.detect(_POINT, _baseline(), _ctx(render)) == []
+    assert seen.count("*)(uid=*))(|(uid=*") == 1  # not widened, so never repeated
+
+
+# The error stage sends one request per probe; then the first boolean pair (TRUE, FALSE) and
+# its confirmation (TRUE, FALSE). Each case fails one of those four requests and nothing else.
+_ERRORS = len(payloads.LDAP_ERROR)
+
+
+@pytest.mark.parametrize(
+    ("failed", "sent"),
+    [
+        (_ERRORS, _ERRORS + 2),
+        (_ERRORS + 1, _ERRORS + 2),
+        (_ERRORS + 2, _ERRORS + 4),
+        (_ERRORS + 3, _ERRORS + 4),
+    ],
+    ids=["true", "false", "confirm-true", "confirm-false"],
+)
+async def test_one_failed_boolean_request_ends_the_detector(failed: int, sent: int) -> None:
+    """A request that fails (``None``) in either pair stops the routine with no hit."""
+    calls: list[str] = []
+
+    def render(v: str) -> Response | None:
+        calls.append(v)
+        if len(calls) - 1 == failed:
+            return None
+        return _resp(_WIDE_BODY if _widens(v) else _BASE_BODY)
+
+    assert await ldap.detect(_POINT, _baseline(), _ctx(render)) == []
+    assert len(calls) == sent
 
 
 def test_is_ldaplike_matches_directory_parameter_names() -> None:

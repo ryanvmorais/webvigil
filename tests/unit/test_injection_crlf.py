@@ -14,6 +14,7 @@ import re
 from collections.abc import Callable
 
 import httpx
+import pytest
 
 from webvigil.checks.injection.detect import DetectCtx, crlf, normalize_body
 from webvigil.checks.injection.models import Baseline, InjectionPoint
@@ -168,3 +169,42 @@ async def test_set_cookie_split_proof_leaves_out_the_targets_own_cookies() -> No
     blob = " ".join(content for _, content in hits[0].evidence)
     assert "TOPSECRET" not in blob
     assert re.search(r"wv[0-9a-f]+=1", blob)
+
+
+async def test_a_denied_own_baseline_ends_the_detector() -> None:
+    """The benign request the detector sends first is denied: no payload follows."""
+    calls: list[str] = []
+
+    def render(value: str) -> Response | None:
+        calls.append(value)
+        return None
+
+    assert await crlf.detect(_POINT, _baseline(), _ctx(render)) == []
+    assert calls == ["en"]
+
+
+# The token is random per call; fixing it lets a test put the canary on the target's
+# ordinary answer before the detector draws it.
+_FIXED_TOKEN = "abcdef012345"
+
+
+async def test_a_canary_cookie_the_target_already_sets_is_suppressed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The canary cookie on the ordinary request too is the target's own, not a split."""
+    monkeypatch.setattr(
+        "webvigil.checks.injection.detect.crlf.secrets.token_hex", lambda n: _FIXED_TOKEN
+    )
+    cookie = {"content-type": "text/plain", "set-cookie": f"wv{_FIXED_TOKEN}=1"}
+    assert await crlf.detect(_POINT, _baseline(), _ctx(lambda v: _resp(headers=cookie))) == []
+
+
+async def test_a_body_marker_the_page_already_shows_is_suppressed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A body equal to the marker is no split when the baseline page already held it."""
+    monkeypatch.setattr(
+        "webvigil.checks.injection.detect.crlf.secrets.token_hex", lambda n: _FIXED_TOKEN
+    )
+    marker = f"<html>wv{_FIXED_TOKEN}</html>"
+    assert await crlf.detect(_POINT, _baseline(marker), _ctx(lambda v: _resp(marker))) == []
