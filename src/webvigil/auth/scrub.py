@@ -23,6 +23,7 @@ import html
 import json
 import re
 from collections.abc import Iterable
+from contextlib import suppress
 from urllib.parse import quote, quote_plus
 
 from webvigil.core.findings import EvidenceItem, Finding, Location
@@ -52,9 +53,15 @@ def _spellings(secret: str) -> set[str]:
     Returns:
         set[str]: The ways a target is likely to echo it: raw, JSON-escaped (with and without
             ``\u`` escapes for non-ASCII), HTML-escaped (with and without the quotes),
-            percent-encoded and form-encoded (upper- and lower-case hex).
+            percent-encoded and form-encoded (UTF-8 and Latin-1, upper- and lower-case hex).
     """
     encoded = {quote(secret, safe=""), quote_plus(secret)}
+    # A page in Latin-1 escapes the same characters as other bytes (``é`` is ``%E9``).
+    with suppress(UnicodeEncodeError):  # a character outside Latin-1 has no such spelling
+        encoded |= {
+            quote(secret, safe="", encoding="latin-1"),
+            quote_plus(secret, encoding="latin-1"),
+        }
     return {
         secret,
         json.dumps(secret)[1:-1],

@@ -150,6 +150,43 @@ def test_html_escaped_and_lower_case_percent_echoes_are_scrubbed() -> None:
     assert scrubbed.findings[0].description == " | ".join([REDACTED] * len(spellings))
 
 
+@pytest.mark.parametrize(
+    "spelling",
+    ["Caf%E9Token%2012", "Caf%e9Token%2012", "Caf%E9Token+12", "Caf%e9Token+12"],
+    ids=["percent", "percent-lower", "form", "form-lower"],
+)
+@pytest.mark.parametrize("kind", ["given", "issued"])
+def test_a_latin1_percent_echo_is_scrubbed(spelling: str, kind: str) -> None:
+    """A page in Latin-1 writes ``é`` as ``%E9``, the same secret under other bytes."""
+    secret = "CaféToken 12"
+    result = make_result(make_finding().model_copy(update={"title": f"echo {spelling}"}))
+
+    scrubbed = (
+        scrub_result(result, [secret])
+        if kind == "given"
+        else scrub_result(result, [], issued=[secret])
+    )
+
+    assert scrubbed.findings[0].title == f"echo {REDACTED}"
+
+
+def test_a_secret_outside_latin1_keeps_its_utf8_spelling() -> None:
+    """Latin-1 cannot encode it: that spelling is skipped and the UTF-8 one still goes."""
+    secret = "日本語Token12"
+    echo = quote(secret, safe="")
+    result = make_result(make_finding().model_copy(update={"title": f"echo {echo}"}))
+
+    assert scrub_result(result, [secret]).findings[0].title == f"echo {REDACTED}"
+
+
+def test_a_target_value_that_is_no_session_id_cannot_blank_its_percent_form() -> None:
+    """The session-id shape is judged on the value, so a URL's escapes stay in the report."""
+    title = "page /%E9%E9%E9%E9 and /%C3%A9%C3%A9%C3%A9%C3%A9"
+    result = make_result(make_finding().model_copy(update={"title": title}))
+
+    assert scrub_result(result, [], issued=["éééé"]) is result
+
+
 def test_references_and_technology_names_are_scrubbed() -> None:
     """A reference URL, a technology name, version or advisory can carry a reflected value."""
     finding = make_finding().model_copy(
