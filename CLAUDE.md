@@ -19,7 +19,7 @@ Web UI (podem ter i18n depois — o produto ainda não define público-alvo de i
 
 ## Stack
 
-- **Engine/CLI:** Python 3.12+ (piso 3.12; o CI testa 3.12, 3.13, 3.14 e 3.15, a mais nova estável, e a imagem Docker usa a 3.15), `uv`, `httpx`, `pydantic` v2, `typer`+`rich`, `jinja2`,
+- **Engine/CLI:** Python 3.12+ (piso 3.12; o CI testa 3.12, 3.13, 3.14 e 3.15, a mais nova estável, e a imagem Docker usa a 3.15), `uv`, `httpx2`, `certifi`, `pydantic` v2, `typer`+`rich`, `jinja2`,
   `cryptography`, `selectolax`.
 - **Web API (extra `web`):** `fastapi`, `uvicorn`, `sqlmodel`+`alembic` (SQLite), `argon2-cffi`, `pyjwt`.
 - **Web UI:** `web/` — Next.js 16 (App Router) + React 19 + TypeScript + Tailwind CSS v4 + shadcn/ui + TanStack Query, gerido por `pnpm` (Node 26; `engines` em `web/package.json`; a imagem do Node 26 não traz o `corepack`, então o `web/Dockerfile` instala o pnpm da versão do `packageManager` com `npm install -g`).
@@ -91,7 +91,11 @@ Camadas, de cima para baixo:
    O escopo confere também a porta (a do alvo, mais o par 80/443 se o alvo usa a padrão) e as
    credenciais só vão à origem do alvo ou ao upgrade `https` (`Target.carries_credentials`). Cada
    nome resolve uma vez por scan e a conexão vai ao IP conferido (`http/addresses.py`, instalado no
-   transporte do `httpx` para não perder o proxy do ambiente); alvo público não chega a IP interno.
+   transporte do `httpx2` para não perder o proxy do ambiente); alvo público não chega a IP interno.
+   A confiança de certificados é do engine (`http/tls.py`): `certifi`, ou `SSL_CERT_FILE` /
+   `SSL_CERT_DIR`, e a conexão com um proxy `https://` confia também no repositório do sistema.
+   ⚠️ Todo cliente novo passa `verify=client_ssl_context()` e chama `pin_proxy_trust`, nunca o
+   `verify=True` da biblioteca.
    Todo campo de texto livre do resultado tem teto (`core/bounded.py`: `Name` 1 Ki caracteres,
    `Text` 16 Ki, `Url` 64 Ki, evidência 4 Ki), cortado com `...[truncated]` na criação e na
    leitura, sem recusar; o `webvigil report` lê no máximo 256 MiB (`MAX_REPORT_BYTES`), exige
@@ -153,6 +157,6 @@ no CI. `webvigil.cli` e `webvigil.api` não se importam. A Web UI só fala com a
 ## Fluxo de trabalho
 
 - **Spec-driven development.** Specs em `specs/NNN-nome/` (requirements → design → tasks → implementação), com portão de aprovação humana em cada fase. Convenções e roadmap em [`specs/README.md`](specs/README.md).
-- Estado: as specs `001` a `022` estão **concluídas** e nenhuma está em andamento; escopo, issue e entrega de cada uma na tabela "Roadmap" do [`specs/README.md`](specs/README.md), e o que cada versão trouxe no [`CHANGELOG.md`](CHANGELOG.md). Os limites (detecção cega/OAST, request smuggling, YAML no `--openapi`) estão em "Scope and limitations" do [`README.md`](README.md).
+- Estado: as specs `001` a `023` estão **concluídas** e nenhuma está em andamento; escopo, issue e entrega de cada uma na tabela "Roadmap" do [`specs/README.md`](specs/README.md), e o que cada versão trouxe no [`CHANGELOG.md`](CHANGELOG.md). Os limites (detecção cega/OAST, request smuggling, YAML no `--openapi`) estão em "Scope and limitations" do [`README.md`](README.md).
 - **Releases:** PyPI, `ghcr.io/ryanvmorais/webvigil` e GitHub Releases desde a `v1.0.0`. Como cortar uma versão e o molde das notas: [`docs/releasing.md`](docs/releasing.md); compatibilidade: [`docs/stability.md`](docs/stability.md). ⚠️ Toda mudança visível ao usuário entra em `[Unreleased]` do [`CHANGELOG.md`](CHANGELOG.md) **no mesmo PR**. ⚠️ Ao subir a versão, rode `uv run python scripts/dump-openapi.py` e `pnpm gen:api` (o `web/openapi.json` carrega `info.version`). ⚠️ `schema_version` (`SCHEMA_VERSION` em `core/result.py`): campo novo mantém; remover, renomear ou retipar sobe a versão e é major. O engine usa só o backend Lexbor do `selectolax` (`selectolax.lexbor`). Publicar uma versão é ato do mantenedor.
 - Commits em inglês, padrão Conventional Commits.

@@ -27,9 +27,9 @@ run in CI, and a violation fails the build.
 A security engine you cannot reason about is a liability. If `webvigil.checks.injection`
 could reach into a FastAPI request object or a SQLModel session, then reviewing what the
 SQL-injection detector actually does means reviewing a slice of a web framework and an ORM
-along with it. Keeping the engine's dependency surface small — `httpx`, `pydantic`,
-`selectolax`, `jinja2` for the HTML report, `cryptography` for certificate parsing,
-`packaging` for version ranges, and the standard library — keeps the trust boundary small.
+along with it. Keeping the engine's dependency surface small — `httpx2`, `certifi` for its CA
+bundle, `pydantic`, `selectolax`, `jinja2` for the HTML report, `cryptography` for certificate
+parsing, `packaging` for version ranges, and the standard library — keeps the trust boundary small.
 You can read the engine and know what it can and cannot do.
 
 ### Reusability
@@ -72,7 +72,7 @@ is the exact coupling the guard exists to prevent.
 
 The contract did not forbid that specifically. But the habit the contract builds — keep the
 boundaries clean, don't reach across a layer for convenience — pointed at the right answer:
-a separate `httpx.AsyncClient`, bound to the OSV base URL, that the target-scoped client
+a separate `httpx2.AsyncClient`, bound to the OSV base URL, that the target-scoped client
 knows nothing about. "The engine talks only to the target" stays literally true, and the
 one deliberate exception is visibly separate.
 

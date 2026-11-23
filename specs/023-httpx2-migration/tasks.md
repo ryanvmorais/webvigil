@@ -1,6 +1,6 @@
 ---
 feature: Engine HTTP client migration — move the engine from httpx to httpx2 with no change in what a scan reports (issue #304)
-status: approved
+status: done
 date: 2026-11-22
 related:
   - 001-foundation/design.md
@@ -88,15 +88,15 @@ strategy.
 
 ## Stage 3 — Cross-platform check and documentation
 
-- [ ] RF-09: repeat the scan of Stage 2 from the new `main`, and compare the two JSON reports without timestamps and
+- [x] RF-09: repeat the scan of Stage 2 from the new `main`, and compare the two JSON reports without timestamps and
   durations. Findings, severities, check ids, fingerprints and `schema_version` are identical. — RF-09, RNF-02
-- [ ] `.github/workflows/`: confirm the whole CI matrix on the swap's merge commit: `quality` on Linux and Windows
+- [x] `.github/workflows/`: confirm the whole CI matrix on the swap's merge commit: `quality` on Linux and Windows
   for every Python version, `package`, `docker` and `compose`. — RF-02, RNF-04
-- [ ] Build the image and check, from inside it, that the engine's context loads the `certifi` bundle and that a
+- [x] Build the image and check, from inside it, that the engine's context loads the `certifi` bundle and that a
   scan of the `target` service of the Compose file completes. — RF-01, RF-02
-- [ ] `docs/stack.md`, `docs/checks-internals.md`, `docs/active-injection.md`, `docs/notes/engine-boundaries.md` and
+- [x] `docs/stack.md`, `docs/checks-internals.md`, `docs/active-injection.md`, `docs/notes/engine-boundaries.md` and
   `CLAUDE.md`: `httpx2` in place of `httpx`, and the trust rule of ADR-1 and ADR-2 where the HTTP layer is
   described. — RNF-02
-- [ ] `design.md`: fill in `## Implementation notes` with the measurements. Set `status: done` in the three files and
+- [x] `design.md`: fill in `## Implementation notes` with the measurements. Set `status: done` in the three files and
   on the roadmap of `specs/README.md`; the pull request closes #304. — RF-11
-- [ ] Quality gate.
+- [x] Quality gate: ruff, black, mypy, import-linter and the package check green; 2537 passed, 2 skipped.

@@ -96,21 +96,30 @@ unions, `as const`, and how types flow from a schema (`components["schemas"]["Sc
 
 ## The engine and CLI (Python)
 
-### httpx
+### httpx2 (+ certifi)
 
 The async HTTP client the whole engine runs on. `webvigil.http` wraps one
-`httpx.AsyncClient` with retry, redirect control (`follow_redirects=False` — the
+`httpx2.AsyncClient` with retry, redirect control (`follow_redirects=False` — the
 scanner walks the redirect chain itself, scope-checking every hop), timeouts and
 per-request statistics.
 
-**Why not** `requests`: `requests` is sync-only. **Why not** `aiohttp`: httpx
-has a cleaner API, HTTP/2 support, and a sync mode for tests.
+Certificate trust belongs to the engine, not to the library. `http/tls.py` builds the TLS context
+of each client from the **certifi** bundle, or from `SSL_CERT_FILE` / `SSL_CERT_DIR` when set, so
+a scan's verdict does not depend on the certificates of the machine it runs on. The connection to
+an `https://` proxy from the environment also trusts the system store, so a corporate proxy keeps
+working.
+
+**Why not** `requests`: `requests` is sync-only. **Why not** `aiohttp`: httpx2
+has a cleaner API, HTTP/2 support, and a sync mode for tests. **Why not** `httpx`: its last stable
+release is 0.28.1 (December 2024), and the FastAPI and Starlette stack moved to `httpx2`, which
+keeps the same API (spec 023).
 
 **Learn:** `AsyncClient`, `Response` (`.text`, `.content`, `.headers`,
-`.history`), `httpx.Headers` (case-insensitive, multi-value for `Set-Cookie`),
-the transport/timeout/retry model, `MockTransport` for tests, and `httpx.Cookies` (the
-stdlib `http.cookiejar` underneath), which is the jar of the automated login's session: it
-brings the Domain, Path, `Secure` and expiry rules a hand-rolled parser would get subtly wrong.
+`.history`), `httpx2.Headers` (case-insensitive, multi-value for `Set-Cookie`),
+the transport/timeout/retry model, `ssl.SSLContext`, `MockTransport` for tests, and
+`httpx2.Cookies` (the stdlib `http.cookiejar` underneath), which is the jar of the automated
+login's session: it brings the Domain, Path, `Secure` and expiry rules a hand-rolled parser would
+get subtly wrong.
 
 ### selectolax
 
@@ -421,20 +430,19 @@ Rich, FastAPI, SQLModel, Alembic, PyJWT, argon2 or Uvicorn, and `webvigil.cli` /
 **Learn:** the contract lives in `pyproject.toml` `[tool.importlinter]`; a
 violation means you leaked a UI/DB dependency into the pure engine.
 
-### pytest (+ pytest-asyncio, pytest-cov, httpx2, trustme, jsonschema, Starlette)
+### pytest (+ pytest-asyncio, pytest-cov, trustme, jsonschema, Starlette)
 
 The test runner. `asyncio_mode=auto` means `async def test_*` just works.
 The `httpx_mock` fixture (`tests/http_mock.py`, written here so the suite is not tied to one
-`httpx` release) mocks HTTP at the transport layer. `trustme` mints throwaway TLS
+`httpx2` release) mocks HTTP at the transport layer. `trustme` mints throwaway TLS
 certificates for the TLS-check tests. `jsonschema` validates the SARIF reporter
 output against the bundled 2.1.0 schema. **pytest-cov** measures per-file line and branch
 coverage (`uv run pytest --cov`), the guard that a refactor of the tests does not lower it.
 **Starlette** runs the insecure/hardened fixture app that the integration tests scan for real;
-**httpx2** is the HTTP
-client of `starlette.testclient` (and FastAPI's `TestClient`), used by tests only, while the engine
-keeps `httpx`. To test `HttpClient` offline against a
-hand-written site, `tests/support.py` has `HandlerTransport`: it rebuilds each answer over a
-byte stream, because httpx records `Response.elapsed` only on a closed stream.
+`starlette.testclient` (and FastAPI's `TestClient`) runs on `httpx2`, the engine's own client. To
+test `HttpClient` offline against a hand-written site, `tests/support.py` has `HandlerTransport`:
+it rebuilds each answer over a byte stream, because httpx2 records `Response.elapsed` only on a
+closed stream.
 
 **Learn:** fixtures (`@pytest.fixture`, `conftest.py`), parametrization
 (`@pytest.mark.parametrize`), `assert` rewriting, `pytest -k <expr>` /

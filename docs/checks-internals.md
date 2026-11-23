@@ -54,7 +54,7 @@ detector families per point).
 `injection.crlf` (HIGH) / `injection.host-header` (MEDIUM) / `injection.xxe` (HIGH) /
 `http.methods.unsafe` (MEDIUM, new `Category.HTTP`) (spec 012): **in-band**
 request-envelope injection. `crlf` is a new detector in the `InjectionScanner` (`%0d%0a` payload →
-injected header/cookie/body that `httpx` parses back, not text reflection).
+injected header/cookie/body that `httpx2` parses back, not text reflection).
 `xxe` is an opt-in detector (`[injection] xxe` / `--xxe`, default off, POST points only,
 re-sends the body as XML with an external entity → file signature or parser error).
 `host-header` + `http.methods.unsafe` come from a new `EnvelopeScanner` pass
@@ -158,7 +158,7 @@ pick the form with a password field, build the body with `form_body` (hidden/CSR
 (never a retry, never another credential), follow the chain and **verify** (markers → `check_url` →
 heuristic; login form back = failure, nothing conclusive = "not confirmed" with a warning). Failure =
 `LoginFailedError`, exit 4, before the crawl. The session is a `webvigil.http.session.Session`: a
-`SessionJar` over `httpx.Cookies` (handshake mode accepts every `Set-Cookie` from every hop; live mode only the
+`SessionJar` over `httpx2.Cookies` (handshake mode accepts every `Set-Cookie` from every hop; live mode only the
 rotation of names it already has; target host only) that the `HttpClient` consults — `handshake()` / `quiet()`
 are `ContextVar`s (one task's re-login does not leak into the others). Session drop = `401`, a redirect to the
 login from a page that is not a login page (learned once, ADR-6), or `logged_out_marker`; **never `403`
