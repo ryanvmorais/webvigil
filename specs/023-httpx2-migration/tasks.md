@@ -51,21 +51,21 @@ strategy.
 
 ## Stage 1 — One explicit TLS context (still on `httpx`)
 
-- [ ] `pyproject.toml`: add `certifi>=2026.10.23` to the runtime dependencies, and run `uv lock`. — RNF-01, ADR-1
-- [ ] `src/webvigil/http/tls.py`: `client_ssl_context(*, verify=True)` with the design's table, and
+- [x] `pyproject.toml`: add `certifi>=2026.10.23` to the runtime dependencies, and run `uv lock`. — RNF-01, ADR-1
+- [x] `src/webvigil/http/tls.py`: `client_ssl_context(*, verify=True)` with the design's table, and
   `pin_proxy_trust(client)`, raising `RuntimeError` on a layout it does not recognise. — RF-02, RF-03, ADR-1, ADR-2
-- [ ] `src/webvigil/http/client.py`: pass `verify=client_ssl_context(verify=config.http.verify_tls)`, and call
+- [x] `src/webvigil/http/client.py`: pass `verify=client_ssl_context(verify=config.http.verify_tls)`, and call
   `pin_proxy_trust` after `install` when there is no test transport. — RF-02, RF-03, RF-04, ADR-1, ADR-2
-- [ ] `src/webvigil/checks/deps/osv.py`: pass `verify=client_ssl_context()` and call `pin_proxy_trust`. — RF-02,
+- [x] `src/webvigil/checks/deps/osv.py`: pass `verify=client_ssl_context()` and call `pin_proxy_trust`. — RF-02,
   RF-03, ADR-1, ADR-2
-- [ ] `tests/unit/test_http_tls.py`: the three sources and their precedence; verification off; both clients use the
+- [x] `tests/unit/test_http_tls.py`: the three sources and their precedence; verification off; both clients use the
   returned context; a real handshake with a trusted and an untrusted CA; the OSV client always verifies; the proxy
   trust on `https://` and `http://` proxies; the unknown layout. — RF-02, RF-03, RF-11, ADR-2
-- [ ] `tests/unit/test_http_tls.py`: a real HTTP/2 exchange through `HttpClient` on loopback, against a small `h2`
+- [x] `tests/unit/test_http_tls.py`: a real HTTP/2 exchange through `HttpClient` on loopback, against a small `h2`
   server with a `trustme` certificate, asserting the negotiated version, the status, the body and repeated
   headers; the control is the same request to a server that offers only HTTP/1.1. — RF-07, RF-11
-- [ ] Apply each sabotage of the design's test strategy for this stage and watch the test fail. — RF-11
-- [ ] Quality gate.
+- [x] Apply each sabotage of the design's test strategy for this stage and watch the test fail. — RF-11
+- [x] Quality gate: ruff, black, mypy, import-linter and the package check green; 2522 passed, 2 skipped.
 
 ## Stage 2 — The swap to `httpx2`
 

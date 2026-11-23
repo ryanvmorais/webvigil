@@ -54,6 +54,8 @@ classifiers = [
 
 dependencies = [
     "httpx[http2]>=0.28.1",
+    # The CA bundle the engine trusts by default (`http/tls.py`, spec 023 ADR-1).
+    "certifi>=2026.10.23",
     "pydantic>=2.13.5",
     "typer>=0.27.2",
     "rich>=15.0.0",
