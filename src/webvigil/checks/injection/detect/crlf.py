@@ -4,7 +4,7 @@ CRLF-injection / HTTP-response-splitting detector (spec 012, RF-01, ADR-5).
 For an injection point the detector appends ``%0d%0a``-prefixed payloads to the
 value and checks whether the *response* carries something the baseline did not:
 
-1. a marker header (``X-WvInjected: <token>``) that ``httpx`` parsed back;
+1. a marker header (``X-WvInjected: <token>``) that ``httpx2`` parsed back;
 2. a ``Set-Cookie`` split (``wv<token>=1``);
 3. a full response-body split (the whole body is the marker).
 

@@ -441,14 +441,14 @@ EL_ERROR_SIGNATURES: tuple[tuple[str, re.Pattern[str]], ...] = (
 # --- CRLF injection / HTTP response splitting (spec 012, RF-01) ----------------------
 #
 # The payload is appended to the point's value. A hit needs the injected *header* parsed
-# back by ``httpx`` (or the whole response body replaced by the marker) — never a mere
+# back by ``httpx2`` (or the whole response body replaced by the marker) — never a mere
 # body-text reflection (ADR-5). ``{header}`` / ``{token}`` are substituted by the detector.
 
 CRLF_TOKEN_BYTES = 6
 CRLF_HEADER = "X-WvInjected"
 
 CRLF_PAYLOADS: tuple[str, ...] = (
-    "\r\n{header}: {token}",  # raw CR LF — httpx percent-encodes it on the wire
+    "\r\n{header}: {token}",  # raw CR LF — httpx2 percent-encodes it on the wire
     "%0d%0a{header}: {token}",  # pre-encoded
     "%0D%0A{header}:%20{token}",  # pre-encoded, upper, encoded space
     "\u560a\u560d{header}: {token}",  # unicode-newline trick (some Java stacks)

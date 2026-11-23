@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from collections import deque
 
-import httpx
+import httpx2
 import pytest
 
 from tests.support import make_page
@@ -38,11 +38,13 @@ class _Router:
         self.routes = routes
         self.seen: list[str] = []
 
-    def __call__(self, request: httpx.Request) -> httpx.Response:
+    def __call__(self, request: httpx2.Request) -> httpx2.Response:
         url = str(request.url)
         self.seen.append(url)
         status, body, content_type = self.routes.get(url, (404, "", "text/plain"))
-        return httpx.Response(status_code=status, text=body, headers={"content-type": content_type})
+        return httpx2.Response(
+            status_code=status, text=body, headers={"content-type": content_type}
+        )
 
 
 class _CountingCrawler(Crawler):

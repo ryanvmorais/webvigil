@@ -9,7 +9,7 @@ the internet never sends the scanner into the network it runs on. A target that 
 non-public addresses (``localhost``, a Compose service, an intranet host) was chosen by the user,
 so its scan may reach them.
 
-When an HTTP proxy is set in the environment (``HTTP_PROXY`` / ``HTTPS_PROXY``), ``httpx``
+When an HTTP proxy is set in the environment (``HTTP_PROXY`` / ``HTTPS_PROXY``), ``httpx2``
 connects to the proxy and the proxy resolves the names: the check does not apply there.
 """
 
@@ -20,7 +20,7 @@ import ipaddress
 import socket
 from collections.abc import Awaitable, Callable, Iterable
 
-import httpcore
+import httpcore2
 
 # Resolves ``(host, port)`` to the IP addresses a connection may use, in preference order.
 Resolver = Callable[[str, int], Awaitable[list[str]]]
@@ -29,7 +29,7 @@ Resolver = Callable[[str, int], Awaitable[list[str]]]
 _NAT64 = ipaddress.IPv6Network("64:ff9b::/96")
 
 
-class BlockedAddressError(httpcore.ConnectError):
+class BlockedAddressError(httpcore2.ConnectError):
     """A host of the scan resolved only to addresses the scan may not connect to."""
 
 
@@ -91,13 +91,13 @@ async def system_resolver(host: str, port: int) -> list[str]:
         list[str]: The distinct addresses, in the resolver's order.
 
     Raises:
-        httpcore.ConnectError: When the name does not resolve.
+        httpcore2.ConnectError: When the name does not resolve.
     """
     loop = asyncio.get_running_loop()
     try:
         infos = await loop.getaddrinfo(host, port, type=socket.SOCK_STREAM)
     except OSError as exc:
-        raise httpcore.ConnectError(f"{host}: {exc}") from exc
+        raise httpcore2.ConnectError(f"{host}: {exc}") from exc
     return list(dict.fromkeys(str(info[4][0]) for info in infos))
 
 
@@ -146,7 +146,7 @@ class AddressGuard:
 
         Raises:
             BlockedAddressError: When ``host`` resolved to no address the scan may use.
-            httpcore.ConnectError: When a name does not resolve.
+            httpcore2.ConnectError: When a name does not resolve.
         """
         host = host.lower()
         async with self._lock:
@@ -163,23 +163,23 @@ class AddressGuard:
         return allowed
 
 
-class GuardedBackend(httpcore.AsyncNetworkBackend):
+class GuardedBackend(httpcore2.AsyncNetworkBackend):
     """
-    An ``httpcore`` network backend that connects only to the addresses an :class:`AddressGuard`
+    An ``httpcore2`` network backend that connects only to the addresses an :class:`AddressGuard`
     allows.
     """
 
     def __init__(
-        self, guard: AddressGuard, inner: httpcore.AsyncNetworkBackend | None = None
+        self, guard: AddressGuard, inner: httpcore2.AsyncNetworkBackend | None = None
     ) -> None:
         """
         Args:
             guard (AddressGuard): The scan's address guard.
-            inner (httpcore.AsyncNetworkBackend | None): The backend that opens the sockets;
-                ``httpcore.AnyIOBackend`` when ``None``.
+            inner (httpcore2.AsyncNetworkBackend | None): The backend that opens the sockets;
+                ``httpcore2.AnyIOBackend`` when ``None``.
         """
         self._guard = guard
-        self._inner = inner or httpcore.AnyIOBackend()
+        self._inner = inner or httpcore2.AnyIOBackend()
 
     async def connect_tcp(
         self,
@@ -187,12 +187,12 @@ class GuardedBackend(httpcore.AsyncNetworkBackend):
         port: int,
         timeout: float | None = None,
         local_address: str | None = None,
-        socket_options: Iterable[httpcore.SOCKET_OPTION] | None = None,
-    ) -> httpcore.AsyncNetworkStream:
+        socket_options: Iterable[httpcore2.SOCKET_OPTION] | None = None,
+    ) -> httpcore2.AsyncNetworkStream:
         """
         Connect to the first allowed address of ``host`` that answers.
 
-        TLS still verifies the certificate against ``host``: ``httpcore`` passes the request's
+        TLS still verifies the certificate against ``host``: ``httpcore2`` passes the request's
         host name as the server name, whatever address the socket uses.
 
         Args:
@@ -200,21 +200,21 @@ class GuardedBackend(httpcore.AsyncNetworkBackend):
             port (int): The port.
             timeout (float | None): The connect timeout, applied to the resolution too.
             local_address (str | None): The local address to bind.
-            socket_options (Iterable[httpcore.SOCKET_OPTION] | None): Socket options.
+            socket_options (Iterable[httpcore2.SOCKET_OPTION] | None): Socket options.
 
         Returns:
-            httpcore.AsyncNetworkStream: The connected stream.
+            httpcore2.AsyncNetworkStream: The connected stream.
 
         Raises:
             BlockedAddressError: When ``host`` resolved to no address the scan may use.
-            httpcore.ConnectError: When no allowed address accepts the connection.
-            httpcore.ConnectTimeout: When the resolution or the connection times out.
+            httpcore2.ConnectError: When no allowed address accepts the connection.
+            httpcore2.ConnectTimeout: When the resolution or the connection times out.
         """
         try:
             async with asyncio.timeout(timeout):
                 allowed = await self._guard.addresses(host, port)
         except TimeoutError as exc:
-            raise httpcore.ConnectTimeout(f"{host}: name resolution timed out") from exc
+            raise httpcore2.ConnectTimeout(f"{host}: name resolution timed out") from exc
         options = list(socket_options or [])
         last: Exception | None = None
         for address in allowed:
@@ -226,7 +226,7 @@ class GuardedBackend(httpcore.AsyncNetworkBackend):
                     local_address=local_address,
                     socket_options=options,
                 )
-            except (httpcore.ConnectError, httpcore.ConnectTimeout) as exc:
+            except (httpcore2.ConnectError, httpcore2.ConnectTimeout) as exc:
                 last = exc
         assert last is not None  # ``allowed`` is never empty
         raise last
@@ -235,16 +235,16 @@ class GuardedBackend(httpcore.AsyncNetworkBackend):
         self,
         path: str,
         timeout: float | None = None,
-        socket_options: Iterable[httpcore.SOCKET_OPTION] | None = None,
-    ) -> httpcore.AsyncNetworkStream:  # pragma: no cover - the scan never uses a Unix socket
+        socket_options: Iterable[httpcore2.SOCKET_OPTION] | None = None,
+    ) -> httpcore2.AsyncNetworkStream:  # pragma: no cover - the scan never uses a Unix socket
         """
         Args:
             path (str): The socket path.
             timeout (float | None): The connect timeout.
-            socket_options (Iterable[httpcore.SOCKET_OPTION] | None): Socket options.
+            socket_options (Iterable[httpcore2.SOCKET_OPTION] | None): Socket options.
 
         Returns:
-            httpcore.AsyncNetworkStream: The connected stream.
+            httpcore2.AsyncNetworkStream: The connected stream.
         """
         return await self._inner.connect_unix_socket(path, timeout, socket_options)
 
@@ -258,24 +258,24 @@ class GuardedBackend(httpcore.AsyncNetworkBackend):
 
 def install(client_transport: object, guard: AddressGuard) -> None:
     """
-    Route the connections of an ``httpx`` default transport through ``guard``.
+    Route the connections of an ``httpx2`` default transport through ``guard``.
 
-    ``httpx`` has no public option for the network backend, and passing a custom transport to
+    ``httpx2`` has no public option for the network backend, and passing a custom transport to
     ``AsyncClient`` turns off the proxies set in the environment, so the backend is swapped on
     the client's own transport. A layout this code does not recognise is an error, never a
     silent scan without the guard.
 
     Args:
-        client_transport (object): ``httpx.AsyncClient._transport`` of a client built without a
+        client_transport (object): ``httpx2.AsyncClient._transport`` of a client built without a
             custom transport.
         guard (AddressGuard): The scan's address guard.
 
     Raises:
-        RuntimeError: When the transport is not the ``httpx``/``httpcore`` layout expected.
+        RuntimeError: When the transport is not the ``httpx2``/``httpcore2`` layout expected.
     """
     pool = getattr(client_transport, "_pool", None)
-    if not isinstance(pool, httpcore.AsyncConnectionPool) or not hasattr(pool, "_network_backend"):
-        raise RuntimeError("unexpected httpx transport layout: cannot install the address guard")
+    if not isinstance(pool, httpcore2.AsyncConnectionPool) or not hasattr(pool, "_network_backend"):
+        raise RuntimeError("unexpected httpx2 transport layout: cannot install the address guard")
     pool._network_backend = GuardedBackend(guard)
 
 

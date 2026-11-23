@@ -656,5 +656,5 @@ def build_request(
     fuzzed = [(name, value if name == point.param else current) for name, current in point.params]
     if point.method == "GET":
         return "GET", point.base_url, fuzzed, None
-    # httpx wants a Mapping for a urlencoded form body; a pair list takes its raw-content path.
+    # httpx2 wants a Mapping for a urlencoded form body; a pair list takes its raw-content path.
     return "POST", point.base_url, list(point.query), dict(fuzzed)

@@ -11,7 +11,7 @@ on the next hop.
 
 from __future__ import annotations
 
-import httpx
+import httpx2
 import pytest
 
 from webvigil.core.config import ScanConfig
@@ -52,13 +52,13 @@ def _redirect_to(httpx_mock: object, location: str) -> None:
     httpx_mock.add_response(url=location, status_code=200, text="ok")  # type: ignore[attr-defined]
 
 
-def _hop(httpx_mock: object) -> httpx.Request:
+def _hop(httpx_mock: object) -> httpx2.Request:
     """
     Args:
         httpx_mock (object): The ``httpx_mock`` fixture.
 
     Returns:
-        httpx.Request: The request the client sent after the redirect.
+        httpx2.Request: The request the client sent after the redirect.
     """
     sent = httpx_mock.get_requests()  # type: ignore[attr-defined]
     assert len(sent) == 2

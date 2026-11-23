@@ -302,7 +302,7 @@ class Authenticator:
             ]
             response = await self._http.request("POST", form.action, files=parts, headers=headers)
         else:
-            # ``data=`` with a list of pairs makes httpx build a sync stream, which its async
+            # ``data=`` with a list of pairs makes httpx2 build a sync stream, which its async
             # client refuses: send the encoded body ourselves (as the CSRF pass does).
             headers["Content-Type"] = "application/x-www-form-urlencoded"
             response = await self._http.request(

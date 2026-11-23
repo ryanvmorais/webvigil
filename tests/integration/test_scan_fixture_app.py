@@ -34,7 +34,7 @@ import json
 import re
 from urllib.parse import quote, quote_plus
 
-import httpx
+import httpx2
 import pytest
 from starlette.applications import Starlette
 
@@ -116,15 +116,15 @@ _OSV_JQUERY_RECORD = {
 }
 
 
-def _osv_up(request: httpx.Request) -> httpx.Response:
+def _osv_up(request: httpx2.Request) -> httpx2.Response:
     """
     An OSV.dev stub that reports jquery vulnerable and serves ``_OSV_JQUERY_RECORD``.
 
     Args:
-        request (httpx.Request): The intercepted OSV.dev request.
+        request (httpx2.Request): The intercepted OSV.dev request.
 
     Returns:
-        httpx.Response: The batched or per-package response.
+        httpx2.Response: The batched or per-package response.
     """
     if request.url.path == "/v1/querybatch":
         queries = json.loads(request.content)["queries"]
@@ -136,15 +136,15 @@ def _osv_up(request: httpx.Request) -> httpx.Response:
             )
             for query in queries
         ]
-        return httpx.Response(200, json={"results": results})
+        return httpx2.Response(200, json={"results": results})
     if request.url.path == "/v1/query":
-        return httpx.Response(200, json={"vulns": [_OSV_JQUERY_RECORD]})
-    return httpx.Response(404, json={})
+        return httpx2.Response(200, json={"vulns": [_OSV_JQUERY_RECORD]})
+    return httpx2.Response(404, json={})
 
 
-def _osv_down(request: httpx.Request) -> httpx.Response:
+def _osv_down(request: httpx2.Request) -> httpx2.Response:
     """An OSV.dev stub that always 503s, to model an outage."""
-    return httpx.Response(503, json={})
+    return httpx2.Response(503, json={})
 
 
 def _assert_same_findings(first: ScanResult, second: ScanResult) -> None:
@@ -296,7 +296,7 @@ def scan(monkeypatch: pytest.MonkeyPatch):
         # between them, about 3 s per probe and three minutes per Active scan, is dropped.
         monkeypatch.setattr(client_mod, "BACKOFF_BASE_S", 0.0)
         monkeypatch.setattr(client_mod, "BACKOFF_JITTER_S", 0.0)
-        transport = httpx.ASGITransport(app=app)
+        transport = httpx2.ASGITransport(app=app)
         monkeypatch.setattr(
             orch_mod, "HttpClient", functools.partial(HttpClient, transport=transport)
         )
@@ -357,7 +357,7 @@ def scan(monkeypatch: pytest.MonkeyPatch):
         # Every scan gets the stub, opted in or not, and counts the providers the engine builds: a
         # lookup the opt-in should have prevented is counted instead of reaching the real OSV.dev,
         # where it would pass or fail on the network.
-        osv_transport = httpx.MockTransport(_osv_up if osv_up else _osv_down)
+        osv_transport = httpx2.MockTransport(_osv_up if osv_up else _osv_down)
         app.state.osv_providers = 0
 
         def _osv_provider(*args: object, **kwargs: object) -> OsvProvider:

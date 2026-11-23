@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-import httpx
+import httpx2
 import pytest
 
 from webvigil.checks.injection.detect import DetectCtx, normalize_body, redirect
@@ -41,7 +41,7 @@ def _resp(
     Returns:
         Response: The assembled response.
     """
-    headers = httpx.Headers({"content-type": "text/html"})
+    headers = httpx2.Headers({"content-type": "text/html"})
     if location is not None:
         headers["location"] = location
     return Response(

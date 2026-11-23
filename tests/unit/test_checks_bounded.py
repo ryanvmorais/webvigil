@@ -15,7 +15,7 @@ import json
 import re
 import time
 
-import httpx
+import httpx2
 import pytest
 
 from tests.support import HandlerTransport, make_context, make_page
@@ -234,8 +234,10 @@ async def test_no_check_keeps_one_finding_per_listed_item(monkeypatch: pytest.Mo
     pages = tuple(_hostile_page(i) for i in range(3))
     target = Target.parse("https://shop.example/")
 
-    def _answer(_request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, headers=list(pages[0].headers.multi_items()), text=pages[0].text)
+    def _answer(_request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(
+            200, headers=list(pages[0].headers.multi_items()), text=pages[0].text
+        )
 
     config = ScanConfig()
     http = HttpClient(target, config, transport=HandlerTransport(_answer))
@@ -310,7 +312,7 @@ def _response(text: str) -> Response:
         url="https://shop.example/",
         requested_url="https://shop.example/",
         status_code=200,
-        headers=httpx.Headers({"content-type": "text/html"}),
+        headers=httpx2.Headers({"content-type": "text/html"}),
         text=text,
         content=b"",
         elapsed_ms=0.0,

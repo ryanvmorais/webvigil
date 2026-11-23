@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from typing import cast
 from urllib.parse import urlsplit
 
 from webvigil.core.context import Page
@@ -20,7 +19,7 @@ def header_value(page: Page, name: str) -> str | None:
     Returns:
         str | None: The header value, or ``None`` when absent.
     """
-    return cast("str | None", page.headers.get(name))
+    return page.headers.get(name)
 
 
 def is_https(url: str) -> bool:

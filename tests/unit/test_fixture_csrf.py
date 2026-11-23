@@ -2,7 +2,7 @@
 The fixture's CSRF routes — spec 017 RF-12.
 
 Pure unit of ``tests/fixtures/app.py``: ``/panel`` and its four POST routes are driven through
-``httpx.ASGITransport`` with no scan, so a regression in what each route accepts or refuses
+``httpx2.ASGITransport`` with no scan, so a regression in what each route accepts or refuses
 cannot hide behind the integration test (which would then fail for the wrong reason). The app is
 built per test, so ``app.state.csrf_log`` starts empty.
 
@@ -13,7 +13,7 @@ log exactly.
 
 from __future__ import annotations
 
-import httpx
+import httpx2
 import pytest
 from starlette.applications import Starlette
 
@@ -22,20 +22,20 @@ from tests.fixtures.app import _CSRF_TOKEN, make_app
 _BASE = "http://example.com"
 
 
-def _client(app: Starlette) -> httpx.AsyncClient:
+def _client(app: Starlette) -> httpx2.AsyncClient:
     """
     Args:
         app (Starlette): The fixture app.
 
     Returns:
-        httpx.AsyncClient: A client wired to ``app`` in-process.
+        httpx2.AsyncClient: A client wired to ``app`` in-process.
     """
-    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=_BASE)
+    return httpx2.AsyncClient(transport=httpx2.ASGITransport(app=app), base_url=_BASE)
 
 
 async def _post(
     app: Starlette, path: str, data: dict[str, str], headers: dict[str, str] | None = None
-) -> httpx.Response:
+) -> httpx2.Response:
     """
     Args:
         app (Starlette): The fixture app.
@@ -44,7 +44,7 @@ async def _post(
         headers (dict[str, str] | None): Extra request headers.
 
     Returns:
-        httpx.Response: The response, redirects not followed.
+        httpx2.Response: The response, redirects not followed.
     """
     async with _client(app) as client:
         return await client.post(path, data=data, headers=headers)

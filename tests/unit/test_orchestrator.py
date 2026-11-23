@@ -14,7 +14,7 @@ import asyncio
 import os
 from typing import ClassVar
 
-import httpx
+import httpx2
 import pytest
 
 from webvigil.auth.login import Credentials, LoginResult
@@ -46,7 +46,7 @@ def _page() -> Page:
         requested_url=_TARGET,
         url=_TARGET,
         status_code=200,
-        headers=httpx.Headers({"content-type": "text/html"}),
+        headers=httpx2.Headers({"content-type": "text/html"}),
         text="<html></html>",
         elapsed_ms=1.0,
     )
@@ -576,9 +576,9 @@ class _IssuingAuth(_StubAuth):
     async def login(self) -> LoginResult:
         jar = self.session.jar
         jar.begin()
-        request = httpx.Request("POST", "https://example.com/signin")
+        request = httpx2.Request("POST", "https://example.com/signin")
         jar.absorb(
-            httpx.Response(200, headers={"set-cookie": f"sid={_ISSUED_ID}"}, request=request),
+            httpx2.Response(200, headers={"set-cookie": f"sid={_ISSUED_ID}"}, request=request),
             handshake=True,
         )
         jar.commit()

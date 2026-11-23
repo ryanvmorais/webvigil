@@ -1,7 +1,7 @@
 """
 The async HTTP client wrapper: retries, manual redirects, and the scope guard.
 
-No component talks to ``httpx`` directly — they all go through
+No component talks to ``httpx2`` directly — they all go through
 :class:`HttpClient`, so politeness, retries, timeouts, and scope enforcement
 apply uniformly (RF-05, RF-03, RF-04). :meth:`HttpClient.request` carries any
 HTTP method through the same machinery; :meth:`HttpClient.get` is a thin wrapper
@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from types import TracebackType
 from urllib.parse import urlsplit
 
-import httpx
+import httpx2
 
 from webvigil.core.config import ScanConfig
 from webvigil.core.errors import RequestFailed, ScanDeadlineExceeded
@@ -58,7 +58,7 @@ _QUIET: contextvars.ContextVar[bool] = contextvars.ContextVar("webvigil_quiet", 
 _ANON: contextvars.ContextVar[bool] = contextvars.ContextVar("webvigil_anon", default=False)
 
 
-class _TotalTimeout(httpx.ReadTimeout):
+class _TotalTimeout(httpx2.ReadTimeout):
     """A request that used up ``[http] total_timeout_s``: failed for good, never retried."""
 
 
@@ -70,10 +70,10 @@ _Files = (
     dict[str, tuple[str, bytes, str]] | list[tuple[str, tuple[str | None, str | bytes, str | None]]]
 )
 
-# Marks, on an httpx response, that its body was cut at ``max_body_bytes``.
+# Marks, on an httpx2 response, that its body was cut at ``max_body_bytes``.
 _TRUNCATED_EXTENSION = "webvigil_truncated"
-# Holds, on an httpx redirect response, the Location header that _hide_location took away from
-# httpx: the engine follows redirects itself and reads it from here.
+# Holds, on an httpx2 redirect response, the Location header that _hide_location took away from
+# httpx2: the engine follows redirects itself and reads it from here.
 _LOCATION_EXTENSION = "webvigil_location"
 
 # Backoff between retries; module-level so tests can shrink them.
@@ -206,7 +206,7 @@ class Response:
         url (str): Final URL after in-scope redirects.
         requested_url (str): URL originally asked for.
         status_code (int): HTTP status of the final response.
-        headers (httpx.Headers): Response headers of the final response.
+        headers (httpx2.Headers): Response headers of the final response.
         text (str): Decoded response body.
         content (bytes): Raw response body.
         elapsed_ms (float): Wall-clock time for the final request, in
@@ -224,7 +224,7 @@ class Response:
     url: str
     requested_url: str
     status_code: int
-    headers: httpx.Headers
+    headers: httpx2.Headers
     text: str
     content: bytes
     elapsed_ms: float
@@ -242,18 +242,18 @@ class Response:
         return "html" in self.headers.get("content-type", "").lower()
 
 
-def _decode_text(raw: httpx.Response) -> str:
+def _decode_text(raw: httpx2.Response) -> str:
     """
     The body as text, in the charset the response declares, or UTF-8 when that cannot decode.
 
     ``charset=`` is the target's to write, and Python's codec registry also holds codecs that
     are not text encodings (``base64``, ``zlib``, ``hex``) or that refuse the ``replace``
-    error handler (``idna``): ``httpx`` looks the name up and then fails inside ``.text`` with
+    error handler (``idna``): ``httpx2`` looks the name up and then fails inside ``.text`` with
     whatever that codec raises. Such a body is read as UTF-8 with replacement characters, as an
     unknown charset already is.
 
     Args:
-        raw (httpx.Response): A response with its body loaded.
+        raw (httpx2.Response): A response with its body loaded.
 
     Returns:
         str: The decoded body.
@@ -275,20 +275,20 @@ def _host_of(url: str) -> str:
     return (urlsplit(url).hostname or "").lower()
 
 
-async def _hide_location(response: httpx.Response) -> None:
+async def _hide_location(response: httpx2.Response) -> None:
     r"""
-    Take a redirect's ``Location`` away from ``httpx``, which would otherwise parse it.
+    Take a redirect's ``Location`` away from ``httpx2``, which would otherwise parse it.
 
-    ``httpx`` builds the next request of a redirect even with ``follow_redirects=False``, and a
+    ``httpx2`` builds the next request of a redirect even with ``follow_redirects=False``, and a
     ``Location`` it cannot build one from (``https:\\host/``, which a browser reads as
     ``https://host/``; ``mailto:x``) raises ``InvalidURL`` there: the response never reaches the
     engine. The engine follows redirects itself, from :func:`~webvigil.core.urls.resolve_url`, so
     this response hook, which runs before that step, moves the header into the response's
-    extensions: ``httpx`` sees no redirect, and :meth:`HttpClient._send_with_redirects` reads the
+    extensions: ``httpx2`` sees no redirect, and :meth:`HttpClient._send_with_redirects` reads the
     value from there and puts it back on the :class:`Response` it returns.
 
     Args:
-        response (httpx.Response): A response, before ``httpx`` looks at its redirect.
+        response (httpx2.Response): A response, before ``httpx2`` looks at its redirect.
     """
     if response.status_code in _REDIRECT_STATUS and "location" in response.headers:
         response.extensions[_LOCATION_EXTENSION] = response.headers["location"]
@@ -297,7 +297,7 @@ async def _hide_location(response: httpx.Response) -> None:
 
 class HttpClient:
     """
-    Owns one ``httpx.AsyncClient`` and the shared rate limiter for a scan.
+    Owns one ``httpx2.AsyncClient`` and the shared rate limiter for a scan.
 
     Must be used as an async context manager: the underlying client is created
     on ``__aenter__`` and closed on ``__aexit__``.
@@ -308,7 +308,7 @@ class HttpClient:
         target: Target,
         config: ScanConfig,
         *,
-        transport: httpx.BaseTransport | httpx.AsyncBaseTransport | None = None,
+        transport: httpx2.BaseTransport | httpx2.AsyncBaseTransport | None = None,
         resolver: Resolver | None = None,
     ) -> None:
         """
@@ -317,8 +317,8 @@ class HttpClient:
                 request.
             config (ScanConfig): The resolved scan configuration (concurrency,
                 delay, timeout, TLS verification, ``[auth]`` cookies).
-            transport (httpx.BaseTransport | httpx.AsyncBaseTransport | None):
-                Test seam — an ``httpx`` ``ASGITransport`` / ``MockTransport``.
+            transport (httpx2.BaseTransport | httpx2.AsyncBaseTransport | None):
+                Test seam — an ``httpx2`` ``ASGITransport`` / ``MockTransport``.
                 ``None`` in normal operation.
             resolver (Resolver | None): Test seam — the name resolver of the address guard;
                 the system resolver when ``None``.
@@ -337,18 +337,18 @@ class HttpClient:
         self._total_timeout = config.http.total_timeout_s
         self._max_duration = config.scan.max_duration_s
         self._deadline: float | None = None  # loop time; set when the client opens
-        self._transport = transport  # test seam: an httpx ASGITransport / MockTransport
-        self._client: httpx.AsyncClient | None = None
+        self._transport = transport  # test seam: an httpx2 ASGITransport / MockTransport
+        self._client: httpx2.AsyncClient | None = None
         self._session: Session | None = None  # spec 019: set by use_session()
 
     async def __aenter__(self) -> HttpClient:
         """
-        Open the underlying ``httpx.AsyncClient``.
+        Open the underlying ``httpx2.AsyncClient``.
 
         Returns:
             HttpClient: This instance, ready to issue requests.
         """
-        self._client = httpx.AsyncClient(
+        self._client = httpx2.AsyncClient(
             http2=True,
             follow_redirects=False,
             verify=client_ssl_context(verify=self._config.http.verify_tls),
@@ -397,7 +397,7 @@ class HttpClient:
         exc: BaseException | None,
         tb: TracebackType | None,
     ) -> None:
-        """Close the underlying ``httpx.AsyncClient`` if it is open."""
+        """Close the underlying ``httpx2.AsyncClient`` if it is open."""
         if self._client is not None:
             await self._client.aclose()
             self._client = None
@@ -474,10 +474,10 @@ class HttpClient:
             _QUIET.reset(token)
 
     @property
-    def _active_client(self) -> httpx.AsyncClient:
+    def _active_client(self) -> httpx2.AsyncClient:
         """
         Returns:
-            httpx.AsyncClient: The open client.
+            httpx2.AsyncClient: The open client.
 
         Raises:
             RuntimeError: When accessed outside the async context manager.
@@ -739,20 +739,20 @@ class HttpClient:
             truncated=bool(raw.extensions.get(_TRUNCATED_EXTENSION, False)),
         )
 
-    async def _read_capped(self, streamed: httpx.Response) -> httpx.Response:
+    async def _read_capped(self, streamed: httpx2.Response) -> httpx2.Response:
         """
         Read a streamed response body up to ``max_body_bytes`` and close the connection.
 
-        ``httpx`` would read the whole body into memory, however large: a hostile server, a
+        ``httpx2`` would read the whole body into memory, however large: a hostile server, a
         multi-gigabyte file reached by a probe, or a compressed body that inflates a thousandfold
         could exhaust the scanner. The limit is on the *decompressed* size, and a cut body is
         marked and counted so the scan can say so.
 
         Args:
-            streamed (httpx.Response): A response obtained with ``stream=True``.
+            streamed (httpx2.Response): A response obtained with ``stream=True``.
 
         Returns:
-            httpx.Response: The same response with its (possibly cut) body loaded, as
+            httpx2.Response: The same response with its (possibly cut) body loaded, as
                 ``Response.aread`` would leave it.
         """
         decoder = BodyDecoder(
@@ -782,7 +782,7 @@ class HttpClient:
         content: str | bytes | None,
         files: _Files | None,
         crafted: bool,
-    ) -> httpx.Response:
+    ) -> httpx2.Response:
         """
         Send one request with retry and the ``[auth]`` cookie / header handling, no redirect loop.
 
@@ -803,10 +803,10 @@ class HttpClient:
             crafted (bool): Whether to count this against ``crafted_requests``.
 
         Returns:
-            httpx.Response: The raw response.
+            httpx2.Response: The raw response.
 
         Raises:
-            RequestFailed: When every attempt fails, or at once when ``httpx`` cannot build
+            RequestFailed: When every attempt fails, or at once when ``httpx2`` cannot build
                 the URL or decode the body.
         """
         idempotent = method in _IDEMPOTENT
@@ -842,10 +842,10 @@ class HttpClient:
             for name, value in self._auth_headers:
                 if name.lower() not in present:
                     req_headers[name] = value
-        # httpx encodes a text header as ASCII, so a cookie outside it goes out as its own bytes
-        wire_headers: dict[str, str] | httpx.Headers = req_headers
+        # httpx2 encodes a text header as ASCII, so a cookie outside it goes out as its own bytes
+        wire_headers: dict[str, str] | httpx2.Headers = req_headers
         if jar_cookie is not None and not jar_cookie.isascii():
-            wire_headers = httpx.Headers(
+            wire_headers = httpx2.Headers(
                 [
                     (
                         name.encode("ascii"),
@@ -865,7 +865,7 @@ class HttpClient:
             try:
                 async with self.limiter.slot(_host_of(url)):
                     self._check_deadline(url)  # the wait for a slot may have used it up
-                    # httpx's stubs are narrower than what it accepts at runtime
+                    # httpx2's stubs are narrower than what it accepts at runtime
                     # (a list of pairs works for both params and a form body).
                     request = self._active_client.build_request(
                         method,
@@ -904,11 +904,11 @@ class HttpClient:
                             f"no complete response within {self._total_timeout:g} s "
                             "([http] total_timeout_s)"
                         ) from exc
-            except (httpx.InvalidURL, httpx.DecodingError) as exc:
-                # A URL httpx refuses to build (one over 64 KiB, say) or a body that does not
+            except (httpx2.InvalidURL, httpx2.DecodingError) as exc:
+                # A URL httpx2 refuses to build (one over 64 KiB, say) or a body that does not
                 # decode as its Content-Encoding claims: the same answer on every attempt.
                 raise RequestFailed(url, f"{type(exc).__name__}: {exc}") from exc
-            except (httpx.TransportError, httpx.TimeoutException) as exc:
+            except (httpx2.TransportError, httpx2.TimeoutException) as exc:
                 last_error = f"{type(exc).__name__}: {exc}"
                 if isinstance(exc.__cause__, BlockedAddressError):
                     # the resolution is pinned for the scan: a retry would be refused the same way
@@ -921,7 +921,7 @@ class HttpClient:
                     raise RequestFailed(url, last_error) from exc
                 # A non-idempotent request is only retried when it never reached the
                 # server (a pre-send connect error) — never on a read timeout.
-                if idempotent or isinstance(exc, httpx.ConnectError):
+                if idempotent or isinstance(exc, httpx2.ConnectError):
                     continue
                 self.stats.failed += 1
                 raise RequestFailed(url, last_error) from exc

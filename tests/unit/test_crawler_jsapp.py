@@ -9,7 +9,7 @@ scripts, a crawl that did find a surface).
 
 from __future__ import annotations
 
-import httpx
+import httpx2
 
 from webvigil.core.context import Page
 from webvigil.crawler.jsapp import looks_like_script_app, script_app_warning
@@ -45,7 +45,7 @@ def _page(html: str, *, content_type: str = "text/html", status: int = 200) -> P
         requested_url="https://example.com/",
         url="https://example.com/",
         status_code=status,
-        headers=httpx.Headers({"content-type": content_type}),
+        headers=httpx2.Headers({"content-type": content_type}),
         text=html,
         elapsed_ms=1.0,
     )

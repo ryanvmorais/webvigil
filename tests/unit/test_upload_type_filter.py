@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import re
 
-import httpx
+import httpx2
 import pytest
 
 from webvigil.checks.upload.scanner import UploadScanner
@@ -51,32 +51,32 @@ class _Server:
         self.posts = 0
         self.gets = 0
 
-    def __call__(self, request: httpx.Request) -> httpx.Response:
+    def __call__(self, request: httpx2.Request) -> httpx2.Response:
         path = request.url.path
         if request.method == "POST" and path == "/up":
             self.posts += 1
             part = _PART.search(request.content + b"\r\n--")
             if part is None:
-                return httpx.Response(400, text="bad")
+                return httpx2.Response(400, text="bad")
             ctype = part["type"].decode()
             name = part["name"].decode()
             if self.accept is not None and ctype not in self.accept:
-                return httpx.Response(200, text="<p>Your file was not uploaded.</p>")
+                return httpx2.Response(200, text="<p>Your file was not uploaded.</p>")
             self.files[name] = part["body"]
             text = f"<pre>../files/{name} uploaded</pre>" if self.echo else "<p>Thanks.</p>"
-            return httpx.Response(200, text=text)
+            return httpx2.Response(200, text=text)
         if request.method == "GET" and path.startswith("/files/"):
             self.gets += 1
             body = self.files.get(path.removeprefix("/files/"))
             if body is None:
-                return httpx.Response(404, text="not found")
+                return httpx2.Response(404, text="not found")
             php = _PHP.search(body)
             if php is not None:  # a .php file is executed, whatever it was declared as
                 product = int(php["a"]) * int(php["b"])
-                return httpx.Response(200, text=f"{php['marker'].decode()}:{product}")
-            return httpx.Response(200, text=body.decode(), headers={"content-type": "text/html"})
+                return httpx2.Response(200, text=f"{php['marker'].decode()}:{product}")
+            return httpx2.Response(200, text=body.decode(), headers={"content-type": "text/html"})
         self.gets += request.method == "GET"
-        return httpx.Response(404, text="not found")
+        return httpx2.Response(404, text="not found")
 
 
 def _form() -> Form:

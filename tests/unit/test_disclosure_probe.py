@@ -8,7 +8,7 @@ real. The probe runs against the full shipped catalogue.
 
 from __future__ import annotations
 
-import httpx
+import httpx2
 import pytest
 
 from webvigil.checks.disclosure import probe as probe_mod
@@ -43,7 +43,7 @@ def _page(html: str = "", url: str = _SEED, ok: bool = True) -> Page:
         requested_url=url,
         url=url,
         status_code=200 if ok else 0,
-        headers=httpx.Headers({"content-type": "text/html; charset=utf-8"}),
+        headers=httpx2.Headers({"content-type": "text/html; charset=utf-8"}),
         text=html,
         elapsed_ms=0.0,
         error=None if ok else "boom",
@@ -52,7 +52,7 @@ def _page(html: str = "", url: str = _SEED, ok: bool = True) -> Page:
 
 class _Router:
     """
-    An ``httpx`` callback: serves ``routes`` (URL -> ``(status, body, content_type)``),
+    An ``httpx2`` callback: serves ``routes`` (URL -> ``(status, body, content_type)``),
     everything else gets ``default``, and every requested URL is appended to ``seen``.
     """
 
@@ -61,11 +61,11 @@ class _Router:
         self.default = default
         self.seen: list[str] = []
 
-    def __call__(self, request: httpx.Request) -> httpx.Response:
+    def __call__(self, request: httpx2.Request) -> httpx2.Response:
         url = str(request.url)
         self.seen.append(url)
         status, body, ctype = self.routes.get(url, self.default)
-        return httpx.Response(status_code=status, text=body, headers={"content-type": ctype})
+        return httpx2.Response(status_code=status, text=body, headers={"content-type": ctype})
 
 
 async def _run(router: _Router, pages: tuple[Page, ...], httpx_mock: object):
@@ -117,12 +117,12 @@ async def test_inconclusive_calibration_warns_and_still_validates(httpx_mock: ob
     """When calibration cannot settle on a soft-404 shape it warns, but validation still runs."""
     counter = {"n": 0}
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         url = str(request.url)
         if url == "https://example.com/.env":
-            return httpx.Response(200, text=_ENV, headers={"content-type": "text/plain"})
+            return httpx2.Response(200, text=_ENV, headers={"content-type": "text/plain"})
         counter["n"] += 1
-        return httpx.Response(200, text=f"<html>unique {counter['n']} " + "x" * counter["n"] * 40)
+        return httpx2.Response(200, text=f"<html>unique {counter['n']} " + "x" * counter["n"] * 40)
 
     httpx_mock.add_callback(handler, is_reusable=True)  # type: ignore[attr-defined]
     target = Target.parse(_SEED)

@@ -15,7 +15,7 @@ import ssl
 import warnings
 from dataclasses import dataclass
 
-import httpcore
+import httpcore2
 
 from webvigil.http.addresses import AddressGuard
 from webvigil.http.policy import RateLimiter
@@ -222,7 +222,7 @@ async def probe(
         try:
             async with asyncio.timeout(timeout):
                 address = (await guard.addresses(host, port))[0]
-        except (httpcore.ConnectError, httpcore.ConnectTimeout, TimeoutError) as exc:
+        except (httpcore2.ConnectError, httpcore2.ConnectTimeout, TimeoutError) as exc:
             return _unreachable(exc)
     if limiter is not None:
         async with limiter.slot(host):

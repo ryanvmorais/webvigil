@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 
-import httpx
+import httpx2
 
 from webvigil.core.config import ScanConfig
 from webvigil.core.context import Observations, Page, ScanContext
@@ -79,7 +79,7 @@ def make_page(
         requested_url=url,
         url=url,
         status_code=status,
-        headers=httpx.Headers(pairs),
+        headers=httpx2.Headers(pairs),
         text=text,
         elapsed_ms=1.0,
     )
@@ -218,32 +218,32 @@ def make_result(
     )
 
 
-class HandlerTransport(httpx.AsyncBaseTransport):
+class HandlerTransport(httpx2.AsyncBaseTransport):
     """
     An in-process transport that answers every request with ``handler(request)``.
 
-    The answer is rebuilt over a byte stream: ``httpx`` records ``Response.elapsed`` only when a
+    The answer is rebuilt over a byte stream: ``httpx2`` records ``Response.elapsed`` only when a
     stream is closed, and ``HttpClient`` reads it, so a response built from ``text=`` would
     raise. Use it wherever a test needs the real ``HttpClient`` against a hand-written app.
     """
 
-    def __init__(self, handler: Callable[[httpx.Request], httpx.Response]) -> None:
+    def __init__(self, handler: Callable[[httpx2.Request], httpx2.Response]) -> None:
         """
         Args:
-            handler (Callable[[httpx.Request], httpx.Response]): Plays the target.
+            handler (Callable[[httpx2.Request], httpx2.Response]): Plays the target.
         """
         self._handler = handler
 
-    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+    async def handle_async_request(self, request: httpx2.Request) -> httpx2.Response:
         """
         Args:
-            request (httpx.Request): The request the client sent.
+            request (httpx2.Request): The request the client sent.
 
         Returns:
-            httpx.Response: ``handler``'s answer, over a byte stream.
+            httpx2.Response: ``handler``'s answer, over a byte stream.
         """
         await request.aread()  # a multipart body is a stream until read
         answer = self._handler(request)
-        return httpx.Response(
-            answer.status_code, headers=answer.headers, stream=httpx.ByteStream(answer.content)
+        return httpx2.Response(
+            answer.status_code, headers=answer.headers, stream=httpx2.ByteStream(answer.content)
         )

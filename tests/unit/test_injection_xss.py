@@ -13,7 +13,7 @@ import html as html_mod
 import re
 from collections.abc import Callable
 
-import httpx
+import httpx2
 import pytest
 
 from webvigil.checks.injection import payloads
@@ -38,7 +38,7 @@ def _resp(text: str, *, content_type: str = "text/html") -> Response:
         url="https://example.com/s",
         requested_url="https://example.com/s",
         status_code=200,
-        headers=httpx.Headers({"content-type": content_type}),
+        headers=httpx2.Headers({"content-type": content_type}),
         text=text,
         content=text.encode(),
         elapsed_ms=1.0,

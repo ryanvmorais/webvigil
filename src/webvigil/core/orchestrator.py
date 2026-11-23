@@ -937,7 +937,7 @@ def _portable_traceback(exc: BaseException) -> str:
 
     The traceback is stored in ``ScanResult.errors`` and travels with the JSON report, which
     gets shared. The install path names the OS user (``/home/<name>/...``), so each frame
-    keeps only its path inside the install (``webvigil/checks/...``, ``httpx/...``). A frame
+    keeps only its path inside the install (``webvigil/checks/...``, ``httpx2/...``). A frame
     still absolute after that (a plugin in a directory outside the install and the home,
     such as ``D:\work\plugin`` on Windows) keeps only its file name.
 

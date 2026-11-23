@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 
-import httpx
+import httpx2
 import pytest
 
 from webvigil.checks.injection import payloads
@@ -33,7 +33,7 @@ def _resp(text: str, *, status: int = 200) -> Response:
         url="https://example.com/greet",
         requested_url="https://example.com/greet",
         status_code=status,
-        headers=httpx.Headers({"content-type": "text/html"}),
+        headers=httpx2.Headers({"content-type": "text/html"}),
         text=text,
         content=text.encode(),
         elapsed_ms=1.0,

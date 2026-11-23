@@ -3,7 +3,7 @@ Session-looking cookies — spec 020 RF-02.
 
 One definition of "a session cookie" (by name), JWT-shaped values skipped, and the extraction of
 the session ids out of a response's ``Set-Cookie`` lines. Pure functions over strings and
-``httpx.Headers``: no network.
+``httpx2.Headers``: no network.
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from __future__ import annotations
 import base64
 import json
 
-import httpx
+import httpx2
 import pytest
 
 from webvigil.checks.session.cookies import (
@@ -83,7 +83,7 @@ def test_a_jwt_is_recognised_by_its_shape_only(value: str, expected: bool) -> No
 
 def test_session_cookies_reads_every_set_cookie_line_and_skips_what_is_not_an_id() -> None:
     """Session-looking names only, in header order; a JWT, an empty value and junk are dropped."""
-    headers = httpx.Headers(
+    headers = httpx2.Headers(
         [
             ("set-cookie", "PHPSESSID=abc123def; Path=/; HttpOnly"),
             ("set-cookie", "lang=en; Path=/"),
@@ -100,7 +100,7 @@ def test_session_cookies_reads_every_set_cookie_line_and_skips_what_is_not_an_id
 def test_a_cookie_whose_name_and_value_pass_the_browser_limit_is_ignored() -> None:
     """Past ``MAX_NAME_VALUE_OCTETS`` a browser drops the cookie, and so does the check."""
     at_limit = "b" * (MAX_NAME_VALUE_OCTETS - len("session"))
-    headers = httpx.Headers(
+    headers = httpx2.Headers(
         [
             ("set-cookie", "sid=" + "a" * MAX_NAME_VALUE_OCTETS),
             ("set-cookie", f"session={at_limit}"),
@@ -112,7 +112,7 @@ def test_a_cookie_whose_name_and_value_pass_the_browser_limit_is_ignored() -> No
 def test_long_attributes_do_not_hide_a_session_cookie() -> None:
     """Attributes a browser ignores, however long, leave the cookie readable."""
     junk = "; x=" + "q" * 50_000
-    headers = httpx.Headers([("set-cookie", f"sid=abc123{junk}; Path=/")])
+    headers = httpx2.Headers([("set-cookie", f"sid=abc123{junk}; Path=/")])
     assert session_cookies(headers) == [("sid", "abc123")]
 
 
@@ -144,7 +144,7 @@ def test_an_attribute_is_read_as_a_browser_reads_it(raw: str, expected: str | No
 
 def test_a_response_without_cookies_has_no_session_ids() -> None:
     """No ``Set-Cookie`` header, no ids."""
-    assert session_cookies(httpx.Headers({"content-type": "text/html"})) == []
+    assert session_cookies(httpx2.Headers({"content-type": "text/html"})) == []
 
 
 def test_a_jwt_shaped_value_with_a_deeply_nested_header_is_not_a_jwt() -> None:

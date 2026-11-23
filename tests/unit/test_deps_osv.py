@@ -1,7 +1,7 @@
 """
 OsvProvider: normalisation, severity mapping, name mapping, and the batched I/O — spec 010.
 
-Every test uses ``httpx.MockTransport``; nothing here touches the real network
+Every test uses ``httpx2.MockTransport``; nothing here touches the real network
 (RF-16). ``_GHSA_RECORD`` / ``_CVE_RECORD`` are trimmed but real-shaped OSV
 records — one with a GHSA severity label, one CVE-only that forces the CVSS
 path. ``_Transport`` records the call paths and the ``querybatch`` body so the
@@ -15,7 +15,7 @@ import json
 from collections.abc import AsyncIterator
 from typing import Any
 
-import httpx
+import httpx2
 import pytest
 
 from webvigil.checks.deps import _data, osv
@@ -108,26 +108,26 @@ class _Transport:
         self._query_status = query_status
 
     @property
-    def transport(self) -> httpx.MockTransport:
-        return httpx.MockTransport(self._handle)
+    def transport(self) -> httpx2.MockTransport:
+        return httpx2.MockTransport(self._handle)
 
-    def _handle(self, request: httpx.Request) -> httpx.Response:
+    def _handle(self, request: httpx2.Request) -> httpx2.Response:
         self.calls.append(request.url.path)
         body = json.loads(request.content) if request.content else {}
         if request.url.path == "/v1/querybatch":
             self.sent_queries = body.get("queries", [])
-            return httpx.Response(self._batch_status, json=self._batch)
+            return httpx2.Response(self._batch_status, json=self._batch)
         if request.url.path == "/v1/query":
             self.package_queries.append(body)
             name = body["package"]["name"]
-            return httpx.Response(self._query_status, json=self._queries.get(name, {"vulns": []}))
-        return httpx.Response(404, json={})
+            return httpx2.Response(self._query_status, json=self._queries.get(name, {"vulns": []}))
+        return httpx2.Response(404, json={})
 
 
-def _provider(transport: httpx.MockTransport) -> OsvProvider:
+def _provider(transport: httpx2.MockTransport) -> OsvProvider:
     """
     Args:
-        transport (httpx.MockTransport): The mock transport to route calls through.
+        transport (httpx2.MockTransport): The mock transport to route calls through.
 
     Returns:
         OsvProvider: A provider pointed at ``http://osv.test`` over ``transport``.
@@ -406,16 +406,16 @@ async def test_a_long_batch_is_sent_in_chunks_and_read_back_in_order(
     monkeypatch.setattr(osv, "_QUERYBATCH_CAP", 2)
     batches: list[list[str]] = []
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         body = json.loads(request.content)
         if request.url.path == "/v1/querybatch":
             names = [query["package"]["name"] for query in body["queries"]]
             batches.append(names)
             hits = [{"vulns": [{"id": "GHSA-x"}]} if n == "lodash" else {} for n in names]
-            return httpx.Response(200, json={"results": hits})
-        return httpx.Response(200, json={"vulns": [{**_GHSA_RECORD, "id": "GHSA-lodash"}]})
+            return httpx2.Response(200, json={"results": hits})
+        return httpx2.Response(200, json={"vulns": [{**_GHSA_RECORD, "id": "GHSA-lodash"}]})
 
-    result = await _provider(httpx.MockTransport(handler)).lookup(
+    result = await _provider(httpx2.MockTransport(handler)).lookup(
         [_det("jquery", "3.4.1"), _det("vue", "2.0.0"), _det("lodash", "4.17.20")]
     )
     assert batches == [["jquery", "vue"], ["lodash"]]
@@ -458,38 +458,38 @@ async def test_querybatch_error_status_raises() -> None:
 async def test_non_json_body_raises() -> None:
     """A 200 whose body is not JSON raises :class:`OsvLookupError`."""
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, text="<html>not json</html>")
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(200, text="<html>not json</html>")
 
     with pytest.raises(OsvLookupError):
-        await _provider(httpx.MockTransport(handler)).lookup([_det("jquery", "3.4.1")])
+        await _provider(httpx2.MockTransport(handler)).lookup([_det("jquery", "3.4.1")])
 
 
 async def test_transport_error_raises() -> None:
     """A transport-level connection error raises :class:`OsvLookupError`."""
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        raise httpx.ConnectError("connection refused")
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        raise httpx2.ConnectError("connection refused")
 
     with pytest.raises(OsvLookupError):
-        await _provider(httpx.MockTransport(handler)).lookup([_det("jquery", "3.4.1")])
+        await _provider(httpx2.MockTransport(handler)).lookup([_det("jquery", "3.4.1")])
 
 
 async def test_partial_query_failure_keeps_the_rest_and_warns() -> None:
     """One failing per-package query is a warning; the packages that resolved still count."""
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         if request.url.path == "/v1/querybatch":
-            return httpx.Response(
+            return httpx2.Response(
                 200,
                 json={"results": [{"vulns": [{"id": "GHSA-j"}]}, {"vulns": [{"id": "GHSA-l"}]}]},
             )
         body = json.loads(request.content)
         if body["package"]["name"] == "jquery":
-            return httpx.Response(200, json={"vulns": [_GHSA_RECORD]})
-        return httpx.Response(503, json={})
+            return httpx2.Response(200, json={"vulns": [_GHSA_RECORD]})
+        return httpx2.Response(503, json={})
 
-    result = await _provider(httpx.MockTransport(handler)).lookup(
+    result = await _provider(httpx2.MockTransport(handler)).lookup(
         [_det("jquery", "3.4.1"), _det("lodash", "4.17.20")]
     )
     assert ("jquery", "3.4.1") in result.advisories
@@ -502,47 +502,47 @@ async def test_partial_query_failure_keeps_the_rest_and_warns() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _batch_then(query: httpx.Response) -> httpx.MockTransport:
+def _batch_then(query: httpx2.Response) -> httpx2.MockTransport:
     """
     Args:
-        query (httpx.Response): The answer to every ``/v1/query``.
+        query (httpx2.Response): The answer to every ``/v1/query``.
 
     Returns:
-        httpx.MockTransport: A transport whose querybatch reports one hit for the first query.
+        httpx2.MockTransport: A transport whose querybatch reports one hit for the first query.
     """
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         if request.url.path == "/v1/querybatch":
-            return httpx.Response(200, json={"results": [{"vulns": [{"id": "GHSA-x"}]}]})
+            return httpx2.Response(200, json={"results": [{"vulns": [{"id": "GHSA-x"}]}]})
         return query
 
-    return httpx.MockTransport(handler)
+    return httpx2.MockTransport(handler)
 
 
 async def test_a_body_over_the_size_cap_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     """The response is read in a stream and refused past ``_MAX_RESPONSE_BYTES``."""
     monkeypatch.setattr(osv, "_MAX_RESPONSE_BYTES", 1024)
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, content=b"[" + b" " * 4096 + b"]")
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(200, content=b"[" + b" " * 4096 + b"]")
 
     with pytest.raises(OsvLookupError, match="over 1024 bytes"):
-        await _provider(httpx.MockTransport(handler)).lookup([_det("jquery", "3.4.1")])
+        await _provider(httpx2.MockTransport(handler)).lookup([_det("jquery", "3.4.1")])
 
 
 async def test_a_response_that_drips_past_the_total_deadline_raises() -> None:
-    """A body that keeps arriving never trips httpx's per-read timeout; the total one stops it."""
+    """A body that keeps arriving never trips httpx2's per-read timeout; the total one stops it."""
 
     async def drip() -> AsyncIterator[bytes]:
         while True:
             await asyncio.sleep(0.01)
             yield b" "
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, content=drip())
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(200, content=drip())
 
     provider = OsvProvider(
-        "http://osv.test", 0.02, user_agent="WebVigil/test", transport=httpx.MockTransport(handler)
+        "http://osv.test", 0.02, user_agent="WebVigil/test", transport=httpx2.MockTransport(handler)
     )
     with pytest.raises(OsvLookupError, match="timed out"):
         await provider.lookup([_det("jquery", "3.4.1")])
@@ -551,18 +551,18 @@ async def test_a_response_that_drips_past_the_total_deadline_raises() -> None:
 async def test_json_nested_past_the_parser_raises_a_lookup_error() -> None:
     """``RecursionError`` from the JSON parser is a lookup error, not a crash."""
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, content=b"[" * 200_000)
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(200, content=b"[" * 200_000)
 
     with pytest.raises(OsvLookupError, match="invalid JSON"):
-        await _provider(httpx.MockTransport(handler)).lookup([_det("jquery", "3.4.1")])
+        await _provider(httpx2.MockTransport(handler)).lookup([_det("jquery", "3.4.1")])
 
 
 async def test_a_malformed_record_is_skipped_and_the_rest_kept() -> None:
     """A record whose fields have the wrong type is dropped with a warning; the good one stays."""
     bad = {"id": "GHSA-bad", "database_specific": ["not", "an", "object"]}
     worse = {"id": "GHSA-worse", "affected": 7}
-    transport = _batch_then(httpx.Response(200, json={"vulns": [bad, _GHSA_RECORD, worse]}))
+    transport = _batch_then(httpx2.Response(200, json={"vulns": [bad, _GHSA_RECORD, worse]}))
     result = await _provider(transport).lookup([_det("jquery", "3.4.1")])
     (advisory,) = result.advisories[("jquery", "3.4.1")]
     assert advisory.identifiers[0] == "GHSA-gxr4-xjj5-5px2"
@@ -575,7 +575,7 @@ async def test_records_past_the_per_package_cap_are_dropped_with_a_warning(
     """Only the first ``_MAX_RECORDS_PER_PACKAGE`` records of one package are converted."""
     monkeypatch.setattr(osv, "_MAX_RECORDS_PER_PACKAGE", 2)
     records = [{**_GHSA_RECORD, "id": f"GHSA-{n}", "aliases": []} for n in range(3)]
-    transport = _batch_then(httpx.Response(200, json={"vulns": records}))
+    transport = _batch_then(httpx2.Response(200, json={"vulns": records}))
     result = await _provider(transport).lookup([_det("jquery", "3.4.1")])
     assert len(result.advisories[("jquery", "3.4.1")]) == 2
     assert result.warnings == ("OSV.dev returned 3 records for jquery@3.4.1; kept the first 2",)

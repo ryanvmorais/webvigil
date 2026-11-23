@@ -15,11 +15,11 @@ from collections.abc import Awaitable, Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-import httpx
+import httpx2
 import pytest
 
-Answer = Callable[[httpx.Request], httpx.Response | Awaitable[httpx.Response | None] | None]
-Headers = httpx.Headers | Mapping[str, str] | Sequence[tuple[str, str]]
+Answer = Callable[[httpx2.Request], httpx2.Response | Awaitable[httpx2.Response | None] | None]
+Headers = httpx2.Headers | Mapping[str, str] | Sequence[tuple[str, str]]
 
 
 # ---------------------------------------------------------------------------
@@ -27,10 +27,10 @@ Headers = httpx.Headers | Mapping[str, str] | Sequence[tuple[str, str]]
 # ---------------------------------------------------------------------------
 
 
-def _params(url: httpx.URL) -> dict[str, list[str]]:
+def _params(url: httpx2.URL) -> dict[str, list[str]]:
     """
     Args:
-        url (httpx.URL): The URL to read.
+        url (httpx2.URL): The URL to read.
 
     Returns:
         dict[str, list[str]]: Its query values by name, so the order of the names does not count
@@ -39,11 +39,11 @@ def _params(url: httpx.URL) -> dict[str, list[str]]:
     return {name: url.params.get_list(name) for name in url.params}
 
 
-def _same_url(expected: httpx.URL, received: httpx.URL) -> bool:
+def _same_url(expected: httpx2.URL, received: httpx2.URL) -> bool:
     """
     Args:
-        expected (httpx.URL): The URL of a registration.
-        received (httpx.URL): The URL of a request.
+        expected (httpx2.URL): The URL of a registration.
+        received (httpx2.URL): The URL of a request.
 
     Returns:
         bool: Whether they are equal, comparing the query parameters regardless of their order.
@@ -59,20 +59,20 @@ class _Registration:
 
     Attributes:
         answer (Answer): Builds the response, or raises.
-        url (httpx.URL | None): The only URL it answers, or ``None`` for any.
+        url (httpx2.URL | None): The only URL it answers, or ``None`` for any.
         is_reusable (bool): Whether it may answer again once every match was used.
         uses (int): How many requests it was selected for.
     """
 
     answer: Answer
-    url: httpx.URL | None
+    url: httpx2.URL | None
     is_reusable: bool
     uses: int = 0
 
-    def matches(self, request: httpx.Request) -> bool:
+    def matches(self, request: httpx2.Request) -> bool:
         """
         Args:
-            request (httpx.Request): The request received.
+            request (httpx2.Request): The request received.
 
         Returns:
             bool: Whether this registration may answer it.
@@ -80,13 +80,13 @@ class _Registration:
         return self.url is None or _same_url(self.url, request.url)
 
 
-def _unread(response: httpx.Response) -> httpx.Response:
+def _unread(response: httpx2.Response) -> httpx2.Response:
     """
     Args:
-        response (httpx.Response): A response built by a registration.
+        response (httpx2.Response): A response built by a registration.
 
     Returns:
-        httpx.Response: The same response, unread, so the client streams it through its body cap.
+        httpx2.Response: The same response, unread, so the client streams it through its body cap.
     """
     response.is_stream_consumed = False
     response.is_closed = False
@@ -111,8 +111,8 @@ class HttpxMock:
         """
         self._require_all_used = assert_all_responses_were_requested
         self._registrations: list[_Registration] = []
-        self._requests: list[httpx.Request] = []
-        self._unmatched: list[httpx.Request] = []
+        self._requests: list[httpx2.Request] = []
+        self._unmatched: list[httpx2.Request] = []
 
     def add_response(
         self,
@@ -121,7 +121,7 @@ class HttpxMock:
         content: bytes | None = None,
         text: str | None = None,
         json: Any = None,
-        url: str | httpx.URL | None = None,
+        url: str | httpx2.URL | None = None,
         is_reusable: bool = False,
     ) -> None:
         """
@@ -133,13 +133,13 @@ class HttpxMock:
             content (bytes | None): A raw body. Defaults to ``None``.
             text (str | None): A text body. Defaults to ``None``.
             json (Any): A JSON body, copied now. Defaults to ``None``.
-            url (str | httpx.URL | None): The only URL it answers. Defaults to any.
+            url (str | httpx2.URL | None): The only URL it answers. Defaults to any.
             is_reusable (bool): Whether it may answer again. Defaults to ``False``.
         """
         body = copy.deepcopy(json)
 
-        def respond(_request: httpx.Request) -> httpx.Response:
-            return httpx.Response(
+        def respond(_request: httpx2.Request) -> httpx2.Response:
+            return httpx2.Response(
                 status_code=status_code,
                 headers=headers,
                 json=body,
@@ -152,7 +152,7 @@ class HttpxMock:
     def add_callback(
         self,
         callback: Answer,
-        url: str | httpx.URL | None = None,
+        url: str | httpx2.URL | None = None,
         is_reusable: bool = False,
     ) -> None:
         """
@@ -160,16 +160,16 @@ class HttpxMock:
 
         Args:
             callback (Answer): Receives the request; it may be a coroutine function.
-            url (str | httpx.URL | None): The only URL it answers. Defaults to any.
+            url (str | httpx2.URL | None): The only URL it answers. Defaults to any.
             is_reusable (bool): Whether it may answer again. Defaults to ``False``.
         """
-        expected = httpx.URL(url) if isinstance(url, str) else url
+        expected = httpx2.URL(url) if isinstance(url, str) else url
         self._registrations.append(_Registration(callback, expected, is_reusable))
 
     def add_exception(
         self,
         exception: BaseException,
-        url: str | httpx.URL | None = None,
+        url: str | httpx2.URL | None = None,
         is_reusable: bool = False,
     ) -> None:
         """
@@ -177,21 +177,21 @@ class HttpxMock:
 
         Args:
             exception (BaseException): The exception.
-            url (str | httpx.URL | None): The only URL it answers. Defaults to any.
+            url (str | httpx2.URL | None): The only URL it answers. Defaults to any.
             is_reusable (bool): Whether it may answer again. Defaults to ``False``.
         """
 
-        def fail(request: httpx.Request) -> httpx.Response:
-            if isinstance(exception, httpx.RequestError):
+        def fail(request: httpx2.Request) -> httpx2.Response:
+            if isinstance(exception, httpx2.RequestError):
                 exception.request = request
             raise exception
 
         self.add_callback(fail, url=url, is_reusable=is_reusable)
 
-    def get_requests(self) -> list[httpx.Request]:
+    def get_requests(self) -> list[httpx2.Request]:
         """
         Returns:
-            list[httpx.Request]: Every request received, in order, with its body read.
+            list[httpx2.Request]: Every request received, in order, with its body read.
         """
         return list(self._requests)
 
@@ -227,18 +227,18 @@ class HttpxMock:
             AssertionError: :meth:`verify` failed.
         """
 
-        async def handle(_transport: httpx.AsyncHTTPTransport, request: httpx.Request) -> Any:
+        async def handle(_transport: httpx2.AsyncHTTPTransport, request: httpx2.Request) -> Any:
             return await self._handle(request)
 
         with pytest.MonkeyPatch.context() as patch:
-            patch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", handle)
+            patch.setattr(httpx2.AsyncHTTPTransport, "handle_async_request", handle)
             yield self
         self.verify()
 
-    def _select(self, request: httpx.Request) -> _Registration | None:
+    def _select(self, request: httpx2.Request) -> _Registration | None:
         """
         Args:
-            request (httpx.Request): The request received.
+            request (httpx2.Request): The request received.
 
         Returns:
             _Registration | None: The first matching registration not yet used; when all were
@@ -252,16 +252,16 @@ class HttpxMock:
             chosen.uses += 1
         return chosen
 
-    async def _handle(self, request: httpx.Request) -> httpx.Response:
+    async def _handle(self, request: httpx2.Request) -> httpx2.Response:
         """
         Args:
-            request (httpx.Request): The request the client sent.
+            request (httpx2.Request): The request the client sent.
 
         Returns:
-            httpx.Response: The selected registration's response, unread.
+            httpx2.Response: The selected registration's response, unread.
 
         Raises:
-            httpx.TimeoutException: Nothing answers it, the failure the engine's retry path sees.
+            httpx2.TimeoutException: Nothing answers it, the failure the engine's retry path sees.
         """
         await request.aread()
         self._requests.append(request)
@@ -273,7 +273,7 @@ class HttpxMock:
             if response is not None:
                 return _unread(response)
         self._unmatched.append(request)
-        raise httpx.TimeoutException(
+        raise httpx2.TimeoutException(
             f"No response registered for {request.method} {request.url}", request=request
         )
 

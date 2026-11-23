@@ -12,7 +12,7 @@ import json
 from datetime import date
 from pathlib import Path
 
-import httpx
+import httpx2
 import pytest
 
 from webvigil.checks.deps._data import Provenance
@@ -48,7 +48,7 @@ def _page(html: str, url: str = _SEED, content_type: str = "text/html; charset=u
         requested_url=url,
         url=url,
         status_code=200,
-        headers=httpx.Headers({"content-type": content_type}),
+        headers=httpx2.Headers({"content-type": content_type}),
         text=html,
         elapsed_ms=0.0,
     )
@@ -78,7 +78,7 @@ async def _run(pages: tuple[Page, ...], router, httpx_mock: object, *, max_fetch
 
 def _router(routes: dict[str, tuple[int, str]]):
     """
-    Build an ``httpx`` callback that serves ``routes`` and records the URLs it saw.
+    Build an ``httpx2`` callback that serves ``routes`` and records the URLs it saw.
 
     Args:
         routes (dict[str, tuple[int, str]]): URL -> ``(status, body)``; anything
@@ -89,10 +89,10 @@ def _router(routes: dict[str, tuple[int, str]]):
     """
     seen: list[str] = []
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         seen.append(str(request.url))
         status, body = routes.get(str(request.url), (404, ""))
-        return httpx.Response(
+        return httpx2.Response(
             status_code=status, text=body, headers={"content-type": "application/javascript"}
         )
 

@@ -15,7 +15,7 @@ import re
 from typing import Any
 from urllib.parse import parse_qsl
 
-import httpx
+import httpx2
 import pytest
 
 from webvigil.core.config import ScanConfig
@@ -52,7 +52,7 @@ def _resp(
         url=url,
         requested_url=url,
         status_code=status,
-        headers=httpx.Headers({"content-type": content_type}),
+        headers=httpx2.Headers({"content-type": content_type}),
         text=text,
         content=text.encode(),
         elapsed_ms=1.0,

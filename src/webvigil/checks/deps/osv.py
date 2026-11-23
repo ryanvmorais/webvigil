@@ -28,7 +28,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
-import httpx
+import httpx2
 
 from webvigil.checks.deps.advisories import (
     _DEFAULT_SEVERITY,
@@ -50,7 +50,7 @@ _CWE_RE = re.compile(r"CWE-(\d+)", re.IGNORECASE)
 # stream and refused past this size, after decompression. The largest real ``/v1/query`` answer
 # for an npm package is well under 1 MiB.
 _MAX_RESPONSE_BYTES = 16 * 1024 * 1024
-# ``osv_timeout_s`` is httpx's per-operation timeout, which a slow drip of bytes never trips; a
+# ``osv_timeout_s`` is httpx2's per-operation timeout, which a slow drip of bytes never trips; a
 # whole request (connect to last byte) gets this many times that budget, 30 s by default.
 _TOTAL_TIMEOUT_FACTOR = 3
 # Records kept per package, aliases and references kept per record, and the longest ``fixed``
@@ -353,7 +353,7 @@ class OsvProvider:
         timeout_s: float,
         *,
         user_agent: str,
-        transport: httpx.AsyncBaseTransport | None = None,
+        transport: httpx2.AsyncBaseTransport | None = None,
     ) -> None:
         """
         Args:
@@ -361,7 +361,7 @@ class OsvProvider:
                 stripped.
             timeout_s (float): Per-request timeout, in seconds.
             user_agent (str): ``User-Agent`` sent on every request.
-            transport (httpx.AsyncBaseTransport | None): Test seam — a
+            transport (httpx2.AsyncBaseTransport | None): Test seam — a
                 ``MockTransport``. ``None`` in normal operation.
         """
         self._base_url = base_url.rstrip("/")
@@ -434,10 +434,10 @@ class OsvProvider:
 
         return OsvResult(advisories=advisories, warnings=tuple(warnings))
 
-    def _client(self) -> httpx.AsyncClient:
+    def _client(self) -> httpx2.AsyncClient:
         """
         Returns:
-            httpx.AsyncClient: A fresh client bound to the OSV base URL, with the
+            httpx2.AsyncClient: A fresh client bound to the OSV base URL, with the
                 configured timeout, ``User-Agent``, and test transport. This is
                 a dedicated client, separate from the scan's scope-guarded one
                 (engine-boundaries note).
@@ -451,18 +451,18 @@ class OsvProvider:
         }
         if self._transport is not None:
             kwargs["transport"] = self._transport
-        client = httpx.AsyncClient(**kwargs)
+        client = httpx2.AsyncClient(**kwargs)
         pin_proxy_trust(client)
         return client
 
     async def _querybatch(
-        self, client: httpx.AsyncClient, queries: list[dict[str, Any]]
+        self, client: httpx2.AsyncClient, queries: list[dict[str, Any]]
     ) -> list[list[Any]]:
         """
         Run ``POST /v1/querybatch``, chunked to the API's per-request cap.
 
         Args:
-            client (httpx.AsyncClient): The OSV client.
+            client (httpx2.AsyncClient): The OSV client.
             queries (list[dict[str, Any]]): One package/version query per
                 detection.
 
@@ -487,13 +487,13 @@ class OsvProvider:
         return results
 
     async def _query(
-        self, client: httpx.AsyncClient, npm_name: str, version: str
+        self, client: httpx2.AsyncClient, npm_name: str, version: str
     ) -> list[Mapping[str, Any]]:
         """
         Run ``POST /v1/query`` for one package/version.
 
         Args:
-            client (httpx.AsyncClient): The OSV client.
+            client (httpx2.AsyncClient): The OSV client.
             npm_name (str): The npm package name.
             version (str): The detected version.
 
@@ -513,13 +513,13 @@ class OsvProvider:
         return [v for v in vulns if isinstance(v, Mapping)] if isinstance(vulns, list) else []
 
     async def _post(
-        self, client: httpx.AsyncClient, path: str, json: dict[str, Any]
+        self, client: httpx2.AsyncClient, path: str, json: dict[str, Any]
     ) -> Mapping[str, Any]:
         """
         POST a JSON body and return the decoded object.
 
         Args:
-            client (httpx.AsyncClient): The OSV client.
+            client (httpx2.AsyncClient): The OSV client.
             path (str): The API path.
             json (dict[str, Any]): The request body.
 
@@ -536,7 +536,7 @@ class OsvProvider:
                 raw = await self._read(client, path, json)
         except TimeoutError as exc:
             raise OsvLookupError(f"{path} timed out") from exc
-        except httpx.HTTPError as exc:
+        except httpx2.HTTPError as exc:
             raise OsvLookupError(str(exc) or exc.__class__.__name__) from exc
         try:
             data = jsonlib.loads(raw)
@@ -547,12 +547,12 @@ class OsvProvider:
         return data
 
     @staticmethod
-    async def _read(client: httpx.AsyncClient, path: str, json: dict[str, Any]) -> bytes:
+    async def _read(client: httpx2.AsyncClient, path: str, json: dict[str, Any]) -> bytes:
         """
         POST a JSON body and read the response in a stream, up to the size cap.
 
         Args:
-            client (httpx.AsyncClient): The OSV client.
+            client (httpx2.AsyncClient): The OSV client.
             path (str): The API path.
             json (dict[str, Any]): The request body.
 
@@ -560,7 +560,7 @@ class OsvProvider:
             bytes: The decoded (decompressed) response body.
 
         Raises:
-            httpx.HTTPError: On a transport error or a non-2xx status.
+            httpx2.HTTPError: On a transport error or a non-2xx status.
             OsvLookupError: When the body passes ``_MAX_RESPONSE_BYTES``.
         """
         async with client.stream("POST", path, json=json) as response:

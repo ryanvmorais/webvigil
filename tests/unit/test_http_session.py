@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 from urllib.parse import urlsplit
 
-import httpx
+import httpx2
 import pytest
 
 from tests.support import HandlerTransport
@@ -49,13 +49,13 @@ class _App:
         """Kill every live session, as a timeout would."""
         self.valid.clear()
 
-    def handle(self, request: httpx.Request) -> httpx.Response:
+    def handle(self, request: httpx2.Request) -> httpx2.Response:
         """
         Args:
-            request (httpx.Request): The request the client sent.
+            request (httpx2.Request): The request the client sent.
 
         Returns:
-            httpx.Response: The app's answer.
+            httpx2.Response: The app's answer.
         """
         path = request.url.path
         if path == "/signin":
@@ -63,28 +63,28 @@ class _App:
             token = f"tok{self.issued}"
             if self.honour:
                 self.valid.add(token)
-            return httpx.Response(200, headers={"set-cookie": f"sid={token}; Path=/"}, text="form")
+            return httpx2.Response(200, headers={"set-cookie": f"sid={token}; Path=/"}, text="form")
         self.cookie_seen.append(request.headers.get("cookie", ""))
         response = self._page(request)
         if path in self.rotate:
             response.headers["set-cookie"] = f"sid={self.rotate[path]}; Path=/"
         return response
 
-    def _page(self, request: httpx.Request) -> httpx.Response:
+    def _page(self, request: httpx2.Request) -> httpx2.Response:
         """
         Answer a page request, before any cookie rotation is added.
 
         Args:
-            request (httpx.Request): A request for any path but ``/signin``.
+            request (httpx2.Request): A request for any path but ``/signin``.
 
         Returns:
-            httpx.Response: The forced status, the bounce, or 200 / 401 by the ``sid`` sent.
+            httpx2.Response: The forced status, the bounce, or 200 / 401 by the ``sid`` sent.
         """
         path = request.url.path
         if path in self.status_for:
-            return httpx.Response(self.status_for[path], text="blocked")
+            return httpx2.Response(self.status_for[path], text="blocked")
         if path in self.bounce:
-            return httpx.Response(302, headers={"location": "/signin"})
+            return httpx2.Response(302, headers={"location": "/signin"})
         sid = next(
             (
                 p.split("=", 1)[1]
@@ -94,8 +94,8 @@ class _App:
             "",
         )
         if sid in self.valid:
-            return httpx.Response(200, text="ok")
-        return httpx.Response(401, text="no")
+            return httpx2.Response(200, text="ok")
+        return httpx2.Response(401, text="no")
 
 
 def _client(app: _App, *, cookies: list[str] | None = None) -> HttpClient:
@@ -183,20 +183,20 @@ class _RawCookieApp(_App):
         self.value = value
         self.received: list[tuple[list[bytes], str | None]] = []  # (Cookie lines, x-test)
 
-    def handle(self, request: httpx.Request) -> httpx.Response:
+    def handle(self, request: httpx2.Request) -> httpx2.Response:
         """
         Args:
-            request (httpx.Request): The request the client sent.
+            request (httpx2.Request): The request the client sent.
 
         Returns:
-            httpx.Response: The login's ``Set-Cookie``, or a plain page.
+            httpx2.Response: The login's ``Set-Cookie``, or a plain page.
         """
         if request.url.path == "/signin":
             cookie = b"sid=" + self.value + b"; Path=/"
-            return httpx.Response(200, headers=[(b"set-cookie", cookie)], text="form")
+            return httpx2.Response(200, headers=[(b"set-cookie", cookie)], text="form")
         lines = [v for k, v in request.headers.raw if k.lower() == b"cookie"]
         self.received.append((lines, request.headers.get("x-test")))
-        return httpx.Response(200, text="ok")
+        return httpx2.Response(200, text="ok")
 
 
 @pytest.mark.parametrize(
@@ -403,7 +403,7 @@ def _page(text: str) -> Response:
         url=f"{_BASE}/page",
         requested_url=f"{_BASE}/page",
         status_code=200,
-        headers=httpx.Headers({"content-type": "text/html"}),
+        headers=httpx2.Headers({"content-type": "text/html"}),
         text=text,
         content=text.encode(),
         elapsed_ms=1.0,
@@ -436,7 +436,7 @@ async def test_a_handshake_does_not_leak_into_a_concurrent_request() -> None:
         await _login(http, session)
         go = asyncio.Event()
 
-        async def concurrent() -> httpx.Response:
+        async def concurrent() -> httpx2.Response:
             await go.wait()
             return await http.get(f"{_BASE}/page")
 
@@ -479,10 +479,10 @@ async def test_a_401_page_unrelated_to_the_session_is_vetoed_once_then_learned()
 async def test_an_anonymous_request_carries_only_the_callers_own_headers() -> None:
     """No static cookie, no static header, no jar; an explicit Cookie header goes out as given."""
     app = _App()
-    seen: list[httpx.Headers] = []
+    seen: list[httpx2.Headers] = []
     original = app.handle
 
-    def spy(request: httpx.Request) -> httpx.Response:
+    def spy(request: httpx2.Request) -> httpx2.Response:
         seen.append(request.headers)
         return original(request)
 
@@ -545,7 +545,7 @@ async def test_anonymous_is_scoped_to_its_task() -> None:
         await _login(http, session)
         go = asyncio.Event()
 
-        async def concurrent() -> httpx.Response:
+        async def concurrent() -> httpx2.Response:
             await go.wait()
             return await http.get(f"{_BASE}/page")
 

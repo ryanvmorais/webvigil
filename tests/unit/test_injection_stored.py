@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from urllib.parse import parse_qs
 
-import httpx
+import httpx2
 import pytest
 
 from tests.support import make_page
@@ -168,25 +168,25 @@ class _Guestbook:
         self.store: list[str] = []
         self.seen: list[tuple[str, str, str]] = []
 
-    def __call__(self, request: httpx.Request) -> httpx.Response:
+    def __call__(self, request: httpx2.Request) -> httpx2.Response:
         method, url = request.method, str(request.url)
         body = request.content.decode() if request.content else ""
         self.seen.append((method, url, body))
         html = {"content-type": "text/html; charset=utf-8"}
         if method == "POST" and url == "https://example.com/guestbook":
             self.store.append(parse_qs(body).get("body", [""])[0])
-            return httpx.Response(302, headers={"location": "/guestbook"})
+            return httpx2.Response(302, headers={"location": "/guestbook"})
         if url == "https://example.com/guestbook":
             links = "".join(f'<a href="/guestbook/e/{i}">e{i}</a>' for i in range(len(self.store)))
-            return httpx.Response(200, text=f"<html><body>{links}</body></html>", headers=html)
+            return httpx2.Response(200, text=f"<html><body>{links}</body></html>", headers=html)
         if url.startswith("https://example.com/guestbook/e/"):
             entry = self.store[int(url.rsplit("/", 1)[1])]
-            return httpx.Response(
+            return httpx2.Response(
                 200, text=f"<html><body><div>{entry}</div></body></html>", headers=html
             )
         if url in self.pages:
-            return httpx.Response(200, text=self.pages[url], headers=html)
-        return httpx.Response(404, text="", headers={"content-type": "text/plain"})
+            return httpx2.Response(200, text=self.pages[url], headers=html)
+        return httpx2.Response(404, text="", headers={"content-type": "text/plain"})
 
 
 _GB_FORM = Form(
@@ -281,14 +281,14 @@ async def test_an_escaped_guestbook_yields_no_hit(httpx_mock: object) -> None:
     class _Safe(_Guestbook):
         """A ``_Guestbook`` variant that HTML-escapes the entry before rendering it."""
 
-        def __call__(self, request: httpx.Request) -> httpx.Response:
+        def __call__(self, request: httpx2.Request) -> httpx2.Response:
             resp = super().__call__(request)
             if request.method == "GET" and "/guestbook/e/" in str(request.url):
                 import html as _html
 
                 i = int(str(request.url).rsplit("/", 1)[1])
                 safe = _html.escape(self.store[i])
-                return httpx.Response(
+                return httpx2.Response(
                     200,
                     text=f"<html><body><div>{safe}</div></body></html>",
                     headers={"content-type": "text/html"},

@@ -16,7 +16,7 @@ import threading
 import time
 from collections.abc import AsyncIterator, Callable
 
-import httpx
+import httpx2
 import pytest
 from sqlalchemy import Engine
 from sqlmodel import Session, select
@@ -348,7 +348,7 @@ async def test_runner_drives_the_real_engine(
     web_engine: Engine, runner_factory: Callable, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """With the real orchestrator against the fixture app, a scan produces real findings."""
-    transport = httpx.ASGITransport(app=make_app("insecure"))
+    transport = httpx2.ASGITransport(app=make_app("insecure"))
     monkeypatch.setattr(
         orch_mod, "HttpClient", functools.partial(orch_mod.HttpClient, transport=transport)
     )

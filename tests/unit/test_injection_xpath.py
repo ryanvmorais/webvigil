@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-import httpx
+import httpx2
 
 from webvigil.checks.injection import payloads
 from webvigil.checks.injection.detect import DetectCtx, normalize_body, xpath
@@ -29,7 +29,7 @@ def _resp(text: str, *, status: int = 200) -> Response:
         url="https://example.com/xdoc",
         requested_url="https://example.com/xdoc",
         status_code=status,
-        headers=httpx.Headers({"content-type": "application/xml"}),
+        headers=httpx2.Headers({"content-type": "application/xml"}),
         text=text,
         content=text.encode(),
         elapsed_ms=1.0,

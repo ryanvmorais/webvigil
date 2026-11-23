@@ -1,7 +1,7 @@
 """
 The response-body limit of the HTTP client (``[http] max_body_bytes``) — security audit, 1.0.0.
 
-A scanner reads responses from servers it does not control. Without a limit, ``httpx`` loads
+A scanner reads responses from servers it does not control. Without a limit, ``httpx2`` loads
 the whole body into memory: a hostile server, a multi-gigabyte file reached by a probe or a
 compressed body that inflates a thousandfold can exhaust the scanner. All requests go through
 ``httpx_mock``; the endless-stream test counts how much the client actually pulled.
@@ -13,7 +13,7 @@ import gzip
 import zlib
 from collections.abc import AsyncIterator
 
-import httpx
+import httpx2
 import pytest
 
 from webvigil.core.config import ScanConfig
@@ -36,8 +36,8 @@ def _client(limit: int = _LIMIT) -> HttpClient:
     return HttpClient(Target.parse("https://example.com"), config)
 
 
-class _Chunks(httpx.AsyncByteStream):
-    """A response body served as the given raw chunks, so ``httpx`` decodes it as it streams."""
+class _Chunks(httpx2.AsyncByteStream):
+    """A response body served as the given raw chunks, so ``httpx2`` decodes it as it streams."""
 
     def __init__(self, data: bytes, size: int = 4096) -> None:
         self._chunks = [data[i : i + size] for i in range(0, len(data), size)]
@@ -47,22 +47,22 @@ class _Chunks(httpx.AsyncByteStream):
             yield chunk
 
 
-def _gzip_response(payload: bytes) -> httpx.Response:
+def _gzip_response(payload: bytes) -> httpx2.Response:
     """
     Args:
         payload (bytes): The plain body to compress.
 
     Returns:
-        httpx.Response: A ``Content-Encoding: gzip`` response that streams the compressed bytes.
+        httpx2.Response: A ``Content-Encoding: gzip`` response that streams the compressed bytes.
             (``httpx_mock`` decodes a ``content=`` body at construction and then serves the
             plain bytes under a gzip header, so a stream is the faithful way to mock one.)
     """
-    return httpx.Response(
+    return httpx2.Response(
         200, headers={"content-encoding": "gzip"}, stream=_Chunks(gzip.compress(payload))
     )
 
 
-class _EndlessBody(httpx.AsyncByteStream):
+class _EndlessBody(httpx2.AsyncByteStream):
     """A response body that never ends: 1 KiB chunks, counted as they are pulled."""
 
     def __init__(self) -> None:
@@ -118,8 +118,8 @@ async def test_an_endless_body_stops_being_read_at_the_limit(httpx_mock: object)
     """The client stops pulling from a server that never stops sending."""
     stream = _EndlessBody()
 
-    def respond(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, stream=stream)
+    def respond(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(200, stream=stream)
 
     httpx_mock.add_callback(respond)  # type: ignore[attr-defined]
     async with _client(limit=10_000) as http:
@@ -146,16 +146,16 @@ def test_the_limit_must_be_positive() -> None:
 # --- bounded decoding (security audit 2026-11): the limit holds at every stage ---------------
 
 
-def _coded_response(raw: bytes, coding: str) -> httpx.Response:
+def _coded_response(raw: bytes, coding: str) -> httpx2.Response:
     """
     Args:
         raw (bytes): The body as sent on the wire.
         coding (str): The ``Content-Encoding`` header value.
 
     Returns:
-        httpx.Response: A streamed response with that header, served in 4 KiB chunks.
+        httpx2.Response: A streamed response with that header, served in 4 KiB chunks.
     """
-    return httpx.Response(200, headers={"content-encoding": coding}, stream=_Chunks(raw))
+    return httpx2.Response(200, headers={"content-encoding": coding}, stream=_Chunks(raw))
 
 
 async def test_a_body_coded_twice_is_bounded_while_it_is_decoded(httpx_mock: object) -> None:
@@ -192,7 +192,7 @@ async def test_a_body_coded_twice_within_the_limit_decodes_whole(httpx_mock: obj
 
 @pytest.mark.parametrize("wbits", [zlib.MAX_WBITS, -zlib.MAX_WBITS])
 async def test_deflate_decodes_wrapped_or_raw(httpx_mock: object, wbits: int) -> None:
-    """``deflate`` accepts zlib-wrapped data and raw deflate, as ``httpx`` does."""
+    """``deflate`` accepts zlib-wrapped data and raw deflate, as ``httpx2`` does."""
     packer = zlib.compressobj(wbits=wbits)
     raw = packer.compress(b"deflated body") + packer.flush()
     httpx_mock.add_callback(lambda request: _coded_response(raw, "deflate"))  # type: ignore[attr-defined]
