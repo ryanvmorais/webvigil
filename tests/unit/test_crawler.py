@@ -55,7 +55,7 @@ async def _discover(config: ScanConfig, router: _Router, httpx_mock: object) -> 
     Args:
         config (ScanConfig): The scan config.
         router (_Router): The response router.
-        httpx_mock: The ``pytest-httpx`` fixture.
+        httpx_mock: The ``httpx_mock`` fixture.
 
     Returns:
         list[Page]: The pages the crawler discovered.
@@ -325,7 +325,7 @@ async def _crawl(config: ScanConfig, router: _Router, httpx_mock: object) -> Cra
     Args:
         config (ScanConfig): The scan config.
         router (_Router): The response router.
-        httpx_mock: The ``pytest-httpx`` fixture.
+        httpx_mock: The ``httpx_mock`` fixture.
 
     Returns:
         Crawler: The crawler after ``discover()`` has run, for its ``forms`` and counters.
@@ -475,7 +475,7 @@ async def _recrawl(
     Args:
         config (ScanConfig): The scan config.
         router (_Router): The response router.
-        httpx_mock: The ``pytest-httpx`` fixture.
+        httpx_mock: The ``httpx_mock`` fixture.
         frontier (list[str]): The URLs to re-fetch and follow one hop past.
         max_fetches (int): The hard fetch cap passed to ``recrawl``.
         limit (int | None): If set, ``should_fetch`` returns ``False`` after this

@@ -17,6 +17,8 @@ from dataclasses import dataclass
 import pytest
 import trustme
 
+from tests.http_mock import httpx_mock as httpx_mock
+
 
 @dataclass
 class RunningTlsServer:

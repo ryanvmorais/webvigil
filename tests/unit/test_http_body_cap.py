@@ -4,7 +4,7 @@ The response-body limit of the HTTP client (``[http] max_body_bytes``) — secur
 A scanner reads responses from servers it does not control. Without a limit, ``httpx`` loads
 the whole body into memory: a hostile server, a multi-gigabyte file reached by a probe or a
 compressed body that inflates a thousandfold can exhaust the scanner. All requests go through
-``pytest-httpx``; the endless-stream test counts how much the client actually pulled.
+``httpx_mock``; the endless-stream test counts how much the client actually pulled.
 """
 
 from __future__ import annotations
@@ -54,7 +54,7 @@ def _gzip_response(payload: bytes) -> httpx.Response:
 
     Returns:
         httpx.Response: A ``Content-Encoding: gzip`` response that streams the compressed bytes.
-            (``pytest-httpx`` decodes a ``content=`` body at construction and then serves the
+            (``httpx_mock`` decodes a ``content=`` body at construction and then serves the
             plain bytes under a gzip header, so a stream is the faithful way to mock one.)
     """
     return httpx.Response(

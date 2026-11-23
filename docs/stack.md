@@ -421,10 +421,11 @@ Rich, FastAPI, SQLModel, Alembic, PyJWT, argon2 or Uvicorn, and `webvigil.cli` /
 **Learn:** the contract lives in `pyproject.toml` `[tool.importlinter]`; a
 violation means you leaked a UI/DB dependency into the pure engine.
 
-### pytest (+ pytest-asyncio, pytest-cov, pytest-httpx, httpx2, trustme, jsonschema, Starlette)
+### pytest (+ pytest-asyncio, pytest-cov, httpx2, trustme, jsonschema, Starlette)
 
 The test runner. `asyncio_mode=auto` means `async def test_*` just works.
-`pytest-httpx` mocks HTTP at the transport layer. `trustme` mints throwaway TLS
+The `httpx_mock` fixture (`tests/http_mock.py`, written here so the suite is not tied to one
+`httpx` release) mocks HTTP at the transport layer. `trustme` mints throwaway TLS
 certificates for the TLS-check tests. `jsonschema` validates the SARIF reporter
 output against the bundled 2.1.0 schema. **pytest-cov** measures per-file line and branch
 coverage (`uv run pytest --cov`), the guard that a refactor of the tests does not lower it.

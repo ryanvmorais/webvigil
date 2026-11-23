@@ -29,7 +29,7 @@ async def _run(response_headers: dict[str, str], httpx_mock: object) -> list:
     Args:
         response_headers (dict[str, str]): Headers to return for the check's
             probe request.
-        httpx_mock: The ``pytest-httpx`` fixture.
+        httpx_mock: The ``httpx_mock`` fixture.
 
     Returns:
         list: The findings the check produced.

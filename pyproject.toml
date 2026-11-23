@@ -100,7 +100,6 @@ dev = [
     # Test runner and helpers.
     "pytest>=9.2.0",
     "pytest-asyncio>=1.5.0",
-    "pytest-httpx>=0.36.2",
     # Coverage: the guard of the test-suite audit (issue #101) — a refactor of the tests must not
     # lower the per-file line and branch coverage of `src/webvigil`.
     "pytest-cov>=7.1.0",
@@ -235,6 +234,10 @@ asyncio_mode = "auto"
 # A wider loop is an explicit `loop_scope=` on the fixture, never inherited from its scope (#312).
 asyncio_default_fixture_loop_scope = "function"
 pythonpath = ["."]
+# Declares the marker that `tests/http_mock.py` reads, so pytest does not flag it as unknown.
+markers = [
+    "httpx_mock(*, assert_all_responses_were_requested=True): configure the `httpx_mock` fixture.",
+]
 filterwarnings = [
     # A model validator that returns another object is dropped by `Model(...)` (#313).
     "error:A custom validator is returning a value other than:UserWarning",

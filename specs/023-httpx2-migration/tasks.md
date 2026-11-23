@@ -32,22 +32,22 @@ strategy.
 
 ## Stage 0 — The in-repository test mock (still on `httpx`)
 
-- [ ] `tests/`: record the baseline on `main`, on one Python version: the test count and `uv run pytest --cov
+- [x] `tests/`: record the baseline on `main`, on one Python version: the test count and `uv run pytest --cov
   --cov-report=json:coverage-before.json`, kept outside the repository. — RNF-05
-- [ ] `tests/http_mock.py`: `HttpxMock` with `add_response`, `add_callback`, `add_exception`, `get_requests` and
+- [x] `tests/http_mock.py`: `HttpxMock` with `add_response`, `add_callback`, `add_exception`, `get_requests` and
   `reset`; the selection rule; the unmatched path raising `httpx.TimeoutException`; the unread response; a
   `verify()` the fixture calls at teardown; the `httpx_mock` fixture patching
   `httpx.AsyncHTTPTransport.handle_async_request`. — RF-10, ADR-4
-- [ ] `tests/conftest.py`: expose the fixture. `pyproject.toml`: declare the `httpx_mock` marker under
+- [x] `tests/conftest.py`: expose the fixture. `pyproject.toml`: declare the `httpx_mock` marker under
   `[tool.pytest.ini_options]`, remove `pytest-httpx`, and run `uv lock`. — RF-10, RNF-01
-- [ ] `tests/unit/test_http_mock.py`: the contract of the design's table (selection order, reuse, unmatched
+- [x] `tests/unit/test_http_mock.py`: the contract of the design's table (selection order, reuse, unmatched
   request, unused registration, marker, reset, exception with its request, callback returning `None`, URL match
   regardless of query order, response read through `aiter_raw`), each failure with a passing twin. — RF-10, RF-11
-- [ ] Break each rule of `tests/http_mock.py` once and watch its contract test fail. — RF-11
-- [ ] Confirm that no existing test assertion changed, and compare coverage per file against the baseline: no line
+- [x] Break each rule of `tests/http_mock.py` once and watch its contract test fail. — RF-11
+- [x] Confirm that no existing test assertion changed, and compare coverage per file against the baseline: no line
   or branch of `src/webvigil` stops being covered. — RF-10, RNF-05
-- [ ] `docs/stack.md`: replace the `pytest-httpx` entry with the in-repository mock. — ADR-4
-- [ ] Quality gate.
+- [x] `docs/stack.md`: replace the `pytest-httpx` entry with the in-repository mock. — ADR-4
+- [x] Quality gate: ruff, black, mypy, import-linter and the package check green; 2493 passed, 2 skipped.
 
 ## Stage 1 — One explicit TLS context (still on `httpx`)
 

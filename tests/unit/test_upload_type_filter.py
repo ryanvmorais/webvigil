@@ -103,7 +103,7 @@ async def _run(server: _Server, httpx_mock: object) -> tuple[UploadScanner, list
 
     Args:
         server (_Server): The endpoint under test.
-        httpx_mock: The ``pytest-httpx`` fixture.
+        httpx_mock: The ``httpx_mock`` fixture.
 
     Returns:
         tuple[UploadScanner, list]: The scanner (for its counters) and its hits.

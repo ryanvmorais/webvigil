@@ -76,7 +76,7 @@ async def _run(router: _Router, pages: tuple[Page, ...], httpx_mock: object):
         router (_Router): The response router.
         pages (tuple[Page, ...]): The crawled pages the probe mines for derived
             targets.
-        httpx_mock: The ``pytest-httpx`` fixture.
+        httpx_mock: The ``httpx_mock`` fixture.
 
     Returns:
         ProbeReport: The probe's report.
