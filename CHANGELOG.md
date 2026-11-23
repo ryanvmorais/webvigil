@@ -19,6 +19,11 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
   now brings `httpx2` and `httpcore2` instead of `httpx` and `httpcore`, and the provisional
   Python API exposes `httpx2` objects where it exposed `httpx` ones, such as `Response.headers`.
 
+### Fixed
+
+- The `target` service of the Compose file starts again. Its image was missing `jinja2`, so the
+  deliberately vulnerable app stopped at startup.
+
 ## [1.4.7] - 2026-11-22
 
 A patch release that keeps a scan running when a session cookie or a `--cookie` value is outside

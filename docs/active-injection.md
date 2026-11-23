@@ -248,7 +248,7 @@ it exposes — rather than a parameter value.
 
 **CRLF injection** (`injection.crlf`, CWE-113) — the detector appends `%0d%0a`-prefixed
 payloads to a parameter and checks whether the *response* carries an injected header
-(`X-WvInjected: <token>`) that `httpx` parsed back, an injected `Set-Cookie`, or — with a
+(`X-WvInjected: <token>`) that `httpx2` parsed back, an injected `Set-Cookie`, or — with a
 double CRLF — a whole split body. A payload merely reflected in the page *text* is not a
 CRLF hit (that is reflected XSS). Modern servers strip CR/LF from header values, so a real
 target can be a false negative even when vulnerable.

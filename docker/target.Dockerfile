@@ -4,7 +4,9 @@
 #   webvigil scan http://localhost:8080 --mode active --authorized-by me
 FROM python:3.15-slim
 
-RUN pip install --no-cache-dir "starlette>=0.37" "uvicorn>=0.30" "python-multipart>=0.0.9"
+# Everything the fixture app imports. The CI does not build this image, so a missing package only
+# shows up when the service is started.
+RUN pip install --no-cache-dir "starlette>=0.37" "uvicorn>=0.30" "python-multipart>=0.0.9" "jinja2>=3.1.6"
 
 WORKDIR /app
 COPY tests ./tests

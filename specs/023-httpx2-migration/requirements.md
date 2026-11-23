@@ -1,6 +1,6 @@
 ---
 feature: Engine HTTP client migration — move the engine from httpx to httpx2 with no change in what a scan reports (issue #304)
-status: approved
+status: done
 date: 2026-11-22
 related:
   - 001-foundation/design.md

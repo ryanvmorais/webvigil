@@ -1,6 +1,6 @@
 ---
 feature: Engine HTTP client migration — move the engine from httpx to httpx2 with no change in what a scan reports (issue #304)
-status: approved
+status: done
 date: 2026-11-22
 related:
   - 001-foundation/design.md
@@ -245,3 +245,26 @@ TLS module. The mock's contract tests go past it, because they replace the guara
 3. **`client_ssl_context`, unreadable paths.** The design says a path that cannot be read raises at client creation.
    That holds for `SSL_CERT_FILE`. A missing `SSL_CERT_DIR` raises nothing, in `httpx` 0.28 as well, because OpenSSL
    only reads the directory during verification, so the handshake is refused instead. The behaviour is unchanged.
+4. **The `target` image.** Stage 3 scans the `target` service of the Compose file, and that service did not start:
+   its image never installed `jinja2`, which the fixture app has imported since spec 011. The CI builds neither this
+   image nor this service. `docker/target.Dockerfile` now installs it.
+
+## Implementation notes
+
+- **Delivery.** Four pull requests: the mock (#340), the TLS context (#341), the swap (#342) and this closing stage.
+- **Suite.** 2493 tests after the mock, 2522 after the TLS context and 2537 after the swap, with no line or branch of
+  `src/webvigil` losing coverage. With `httpx2` and `httpcore2` normalized back, the tokens of the 71 Python files the
+  swap changed match the previous commit, except for the dropped `cast`.
+- **Sabotage.** The 25 breaks of the TLS module and of both clients each fail a test. The first run left two uncaught,
+  and the tests were tightened.
+- **RF-09.** An Active Mode scan of the fixture app from `8b026e0` (the last commit on `httpx`) and from `3836efb` (the
+  swap merged) gives the same 45 findings, in the same order, with the same fingerprints and `schema_version`. The
+  reports have 0 differences once `started_at`, `finished_at`, each scan's random markers, the `Date` header and the
+  measured delays in the evidence are left out. Two runs on `8b026e0` set that noise floor.
+- **CI on `3836efb`.** `quality` on Linux and Windows for Python 3.12 to 3.15, `package`, `docker`, `compose` and `web`
+  are green.
+- **Clean install.** A wheel in an empty environment, with and without the `web` extra, holds `httpx2`, `httpcore2`,
+  `h2` and `certifi`, and neither `httpx` nor `httpcore`. It resolves `httpx2` 2.16.2, on which the suite also passes,
+  while the lock stays on 2.16.0 under the seven-day cooldown.
+- **Image.** From inside it, the engine's context holds exactly the `certifi` bundle (118 CAs). A scan of the `target`
+  service over a Docker network reports the same 45 findings by check id and severity.
