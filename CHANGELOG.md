@@ -16,6 +16,8 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 - A session cookie or a `--cookie` value outside ASCII no longer stops the scan or ends its later
   passes early. The scanner now sends the value back byte for byte, and the report shows and
   redacts it as text.
+- The report also hides a credential or session value that a page echoes percent-encoded in
+  Latin-1.
 
 ## [1.4.6] - 2026-11-22
 
