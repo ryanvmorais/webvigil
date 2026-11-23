@@ -17,6 +17,10 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
   fails and no finding reaches the threshold, a build no longer passes on a scan that could not
   look. A finding at the threshold still exits with `3`, and without `--fail-on` the exit code
   stays `0`. An OSV.dev outage does not count, because the offline database still answers.
+- The locked dependencies move to their latest releases older than seven days. The container
+  image gets `httpx2` and `httpcore2` 2.16.2, and the Web API of the Docker Compose stack also
+  gets `python-multipart` 0.0.34. Only the lockfile changed: an install from PyPI resolves the
+  same ranges as before.
 
 ### Fixed
 
