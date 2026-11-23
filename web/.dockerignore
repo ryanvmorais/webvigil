@@ -21,3 +21,7 @@ test-results
 **/*.test.ts
 **/*.test.tsx
 README.md
+
+# --- 5. LOCAL ENVIRONMENT FILES ---
+# They can hold secrets, and `next build` reads them. The image takes its settings from build args.
+**/.env*
