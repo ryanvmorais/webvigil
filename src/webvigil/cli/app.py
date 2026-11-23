@@ -92,7 +92,12 @@ def scan(
     config: Annotated[Path | None, typer.Option("--config", help="Path to webvigil.toml.")] = None,
     fail_on: Annotated[
         str | None,
-        typer.Option(help=f"Exit non-zero on findings >= this severity ({', '.join(_FAIL_ON)})."),
+        typer.Option(
+            help=(
+                f"Exit non-zero on findings >= this severity ({', '.join(_FAIL_ON)}) "
+                "or on an incomplete scan."
+            )
+        ),
     ] = None,
     verify_tls: Annotated[
         bool, typer.Option("--verify-tls/--insecure", help="Verify the target's TLS certificate.")
@@ -342,6 +347,11 @@ def scan(
         confirm_csrf=cfg.injection.csrf_confirm and cfg.scan.mode is ScanMode.ACTIVE,
         post_crawl=cfg.scan.submit_post_forms and cfg.scan.mode is ScanMode.ACTIVE,
     )
+    if result.incomplete:  # said here too: with --output the summary is not printed
+        _render.status(
+            "warning: the scan is incomplete because a pass or a check failed: "
+            "the report's warnings and errors say which"
+        )
     raise typer.Exit(int(evaluate(result, cfg.report.fail_on)))
 
 

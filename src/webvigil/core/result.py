@@ -14,7 +14,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, StrictInt, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, model_validator
 
 from webvigil.core.bounded import Name, Text, Url
 from webvigil.core.findings import Finding, ScanMode, Severity
@@ -118,6 +118,9 @@ class ScanResult(BaseModel):
         errors (tuple[CheckError, ...]): Checks that raised. Defaults to empty.
         warnings (tuple[str, ...]): Non-fatal notices raised during the scan.
             Defaults to empty.
+        pass_failed (bool): Whether a scan pass raised and its results are missing. It lives
+            only in memory, for the exit code: the warnings name the pass in the report, and
+            the JSON shape does not change. Defaults to ``False``.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -128,6 +131,16 @@ class ScanResult(BaseModel):
     technologies: tuple[Technology, ...] = ()
     errors: tuple[CheckError, ...] = ()
     warnings: tuple[Text, ...] = ()
+    pass_failed: bool = Field(default=False, exclude=True)
+
+    @property
+    def incomplete(self) -> bool:
+        """
+        Returns:
+            bool: ``True`` when a pass or a check failed, so a clean result proves nothing
+                about what they would have tested.
+        """
+        return self.pass_failed or bool(self.errors)
 
     @model_validator(mode="before")
     @classmethod

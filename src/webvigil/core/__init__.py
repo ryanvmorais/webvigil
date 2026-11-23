@@ -21,6 +21,7 @@ from webvigil.core.errors import (
     OutOfScopeError,
     RequestFailed,
     ScanDeadlineExceeded,
+    TargetUnreachableError,
     WebVigilError,
 )
 from webvigil.core.findings import (
@@ -67,6 +68,7 @@ __all__ = [
     "Scope",
     "Severity",
     "Target",
+    "TargetUnreachableError",
     "Technology",
     "WebVigilError",
     "compute_fingerprint",

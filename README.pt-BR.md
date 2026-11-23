@@ -252,8 +252,8 @@ uv run webvigil scan "$TARGET_URL" --format sarif --output results.sarif --fail-
 ```
 
 Códigos de saída: `0` limpo · `3` achados no nível de `--fail-on` ou acima · `4` erro
-operacional (alvo inválido, host inalcançável, configuração) · `5` Modo Ativo sem
-`--authorized-by`.
+operacional (alvo inválido, host inalcançável, configuração ou scan com `--fail-on` que ficou
+incompleto porque um passo ou check falhou) · `5` Modo Ativo sem `--authorized-by`.
 
 Para escanear, a partir da imagem, um alvo na sua própria máquina, acrescente `--network host`
 (Linux) ou use `host.docker.internal` como nome do host (Docker Desktop).

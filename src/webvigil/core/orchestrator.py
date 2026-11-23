@@ -39,7 +39,7 @@ from webvigil.checks.session.scanner import SessionHit, SessionScanner, kinds_fo
 from webvigil.checks.upload.scanner import UploadHit, UploadScanner
 from webvigil.core.config import LoginSection, ScanConfig
 from webvigil.core.context import Detection, Observations, Page, ScanContext
-from webvigil.core.errors import ActiveModeNotAuthorized
+from webvigil.core.errors import ActiveModeNotAuthorized, TargetUnreachableError
 from webvigil.core.findings import Category, Finding, ScanMode
 from webvigil.core.result import CheckError, ScanMetadata, ScanResult
 from webvigil.core.target import Target
@@ -66,6 +66,12 @@ _CSRF_CHECK_ID = "csrf.form.token-not-enforced"
 # scanned site lists limits itself per page; this bounds the report and the stored scan when a
 # check does not, or when many pages each reach their own limit.
 FINDINGS_PER_CHECK_CAP = 5_000
+
+
+class _PassFailure(str):
+    """A scan warning saying a pass raised, so what it would have found is missing."""
+
+    __slots__ = ()
 
 
 class Orchestrator:
@@ -118,6 +124,7 @@ class Orchestrator:
             InvalidTargetError: If ``raw_target`` cannot be parsed.
             ActiveModeNotAuthorized: If Active Mode is requested without an
                 ``authorized_by`` attestation.
+            TargetUnreachableError: If no page of the target answered.
             OpenApiError: If ``[scan] openapi`` is set but cannot be loaded
                 (spec 013).
             HarError: If ``[scan] har`` is set but cannot be loaded (spec 021).
@@ -164,6 +171,10 @@ class Orchestrator:
                 post_operations=[op for op in operations if op.method == "POST"],
             )
             pages = tuple(await crawler.discover())
+            # A page that never answered has no headers: judging it would report them as missing.
+            entry = next((page for page in pages if page.ok), None)
+            if entry is None:
+                raise TargetUnreachableError(f"the target did not answer: {pages[0].error}")
             if crawler.post_summary is not None and (line := crawler.post_summary.warning()):
                 warnings.append(line)
             if line := script_app_warning(pages, har=bool(self._config.scan.har)):
@@ -207,7 +218,7 @@ class Orchestrator:
                 target=target,
                 http=http,
                 pages=pages,
-                entry=pages[0],
+                entry=entry,
                 forms=forms,
                 observations=Observations(
                     detections=detections,
@@ -260,6 +271,7 @@ class Orchestrator:
             technologies=technologies,
             errors=tuple(errors),
             warnings=tuple(warnings),
+            pass_failed=any(isinstance(warning, _PassFailure) for warning in warnings),
         )
         # spec 019, RF-11: a target may have reflected the password, a configured cookie or
         # header, or a session id into a page. The static credentials are scrubbed with or
@@ -408,7 +420,9 @@ class Orchestrator:
         try:
             result = await fingerprinter.scan(pages)
         except Exception as exc:  # a pass bug must not abort the whole scan
-            warnings.append(f"dependency fingerprint pass failed: {exc or type(exc).__name__}")
+            warnings.append(
+                _PassFailure(f"dependency fingerprint pass failed: {exc or type(exc).__name__}")
+            )
             return ()
         warnings.extend(result.warnings)
         return tuple(result.detections)
@@ -497,7 +511,9 @@ class Orchestrator:
         try:
             report = await probe.run()
         except Exception as exc:  # a pass bug must not abort the whole scan
-            warnings.append(f"disclosure probe pass failed: {exc or type(exc).__name__}")
+            warnings.append(
+                _PassFailure(f"disclosure probe pass failed: {exc or type(exc).__name__}")
+            )
             return ()
         warnings.extend(report.warnings)
         return tuple(report.hits)
@@ -537,7 +553,9 @@ class Orchestrator:
             scanner = EnvelopeScanner(http, target, self._config, pages, forms)
             hits = await scanner.run()
         except Exception as exc:  # a pass bug must not abort the whole scan
-            warnings.append(f"request-envelope pass failed: {exc or type(exc).__name__}")
+            warnings.append(
+                _PassFailure(f"request-envelope pass failed: {exc or type(exc).__name__}")
+            )
             return ()
         warnings.extend(scanner.warnings)
         return tuple(hits)
@@ -579,7 +597,7 @@ class Orchestrator:
             scanner = UploadScanner(http, target, self._config, pages, forms)
             hits = await scanner.run()
         except Exception as exc:  # a pass bug must not abort the whole scan
-            warnings.append(f"file-upload pass failed: {exc or type(exc).__name__}")
+            warnings.append(_PassFailure(f"file-upload pass failed: {exc or type(exc).__name__}"))
             return ()
         warnings.extend(scanner.warnings)
         return tuple(hits)
@@ -633,7 +651,7 @@ class Orchestrator:
             )
             hits = await scanner.run()
         except Exception as exc:  # a pass bug must not abort the whole scan
-            warnings.append(f"session checks failed: {exc or type(exc).__name__}")
+            warnings.append(_PassFailure(f"session checks failed: {exc or type(exc).__name__}"))
             return ()
         warnings.extend(scanner.warnings)
         return tuple(hits)
@@ -675,7 +693,9 @@ class Orchestrator:
             scanner = CsrfScanner(http, target, self._config, pages, forms)
             hits = await scanner.run()
         except Exception as exc:  # a pass bug must not abort the whole scan
-            warnings.append(f"CSRF confirmation pass failed: {exc or type(exc).__name__}")
+            warnings.append(
+                _PassFailure(f"CSRF confirmation pass failed: {exc or type(exc).__name__}")
+            )
             return ()
         warnings.extend(scanner.warnings)
         return tuple(hits)
@@ -729,7 +749,9 @@ class Orchestrator:
                 operations=operations,
             ).run()
         except Exception as exc:  # a detector bug must not abort the whole scan
-            warnings.append(f"active injection pass failed: {exc or type(exc).__name__}")
+            warnings.append(
+                _PassFailure(f"active injection pass failed: {exc or type(exc).__name__}")
+            )
             return ()
         warnings.extend(report.warnings)
         return tuple(report.hits)
@@ -775,7 +797,7 @@ class Orchestrator:
                 http, target, self._config, pages, forms, crawler=crawler
             ).run()
         except Exception as exc:  # a detector bug must not abort the whole scan
-            warnings.append(f"stored-XSS pass failed: {exc or type(exc).__name__}")
+            warnings.append(_PassFailure(f"stored-XSS pass failed: {exc or type(exc).__name__}"))
             return ()
         warnings.extend(report.warnings)
         return tuple(report.hits)

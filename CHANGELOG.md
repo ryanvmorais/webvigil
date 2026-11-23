@@ -11,6 +11,22 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 ## [Unreleased]
 
+### Changed
+
+- **With `--fail-on`, a scan left incomplete now exits with `4`.** When a scan pass or a check
+  fails and no finding reaches the threshold, a build no longer passes on a scan that could not
+  look. A finding at the threshold still exits with `3`, and without `--fail-on` the exit code
+  stays `0`. An OSV.dev outage does not count, because the offline database still answers.
+
+### Fixed
+
+- **A target that never answers now exits with `4`, as documented.** A closed port or a name that
+  does not resolve used to finish as a scan with exit `0` and header findings about a response
+  that never came. The scan now stops with an error and writes no report, and the Web UI shows it
+  as failed. If the entry page fails but another page answers, the header checks read that page.
+- **The terminal now says when a scan is incomplete**, also with `--format` and `--output`, where
+  no summary is printed.
+
 ## [1.5.0] - 2026-11-23
 
 A minor release that moves the engine's HTTP client to `httpx2`. It is backward compatible with
