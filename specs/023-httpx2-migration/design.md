@@ -238,3 +238,10 @@ TLS module. The mock's contract tests go past it, because they replace the guara
 
 1. **RF-07, test strategy.** The strategy counts the existing tests as the guard of RF-04 to RF-08, but no existing
    test exchanges HTTP/2. Stage 1 adds one real exchange on loopback, so RF-07 has a permanent guard.
+2. **`pin_proxy_trust`, known mounts.** The design treats any mount other than an HTTP proxy as an unknown layout.
+   Two more are valid and are skipped: a `NO_PROXY` entry, which has no transport, and a SOCKS proxy, which works
+   today when `socksio` is installed and has no TLS connection to the proxy. Raising on them would break those
+   setups.
+3. **`client_ssl_context`, unreadable paths.** The design says a path that cannot be read raises at client creation.
+   That holds for `SSL_CERT_FILE`. A missing `SSL_CERT_DIR` raises nothing, in `httpx` 0.28 as well, because OpenSSL
+   only reads the directory during verification, so the handshake is refused instead. The behaviour is unchanged.
