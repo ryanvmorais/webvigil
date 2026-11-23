@@ -39,6 +39,7 @@ from webvigil.checks.deps.advisories import (
 from webvigil.core.context import Detection
 from webvigil.core.findings import Severity
 from webvigil.core.urls import is_http_url
+from webvigil.http.tls import client_ssl_context, pin_proxy_trust
 
 _ECOSYSTEM = "npm"
 _QUERYBATCH_CAP = 1000
@@ -445,10 +446,14 @@ class OsvProvider:
             "base_url": self._base_url,
             "timeout": self._timeout_s,
             "headers": {"user-agent": self._user_agent},
+            # always verifies: ``verify_tls`` is about the scan's target, not about OSV.dev
+            "verify": client_ssl_context(),
         }
         if self._transport is not None:
             kwargs["transport"] = self._transport
-        return httpx.AsyncClient(**kwargs)
+        client = httpx.AsyncClient(**kwargs)
+        pin_proxy_trust(client)
+        return client
 
     async def _querybatch(
         self, client: httpx.AsyncClient, queries: list[dict[str, Any]]

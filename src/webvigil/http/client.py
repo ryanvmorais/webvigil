@@ -34,6 +34,7 @@ from webvigil.http.decoding import ACCEPT_ENCODING, BodyDecoder
 from webvigil.http.policy import RateLimiter
 from webvigil.http.scope_guard import ScopeGuard
 from webvigil.http.session import Session, cookie_bytes, jar_text
+from webvigil.http.tls import client_ssl_context, pin_proxy_trust
 
 _MAX_ATTEMPTS = 3
 _MAX_REDIRECT_HOPS = 10
@@ -350,7 +351,7 @@ class HttpClient:
         self._client = httpx.AsyncClient(
             http2=True,
             follow_redirects=False,
-            verify=self._config.http.verify_tls,
+            verify=client_ssl_context(verify=self._config.http.verify_tls),
             timeout=self._config.http.timeout_s,
             # only the codings BodyDecoder decodes within the body limit
             headers={
@@ -364,6 +365,7 @@ class HttpClient:
             self._deadline = asyncio.get_running_loop().time() + self._max_duration
         if self._transport is None:
             install(self._client._transport, self.addresses)
+            pin_proxy_trust(self._client)
         return self
 
     def _remaining(self) -> float | None:
