@@ -268,3 +268,6 @@ TLS module. The mock's contract tests go past it, because they replace the guara
   while the lock stays on 2.16.0 under the seven-day cooldown.
 - **Image.** From inside it, the engine's context holds exactly the `certifi` bundle (118 CAs). A scan of the `target`
   service over a Docker network reports the same 45 findings by check id and severity.
+- **ALPN order.** `httpcore2` offers `h2` before `http/1.1`, and `httpcore` offered them the other way around. A server
+  that picks by its own preference negotiates what it did before, and one that follows the client's order now answers
+  over HTTP/2. The transport writes this order onto the context, so the engine does not control it.
