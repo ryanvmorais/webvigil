@@ -7,7 +7,7 @@ Pure over synthetic pages built with :func:`make_page` (and one hand-built
 
 from __future__ import annotations
 
-import httpx
+import httpx2
 
 from tests.support import make_context, make_page
 from webvigil.checks.disclosure.leakage import PrivateIpInBodyCheck, SessionIdInUrlCheck
@@ -56,7 +56,7 @@ async def test_access_token_in_a_form_action_and_a_redirect_location() -> None:
         requested_url="https://app.example/login",
         url="https://app.example/login",
         status_code=302,
-        headers=httpx.Headers({"content-type": "text/html"}),
+        headers=httpx2.Headers({"content-type": "text/html"}),
         text="",
         elapsed_ms=1.0,
         final_location="https://other.example/next?sid=zzz",

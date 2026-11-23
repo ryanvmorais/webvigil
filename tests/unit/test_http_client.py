@@ -9,7 +9,7 @@ the assertions read.
 
 from __future__ import annotations
 
-import httpx
+import httpx2
 import pytest
 
 from webvigil.core.config import ScanConfig
@@ -63,7 +63,7 @@ async def test_retries_then_succeeds(httpx_mock: object) -> None:
 
 async def test_retries_exhausted_raises_request_failed(httpx_mock: object) -> None:
     """A connect error on every attempt exhausts the two retries and raises ``RequestFailed``."""
-    httpx_mock.add_exception(httpx.ConnectError("boom"), is_reusable=True)  # type: ignore[attr-defined]
+    httpx_mock.add_exception(httpx2.ConnectError("boom"), is_reusable=True)  # type: ignore[attr-defined]
     async with _http() as http:
         with pytest.raises(RequestFailed):
             await http.get("https://example.com/")
@@ -95,7 +95,7 @@ def test_unreachable_warning_needs_both_enough_failures_and_a_large_share() -> N
 async def test_a_target_that_went_down_ends_in_the_warning(httpx_mock: object) -> None:
     """Real client, dead target: every request fails for good and the counters add the warning."""
     httpx_mock.add_exception(  # type: ignore[attr-defined]
-        httpx.ConnectError("refused"), is_reusable=True
+        httpx2.ConnectError("refused"), is_reusable=True
     )
     async with _http() as http:
         for number in range(25):
@@ -188,7 +188,7 @@ async def test_post_is_not_retried_on_a_5xx(httpx_mock: object) -> None:
 
 async def test_post_is_not_retried_on_a_read_timeout(httpx_mock: object) -> None:
     """A read timeout on a POST may mean the request landed, so it is not retried."""
-    httpx_mock.add_exception(httpx.ReadTimeout("slow"))  # type: ignore[attr-defined]
+    httpx_mock.add_exception(httpx2.ReadTimeout("slow"))  # type: ignore[attr-defined]
     async with _http() as http:
         with pytest.raises(RequestFailed):
             await http.request("POST", "https://example.com/f", data={"x": "1"})
@@ -197,7 +197,7 @@ async def test_post_is_not_retried_on_a_read_timeout(httpx_mock: object) -> None
 
 async def test_post_is_retried_on_a_pre_send_connect_error(httpx_mock: object) -> None:
     """A pre-send connect error cannot have reached the server, so a POST is retried."""
-    httpx_mock.add_exception(httpx.ConnectError("refused"), is_reusable=True)  # type: ignore[attr-defined]
+    httpx_mock.add_exception(httpx2.ConnectError("refused"), is_reusable=True)  # type: ignore[attr-defined]
     async with _http() as http:
         with pytest.raises(RequestFailed):
             await http.request("POST", "https://example.com/f", data={"x": "1"})
@@ -407,8 +407,8 @@ async def test_a_body_that_does_not_decode_fails_the_request_once(httpx_mock: ob
     assert http.stats.retries == 0
 
 
-async def test_a_url_httpx_refuses_to_build_fails_the_request(httpx_mock: object) -> None:
-    """A URL over httpx's 64 KiB limit is a failed request and is never sent."""
+async def test_a_url_httpx2_refuses_to_build_fails_the_request(httpx_mock: object) -> None:
+    """A URL over httpx2's 64 KiB limit is a failed request and is never sent."""
     async with _http() as http:
         with pytest.raises(RequestFailed, match="InvalidURL"):
             await http.get("https://example.com/?q=" + "a" * 70_000)
@@ -429,10 +429,10 @@ async def test_a_malformed_url_is_refused_before_anything_is_sent(
     assert httpx_mock.get_requests() == []  # type: ignore[attr-defined]
 
 
-async def test_a_location_httpx_cannot_parse_leaves_scope_as_a_browser_reads_it(
+async def test_a_location_httpx2_cannot_parse_leaves_scope_as_a_browser_reads_it(
     httpx_mock: object,
 ) -> None:
-    r"""``https:\\evil.test/`` (httpx refuses it) is a redirect to ``evil.test``, not a failure."""
+    r"""``https:\\evil.test/`` (httpx2 refuses it) is a redirect to ``evil.test``, not a failure."""
     location = "https:\\\\evil.test/"
     httpx_mock.add_response(  # type: ignore[attr-defined]
         url="https://example.com/", status_code=302, headers={"location": location}
@@ -445,7 +445,7 @@ async def test_a_location_httpx_cannot_parse_leaves_scope_as_a_browser_reads_it(
     assert response.headers["location"] == location  # what the server sent, for the checks
 
 
-async def test_a_location_httpx_cannot_parse_is_followed_when_it_stays_in_scope(
+async def test_a_location_httpx2_cannot_parse_is_followed_when_it_stays_in_scope(
     httpx_mock: object,
 ) -> None:
     r"""``https:\\example.com/b`` is the target's own ``/b``: the hop is followed."""
@@ -464,7 +464,7 @@ async def test_a_location_httpx_cannot_parse_is_followed_when_it_stays_in_scope(
 async def test_a_redirect_to_another_scheme_is_out_of_scope_not_a_failure(
     httpx_mock: object,
 ) -> None:
-    """``Location: mailto:x`` (httpx cannot build a request from it) leaves scope, nothing more."""
+    """``Location: mailto:x`` (httpx2 cannot build a request from it) leaves scope, nothing more."""
     httpx_mock.add_response(  # type: ignore[attr-defined]
         url="https://example.com/", status_code=302, headers={"location": "mailto:x"}
     )
@@ -495,7 +495,7 @@ async def test_a_location_that_is_not_a_url_fails_the_request(
     """
     A redirect to a malformed ``Location`` is a failed request, not an exception.
 
-    ``httpx`` never parses a redirect's ``Location`` (the client takes it away first); the
+    ``httpx2`` never parses a redirect's ``Location`` (the client takes it away first); the
     client's own ``resolve_url`` refuses the unclosed bracket and the port out of range.
     """
     httpx_mock.add_response(  # type: ignore[attr-defined]

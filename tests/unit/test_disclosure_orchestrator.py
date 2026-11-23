@@ -8,7 +8,7 @@ monkeypatched to a boom stub for the cases where the pass must not run, and
 
 from __future__ import annotations
 
-import httpx
+import httpx2
 import pytest
 
 from webvigil.checks.disclosure.checks import DotenvExposedCheck, VcsExposedCheck
@@ -40,7 +40,7 @@ class _StubCrawler:
                 requested_url=_TARGET,
                 url=_TARGET,
                 status_code=200,
-                headers=httpx.Headers({"content-type": "text/html"}),
+                headers=httpx2.Headers({"content-type": "text/html"}),
                 text="<html><body>ok</body></html>",
                 elapsed_ms=1.0,
             )
@@ -56,11 +56,11 @@ def _stub_crawler(monkeypatch: pytest.MonkeyPatch) -> None:
 pytestmark = pytest.mark.httpx_mock(assert_all_responses_were_requested=False)
 
 
-def _router(request: httpx.Request) -> httpx.Response:
+def _router(request: httpx2.Request) -> httpx2.Response:
     """Serve a valid ``.git/config`` at that one URL; everything else is a 404."""
     if str(request.url) == "https://example.com/.git/config":
-        return httpx.Response(200, text=_GIT_CONFIG, headers={"content-type": "text/plain"})
-    return httpx.Response(404, text="nope", headers={"content-type": "text/html"})
+        return httpx2.Response(200, text=_GIT_CONFIG, headers={"content-type": "text/plain"})
+    return httpx2.Response(404, text="nope", headers={"content-type": "text/html"})
 
 
 def _boom(*_a: object, **_k: object) -> object:

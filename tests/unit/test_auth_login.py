@@ -16,7 +16,7 @@ import contextlib
 from collections.abc import AsyncIterator, Callable
 from urllib.parse import parse_qsl
 
-import httpx
+import httpx2
 import pytest
 
 from tests.support import HandlerTransport
@@ -48,15 +48,15 @@ def _no_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(client_mod, "BACKOFF_JITTER_S", 0.0)
 
 
-def _html(*parts: str) -> httpx.Response:
+def _html(*parts: str) -> httpx2.Response:
     """
     Args:
         *parts (str): HTML fragments for the body.
 
     Returns:
-        httpx.Response: A 200 HTML page.
+        httpx2.Response: A 200 HTML page.
     """
-    return httpx.Response(
+    return httpx2.Response(
         200,
         headers={"content-type": "text/html"},
         text="<html><body>" + "".join(parts) + "</body></html>",
@@ -71,8 +71,8 @@ class _Site:
         *,
         login_page: str = _FORM,
         pre_cookie: bool = True,
-        post: Callable[[httpx.Request, dict[str, str]], httpx.Response] | None = None,
-        pages: dict[str, Callable[[httpx.Request], httpx.Response]] | None = None,
+        post: Callable[[httpx2.Request, dict[str, str]], httpx2.Response] | None = None,
+        pages: dict[str, Callable[[httpx2.Request], httpx2.Response]] | None = None,
     ) -> None:
         """
         Args:
@@ -86,40 +86,40 @@ class _Site:
         self.pre_cookie = pre_cookie
         self.post = post or self._default_post
         self.pages = pages or {}
-        self.requests: list[httpx.Request] = []
+        self.requests: list[httpx2.Request] = []
 
     @property
-    def posts(self) -> list[httpx.Request]:
+    def posts(self) -> list[httpx2.Request]:
         """
         Returns:
-            list[httpx.Request]: Every ``POST`` the site received.
+            list[httpx2.Request]: Every ``POST`` the site received.
         """
         return [r for r in self.requests if r.method == "POST"]
 
     @staticmethod
-    def _default_post(request: httpx.Request, body: dict[str, str]) -> httpx.Response:
+    def _default_post(request: httpx2.Request, body: dict[str, str]) -> httpx2.Response:
         """
         Args:
-            request (httpx.Request): The login ``POST``.
+            request (httpx2.Request): The login ``POST``.
             body (dict[str, str]): Its parsed form body.
 
         Returns:
-            httpx.Response: A redirect to ``/home`` with a session cookie for the right
+            httpx2.Response: A redirect to ``/home`` with a session cookie for the right
                 password, the login page again otherwise.
         """
         if body.get("pass") == _PASSWORD and body.get("csrf") == "tkn1":
-            return httpx.Response(
+            return httpx2.Response(
                 302, headers={"location": "/home", "set-cookie": "sid=sess-9f3a; Path=/"}
             )
         return _html(_FORM, "<p>Invalid credentials</p>")
 
-    def handle(self, request: httpx.Request) -> httpx.Response:
+    def handle(self, request: httpx2.Request) -> httpx2.Response:
         """
         Args:
-            request (httpx.Request): The request the client sent.
+            request (httpx2.Request): The request the client sent.
 
         Returns:
-            httpx.Response: The site's answer.
+            httpx2.Response: The site's answer.
         """
         self.requests.append(request)
         path = request.url.path
@@ -135,7 +135,7 @@ class _Site:
             return self.pages[path](request)
         if path == "/home":
             return _html("<p>Welcome</p>")
-        return httpx.Response(404, text="nope")
+        return httpx2.Response(404, text="nope")
 
 
 @contextlib.asynccontextmanager
@@ -242,7 +242,7 @@ async def test_a_form_that_cannot_be_picked_fails_with_what_was_found(
 async def test_form_index_picks_among_several_login_forms() -> None:
     """``form_index`` selects the second form, which posts to its own action."""
     site = _Site(login_page=_FORM + _OTHER_FORM)
-    site.pages["/other"] = lambda r: httpx.Response(
+    site.pages["/other"] = lambda r: httpx2.Response(
         302, headers={"location": "/home", "set-cookie": "sid=sess-9f3a; Path=/"}
     )
     async with _open(site, form_index=1) as auth:
@@ -287,7 +287,7 @@ async def test_a_multipart_login_form_is_sent_as_multipart_text_parts() -> None:
     page = _FORM.replace('method="post"', 'method="post" enctype="multipart/form-data"')
     site = _Site(
         login_page=page,
-        post=lambda r, b: httpx.Response(
+        post=lambda r, b: httpx2.Response(
             302, headers={"location": "/home", "set-cookie": "sid=sess-9f3a; Path=/"}
         ),
     )
@@ -331,7 +331,7 @@ async def test_the_password_is_never_sent_in_clear_to_an_https_target() -> None:
 async def test_a_login_that_redirects_to_another_host_is_delegated_and_refused() -> None:
     """An SSO hop stops the handshake; the credentials only went to the in-scope action."""
     site = _Site(
-        post=lambda r, b: httpx.Response(
+        post=lambda r, b: httpx2.Response(
             302, headers={"location": "https://idp.example/authorize?s=1"}
         )
     )
@@ -360,7 +360,7 @@ async def test_a_wrong_password_fails_after_exactly_one_attempt() -> None:
 
 async def test_a_server_error_on_the_login_is_a_failed_login_and_is_not_retried() -> None:
     """A ``500`` on the ``POST`` fails the login; the single-attempt rule holds."""
-    site = _Site(post=lambda r, b: httpx.Response(500, text="boom"))
+    site = _Site(post=lambda r, b: httpx2.Response(500, text="boom"))
     async with _open(site) as auth:
         with pytest.raises(LoginFailedError, match="500"):
             await auth.login()
@@ -390,14 +390,14 @@ _HOME_OUT = {"/home": lambda r: _html("<p>Please sign in</p>")}
         ),
         (
             {"check_url": "http://demo.test/account"},
-            {**_HOME_OK, "/account": lambda r: httpx.Response(401)},
+            {**_HOME_OK, "/account": lambda r: httpx2.Response(401)},
             "still looks logged out",
         ),
     ],
 )
 async def test_the_verification_order_markers_then_check_url(
     login: dict[str, object],
-    pages: dict[str, Callable[[httpx.Request], httpx.Response]],
+    pages: dict[str, Callable[[httpx2.Request], httpx2.Response]],
     outcome: str,
 ) -> None:
     """A marker decides first, then ``check_url``; each says what it saw when it fails."""
@@ -429,7 +429,7 @@ async def test_the_markers_read_only_the_head_of_the_body() -> None:
 
 async def test_without_a_marker_or_a_new_cookie_the_login_is_unconfirmed_not_failed() -> None:
     """No password form and no new cookie: nothing can tell, so it continues unconfirmed."""
-    site = _Site(post=lambda r, b: httpx.Response(302, headers={"location": "/home"}))
+    site = _Site(post=lambda r, b: httpx2.Response(302, headers={"location": "/home"}))
     async with _open(site) as auth:
         result = await auth.login()
     assert not result.confirmed
@@ -439,7 +439,7 @@ async def test_without_a_marker_or_a_new_cookie_the_login_is_unconfirmed_not_fai
 async def test_a_rotated_cookie_value_counts_as_a_new_cookie() -> None:
     """A session id the target replaced at login (same name, new value) confirms the login."""
     site = _Site(
-        post=lambda r, b: httpx.Response(
+        post=lambda r, b: httpx2.Response(
             302, headers={"location": "/home", "set-cookie": "pre=rotated-1; Path=/"}
         )
     )
@@ -465,7 +465,7 @@ async def test_relogin_reports_a_failure_as_false_and_remembers_why() -> None:
 async def test_confirm_dropped_reads_the_check_url_with_the_live_session() -> None:
     """The confirmation says "logged out" for a 401 and "fine" for a 200."""
     state = {"status": 200}
-    site = _Site(pages={"/account": lambda r: httpx.Response(state["status"], text="x")})
+    site = _Site(pages={"/account": lambda r: httpx2.Response(state["status"], text="x")})
     async with _open(site, check_url="http://demo.test/account") as auth:
         await auth.login()
         assert await auth.confirm_dropped() is False
@@ -495,7 +495,7 @@ async def test_confirm_dropped_falls_back_to_the_page_the_login_landed_on() -> N
     state = {"status": 200}
     site = _Site(
         pages={
-            "/home": lambda r: httpx.Response(
+            "/home": lambda r: httpx2.Response(
                 state["status"], headers={"content-type": "text/html"}, text="<p>Welcome</p>"
             )
         }

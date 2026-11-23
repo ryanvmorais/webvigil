@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-import httpx
+import httpx2
 
 from webvigil.checks.injection import payloads
 from webvigil.checks.injection.detect import DetectCtx, normalize_body, ssrf
@@ -43,7 +43,7 @@ def _resp(text: str, *, status: int = 200) -> Response:
         url="https://example.com/fetch",
         requested_url="https://example.com/fetch",
         status_code=status,
-        headers=httpx.Headers({"content-type": "text/plain"}),
+        headers=httpx2.Headers({"content-type": "text/plain"}),
         text=text,
         content=text.encode(),
         elapsed_ms=1.0,

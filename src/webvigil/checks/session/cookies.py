@@ -14,7 +14,7 @@ import json
 import re
 from http.cookies import SimpleCookie
 
-import httpx
+import httpx2
 
 SESSION_NAME_RE = re.compile(
     r"session|sess(?:id)?|sid|auth|jwt|(?:^|[_-])token|connect\.sid|phpsessid|jsessionid",
@@ -115,12 +115,12 @@ def cookie_attribute(raw: str, name: str) -> str | None:
     return found
 
 
-def session_cookies(headers: httpx.Headers) -> list[tuple[str, str]]:
+def session_cookies(headers: httpx2.Headers) -> list[tuple[str, str]]:
     """
     The session-looking cookies a response sets.
 
     Args:
-        headers (httpx.Headers): A response's headers; every ``Set-Cookie`` line is read.
+        headers (httpx2.Headers): A response's headers; every ``Set-Cookie`` line is read.
 
     Returns:
         list[tuple[str, str]]: ``(name, value)`` per session-looking cookie, in header order;

@@ -16,7 +16,7 @@ import re
 from collections.abc import Callable
 from typing import Any
 
-import httpx
+import httpx2
 import pytest
 
 from webvigil.checks.injection.detect import DetectCtx, el, normalize_body, ssti
@@ -54,7 +54,7 @@ def _resp(text: str, *, status: int = 200) -> Response:
         url="https://example.com/x",
         requested_url="https://example.com/x",
         status_code=status,
-        headers=httpx.Headers({"content-type": "text/html"}),
+        headers=httpx2.Headers({"content-type": "text/html"}),
         text=text,
         content=text.encode(),
         elapsed_ms=1.0,

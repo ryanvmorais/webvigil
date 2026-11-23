@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-import httpx
+import httpx2
 import pytest
 
 from webvigil.checks.injection import payloads
@@ -31,7 +31,7 @@ def _resp(text: str) -> Response:
         url="https://example.com/dir",
         requested_url="https://example.com/dir",
         status_code=200,
-        headers=httpx.Headers({"content-type": "text/plain"}),
+        headers=httpx2.Headers({"content-type": "text/plain"}),
         text=text,
         content=text.encode(),
         elapsed_ms=1.0,

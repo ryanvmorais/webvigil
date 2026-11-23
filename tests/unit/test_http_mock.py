@@ -2,7 +2,7 @@
 The contract of the in-repository HTTP mock (spec 023, RF-10).
 
 The suite trusts this mock in place of a real server, so each rule is pinned here, and each
-failure has a passing twin. Requests go through a real ``httpx.AsyncClient``; nothing leaves the
+failure has a passing twin. Requests go through a real ``httpx2.AsyncClient``; nothing leaves the
 process, because the transport method is replaced for the length of each ``patched()`` block.
 """
 
@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 
-import httpx
+import httpx2
 import pytest
 
 from tests.http_mock import HttpxMock
@@ -19,27 +19,27 @@ _URL = "https://example.com/"
 _OTHER = "https://example.com/other"
 
 
-async def _get(url: str = _URL) -> httpx.Response:
+async def _get(url: str = _URL) -> httpx2.Response:
     """
     Args:
         url (str): The URL to request. Defaults to ``_URL``.
 
     Returns:
-        httpx.Response: The answer, read by a client built the normal way.
+        httpx2.Response: The answer, read by a client built the normal way.
     """
-    async with httpx.AsyncClient() as client:
+    async with httpx2.AsyncClient() as client:
         return await client.get(url)
 
 
-async def _send_to_transport() -> httpx.Response:
+async def _send_to_transport() -> httpx2.Response:
     """
     Skip the client, which would attach the request to an exception on its own.
 
     Returns:
-        httpx.Response: What the patched transport answers for a ``GET`` of ``_URL``.
+        httpx2.Response: What the patched transport answers for a ``GET`` of ``_URL``.
     """
-    async with httpx.AsyncHTTPTransport() as transport:
-        return await transport.handle_async_request(httpx.Request("GET", _URL))
+    async with httpx2.AsyncHTTPTransport() as transport:
+        return await transport.handle_async_request(httpx2.Request("GET", _URL))
 
 
 # ---------------------------------------------------------------------------
@@ -78,7 +78,7 @@ async def test_a_reusable_registration_that_is_not_the_last_does_not_answer_agai
 
     with pytest.raises(AssertionError, match="no registered response"), mock.patched():
         assert [(await _get()).text, (await _get()).text] == ["reusable", "single"]
-        with pytest.raises(httpx.TimeoutException):
+        with pytest.raises(httpx2.TimeoutException):
             await _get()
 
 
@@ -113,7 +113,7 @@ async def test_a_different_url_does_not_match(registered: str, requested: str) -
     with (
         pytest.raises(AssertionError, match="no registered response"),
         mock.patched(),
-        pytest.raises(httpx.TimeoutException),
+        pytest.raises(httpx2.TimeoutException),
     ):
         await _get(requested)
 
@@ -147,11 +147,11 @@ async def test_a_response_is_handed_back_unread(httpx_mock: HttpxMock) -> None:
     httpx_mock.add_response(content=b"streamed body")
 
     async with (
-        httpx.AsyncClient() as client,
+        httpx2.AsyncClient() as client,
         client.stream("GET", _URL) as response,
     ):
         assert not response.is_stream_consumed
-        with pytest.raises(httpx.ResponseNotRead):
+        with pytest.raises(httpx2.ResponseNotRead):
             _ = response.content
         chunks = [chunk async for chunk in response.aiter_raw()]
 
@@ -159,15 +159,15 @@ async def test_a_response_is_handed_back_unread(httpx_mock: HttpxMock) -> None:
 
 
 async def test_the_same_response_object_can_be_served_twice(httpx_mock: HttpxMock) -> None:
-    shared = httpx.Response(200, content=b"shared")
+    shared = httpx2.Response(200, content=b"shared")
     httpx_mock.add_callback(lambda _request: shared, is_reusable=True)
 
     assert [(await _get()).content, (await _get()).content] == [b"shared", b"shared"]
 
 
 async def test_a_callback_receives_the_request(httpx_mock: HttpxMock) -> None:
-    def echo(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, text=str(request.url))
+    def echo(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(200, text=str(request.url))
 
     httpx_mock.add_callback(echo)
 
@@ -175,8 +175,8 @@ async def test_a_callback_receives_the_request(httpx_mock: HttpxMock) -> None:
 
 
 async def test_an_async_callback_is_awaited(httpx_mock: HttpxMock) -> None:
-    async def answer(_request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, text="awaited")
+    async def answer(_request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(200, text="awaited")
 
     httpx_mock.add_callback(answer)
 
@@ -185,7 +185,7 @@ async def test_an_async_callback_is_awaited(httpx_mock: HttpxMock) -> None:
 
 @pytest.mark.parametrize("is_async", [False, True])
 async def test_a_callback_returning_none_counts_as_no_match(is_async: bool) -> None:
-    async def later(_request: httpx.Request) -> None:
+    async def later(_request: httpx2.Request) -> None:
         return None
 
     mock = HttpxMock()
@@ -194,23 +194,23 @@ async def test_a_callback_returning_none_counts_as_no_match(is_async: bool) -> N
     with (
         pytest.raises(AssertionError, match="no registered response"),
         mock.patched(),
-        pytest.raises(httpx.TimeoutException),
+        pytest.raises(httpx2.TimeoutException),
     ):
         await _get()
 
 
 async def test_an_exception_is_raised_with_the_request_attached(httpx_mock: HttpxMock) -> None:
-    error = httpx.ConnectError("refused")
+    error = httpx2.ConnectError("refused")
     httpx_mock.add_exception(error)
 
-    with pytest.raises(httpx.ConnectError) as raised:
+    with pytest.raises(httpx2.ConnectError) as raised:
         await _send_to_transport()
 
     assert raised.value is error
     assert raised.value.request.url == _URL
 
 
-async def test_an_exception_outside_httpx_is_raised_as_is(httpx_mock: HttpxMock) -> None:
+async def test_an_exception_outside_httpx2_is_raised_as_is(httpx_mock: HttpxMock) -> None:
     error = ValueError("not a request error")
     httpx_mock.add_exception(error)
 
@@ -232,7 +232,7 @@ async def test_get_requests_lists_them_in_order_with_the_body_read(httpx_mock: H
 
     httpx_mock.add_response(is_reusable=True)
 
-    async with httpx.AsyncClient() as client:
+    async with httpx2.AsyncClient() as client:
         await client.post(_URL, content=streamed_body())
         await client.post(_OTHER, content=b"second")
 
@@ -249,14 +249,14 @@ async def test_reset_forgets_requests_registrations_and_unmatched() -> None:
 
     with mock.patched():
         await _get(_URL)
-        with pytest.raises(httpx.TimeoutException):
+        with pytest.raises(httpx2.TimeoutException):
             await _get("https://example.com/unregistered")
         assert len(mock.get_requests()) == 2
 
         mock.reset()
 
         assert mock.get_requests() == []
-        with pytest.raises(httpx.TimeoutException):
+        with pytest.raises(httpx2.TimeoutException):
             await _get(_OTHER)  # its registration was still unused, and now it is gone
         mock.reset()  # the exit check passes: the unused and unmatched entries were forgotten
 
@@ -273,7 +273,7 @@ async def test_an_unmatched_request_times_out_and_fails_the_test() -> None:
         pytest.raises(AssertionError, match=r"no registered response.*GET https://example"),
         mock.patched(),
     ):
-        with pytest.raises(httpx.TimeoutException) as raised:
+        with pytest.raises(httpx2.TimeoutException) as raised:
             await _send_to_transport()
         assert raised.value.request.url == _URL
         assert len(mock.get_requests()) == 1
@@ -309,7 +309,7 @@ async def test_an_unmatched_request_fails_even_when_unused_is_allowed() -> None:
     with (
         pytest.raises(AssertionError, match="no registered response"),
         mock.patched(),
-        pytest.raises(httpx.TimeoutException),
+        pytest.raises(httpx2.TimeoutException),
     ):
         await _get()
 
@@ -327,10 +327,10 @@ def test_the_marker_refuses_an_unknown_option(request: pytest.FixtureRequest) ->
 
 
 async def test_the_transport_is_restored_after_the_block() -> None:
-    original = httpx.AsyncHTTPTransport.handle_async_request
+    original = httpx2.AsyncHTTPTransport.handle_async_request
     mock = HttpxMock()
 
     with mock.patched():
-        assert httpx.AsyncHTTPTransport.handle_async_request is not original
+        assert httpx2.AsyncHTTPTransport.handle_async_request is not original
 
-    assert httpx.AsyncHTTPTransport.handle_async_request is original
+    assert httpx2.AsyncHTTPTransport.handle_async_request is original

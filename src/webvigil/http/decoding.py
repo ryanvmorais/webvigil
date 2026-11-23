@@ -1,14 +1,14 @@
 """
 Bounded content decoding of response bodies.
 
-``httpx`` decodes ``Content-Encoding`` as it streams, but each network chunk is inflated in full
+``httpx2`` decodes ``Content-Encoding`` as it streams, but each network chunk is inflated in full
 before the caller sees it, and a response that lists several codings is inflated through a chain
 of decoders with no bound between them. The scanner reads responses from servers it does not
 control, so it reads the raw bytes and decodes them itself: every stage, the raw bytes included,
 stops at the body limit, and no single step produces more than ``_STEP`` bytes.
 
 Only ``gzip`` and ``deflate`` are decoded, and the client asks for no other (``ACCEPT_ENCODING``).
-A coding the scanner does not know is skipped, as ``httpx`` does when the library for it is not
+A coding the scanner does not know is skipped, as ``httpx2`` does when the library for it is not
 installed, so a scan reads the same bytes whatever else is installed next to it.
 """
 
@@ -17,7 +17,7 @@ from __future__ import annotations
 import zlib
 from collections.abc import Iterator
 
-import httpx
+import httpx2
 
 # What the client advertises: the codings :class:`BodyDecoder` decodes.
 ACCEPT_ENCODING = "gzip, deflate"
@@ -35,8 +35,8 @@ class _Inflater:
     One ``gzip`` or ``deflate`` stage, fed piece by piece, each output step at most ``_STEP``.
 
     ``deflate`` is tried as zlib-wrapped data first and, if its first bytes are not, as raw
-    deflate, the same tolerance ``httpx`` has. Data after the end of the compressed stream is
-    ignored, as ``httpx`` ignores it.
+    deflate, the same tolerance ``httpx2`` has. Data after the end of the compressed stream is
+    ignored, as ``httpx2`` ignores it.
     """
 
     def __init__(self, coding: str) -> None:
@@ -60,7 +60,7 @@ class _Inflater:
             bytes: Output pieces of at most ``_STEP`` bytes.
 
         Raises:
-            httpx.DecodingError: When the data is not valid for the coding.
+            httpx2.DecodingError: When the data is not valid for the coding.
         """
         pending = data
         while pending and not self._inflater.eof:
@@ -81,19 +81,19 @@ class _Inflater:
             bytes: At most ``_STEP`` bytes of output.
 
         Raises:
-            httpx.DecodingError: When the data is not valid for the coding.
+            httpx2.DecodingError: When the data is not valid for the coding.
         """
         try:
             piece = self._inflater.decompress(data, _STEP)
         except zlib.error as exc:
             if not (self._deflate and not self._started):
-                raise httpx.DecodingError(str(exc)) from exc
+                raise httpx2.DecodingError(str(exc)) from exc
             self._deflate = False  # one fallback only: raw deflate
             self._inflater = zlib.decompressobj(-zlib.MAX_WBITS)
             try:
                 piece = self._inflater.decompress(data, _STEP)
             except zlib.error as raw_exc:
-                raise httpx.DecodingError(str(raw_exc)) from raw_exc
+                raise httpx2.DecodingError(str(raw_exc)) from raw_exc
         self._started = True
         return piece
 
@@ -103,12 +103,12 @@ class _Inflater:
             bytes: What the decompressor still holds once the input ended (under one window).
 
         Raises:
-            httpx.DecodingError: When the data is not valid for the coding.
+            httpx2.DecodingError: When the data is not valid for the coding.
         """
         try:
             return self._inflater.flush()
         except zlib.error as exc:
-            raise httpx.DecodingError(str(exc)) from exc
+            raise httpx2.DecodingError(str(exc)) from exc
 
 
 class BodyDecoder:
@@ -123,7 +123,7 @@ class BodyDecoder:
         """
         Args:
             content_encoding (list[str]): The ``Content-Encoding`` values, in the order the
-                server applied them (``httpx.Headers.get_list(..., split_commas=True)``).
+                server applied them (``httpx2.Headers.get_list(..., split_commas=True)``).
             limit (int): The ``[http] max_body_bytes`` value.
         """
         codings = [value.strip().lower() for value in content_encoding]
@@ -155,7 +155,7 @@ class BodyDecoder:
             bool: ``True`` when the body is complete as far as the limit goes: stop reading.
 
         Raises:
-            httpx.DecodingError: When the data is not valid for its coding.
+            httpx2.DecodingError: When the data is not valid for its coding.
         """
         if self.cut:
             return True
@@ -172,7 +172,7 @@ class BodyDecoder:
         Flush every stage once the raw body ended, still within the limit.
 
         Raises:
-            httpx.DecodingError: When the data is not valid for its coding.
+            httpx2.DecodingError: When the data is not valid for its coding.
         """
         for index, stage in enumerate(self._stages):
             if self.cut:

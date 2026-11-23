@@ -3,7 +3,7 @@ The request-body size limit of the Web API (security audit leftovers, 1.0.1).
 
 Real app through ``TestClient``, no mocks. A body is sent two ways because the middleware has two
 paths: with a ``Content-Length`` (refused before any of it is read) and as a stream with none
-(counted as it arrives, which is what ``content=<generator>`` makes httpx do).
+(counted as it arrives, which is what ``content=<generator>`` makes httpx2 do).
 """
 
 from __future__ import annotations

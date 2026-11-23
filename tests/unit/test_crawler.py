@@ -10,7 +10,7 @@ wrapping the crawler in a live :class:`HttpClient`.
 
 from __future__ import annotations
 
-import httpx
+import httpx2
 import pytest
 
 from webvigil.core.config import ScanConfig
@@ -43,11 +43,13 @@ class _Router:
         self.routes = routes
         self.seen: list[str] = []
 
-    def __call__(self, request: httpx.Request) -> httpx.Response:
+    def __call__(self, request: httpx2.Request) -> httpx2.Response:
         url = str(request.url)
         self.seen.append(url)
         status, body, content_type = self.routes.get(url, (404, "", "text/plain"))
-        return httpx.Response(status_code=status, text=body, headers={"content-type": content_type})
+        return httpx2.Response(
+            status_code=status, text=body, headers={"content-type": content_type}
+        )
 
 
 async def _discover(config: ScanConfig, router: _Router, httpx_mock: object) -> list[Page]:
@@ -634,7 +636,7 @@ def test_from_response_passes_the_method_through() -> None:
         url=_SEED,
         requested_url=_SEED,
         status_code=200,
-        headers=httpx.Headers({"content-type": "text/html"}),
+        headers=httpx2.Headers({"content-type": "text/html"}),
         text="<p>ok</p>",
         content=b"<p>ok</p>",
         elapsed_ms=1.0,

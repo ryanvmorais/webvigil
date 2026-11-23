@@ -427,7 +427,7 @@ class Crawler:
                     files.append((name, part))
                 response = await self._http.request("POST", form.action, files=files)
             else:
-                # httpx takes only a mapping for ``data=``; a pre-encoded body keeps the
+                # httpx2 takes only a mapping for ``data=``; a pre-encoded body keeps the
                 # order and any repeated name
                 response = await self._http.request(
                     "POST",

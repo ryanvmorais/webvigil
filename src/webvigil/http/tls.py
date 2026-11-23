@@ -13,8 +13,8 @@ import os
 import ssl
 
 import certifi
-import httpcore
-import httpx
+import httpcore2
+import httpx2
 
 
 def client_ssl_context(*, verify: bool = True) -> ssl.SSLContext:
@@ -43,7 +43,7 @@ def client_ssl_context(*, verify: bool = True) -> ssl.SSLContext:
     return ssl.create_default_context(cafile=certifi.where())
 
 
-def pin_proxy_trust(client: httpx.AsyncClient) -> None:
+def pin_proxy_trust(client: httpx2.AsyncClient) -> None:
     """
     Fix the trust of the TLS connection to each ``https://`` proxy set in the environment.
 
@@ -54,19 +54,21 @@ def pin_proxy_trust(client: httpx.AsyncClient) -> None:
     ``NO_PROXY`` entry has no transport, so those are left alone.
 
     Args:
-        client (httpx.AsyncClient): A client built without a custom transport.
+        client (httpx2.AsyncClient): A client built without a custom transport.
 
     Raises:
-        RuntimeError: When a mount is not the ``httpx``/``httpcore`` layout expected.
+        RuntimeError: When a mount is not the ``httpx2``/``httpcore2`` layout expected.
     """
     for transport in client._mounts.values():
         if transport is None:
             continue
         pool = getattr(transport, "_pool", None)
-        if isinstance(pool, httpcore.AsyncSOCKSProxy):
+        if isinstance(pool, httpcore2.AsyncSOCKSProxy):
             continue
-        if not isinstance(pool, httpcore.AsyncHTTPProxy) or not hasattr(pool, "_proxy_ssl_context"):
-            raise RuntimeError("unexpected httpx proxy layout: cannot set the proxy's TLS trust")
+        if not isinstance(pool, httpcore2.AsyncHTTPProxy) or not hasattr(
+            pool, "_proxy_ssl_context"
+        ):
+            raise RuntimeError("unexpected httpx2 proxy layout: cannot set the proxy's TLS trust")
         if pool._proxy_url.scheme == b"https":
             context = ssl.create_default_context()
             context.load_verify_locations(certifi.where())

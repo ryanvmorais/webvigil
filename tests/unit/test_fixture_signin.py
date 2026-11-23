@@ -1,7 +1,7 @@
 """
 The fixture's stateful login — spec 019 RF-12.
 
-Pure unit of ``tests/fixtures/app.py``: ``/signin`` is driven through ``httpx.ASGITransport`` with
+Pure unit of ``tests/fixtures/app.py``: ``/signin`` is driven through ``httpx2.ASGITransport`` with
 no scan. Only the guarantees the login tests lean on are checked — the form token is enforced,
 the lockout counts wrong passwords (and only the hardened profile refuses), and an issued
 session dies after ``session_ttl`` authenticated requests while a plain ``--cookie`` value stays
@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import re
 
-import httpx
+import httpx2
 import pytest
 from starlette.applications import Starlette
 
@@ -21,21 +21,21 @@ from tests.fixtures.app import SIGNIN_LOCKOUT, SIGNIN_PASSWORD, SIGNIN_USER, mak
 _BASE = "http://demo.test"
 
 
-def _client(app: Starlette) -> httpx.AsyncClient:
+def _client(app: Starlette) -> httpx2.AsyncClient:
     """
     Args:
         app (Starlette): The fixture app.
 
     Returns:
-        httpx.AsyncClient: A client wired to ``app`` in-process; it keeps cookies, like a browser.
+        httpx2.AsyncClient: A client wired to ``app`` in-process; it keeps cookies, like a browser.
     """
-    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=_BASE)
+    return httpx2.AsyncClient(transport=httpx2.ASGITransport(app=app), base_url=_BASE)
 
 
-async def _token(client: httpx.AsyncClient) -> str:
+async def _token(client: httpx2.AsyncClient) -> str:
     """
     Args:
-        client (httpx.AsyncClient): The client; receives the ``pre`` cookie.
+        client (httpx2.AsyncClient): The client; receives the ``pre`` cookie.
 
     Returns:
         str: The form token of a fresh ``GET /signin``.
@@ -44,14 +44,14 @@ async def _token(client: httpx.AsyncClient) -> str:
     return re.search(r'name="csrf" value="([^"]+)"', page.text).group(1)  # type: ignore[union-attr]
 
 
-async def _login(client: httpx.AsyncClient, password: str = SIGNIN_PASSWORD) -> httpx.Response:
+async def _login(client: httpx2.AsyncClient, password: str = SIGNIN_PASSWORD) -> httpx2.Response:
     """
     Args:
-        client (httpx.AsyncClient): The client.
+        client (httpx2.AsyncClient): The client.
         password (str): The password to submit. Defaults to the right one.
 
     Returns:
-        httpx.Response: The answer to ``POST /signin`` (the redirect is not followed).
+        httpx2.Response: The answer to ``POST /signin`` (the redirect is not followed).
     """
     token = await _token(client)
     data = {"csrf": token, "email": SIGNIN_USER, "pass": password, "go": "Sign in"}

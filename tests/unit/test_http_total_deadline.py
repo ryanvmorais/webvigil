@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator
 
-import httpx
+import httpx2
 import pytest
 
 from webvigil.core.config import ScanConfig
@@ -45,7 +45,7 @@ def _client(total: float = _DEADLINE) -> HttpClient:
     return HttpClient(Target.parse("https://example.com"), config)
 
 
-class _Drip(httpx.AsyncByteStream):
+class _Drip(httpx2.AsyncByteStream):
     """A response body of ``count`` single bytes, ``pause`` seconds apart; pulls are counted."""
 
     def __init__(self, count: int, pause: float = 0.05) -> None:
@@ -64,9 +64,9 @@ async def test_a_dripping_body_is_cut_off_by_the_total_deadline(httpx_mock: obje
     """No single read is slow, but the whole body outlasts the deadline: the request fails."""
     streams: list[_Drip] = []
 
-    def respond(request: httpx.Request) -> httpx.Response:
+    def respond(request: httpx2.Request) -> httpx2.Response:
         streams.append(_Drip(count=1000))  # 50 s of dripping, against a 0.2 s deadline
-        return httpx.Response(200, stream=streams[-1])
+        return httpx2.Response(200, stream=streams[-1])
 
     httpx_mock.add_callback(respond, is_reusable=True)  # type: ignore[attr-defined]
     async with _client() as http:
@@ -82,7 +82,7 @@ async def test_a_dripping_body_is_cut_off_by_the_total_deadline(httpx_mock: obje
 async def test_a_post_is_not_retried_after_the_deadline(httpx_mock: object) -> None:
     """A non-idempotent request is never re-sent after a timeout, the deadline included."""
     httpx_mock.add_callback(  # type: ignore[attr-defined]
-        lambda request: httpx.Response(200, stream=_Drip(count=1000))
+        lambda request: httpx2.Response(200, stream=_Drip(count=1000))
     )
     async with _client() as http:
         with pytest.raises(RequestFailed, match="total_timeout_s"):
@@ -93,7 +93,7 @@ async def test_a_post_is_not_retried_after_the_deadline(httpx_mock: object) -> N
 async def test_a_slow_response_inside_the_deadline_is_untouched(httpx_mock: object) -> None:
     """A body that takes a while but finishes in time is read whole, with nothing counted."""
     httpx_mock.add_callback(  # type: ignore[attr-defined]
-        lambda request: httpx.Response(200, stream=_Drip(count=3, pause=0.02))
+        lambda request: httpx2.Response(200, stream=_Drip(count=3, pause=0.02))
     )
     async with _client(total=5.0) as http:
         response = await http.get(_URL)
@@ -104,7 +104,7 @@ async def test_a_slow_response_inside_the_deadline_is_untouched(httpx_mock: obje
 async def test_the_deadline_does_not_count_the_wait_for_a_slot(httpx_mock: object) -> None:
     """A request queued behind another for the one slot gets its own full deadline."""
     httpx_mock.add_callback(  # type: ignore[attr-defined]
-        lambda request: httpx.Response(200, stream=_Drip(count=4, pause=0.1)),
+        lambda request: httpx2.Response(200, stream=_Drip(count=4, pause=0.1)),
         is_reusable=True,
     )
     config = ScanConfig.model_validate(
@@ -146,7 +146,7 @@ def _scan_client(max_duration: float, total: float = 30.0) -> HttpClient:
 async def test_the_scan_deadline_cuts_a_request_in_flight(httpx_mock: object) -> None:
     """A slow body that would fit the per-request deadline still stops at the scan deadline."""
     httpx_mock.add_callback(  # type: ignore[attr-defined]
-        lambda request: httpx.Response(200, stream=_Drip(count=1000)), is_reusable=True
+        lambda request: httpx2.Response(200, stream=_Drip(count=1000)), is_reusable=True
     )
     async with _scan_client(max_duration=0.3) as http:
         with pytest.raises(ScanDeadlineExceeded):

@@ -9,7 +9,7 @@ a counting stub when it must not run, to a canned-result stub when it must.
 
 from __future__ import annotations
 
-import httpx
+import httpx2
 import pytest
 
 from webvigil.checks.deps.advisories import Advisory
@@ -47,7 +47,7 @@ class _StubCrawler:
                 requested_url=_TARGET,
                 url=_TARGET,
                 status_code=200,
-                headers=httpx.Headers({"content-type": "text/html"}),
+                headers=httpx2.Headers({"content-type": "text/html"}),
                 text=_HTML,
                 elapsed_ms=1.0,
             )

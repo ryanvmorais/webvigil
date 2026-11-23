@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-import httpx
+import httpx2
 import pytest
 
 from tests.support import make_page
@@ -80,7 +80,7 @@ def _resp(text: str = "<div>static</div>", status: int = 200) -> Response:
         url="https://example.com/s",
         requested_url="https://example.com/s",
         status_code=status,
-        headers=httpx.Headers({"content-type": "text/html"}),
+        headers=httpx2.Headers({"content-type": "text/html"}),
         text=text,
         content=text.encode(),
         elapsed_ms=1.0,

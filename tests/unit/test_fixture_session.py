@@ -10,7 +10,7 @@ says is not.
 
 from __future__ import annotations
 
-import httpx
+import httpx2
 import pytest
 from starlette.applications import Starlette
 
@@ -19,21 +19,21 @@ from tests.fixtures.app import SESSION_ID_BASE, SIGNIN_PASSWORD, SIGNIN_USER, ma
 _BASE = "http://demo.test"
 
 
-def _client(app: Starlette) -> httpx.AsyncClient:
+def _client(app: Starlette) -> httpx2.AsyncClient:
     """
     Args:
         app (Starlette): The fixture app.
 
     Returns:
-        httpx.AsyncClient: A client wired to ``app`` in-process; it keeps cookies like a browser.
+        httpx2.AsyncClient: A client wired to ``app`` in-process; it keeps cookies like a browser.
     """
-    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=_BASE)
+    return httpx2.AsyncClient(transport=httpx2.ASGITransport(app=app), base_url=_BASE)
 
 
-async def _anonymous_id(client: httpx.AsyncClient, name: str) -> str:
+async def _anonymous_id(client: httpx2.AsyncClient, name: str) -> str:
     """
     Args:
-        client (httpx.AsyncClient): The client.
+        client (httpx2.AsyncClient): The client.
         name (str): The session cookie's name.
 
     Returns:
@@ -43,13 +43,13 @@ async def _anonymous_id(client: httpx.AsyncClient, name: str) -> str:
     return client.cookies[name]
 
 
-async def _login(client: httpx.AsyncClient) -> httpx.Response:
+async def _login(client: httpx2.AsyncClient) -> httpx2.Response:
     """
     Args:
-        client (httpx.AsyncClient): A client that already did ``GET /signin``.
+        client (httpx2.AsyncClient): A client that already did ``GET /signin``.
 
     Returns:
-        httpx.Response: The answer to a right ``POST /signin`` (the redirect is not followed).
+        httpx2.Response: The answer to a right ``POST /signin`` (the redirect is not followed).
     """
     data = {
         "csrf": client.cookies["pre"],

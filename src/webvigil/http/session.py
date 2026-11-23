@@ -19,7 +19,7 @@ from collections.abc import Awaitable, Callable, Iterable
 from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
-import httpx
+import httpx2
 
 from webvigil.core.result import LoginSummary
 
@@ -97,7 +97,7 @@ def _jar_line(raw: bytes) -> str:
     return jar_text(pair) + separator.decode() + readable_cookie(jar_text(attributes))
 
 
-def _jar_view(raw: httpx.Response) -> httpx.Response:
+def _jar_view(raw: httpx2.Response) -> httpx2.Response:
     """
     The ``Set-Cookie`` lines of a response, as the jar should read them.
 
@@ -106,16 +106,16 @@ def _jar_view(raw: httpx.Response) -> httpx.Response:
     replace a session cookie with one that is never sent back over that same ``http``.
 
     Args:
-        raw (httpx.Response): A response of a request to the target host.
+        raw (httpx2.Response): A response of a request to the target host.
 
     Returns:
-        httpx.Response: A response that carries only those lines, in the jar's form.
+        httpx2.Response: A response that carries only those lines, in the jar's form.
     """
     lines = [_jar_line(v) for k, v in raw.headers.raw if k.lower() == b"set-cookie"]
     if raw.url.scheme != "https":
         lines = [line for line in lines if not _SECURE_ATTRIBUTE.search(line)]
     headers = [(b"set-cookie", line.encode("utf-8")) for line in lines]
-    view = httpx.Response(raw.status_code, headers=headers, request=raw.request)
+    view = httpx2.Response(raw.status_code, headers=headers, request=raw.request)
     view.headers.encoding = "utf-8"
     return view
 
@@ -130,12 +130,12 @@ _MAX_VARIANTS_PER_NAME = 4
 _MAX_SCRUB_VALUES = 1024
 
 
-def _prune(jar: httpx.Cookies) -> None:
+def _prune(jar: httpx2.Cookies) -> None:
     """
     Keep at most ``_MAX_VARIANTS_PER_NAME`` cookies of one name and ``_MAX_JAR_COOKIES`` in all.
 
     Args:
-        jar (httpx.Cookies): The jar to prune, in place.
+        jar (httpx2.Cookies): The jar to prune, in place.
     """
     per_name: dict[str, int] = {}
     total = 0
@@ -151,7 +151,7 @@ class SessionJar:
     """
     A cookie jar that only ever holds the session (spec 019, RF-07).
 
-    Wraps :class:`httpx.Cookies` (the stdlib ``http.cookiejar`` underneath) so Domain, Path,
+    Wraps :class:`httpx2.Cookies` (the stdlib ``http.cookiejar`` underneath) so Domain, Path,
     ``Secure`` and expiry are the standard rules, not a hand-rolled parser. It has two modes:
 
     - **Handshake**: between :meth:`begin` and :meth:`commit` every ``Set-Cookie`` of every hop
@@ -175,8 +175,8 @@ class SessionJar:
             host (str): The target host (lower-cased); cookies are sent to no other host.
         """
         self._host = host.lower()
-        self._live = httpx.Cookies()
-        self._pending: httpx.Cookies | None = None
+        self._live = httpx2.Cookies()
+        self._pending: httpx2.Cookies | None = None
         self._names: frozenset[str] = frozenset()
         self._values: set[str] = set()
         self.overflowed = False
@@ -209,7 +209,7 @@ class SessionJar:
 
     def begin(self) -> None:
         """Start a handshake: an empty pending jar that collects the handshake's cookies."""
-        self._pending = httpx.Cookies()
+        self._pending = httpx2.Cookies()
 
     def commit(self) -> None:
         """
@@ -231,12 +231,12 @@ class SessionJar:
         """Discard the pending jar; the live session, if any, is untouched."""
         self._pending = None
 
-    def absorb(self, raw: httpx.Response, *, handshake: bool) -> None:
+    def absorb(self, raw: httpx2.Response, *, handshake: bool) -> None:
         """
         Take the ``Set-Cookie`` headers of one response.
 
         Args:
-            raw (httpx.Response): A response of a request to the target host.
+            raw (httpx2.Response): A response of a request to the target host.
             handshake (bool): ``True`` inside a handshake (every cookie is kept, in the
                 pending jar); ``False`` for a live request (only a rotation of a held name).
         """
@@ -274,7 +274,7 @@ class SessionJar:
         if (urlsplit(url).hostname or "").lower() != self._host:
             return []
         jar = self._pending if handshake and self._pending is not None else self._live
-        request = httpx.Request("GET", url)
+        request = httpx2.Request("GET", url)
         request.headers.encoding = "utf-8"  # an all-ASCII request would refuse the jar's form
         jar.set_cookie_header(request)
         header = request.headers.get("cookie", "")
@@ -285,10 +285,10 @@ class SessionJar:
                 pairs.append((name, value))
         return pairs
 
-    def _remember(self, jar: httpx.Cookies) -> None:
+    def _remember(self, jar: httpx2.Cookies) -> None:
         """
         Args:
-            jar (httpx.Cookies): The jar that just absorbed a response; every value in it
+            jar (httpx2.Cookies): The jar that just absorbed a response; every value in it
                 joins the scrub list.
         """
         for cookie in jar.jar:
@@ -299,7 +299,7 @@ class SessionJar:
                 self._values |= {readable_cookie(cookie.value), raw.decode("latin-1")}
         if len(self._values) > _MAX_SCRUB_VALUES:
             self.overflowed = True
-            self._live = httpx.Cookies()
+            self._live = httpx2.Cookies()
             self._names = frozenset()
 
 

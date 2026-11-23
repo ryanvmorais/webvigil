@@ -3,7 +3,7 @@ CRLF-injection detector — spec 012 RF-01, RF-02, RF-15, ADR-5.
 
 Pure detector unit: ``_ctx`` wraps a ``render`` callable as the scanner's
 ``send``. Each test decides what headers / body the target returns for a payload.
-A hit needs an injected *header* ``httpx`` parsed back (or a full body split), not
+A hit needs an injected *header* ``httpx2`` parsed back (or a full body split), not
 a body-text reflection.
 """
 
@@ -13,7 +13,7 @@ import dataclasses
 import re
 from collections.abc import Callable
 
-import httpx
+import httpx2
 import pytest
 
 from webvigil.checks.injection.detect import DetectCtx, crlf, normalize_body
@@ -33,7 +33,7 @@ def _resp(text: str = "ok", *, headers: dict[str, str] | None = None) -> Respons
         url="https://example.com/set-lang",
         requested_url="https://example.com/set-lang",
         status_code=200,
-        headers=httpx.Headers(headers or {"content-type": "text/plain"}),
+        headers=httpx2.Headers(headers or {"content-type": "text/plain"}),
         text=text,
         content=text.encode(),
         elapsed_ms=1.0,
@@ -162,7 +162,7 @@ async def test_set_cookie_split_proof_leaves_out_the_targets_own_cookies() -> No
         c = _COOKIE_RE.search(value)
         if c:
             pairs.append(("set-cookie", c.group(1)))
-        return dataclasses.replace(_resp("ok"), headers=httpx.Headers(pairs))
+        return dataclasses.replace(_resp("ok"), headers=httpx2.Headers(pairs))
 
     hits = await crlf.detect(_POINT, _baseline(), _ctx(render))
     assert hits

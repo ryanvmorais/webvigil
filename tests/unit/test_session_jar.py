@@ -1,7 +1,7 @@
 """
 SessionJar — the cookie jar behind an automated login — spec 019 RF-07.
 
-Responses are built by hand (``httpx.Response`` with a ``Set-Cookie`` header and its request)
+Responses are built by hand (``httpx2.Response`` with a ``Set-Cookie`` header and its request)
 and fed to ``absorb``; ``pairs_for`` is the observable: the cookies a request to a URL would
 carry. No network, no transport: the jar is the standard ``http.cookiejar`` rules behind a
 small wrapper, and these tests pin the wrapper (the two modes, the host rule, the value list)
@@ -10,7 +10,7 @@ and the rules the login depends on (``Secure``, ``Path``, expiry, odd hosts).
 
 from __future__ import annotations
 
-import httpx
+import httpx2
 import pytest
 
 from webvigil.http.session import (
@@ -26,17 +26,17 @@ from webvigil.http.session import (
 _URL = "http://demo.test/signin"
 
 
-def _response(url: str, *set_cookie: str) -> httpx.Response:
+def _response(url: str, *set_cookie: str) -> httpx2.Response:
     """
     Args:
         url (str): The URL the response answers; becomes the response's request.
         *set_cookie (str): One ``Set-Cookie`` header value per argument.
 
     Returns:
-        httpx.Response: A 200 carrying those headers.
+        httpx2.Response: A 200 carrying those headers.
     """
     headers = [("set-cookie", value) for value in set_cookie]
-    return httpx.Response(200, headers=headers, request=httpx.Request("GET", url))
+    return httpx2.Response(200, headers=headers, request=httpx2.Request("GET", url))
 
 
 def _committed(jar: SessionJar, url: str, *set_cookie: str) -> None:
@@ -135,7 +135,7 @@ def test_the_browser_rules_decide_which_cookies_a_request_carries(
     set_cookie: str, set_from: str, requested: str, expected: list[tuple[str, str]]
 ) -> None:
     """Secure, Path, expiry and the host rule, each through one handshake."""
-    host = httpx.URL(requested).host
+    host = httpx2.URL(requested).host
     jar = SessionJar(host)
     jar.begin()
     if "Max-Age=0" in set_cookie:  # set it first, then clear it, as a login does with `pre`
@@ -235,17 +235,17 @@ def test_ordinary_rotation_keeps_the_session() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _raw_response(url: str, *set_cookie: bytes) -> httpx.Response:
+def _raw_response(url: str, *set_cookie: bytes) -> httpx2.Response:
     """
     Args:
         url (str): The URL the response answers; becomes the response's request.
         *set_cookie (bytes): One raw ``Set-Cookie`` value per argument.
 
     Returns:
-        httpx.Response: A 200 carrying those exact bytes.
+        httpx2.Response: A 200 carrying those exact bytes.
     """
     headers = [(b"set-cookie", value) for value in set_cookie]
-    return httpx.Response(200, headers=headers, request=httpx.Request("GET", url))
+    return httpx2.Response(200, headers=headers, request=httpx2.Request("GET", url))
 
 
 def _committed_raw(url: str, *set_cookie: bytes) -> SessionJar:

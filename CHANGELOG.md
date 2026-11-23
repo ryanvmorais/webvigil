@@ -11,6 +11,14 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 ## [Unreleased]
 
+### Changed
+
+- **The engine's HTTP client is now `httpx2`, in place of `httpx`** (#304). Commands,
+  configuration, check ids, the report schema and fingerprints do not change. Certificate trust
+  stays the same: the `certifi` bundle, or `SSL_CERT_FILE` / `SSL_CERT_DIR` when set. An install
+  now brings `httpx2` and `httpcore2` instead of `httpx` and `httpcore`, and the provisional
+  Python API exposes `httpx2` objects where it exposed `httpx` ones, such as `Response.headers`.
+
 ## [1.4.7] - 2026-11-22
 
 A patch release that keeps a scan running when a session cookie or a `--cookie` value is outside

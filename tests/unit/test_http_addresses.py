@@ -10,8 +10,8 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-import httpcore
-import httpx
+import httpcore2
+import httpx2
 import pytest
 
 from webvigil.core.config import ScanConfig
@@ -50,15 +50,15 @@ class _Resolver:
             list[str]: The addresses in the table.
 
         Raises:
-            httpcore.ConnectError: For a host the table does not know.
+            httpcore2.ConnectError: For a host the table does not know.
         """
         self.asked[host] = self.asked.get(host, 0) + 1
         if host not in self.table:
-            raise httpcore.ConnectError(f"{host}: unknown")
+            raise httpcore2.ConnectError(f"{host}: unknown")
         return list(self.table[host])
 
 
-class _Inner(httpcore.AsyncNetworkBackend):
+class _Inner(httpcore2.AsyncNetworkBackend):
     """A fake network backend: records each connect and refuses the addresses it is told to."""
 
     def __init__(self, refuse: Iterable[str] = ()) -> None:
@@ -75,26 +75,26 @@ class _Inner(httpcore.AsyncNetworkBackend):
         port: int,
         timeout: float | None = None,
         local_address: str | None = None,
-        socket_options: Iterable[httpcore.SOCKET_OPTION] | None = None,
-    ) -> httpcore.AsyncNetworkStream:
+        socket_options: Iterable[httpcore2.SOCKET_OPTION] | None = None,
+    ) -> httpcore2.AsyncNetworkStream:
         """
         Args:
             host (str): The address the guard chose.
             port (int): The port.
             timeout (float | None): Ignored.
             local_address (str | None): Ignored.
-            socket_options (Iterable[httpcore.SOCKET_OPTION] | None): Ignored.
+            socket_options (Iterable[httpcore2.SOCKET_OPTION] | None): Ignored.
 
         Returns:
-            httpcore.AsyncNetworkStream: A mock stream.
+            httpcore2.AsyncNetworkStream: A mock stream.
 
         Raises:
-            httpcore.ConnectError: For a refused address.
+            httpcore2.ConnectError: For a refused address.
         """
         self.connected.append(host)
         if host in self.refuse:
-            raise httpcore.ConnectError(f"{host}: refused")
-        return httpcore.AsyncMockStream([])
+            raise httpcore2.ConnectError(f"{host}: refused")
+        return httpcore2.AsyncMockStream([])
 
 
 _PUBLIC = "93.184.216.34"
@@ -207,7 +207,7 @@ async def test_a_failed_resolution_is_not_pinned() -> None:
     """A name that did not resolve is asked again next time, like a transient DNS error."""
     resolver = _Resolver({"www.example.com": [_PUBLIC]})
     guard = AddressGuard("www.example.com", resolver=resolver)
-    with pytest.raises(httpcore.ConnectError):
+    with pytest.raises(httpcore2.ConnectError):
         await guard.addresses("late.example.com", 443)
     resolver.table["late.example.com"] = [_PUBLIC_2]
     assert await guard.addresses("late.example.com", 443) == [_PUBLIC_2]
@@ -234,7 +234,7 @@ async def test_the_backend_falls_back_to_the_next_allowed_address() -> None:
     backend = GuardedBackend(AddressGuard("www.example.com", resolver=resolver), inner)
     await backend.connect_tcp("www.example.com", 443, timeout=5)
     assert inner.connected == [_PUBLIC, _PUBLIC_2]
-    with pytest.raises(httpcore.ConnectError):
+    with pytest.raises(httpcore2.ConnectError):
         await GuardedBackend(
             AddressGuard("www.example.com", resolver=resolver), _Inner(refuse=[_PUBLIC, _PUBLIC_2])
         ).connect_tcp("www.example.com", 443)
@@ -260,12 +260,12 @@ async def test_a_slow_resolution_is_a_connect_timeout() -> None:
         return [_PUBLIC]
 
     backend = GuardedBackend(AddressGuard("www.example.com", resolver=hang), _Inner())
-    with pytest.raises(httpcore.ConnectTimeout):
+    with pytest.raises(httpcore2.ConnectTimeout):
         await backend.connect_tcp("www.example.com", 443, timeout=0.05)
 
 
 def test_install_refuses_a_layout_it_does_not_know() -> None:
-    """Without the expected httpx internals the scan fails loudly instead of running unguarded."""
+    """Without the expected httpx2 internals the scan fails loudly instead of running unguarded."""
     with pytest.raises(RuntimeError):
         install(object(), AddressGuard("www.example.com"))
 
@@ -340,12 +340,12 @@ async def test_the_tls_probe_does_not_connect_to_a_refused_host() -> None:
     assert "BlockedAddressError" in (result.error or "")
 
 
-async def test_the_httpx_error_keeps_the_guard_refusal_as_its_cause() -> None:
-    """The client tells a refusal apart through the cause ``httpx`` keeps on its own error."""
+async def test_the_httpx2_error_keeps_the_guard_refusal_as_its_cause() -> None:
+    """The client tells a refusal apart through the cause ``httpx2`` keeps on its own error."""
     resolver = _Resolver({"www.example.com": [_PUBLIC], "intra.example.com": ["10.0.0.5"]})
-    transport = httpx.AsyncHTTPTransport()
+    transport = httpx2.AsyncHTTPTransport()
     install(transport, AddressGuard("www.example.com", resolver=resolver))
-    async with httpx.AsyncClient(transport=transport) as client:
-        with pytest.raises(httpx.ConnectError) as caught:
+    async with httpx2.AsyncClient(transport=transport) as client:
+        with pytest.raises(httpx2.ConnectError) as caught:
             await client.get("https://intra.example.com/")
     assert isinstance(caught.value.__cause__, BlockedAddressError)

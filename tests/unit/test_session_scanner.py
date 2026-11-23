@@ -18,7 +18,7 @@ from collections.abc import Callable
 from types import SimpleNamespace
 from urllib.parse import urlsplit
 
-import httpx
+import httpx2
 import pytest
 
 from tests.support import HandlerTransport, make_page
@@ -62,13 +62,13 @@ class _Site:
         self.entry_cookies: Callable[[int], list[str]] = lambda n: []
         self.hits = 0
 
-    def handle(self, request: httpx.Request) -> httpx.Response:
+    def handle(self, request: httpx2.Request) -> httpx2.Response:
         """
         Args:
-            request (httpx.Request): The request the client sent.
+            request (httpx2.Request): The request the client sent.
 
         Returns:
-            httpx.Response: The site's answer.
+            httpx2.Response: The site's answer.
         """
         cookie = request.headers.get("cookie", "")
         self.log.append((request.method, request.url.path, cookie))
@@ -77,17 +77,17 @@ class _Site:
             self.hits += 1
             headers = [("set-cookie", value) for value in self.entry_cookies(self.hits)]
             headers.append(("content-type", "text/html"))
-            return httpx.Response(200, headers=headers, text="<html>entry</html>")
+            return httpx2.Response(200, headers=headers, text="<html>entry</html>")
         if path == "/account":
             sid = dict(p.split("=", 1) for p in cookie.split("; ") if "=" in p).get("sid", "")
             if self.public_account or not self.account_needs_cookie or sid in self.valid:
-                return httpx.Response(200, headers={"content-type": "text/html"}, text="<p>hi</p>")
-            return httpx.Response(401, text="no")
+                return httpx2.Response(200, headers={"content-type": "text/html"}, text="<p>hi</p>")
+            return httpx2.Response(401, text="no")
         if path == "/logout":
             if self.logout_status < 500 and self.logout_invalidates:
                 self.valid.clear()
-            return httpx.Response(self.logout_status, text="bye")
-        return httpx.Response(404, text="nope")
+            return httpx2.Response(self.logout_status, text="bye")
+        return httpx2.Response(404, text="nope")
 
 
 def _config(**session: object) -> ScanConfig:
@@ -116,10 +116,10 @@ def _committed_session(*cookies: str) -> Session:
     """
     jar = SessionJar("demo.test")
     jar.begin()
-    answer = httpx.Response(
+    answer = httpx2.Response(
         200,
         headers=[(b"set-cookie", c.encode()) for c in cookies],
-        request=httpx.Request("GET", f"{_BASE}/"),
+        request=httpx2.Request("GET", f"{_BASE}/"),
     )
     jar.absorb(answer, handshake=True)
     jar.commit()
@@ -556,7 +556,7 @@ async def test_a_post_logout_form_is_submitted_with_its_own_fields() -> None:
     site.logout_invalidates = False
     original = site.handle
 
-    def handle(request: httpx.Request) -> httpx.Response:
+    def handle(request: httpx2.Request) -> httpx2.Response:
         if request.url.path == "/logout":
             seen["method"] = request.method
             seen["body"] = request.content.decode()

@@ -13,7 +13,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-import httpx
+import httpx2
 
 from webvigil.core.config import ScanConfig
 from webvigil.core.target import Target, normalize_url
@@ -41,7 +41,7 @@ class Page:
         url (str): The final URL after in-scope redirects.
         status_code (int): HTTP status of the final response, or ``0`` on a
             fetch error.
-        headers (httpx.Headers): Response headers of the final response.
+        headers (httpx2.Headers): Response headers of the final response.
         text (str): Response body, decoded.
         elapsed_ms (float): Wall-clock time for the fetch, in milliseconds.
         history (tuple[RedirectHop, ...]): Redirect hops followed to reach
@@ -60,7 +60,7 @@ class Page:
     requested_url: str
     url: str
     status_code: int
-    headers: httpx.Headers
+    headers: httpx2.Headers
     text: str
     elapsed_ms: float
     history: tuple[RedirectHop, ...] = ()
@@ -140,7 +140,7 @@ class Page:
             requested_url=url,
             url=url,
             status_code=0,
-            headers=httpx.Headers(),
+            headers=httpx2.Headers(),
             text="",
             elapsed_ms=0.0,
             error=error,

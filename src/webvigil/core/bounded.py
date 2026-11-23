@@ -24,7 +24,7 @@ TRUNCATION_MARKER = "...[truncated]"
 NAME_MAX_CHARS = 1024
 # A paragraph: a description, a remediation, an error message, a warning.
 TEXT_MAX_CHARS = 16 * 1024
-# A URL or a traceback. httpx refuses to build a URL longer than 64 KiB, so no request the engine
+# A URL or a traceback. httpx2 refuses to build a URL longer than 64 KiB, so no request the engine
 # sent is cut.
 URL_MAX_CHARS = 64 * 1024
 

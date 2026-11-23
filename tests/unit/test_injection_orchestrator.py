@@ -16,7 +16,7 @@ import re
 from pathlib import Path
 from typing import ClassVar
 
-import httpx
+import httpx2
 import pytest
 
 from webvigil.checks.csrf.checks import TokenNotEnforcedCheck
@@ -68,7 +68,7 @@ class _StubCrawler:
                 requested_url=_SEED,
                 url=_SEED,
                 status_code=200,
-                headers=httpx.Headers({"content-type": "text/html"}),
+                headers=httpx2.Headers({"content-type": "text/html"}),
                 text="<html><body>ok</body></html>",
                 elapsed_ms=1.0,
             )
@@ -142,9 +142,9 @@ async def test_active_scan_with_no_injection_check_selected_does_not_run(
 async def test_active_scan_reflected_xss_is_reported(httpx_mock: object) -> None:
     """Active mode + a reflecting endpoint + the XSS check yields an ``injection.xss.reflected``."""
 
-    def router(request: httpx.Request) -> httpx.Response:
+    def router(request: httpx2.Request) -> httpx2.Response:
         value = request.url.params.get("q", "")
-        return httpx.Response(
+        return httpx2.Response(
             200, text=f"<div>results for {value}</div>", headers={"content-type": "text/html"}
         )
 
@@ -157,11 +157,11 @@ async def test_active_scan_reflected_xss_is_reported(httpx_mock: object) -> None
 async def test_active_scan_ssrf_metadata_is_reported(httpx_mock: object) -> None:
     """A target that serves cloud creds for a metadata payload yields a CRITICAL SSRF finding."""
 
-    def router(request: httpx.Request) -> httpx.Response:
+    def router(request: httpx2.Request) -> httpx2.Response:
         value = request.url.params.get("q", "")
         if "169.254.169.254" in value or "2852039166" in value:
-            return httpx.Response(200, text='{"Code":"Success","AccessKeyId":"ASIAX"}')
-        return httpx.Response(200, text="<div>ok</div>", headers={"content-type": "text/html"})
+            return httpx2.Response(200, text='{"Code":"Success","AccessKeyId":"ASIAX"}')
+        return httpx2.Response(200, text="<div>ok</div>", headers={"content-type": "text/html"})
 
     httpx_mock.add_callback(router, is_reusable=True)  # type: ignore[attr-defined]
     result = await Orchestrator(_active(), check_types=[SsrfMetadataCheck]).run(_TARGET)
@@ -173,13 +173,13 @@ async def test_active_scan_ssrf_metadata_is_reported(httpx_mock: object) -> None
 async def test_active_scan_command_injection_is_reported(httpx_mock: object) -> None:
     """A target that evaluates the injected arithmetic yields a CRITICAL command-injection."""
 
-    def router(request: httpx.Request) -> httpx.Response:
+    def router(request: httpx2.Request) -> httpx2.Response:
         value = request.url.params.get("q", "")
         m = re.search(r"(wv[0-9a-f]+)=\$\(\((\d+)\*(\d+)\)\)", value)
         if m:
             body = f"{m.group(1)}={int(m.group(2)) * int(m.group(3))}"
-            return httpx.Response(200, text=body, headers={"content-type": "text/plain"})
-        return httpx.Response(200, text="<div>ok</div>", headers={"content-type": "text/html"})
+            return httpx2.Response(200, text=body, headers={"content-type": "text/plain"})
+        return httpx2.Response(200, text="<div>ok</div>", headers={"content-type": "text/html"})
 
     httpx_mock.add_callback(router, is_reusable=True)  # type: ignore[attr-defined]
     cfg = _active(injection={"time_based_cmdi": False})
@@ -189,18 +189,18 @@ async def test_active_scan_command_injection_is_reported(httpx_mock: object) -> 
     assert cmdi[0].location.param == "q"
 
 
-def _ognl_router(request: httpx.Request) -> httpx.Response:
+def _ognl_router(request: httpx2.Request) -> httpx2.Response:
     """A target whose ``q`` is evaluated as OGNL: ``%{a*b}`` and ``%{@Math@abs(-n)}`` run."""
     value = request.url.params.get("q", "")
     arith = re.search(r"(wv[0-9a-f]+)%\{(\d+)\*(\d+)\}", value)
     if arith:
         body = f"{arith.group(1)}{int(arith.group(2)) * int(arith.group(3))}"
-        return httpx.Response(200, text=body, headers={"content-type": "text/plain"})
+        return httpx2.Response(200, text=body, headers={"content-type": "text/plain"})
     static = re.search(r"(wv[0-9a-f]+)%\{@java\.lang\.Math@abs\(-(\d+)\)\}", value)
     if static:
         body = f"{static.group(1)}{static.group(2)}"
-        return httpx.Response(200, text=body, headers={"content-type": "text/plain"})
-    return httpx.Response(200, text="<div>ok</div>", headers={"content-type": "text/html"})
+        return httpx2.Response(200, text=body, headers={"content-type": "text/plain"})
+    return httpx2.Response(200, text="<div>ok</div>", headers={"content-type": "text/html"})
 
 
 async def test_active_scan_expression_language_is_reported(httpx_mock: object) -> None:
@@ -252,9 +252,9 @@ async def test_active_scan_sends_only_the_payloads_of_the_selected_checks(
     """Each check's own payloads go out when it is selected, and no other check's do."""
     seen: list[str] = []
 
-    def router(request: httpx.Request) -> httpx.Response:
+    def router(request: httpx2.Request) -> httpx2.Response:
         seen.append(request.url.params.get("q", ""))
-        return httpx.Response(200, text="<div>ok</div>", headers={"content-type": "text/html"})
+        return httpx2.Response(200, text="<div>ok</div>", headers={"content-type": "text/html"})
 
     httpx_mock.add_callback(router, is_reusable=True)  # type: ignore[attr-defined]
     await Orchestrator(_active(), check_types=[selected]).run(_TARGET)
@@ -268,14 +268,14 @@ async def test_active_scan_sends_only_the_payloads_of_the_selected_checks(
     assert found == {(selected, marker.pattern) for marker in _MARKERS.get(selected, ())}
 
 
-async def test_active_scan_reports_a_redirect_httpx_cannot_parse(httpx_mock: object) -> None:
+async def test_active_scan_reports_a_redirect_httpx2_cannot_parse(httpx_mock: object) -> None:
     r"""A target that honours only ``https:\\webvigil.invalid`` is still an open redirect."""
     honoured = "https:\\\\webvigil.invalid"
 
-    def router(request: httpx.Request) -> httpx.Response:
+    def router(request: httpx2.Request) -> httpx2.Response:
         if request.url.params.get("q", "") == honoured:
-            return httpx.Response(302, headers={"location": honoured})
-        return httpx.Response(200, text="<div>ok</div>", headers={"content-type": "text/html"})
+            return httpx2.Response(302, headers={"location": honoured})
+        return httpx2.Response(200, text="<div>ok</div>", headers={"content-type": "text/html"})
 
     httpx_mock.add_callback(router, is_reusable=True)  # type: ignore[attr-defined]
     result = await Orchestrator(_active(), check_types=[OpenRedirectCheck]).run(_TARGET)

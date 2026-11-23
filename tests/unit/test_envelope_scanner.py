@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-import httpx
+import httpx2
 
 from tests.support import make_page
 from webvigil.checks.envelope.scanner import EnvelopeScanner
@@ -52,7 +52,7 @@ def _resp(
         url="https://example.com/",
         requested_url="https://example.com/",
         status_code=status,
-        headers=httpx.Headers(headers or {"content-type": "text/html"}),
+        headers=httpx2.Headers(headers or {"content-type": "text/html"}),
         text=text,
         content=text.encode(),
         elapsed_ms=1.0,

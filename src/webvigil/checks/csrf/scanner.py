@@ -506,7 +506,7 @@ class CsrfScanner:
             headers = {"Origin": _FOREIGN_ORIGIN, "Referer": f"{_FOREIGN_ORIGIN}/"}
         else:
             headers = {"Origin": self._target.origin, "Referer": form.source_url}
-        # httpx only takes a mapping as a form body; a pre-encoded body keeps the field order
+        # httpx2 only takes a mapping as a form body; a pre-encoded body keeps the field order
         # and any repeated name exactly as the form defines them.
         headers["Content-Type"] = "application/x-www-form-urlencoded"
         try:

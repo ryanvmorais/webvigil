@@ -21,8 +21,8 @@ import certifi
 import h2.config
 import h2.connection
 import h2.events
-import httpcore
-import httpx
+import httpcore2
+import httpx2
 import pytest
 import trustme
 
@@ -182,13 +182,13 @@ def _http(port: int, *, verify_tls: bool = True) -> HttpClient:
 
 
 @contextlib.asynccontextmanager
-async def _engine_client(kind: str) -> AsyncIterator[httpx.AsyncClient]:
+async def _engine_client(kind: str) -> AsyncIterator[httpx2.AsyncClient]:
     """
     Args:
         kind (str): ``"scan"`` for the scan's client, ``"osv"`` for the OSV.dev client.
 
     Yields:
-        httpx.AsyncClient: The open client. Nothing is sent through it.
+        httpx2.AsyncClient: The open client. Nothing is sent through it.
     """
     if kind == "scan":
         async with HttpClient(Target.parse("https://example.com"), ScanConfig()) as http:
@@ -415,17 +415,17 @@ async def test_the_client_speaks_what_the_server_negotiates(
 # ---------------------------------------------------------------------------
 
 
-def _proxy_pool(client: httpx.AsyncClient) -> httpcore.AsyncHTTPProxy:
+def _proxy_pool(client: httpx2.AsyncClient) -> httpcore2.AsyncHTTPProxy:
     """
     Args:
-        client (httpx.AsyncClient): A client with one proxy mount.
+        client (httpx2.AsyncClient): A client with one proxy mount.
 
     Returns:
-        httpcore.AsyncHTTPProxy: The pool of that mount.
+        httpcore2.AsyncHTTPProxy: The pool of that mount.
     """
     (transport,) = [t for t in client._mounts.values() if t is not None]
     pool = transport._pool
-    assert isinstance(pool, httpcore.AsyncHTTPProxy)
+    assert isinstance(pool, httpcore2.AsyncHTTPProxy)
     return pool
 
 
@@ -447,7 +447,7 @@ async def test_an_https_proxy_gets_the_system_store_plus_certifi(
     async with _engine_client(kind) as client:
         pool = _proxy_pool(client)
         pinned = pool._proxy_ssl_context
-        connection = pool.create_connection(httpcore.Origin(b"https", b"example.test", 443))
+        connection = pool.create_connection(httpcore2.Origin(b"https", b"example.test", 443))
     assert pinned is not None
     assert {} in calls  # the no-argument call is the one that loads the system store
     assert _der(tls_ca) in pinned.get_ca_certs(binary_form=True)
@@ -460,7 +460,7 @@ async def test_an_https_proxy_gets_the_system_store_plus_certifi(
 
 @pytest.mark.parametrize("kind", ["scan", "osv"])
 async def test_an_http_proxy_has_no_tls_context(monkeypatch: pytest.MonkeyPatch, kind: str) -> None:
-    """``httpcore`` refuses a proxy context on an ``http://`` proxy, so none is set."""
+    """``httpcore2`` refuses a proxy context on an ``http://`` proxy, so none is set."""
     monkeypatch.setenv("HTTPS_PROXY", "http://proxy.test:3128")
     async with _engine_client(kind) as client:
         assert _proxy_pool(client)._proxy_ssl_context is None
@@ -479,7 +479,7 @@ async def test_a_no_proxy_entry_is_skipped_and_the_proxy_still_pinned(
 
 def test_a_socks_proxy_is_left_alone() -> None:
     """A SOCKS proxy has no TLS leg of its own, and it is not an unknown layout."""
-    pool = object.__new__(httpcore.AsyncSOCKSProxy)  # its constructor needs ``socksio``
+    pool = object.__new__(httpcore2.AsyncSOCKSProxy)  # its constructor needs ``socksio``
     client = SimpleNamespace(_mounts={"all://": SimpleNamespace(_pool=pool)})
     pin_proxy_trust(client)  # type: ignore[arg-type]  # a stand-in with only ``_mounts``
     assert not hasattr(pool, "_proxy_ssl_context")
@@ -490,12 +490,12 @@ def test_a_socks_proxy_is_left_alone() -> None:
     [
         None,
         SimpleNamespace(_proxy_ssl_context=None),
-        object.__new__(httpcore.AsyncHTTPProxy),
+        object.__new__(httpcore2.AsyncHTTPProxy),
     ],
     ids=["no-pool", "another-class-with-the-attribute", "no-proxy-context-attribute"],
 )
 def test_an_unknown_mount_layout_raises(pool: object) -> None:
     """A layout this code does not know never connects with some other context."""
     client = SimpleNamespace(_mounts={"all://": SimpleNamespace(_pool=pool)})
-    with pytest.raises(RuntimeError, match="unexpected httpx proxy layout"):
+    with pytest.raises(RuntimeError, match="unexpected httpx2 proxy layout"):
         pin_proxy_trust(client)  # type: ignore[arg-type]  # a stand-in with only ``_mounts``
