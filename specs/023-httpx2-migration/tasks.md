@@ -69,21 +69,22 @@ strategy.
 
 ## Stage 2 — The swap to `httpx2`
 
-- [ ] Record the RF-09 baseline from `main`: serve `tests.fixtures.serve:app` with `uv run uvicorn --port 8080`, run
+- [x] Record the RF-09 baseline from `main`: serve `tests.fixtures.serve:app` with `uv run uvicorn --port 8080`, run
   `uv run webvigil scan http://127.0.0.1:8080 --mode active --authorized-by local-test --format json --output
   before.json`, and keep the report outside the repository. — RF-09
-- [ ] `pyproject.toml`: replace `httpx[http2]` with `httpx2[http2]>=2.16.0,<3`, drop the separate `httpx2` entry of
+- [x] `pyproject.toml`: replace `httpx[http2]` with `httpx2[http2]>=2.16.0,<3`, drop the separate `httpx2` entry of
   the test group and its comment, and run `uv lock`. Confirm that `httpx` and `httpcore` left `uv.lock`. — RF-01,
   RNF-01
-- [ ] The eight engine modules and `http/tls.py`: `import httpx2` and `import httpcore2`, with annotations,
+- [x] The eight engine modules and `http/tls.py`: `import httpx2` and `import httpcore2`, with annotations,
   docstrings and comments following. — RF-01, ADR-3
-- [ ] `src/webvigil/checks/headers/_parsing.py`: drop the redundant `cast`. — RF-01
-- [ ] `tests/`: rename the imports and references, `tests/http_mock.py` included, with no change to any assertion.
+- [x] `src/webvigil/checks/headers/_parsing.py`: drop the redundant `cast`. — RF-01
+- [x] `tests/`: rename the imports and references, `tests/http_mock.py` included, with no change to any assertion.
   Check it by comparing the diff with `httpx2` and `httpcore2` normalized back. — RF-04, RF-05, RF-06, RF-08, RF-10
-- [ ] `tests/unit/test_http_stack.py`: the AST guard over `src/webvigil`, with its positive control. — RF-01, RF-11
-- [ ] `CHANGELOG.md`, `[Unreleased]`, **Changed**: the HTTP client is now `httpx2`, certificate trust is unchanged,
+- [x] `tests/unit/test_http_stack.py`: the AST guard over `src/webvigil`, with its positive control. — RF-01, RF-11
+- [x] `CHANGELOG.md`, `[Unreleased]`, **Changed**: the HTTP client is now `httpx2`, certificate trust is unchanged,
   and the provisional Python API exposes `httpx2` types. — RNF-02
-- [ ] Quality gate, with `lint-imports` confirming the engine boundary. — RNF-03, RNF-05
+- [x] Quality gate, with `lint-imports` confirming the engine boundary: green; 2537 passed, 2 skipped. — RNF-03,
+  RNF-05
 
 ## Stage 3 — Cross-platform check and documentation
 
