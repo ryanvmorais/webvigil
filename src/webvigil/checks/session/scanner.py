@@ -36,7 +36,7 @@ from webvigil.core.urls import resolve_url
 from webvigil.crawler.forms import Form, form_body
 from webvigil.crawler.safety import is_logout
 from webvigil.http.client import HttpClient, Response
-from webvigil.http.session import Session
+from webvigil.http.session import Session, readable_cookie
 
 # At most this many unchanged cookies are confirmed (one request each).
 _MAX_FIXATION_CANDIDATES = 3
@@ -274,7 +274,8 @@ class SessionScanner:
         reference = auth.reference_url
         hits: list[SessionHit] = []
         for name in candidates:
-            facts = [("cookie", name), ("when", "the value is the same before and after login")]
+            shown = readable_cookie(name)
+            facts = [("cookie", shown), ("when", "the value is the same before and after login")]
             if reference is None or not session.confirmed:
                 facts.append(("verified", "no"))
                 confidence = Confidence.MEDIUM
@@ -291,7 +292,7 @@ class SessionScanner:
             hits.append(
                 SessionHit(
                     kind="fixation",
-                    name=name,
+                    name=shown,
                     url=url,
                     severity=Severity.MEDIUM,
                     confidence=confidence,
@@ -356,7 +357,7 @@ class SessionScanner:
             self.warnings.append("session logout test skipped: the session holds no cookie")
             return []
         snapshot = "; ".join(f"{n}={v}" for n, v in pairs)
-        names = [n for n, _v in pairs]
+        names = [readable_cookie(n) for n, _v in pairs]
 
         response = await self._request_logout(method, url, form)
         if response.status_code >= 500:

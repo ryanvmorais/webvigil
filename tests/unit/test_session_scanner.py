@@ -35,7 +35,7 @@ from webvigil.core.target import Scope, Target
 from webvigil.crawler.forms import Form, FormField
 from webvigil.http import client as client_mod
 from webvigil.http.client import HttpClient
-from webvigil.http.session import Session, SessionJar
+from webvigil.http.session import Session, SessionJar, jar_text
 
 _BASE = "http://demo.test"
 _REF = f"{_BASE}/account"
@@ -118,7 +118,7 @@ def _committed_session(*cookies: str) -> Session:
     jar.begin()
     answer = httpx.Response(
         200,
-        headers=[("set-cookie", c) for c in cookies],
+        headers=[(b"set-cookie", c.encode()) for c in cookies],
         request=httpx.Request("GET", f"{_BASE}/"),
     )
     jar.absorb(answer, handshake=True)
@@ -374,6 +374,19 @@ async def test_an_unchanged_cookie_the_page_needs_is_a_confirmed_fixation() -> N
     assert site.log == [("GET", "/account", "lang=en")]
 
 
+async def test_a_fixation_on_a_name_outside_ascii_is_reported_as_text() -> None:
+    """The confirmation leaves that exact cookie out, and the hit names it readably."""
+    site = _Site()
+    name = jar_text("sessão".encode())
+    hits, _scn = await _fixation(
+        site, {name: "ok"}, {name: "ok"}, cookies=("sessão=ok; Path=/", "lang=en; Path=/")
+    )
+
+    (hit,) = hits
+    assert (hit.name, dict(hit.facts)["cookie"]) == ("sessão", "sessão")
+    assert site.log == [("GET", "/account", "lang=en")]
+
+
 @pytest.mark.parametrize(
     ("pre", "post"),
     [
@@ -446,6 +459,7 @@ async def _logout(
     pages: tuple = (),
     forms: tuple = (),
     logout_url: str | None = None,
+    cookies: tuple[str, ...] = ("sid=ok; Path=/",),
 ) -> tuple[list[SessionHit], SessionScanner, Session]:
     """
     Args:
@@ -453,11 +467,12 @@ async def _logout(
         pages (tuple): The crawled pages (where a logout link is looked for).
         forms (tuple): The form inventory (where a logout form is looked for).
         logout_url (str | None): ``[auth.login] logout_url``. Defaults to ``None``.
+        cookies (tuple[str, ...]): What the live session holds. Defaults to one ``sid``.
 
     Returns:
         tuple[list[SessionHit], SessionScanner, Session]: The hits, the scanner and the session.
     """
-    session = _committed_session("sid=ok; Path=/")
+    session = _committed_session(*cookies)
     config = ScanConfig.model_validate(
         {
             "session": {"test_logout": True},
@@ -495,6 +510,23 @@ async def test_a_logout_that_leaves_the_session_valid_is_a_hit() -> None:
         ("GET", "/account", "sid=ok"),  # the replay: the snapshot, nothing else
     ]
     assert session.closed  # no re-login after the logout
+
+
+async def test_a_logout_replay_names_a_cookie_outside_ascii_as_text() -> None:
+    """The replay sends the session's bytes, and the report lists the name readably."""
+    site = _Site()
+    site.logout_invalidates = False
+    hits, _scn, _session = await _logout(
+        site,
+        pages=(_page(f"{_BASE}/", text=_LOGOUT_PAGE),),
+        cookies=("sid=ok; Path=/", "preferência=1; Path=/"),
+    )
+
+    (hit,) = hits
+    assert set(dict(hit.facts)["replayed cookies"].split(", ")) == {"sid", "preferência"}
+    replay = site.log[-1]
+    assert (replay[0], replay[1]) == ("GET", "/account")
+    assert set(replay[2].split("; ")) == {"sid=ok", "preferência=1"}
 
 
 async def test_a_logout_that_invalidates_the_session_is_not_a_hit() -> None:

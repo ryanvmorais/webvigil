@@ -38,31 +38,86 @@ MARKER_BODY_CHARS = 200_000
 
 _SECURE_ATTRIBUTE = re.compile(r";\s*secure\s*(?:;|$)", re.I)
 
+# A cookie is bytes the server expects back unchanged, in whatever encoding it chose. The stdlib
+# jar works on text and strips what ``str.strip`` calls whitespace, which in Latin-1 includes
+# 0x85 and 0xA0 (the last byte of a UTF-8 "à"). So inside the jar each byte above 0x7F of a name
+# or value is one private-use character: never whitespace, and exactly reversible.
+_JAR_BYTE_OFFSET = 0xF700
+_BYTES_TO_JAR = {byte: _JAR_BYTE_OFFSET + byte for byte in range(0x80, 0x100)}
+_JAR_TO_BYTES = {char: byte for byte, char in _BYTES_TO_JAR.items()}
 
-def _without_insecure_secure_cookies(raw: httpx.Response) -> httpx.Response:
+
+def jar_text(raw: bytes) -> str:
     """
-    Drop the ``Set-Cookie`` lines a browser would refuse (spec 020).
+    Args:
+        raw (bytes): Cookie bytes, as they travel on the wire.
 
-    A ``Secure`` cookie set over plain ``http`` is rejected by every modern browser ("Leave Secure
-    Cookies Alone"); the stdlib jar accepts it, and it would silently replace a session cookie
-    with one that is never sent back over that same ``http``. Over ``https`` nothing is dropped.
+    Returns:
+        str: The form the jar holds; :func:`cookie_bytes` turns it back into ``raw``.
+    """
+    return raw.decode("latin-1").translate(_BYTES_TO_JAR)
+
+
+def cookie_bytes(text: str) -> bytes:
+    """
+    Args:
+        text (str): Cookie text in the jar's form (:func:`jar_text`).
+
+    Returns:
+        bytes: The exact bytes to send.
+    """
+    return text.translate(_JAR_TO_BYTES).encode("latin-1")
+
+
+def readable_cookie(text: str) -> str:
+    """
+    Args:
+        text (str): Cookie text in the jar's form (:func:`jar_text`).
+
+    Returns:
+        str: The text for a person: UTF-8 when the bytes are valid UTF-8, else Latin-1.
+    """
+    raw = cookie_bytes(text)
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return raw.decode("latin-1")
+
+
+def _jar_line(raw: bytes) -> str:
+    """
+    Args:
+        raw (bytes): One ``Set-Cookie`` value.
+
+    Returns:
+        str: The line with its ``name=value`` in the jar's form. The attributes stay readable,
+            because the jar compares ``Path`` and ``Domain`` with the request URL.
+    """
+    pair, separator, attributes = raw.partition(b";")
+    return jar_text(pair) + separator.decode() + readable_cookie(jar_text(attributes))
+
+
+def _jar_view(raw: httpx.Response) -> httpx.Response:
+    """
+    The ``Set-Cookie`` lines of a response, as the jar should read them.
+
+    A ``Secure`` cookie set over plain ``http`` is dropped (spec 020): every modern browser
+    rejects it ("Leave Secure Cookies Alone"), while the stdlib jar would accept it and silently
+    replace a session cookie with one that is never sent back over that same ``http``.
 
     Args:
         raw (httpx.Response): A response of a request to the target host.
 
     Returns:
-        httpx.Response: ``raw`` itself when nothing needs dropping, else a copy without those
-            ``Set-Cookie`` lines.
+        httpx.Response: A response that carries only those lines, in the jar's form.
     """
-    if raw.url.scheme == "https":
-        return raw
-    lines = raw.headers.get_list("set-cookie")
-    kept = [line for line in lines if not _SECURE_ATTRIBUTE.search(line)]
-    if len(kept) == len(lines):
-        return raw
-    headers = [(k, v) for k, v in raw.headers.multi_items() if k.lower() != "set-cookie"]
-    headers += [("set-cookie", line) for line in kept]
-    return httpx.Response(raw.status_code, headers=headers, request=raw.request)
+    lines = [_jar_line(v) for k, v in raw.headers.raw if k.lower() == b"set-cookie"]
+    if raw.url.scheme != "https":
+        lines = [line for line in lines if not _SECURE_ATTRIBUTE.search(line)]
+    headers = [(b"set-cookie", line.encode("utf-8")) for line in lines]
+    view = httpx.Response(raw.status_code, headers=headers, request=raw.request)
+    view.headers.encoding = "utf-8"
+    return view
 
 
 # What the target can make the jar hold. A login sets a handful of cookies, and a session
@@ -185,7 +240,7 @@ class SessionJar:
             handshake (bool): ``True`` inside a handshake (every cookie is kept, in the
                 pending jar); ``False`` for a live request (only a rotation of a held name).
         """
-        raw = _without_insecure_secure_cookies(raw)
+        raw = _jar_view(raw)
         if handshake:
             if self._pending is None:
                 return
@@ -212,14 +267,15 @@ class SessionJar:
                 jar) or not (reads the live one).
 
         Returns:
-            list[tuple[str, str]]: ``(name, value)`` pairs, empty for any host but the
-                target host and for a cookie the browser rules would not send (``Secure`` on
-                ``http``, another path, expired).
+            list[tuple[str, str]]: ``(name, value)`` pairs in the jar's form (:func:`jar_text`),
+                empty for any host but the target host and for a cookie the browser rules would
+                not send (``Secure`` on ``http``, another path, expired).
         """
         if (urlsplit(url).hostname or "").lower() != self._host:
             return []
         jar = self._pending if handshake and self._pending is not None else self._live
         request = httpx.Request("GET", url)
+        request.headers.encoding = "utf-8"  # an all-ASCII request would refuse the jar's form
         jar.set_cookie_header(request)
         header = request.headers.get("cookie", "")
         pairs: list[tuple[str, str]] = []
@@ -237,7 +293,10 @@ class SessionJar:
         """
         for cookie in jar.jar:
             if cookie.value:
-                self._values.add(cookie.value)
+                # the report quotes pages, so it holds the value as text, not in the jar's form;
+                # a page can show the same bytes as UTF-8 or as Latin-1
+                raw = cookie_bytes(cookie.value)
+                self._values |= {readable_cookie(cookie.value), raw.decode("latin-1")}
         if len(self._values) > _MAX_SCRUB_VALUES:
             self.overflowed = True
             self._live = httpx.Cookies()
@@ -452,4 +511,4 @@ class Session:
         return lines
 
 
-__all__ = ["Session", "SessionJar"]
+__all__ = ["Session", "SessionJar", "cookie_bytes", "jar_text", "readable_cookie"]

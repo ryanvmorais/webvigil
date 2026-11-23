@@ -171,6 +171,59 @@ async def test_the_session_cookie_rides_on_target_requests_and_beats_a_static_on
     assert app.cookie_seen == ["lang=en; sid=tok1"]
 
 
+class _RawCookieApp(_App):
+    """A target whose login sets one exact byte string and that records the bytes it gets back."""
+
+    def __init__(self, value: bytes) -> None:
+        """
+        Args:
+            value (bytes): The raw ``sid`` value the login sets.
+        """
+        super().__init__()
+        self.value = value
+        self.received: list[tuple[list[bytes], str | None]] = []  # (Cookie lines, x-test)
+
+    def handle(self, request: httpx.Request) -> httpx.Response:
+        """
+        Args:
+            request (httpx.Request): The request the client sent.
+
+        Returns:
+            httpx.Response: The login's ``Set-Cookie``, or a plain page.
+        """
+        if request.url.path == "/signin":
+            cookie = b"sid=" + self.value + b"; Path=/"
+            return httpx.Response(200, headers=[(b"set-cookie", cookie)], text="form")
+        lines = [v for k, v in request.headers.raw if k.lower() == b"cookie"]
+        self.received.append((lines, request.headers.get("x-test")))
+        return httpx.Response(200, text="ok")
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["café".encode(), "à".encode(), b"caf\xe9"],
+    ids=["utf8", "utf8-ends-a0", "latin1"],
+)
+async def test_a_session_cookie_outside_ascii_goes_out_as_its_own_bytes(value: bytes) -> None:
+    """One Cookie line with the server's bytes, a UTF-8 static cookie, the other headers intact."""
+    app = _RawCookieApp(value)
+    async with _client(app, cookies=["lang=português"]) as http:
+        session = _session(http)
+        await _login(http, session)
+        await http.get(f"{_BASE}/page", headers={"x-test": "kept"})
+
+    assert app.received == [(["lang=português".encode() + b"; sid=" + value], "kept")]
+
+
+async def test_a_static_cookie_outside_ascii_goes_out_as_utf8_without_a_session() -> None:
+    """The ``--cookie`` path alone: no login attached, the value is the UTF-8 the user typed."""
+    app = _RawCookieApp(b"unused")
+    async with _client(app, cookies=["lang=português"]) as http:
+        await http.get(f"{_BASE}/page")
+
+    assert app.received == [(["lang=português".encode()], None)]
+
+
 async def test_without_a_session_the_client_sends_only_what_is_configured() -> None:
     """A target's ``Set-Cookie`` is never replayed when no login is attached (spec 007)."""
     app = _App()
