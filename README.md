@@ -449,7 +449,7 @@ uv run lint-imports
 uv run pytest
 
 # Web UI (in web/):
-pnpm install && pnpm lint && pnpm typecheck && pnpm test && pnpm build
+pnpm install && pnpm lint && pnpm format:check && pnpm typecheck && pnpm test && pnpm build
 
 # Playwright: setup → scan → report → logout, fully offline
 pnpm test:e2e

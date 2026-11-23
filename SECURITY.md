@@ -2,8 +2,7 @@
 
 ## Supported Versions
 
-Only the latest release receives security fixes: the newest `1.x` once `1.0.0` is published,
-and `main` until then.
+Only the latest release (the newest `1.x`) receives security fixes.
 
 | Version | Supported |
 |---|---|

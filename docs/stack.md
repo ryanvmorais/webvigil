@@ -344,7 +344,8 @@ Utility-first CSS: you style in the markup with classes (`flex`, `gap-4`,
 `@import "tailwindcss"` and an `@theme` block in `globals.css`, no
 `tailwind.config.ts`. The design tokens (the shadcn "slate" palette, a severity
 scale) are CSS custom properties; dark mode is `prefers-color-scheme` only, no
-toggle (ADR-8).
+toggle (ADR-8). The build runs through PostCSS: **`@tailwindcss/postcss`** is the Tailwind plugin
+and **`postcss`** the tool that loads it.
 
 **Why not** CSS Modules / styled-components / plain CSS: utilities keep styling
 co-located with the component and produce a tiny final stylesheet (only the
@@ -420,13 +421,17 @@ Rich, FastAPI, SQLModel, Alembic, PyJWT, argon2 or Uvicorn, and `webvigil.cli` /
 **Learn:** the contract lives in `pyproject.toml` `[tool.importlinter]`; a
 violation means you leaked a UI/DB dependency into the pure engine.
 
-### pytest (+ pytest-asyncio, pytest-httpx, trustme, jsonschema, Starlette)
+### pytest (+ pytest-asyncio, pytest-cov, pytest-httpx, httpx2, trustme, jsonschema, Starlette)
 
 The test runner. `asyncio_mode=auto` means `async def test_*` just works.
 `pytest-httpx` mocks HTTP at the transport layer. `trustme` mints throwaway TLS
 certificates for the TLS-check tests. `jsonschema` validates the SARIF reporter
-output against the bundled 2.1.0 schema. **Starlette** runs the insecure/hardened
-fixture app that the integration tests scan for real. To test `HttpClient` offline against a
+output against the bundled 2.1.0 schema. **pytest-cov** measures per-file line and branch
+coverage (`uv run pytest --cov`), the guard that a refactor of the tests does not lower it.
+**Starlette** runs the insecure/hardened fixture app that the integration tests scan for real;
+**httpx2** is the HTTP
+client of `starlette.testclient` (and FastAPI's `TestClient`), used by tests only, while the engine
+keeps `httpx`. To test `HttpClient` offline against a
 hand-written site, `tests/support.py` has `HandlerTransport`: it rebuilds each answer over a
 byte stream, because httpx records `Response.elapsed` only on a closed stream.
 
@@ -471,7 +476,8 @@ config option, and `--headed` / `--debug` for watching a run.
 Library** renders a component and queries it the way a user would (by role, label,
 text). **MSW** (Mock Service Worker) intercepts `fetch` so a component test hits
 fake API responses. **jest-axe** asserts a rendered tree has no accessibility
-violations.
+violations. **jsdom** is the simulated browser DOM the tests run in, so components render
+without a real browser.
 
 **Learn:** `describe`/`it`/`expect`, `vi.fn()` / `vi.mock` / `vi.hoisted`,
 `render()` + `screen.getByRole(...)`, `userEvent.click(...)`, MSW handlers
