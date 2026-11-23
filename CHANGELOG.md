@@ -11,6 +11,12 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-11-23
+
+A minor release that moves the engine's HTTP client to `httpx2`. It is backward compatible with
+[docs/stability.md](docs/stability.md): no CLI option, exit code, check id, configuration key or
+JSON report field changes. Only the provisional Python API changes, as described below.
+
 ### Changed
 
 - **The engine's HTTP client is now `httpx2`, in place of `httpx`** (#304). Commands,
@@ -18,6 +24,8 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
   stays the same: the `certifi` bundle, or `SSL_CERT_FILE` / `SSL_CERT_DIR` when set. An install
   now brings `httpx2` and `httpcore2` instead of `httpx` and `httpcore`, and the provisional
   Python API exposes `httpx2` objects where it exposed `httpx` ones, such as `Response.headers`.
+  In the TLS handshake the client now offers HTTP/2 before HTTP/1.1, so a server that follows the
+  client's preference answers over HTTP/2.
 
 ### Fixed
 
@@ -787,7 +795,8 @@ confirmed against a per-request baseline)
 - A security policy with private vulnerability reporting, a code of conduct, and the
   [stability policy](docs/stability.md).
 
-[Unreleased]: https://github.com/ryanvmorais/webvigil/compare/v1.4.7...HEAD
+[Unreleased]: https://github.com/ryanvmorais/webvigil/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/ryanvmorais/webvigil/compare/v1.4.7...v1.5.0
 [1.4.7]: https://github.com/ryanvmorais/webvigil/compare/v1.4.6...v1.4.7
 [1.4.6]: https://github.com/ryanvmorais/webvigil/compare/v1.4.5...v1.4.6
 [1.4.5]: https://github.com/ryanvmorais/webvigil/compare/v1.4.4...v1.4.5
