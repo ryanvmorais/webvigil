@@ -11,6 +11,13 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 ## [Unreleased]
 
+## [1.4.7] - 2026-11-22
+
+A patch release that keeps a scan running when a session cookie or a `--cookie` value is outside
+ASCII, and hides a credential or session value that a page echoes percent-encoded in Latin-1. It is
+backward compatible with [docs/stability.md](docs/stability.md): no CLI option, exit code, check id,
+configuration key or JSON report field changes.
+
 ### Fixed
 
 - A session cookie or a `--cookie` value outside ASCII no longer stops the scan or ends its later
@@ -767,7 +774,8 @@ confirmed against a per-request baseline)
 - A security policy with private vulnerability reporting, a code of conduct, and the
   [stability policy](docs/stability.md).
 
-[Unreleased]: https://github.com/ryanvmorais/webvigil/compare/v1.4.6...HEAD
+[Unreleased]: https://github.com/ryanvmorais/webvigil/compare/v1.4.7...HEAD
+[1.4.7]: https://github.com/ryanvmorais/webvigil/compare/v1.4.6...v1.4.7
 [1.4.6]: https://github.com/ryanvmorais/webvigil/compare/v1.4.5...v1.4.6
 [1.4.5]: https://github.com/ryanvmorais/webvigil/compare/v1.4.4...v1.4.5
 [1.4.4]: https://github.com/ryanvmorais/webvigil/compare/v1.4.3...v1.4.4

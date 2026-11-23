@@ -2163,7 +2163,7 @@ wheels = [
 
 [[package]]
 name = "webvigil"
-version = "1.4.6"
+version = "1.4.7"
 source = { editable = "." }
 dependencies = [
     { name = "cryptography" },
