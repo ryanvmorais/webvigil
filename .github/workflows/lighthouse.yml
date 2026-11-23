@@ -55,8 +55,8 @@ jobs:
     env:
       # Pinned on purpose: each @lhci/cli version embeds a Lighthouse version, and the
       # version changes the scores. Dependabot cannot see an npx: bump it here by hand
-      # and recalibrate the limits in .github/lighthouse/. 0.15.1 = Lighthouse 12.6.1.
-      LHCI_VERSION: "0.15.1"
+      # and recalibrate the limits in .github/lighthouse/. 0.16.0 = Lighthouse 13.6.0.
+      LHCI_VERSION: "0.16.0"
       # Throwaway value: the database (see the first step) lives in the runner's temp directory.
       WEBVIGIL_SESSION_SECRET: lighthouse-ci-only-secret-not-for-real-deployments-0123456789
       # next.config bakes the /api rewrite at build time (RNF-06): build and start with it.
