@@ -26,6 +26,8 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
   as failed. If the entry page fails but another page answers, the header checks read that page.
 - **The terminal now says when a scan is incomplete**, also with `--format` and `--output`, where
   no summary is printed.
+- **The dashboard's Docker build no longer takes local `.env*` files.** A build from a working
+  copy that had one sent it to the build context and copied it into the build stage.
 
 ## [1.5.0] - 2026-11-23
 
