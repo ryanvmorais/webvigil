@@ -1,7 +1,7 @@
 """
 HttpClient: retries, scope guard, and manual redirect handling — RF-05, RF-04, RF-03.
 
-All requests go through ``pytest-httpx``; the autouse ``_no_backoff`` fixture
+All requests go through ``httpx_mock``; the autouse ``_no_backoff`` fixture
 zeroes the retry sleep so the retry tests are instant. ``http.stats`` is the
 observable side channel — retries, blocked-out-of-scope, crafted requests — that
 the assertions read.

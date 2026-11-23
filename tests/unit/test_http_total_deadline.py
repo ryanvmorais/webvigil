@@ -3,7 +3,7 @@ The total read deadline of the HTTP client (``[http] total_timeout_s``) — issu
 
 ``timeout_s`` limits each connect, read and write on its own, so a server that sends one byte every
 few seconds never trips it and can hold a request, and a concurrency slot, open for a very long
-time. Every request goes through ``pytest-httpx``; the dripping body is a stream that sleeps
+time. Every request goes through ``httpx_mock``; the dripping body is a stream that sleeps
 between bytes, each pause far under the per-read timeout (15 s here) and the sum over the deadline
 (0.2 s). The retry backoff is zeroed, as in the other client tests, so the retries do not sleep.
 """

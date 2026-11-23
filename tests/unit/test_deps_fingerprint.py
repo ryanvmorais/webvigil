@@ -61,7 +61,7 @@ async def _run(pages: tuple[Page, ...], router, httpx_mock: object, *, max_fetch
     Args:
         pages (tuple[Page, ...]): The crawled pages.
         router: A handler from :func:`_router`.
-        httpx_mock: The ``pytest-httpx`` fixture.
+        httpx_mock: The ``httpx_mock`` fixture.
         max_fetches (int): The pass's fetch cap. Defaults to 50.
 
     Returns:

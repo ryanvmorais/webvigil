@@ -61,7 +61,7 @@ async def _crawl(
     """
     Args:
         router (_Router): The response router.
-        httpx_mock: The ``pytest-httpx`` fixture.
+        httpx_mock: The ``httpx_mock`` fixture.
         max_pages (int): The page cap. Defaults to 50.
 
     Returns:

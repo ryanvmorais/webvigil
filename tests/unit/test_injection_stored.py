@@ -217,7 +217,7 @@ async def _run(
         router (_Guestbook): The stateful response router.
         pages (tuple[Page, ...]): The first-crawl pages the pass starts from.
         forms (tuple[Form, ...]): The parsed forms Phase A submits markers into.
-        httpx_mock: The ``pytest-httpx`` fixture.
+        httpx_mock: The ``httpx_mock`` fixture.
         config (ScanConfig | None): The scan config; a stored-XSS-enabled default
             if omitted.
 

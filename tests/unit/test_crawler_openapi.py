@@ -3,7 +3,7 @@ OpenAPI / Swagger import — spec 013 RF-05, RF-06, RF-07, RF-08, RF-10.
 
 Every parsing case runs against a JSON document written under ``tmp_path`` and
 loaded through :func:`load_openapi` with a never-entered :class:`HttpClient`
-(a file ``source`` issues no request). The two URL cases use ``pytest-httpx``
+(a file ``source`` issues no request). The two URL cases use ``httpx_mock``
 to serve the document from the in-scope target host. ``_load`` is the shared
 helper; the target is always ``https://api.example.com``.
 """

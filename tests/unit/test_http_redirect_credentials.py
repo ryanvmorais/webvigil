@@ -43,7 +43,7 @@ def _redirect_to(httpx_mock: object, location: str) -> None:
     Answer the start URL with a redirect to ``location``, and ``location`` with a page.
 
     Args:
-        httpx_mock (object): The ``pytest-httpx`` fixture.
+        httpx_mock (object): The ``httpx_mock`` fixture.
         location (str): The redirect target.
     """
     httpx_mock.add_response(  # type: ignore[attr-defined]
@@ -55,7 +55,7 @@ def _redirect_to(httpx_mock: object, location: str) -> None:
 def _hop(httpx_mock: object) -> httpx.Request:
     """
     Args:
-        httpx_mock (object): The ``pytest-httpx`` fixture.
+        httpx_mock (object): The ``httpx_mock`` fixture.
 
     Returns:
         httpx.Request: The request the client sent after the redirect.
