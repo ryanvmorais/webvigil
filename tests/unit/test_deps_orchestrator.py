@@ -239,6 +239,7 @@ async def test_osv_lookup_failure_is_a_warning_not_a_crash(
     cfg = ScanConfig.model_validate({"deps": {"osv_online": True}})
     result = await Orchestrator(cfg, check_types=[VulnerableLibraryCheck]).run(_TARGET)
     assert any("OSV.dev lookup failed" in w for w in result.warnings)
+    assert result.pass_failed is False  # a third party being down is not a failed pass
     assert any(f.check_id == "deps.js.vulnerable-library" for f in result.findings)
 
 
@@ -257,6 +258,7 @@ async def test_an_unexpected_osv_exception_is_a_warning_not_a_crash(
     cfg = ScanConfig.model_validate({"deps": {"osv_online": True}})
     result = await Orchestrator(cfg, check_types=[VulnerableLibraryCheck]).run(_TARGET)
     assert any("OSV.dev lookup failed (KeyError)" in w for w in result.warnings)
+    assert result.pass_failed is False
     assert not any("third-party text" in w for w in result.warnings)
     assert any(f.check_id == "deps.js.vulnerable-library" for f in result.findings)
 

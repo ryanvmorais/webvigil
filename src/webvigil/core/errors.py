@@ -63,6 +63,15 @@ class ScanDeadlineExceeded(RequestFailed):
     """The scan reached ``[scan] max_duration_s``: the request was not sent."""
 
 
+class TargetUnreachableError(WebVigilError):
+    """
+    No page of the target answered, so there is nothing to report on.
+
+    Raised after the crawl when every request it made failed (a closed port, a name that does
+    not resolve, a timeout). A target that answers with an error status has answered.
+    """
+
+
 class ActiveModeNotAuthorized(WebVigilError):
     """Active Mode was requested without an ``authorized_by`` attestation."""
 

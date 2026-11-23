@@ -18,7 +18,7 @@ saved file:
 | Surface | The promise |
 |---|---|
 | **CLI** | Command names (`scan`, `list-checks`, `report`, `version`) and the options in `--help`. A flag is renamed or removed only in a major release; where possible the old name keeps working for a minor release first, with a notice. |
-| **Exit codes** | `0` clean · `1` unexpected error · `2` usage error · `3` findings at or above `--fail-on` · `4` operational error (bad target, unreachable host, configuration, a failed login) · `5` Active Mode without `--authorized-by`. |
+| **Exit codes** | `0` clean · `1` unexpected error · `2` usage error · `3` findings at or above `--fail-on` · `4` operational error (bad target, unreachable host, configuration, a failed login, or a `--fail-on` scan left incomplete by a failed pass or check) · `5` Active Mode without `--authorized-by`. |
 | **Configuration** | The sections and keys of `webvigil.toml` (see [`webvigil.example.toml`](../webvigil.example.toml)). A key is not renamed or removed within a major version; an unknown key is an error, so a typo never passes silently. |
 | **Check ids** | An id such as `http.headers.csp` or `session.fixation` is not renamed or removed within a major version. It is what `[checks] disabled` takes and what a SARIF rule is called. |
 | **Safety defaults** | What decides whether something is sent to the target never gets looser: Safe Mode is the default, Active Mode needs `--mode active --authorized-by`, and every opt-in that writes to the target, makes a login request or sends library names to a third party stays off by default. |

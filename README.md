@@ -251,7 +251,8 @@ uv run webvigil scan "$TARGET_URL" --format sarif --output results.sarif --fail-
 ```
 
 Exit codes: `0` clean · `3` findings at or above `--fail-on` · `4` operational error
-(bad target, unreachable host, config) · `5` Active Mode without `--authorized-by`.
+(bad target, unreachable host, config, or a `--fail-on` scan left incomplete by a failed pass or
+check) · `5` Active Mode without `--authorized-by`.
 
 To scan a target on your own machine from the image, add `--network host` (Linux) or use
 `host.docker.internal` as the host name (Docker Desktop).
