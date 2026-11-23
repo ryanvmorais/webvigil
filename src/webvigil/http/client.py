@@ -33,7 +33,7 @@ from webvigil.http.addresses import AddressGuard, BlockedAddressError, Resolver,
 from webvigil.http.decoding import ACCEPT_ENCODING, BodyDecoder
 from webvigil.http.policy import RateLimiter
 from webvigil.http.scope_guard import ScopeGuard
-from webvigil.http.session import Session
+from webvigil.http.session import Session, cookie_bytes, jar_text
 
 _MAX_ATTEMPTS = 3
 _MAX_REDIRECT_HOPS = 10
@@ -325,7 +325,8 @@ class HttpClient:
         self._target = target
         self._config = config
         # spec 007 / spec 013: attached to target-host requests only, never stored or logged.
-        self._cookie_header = config.auth.as_header
+        # in the session jar's form, because one Cookie header can carry both (UTF-8 on the wire)
+        self._cookie_header = jar_text(config.auth.as_header.encode("utf-8"))
         self._auth_headers = config.auth.header_pairs
         self._guard = ScopeGuard(target)
         self.addresses = AddressGuard(target.host, resolver=resolver)
@@ -831,6 +832,7 @@ class HttpClient:
         if cookie_header and on_target:
             existing = req_headers.get("cookie")
             req_headers["cookie"] = f"{existing}; {cookie_header}" if existing else cookie_header
+        jar_cookie = req_headers.get("cookie")  # read before the [auth] headers can add one
         # spec 013: configured [auth] headers, target-host only, without clobbering a header
         # the caller already set for this request (case-insensitive).
         if self._auth_headers and on_target and not anonymous:
@@ -838,6 +840,18 @@ class HttpClient:
             for name, value in self._auth_headers:
                 if name.lower() not in present:
                     req_headers[name] = value
+        # httpx encodes a text header as ASCII, so a cookie outside it goes out as its own bytes
+        wire_headers: dict[str, str] | httpx.Headers = req_headers
+        if jar_cookie is not None and not jar_cookie.isascii():
+            wire_headers = httpx.Headers(
+                [
+                    (
+                        name.encode("ascii"),
+                        cookie_bytes(value) if name == "cookie" else value.encode("ascii"),
+                    )
+                    for name, value in req_headers.items()
+                ]
+            )
         last_error: str = "unknown error"
         for attempt in range(_MAX_ATTEMPTS):
             if attempt:
@@ -858,7 +872,7 @@ class HttpClient:
                         data=data,  # type: ignore[arg-type]
                         content=content,
                         files=files,
-                        headers=req_headers,
+                        headers=wire_headers,
                     )
                     self.stats.requests += 1
                     if crafted or not idempotent:

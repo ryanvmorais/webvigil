@@ -18,6 +18,9 @@ from webvigil.http.session import (
     _MAX_SCRUB_VALUES,
     _MAX_VARIANTS_PER_NAME,
     SessionJar,
+    cookie_bytes,
+    jar_text,
+    readable_cookie,
 )
 
 _URL = "http://demo.test/signin"
@@ -225,3 +228,132 @@ def test_ordinary_rotation_keeps_the_session() -> None:
         jar.absorb(_response(_URL, f"sid=r{i}; Path=/"), handshake=False)
     assert not jar.overflowed
     assert jar.pairs_for(_URL, handshake=False) == [("sid", "r9")]
+
+
+# ---------------------------------------------------------------------------
+# Cookies outside ASCII
+# ---------------------------------------------------------------------------
+
+
+def _raw_response(url: str, *set_cookie: bytes) -> httpx.Response:
+    """
+    Args:
+        url (str): The URL the response answers; becomes the response's request.
+        *set_cookie (bytes): One raw ``Set-Cookie`` value per argument.
+
+    Returns:
+        httpx.Response: A 200 carrying those exact bytes.
+    """
+    headers = [(b"set-cookie", value) for value in set_cookie]
+    return httpx.Response(200, headers=headers, request=httpx.Request("GET", url))
+
+
+def _committed_raw(url: str, *set_cookie: bytes) -> SessionJar:
+    """
+    Args:
+        url (str): The URL the handshake response answers.
+        *set_cookie (bytes): The raw ``Set-Cookie`` values it carries.
+
+    Returns:
+        SessionJar: A jar with those cookies committed.
+    """
+    jar = SessionJar("demo.test")
+    jar.begin()
+    jar.absorb(_raw_response(url, *set_cookie), handshake=True)
+    jar.commit()
+    return jar
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "café".encode(),
+        "à".encode(),  # UTF-8 ends in 0xA0, which str.strip removes when read as Latin-1
+        "日本語".encode(),
+        b"caf\xe9",  # Latin-1: not valid UTF-8
+        b"x\x85",
+        b"\xa0x\xa0",
+    ],
+    ids=["utf8", "utf8-ends-a0", "utf8-cjk", "latin1", "ends-85", "edges-a0"],
+)
+def test_a_value_outside_ascii_comes_back_byte_for_byte(value: bytes) -> None:
+    """Whatever encoding the server chose, the session is the bytes it sent."""
+    jar = _committed_raw(_URL, b"sid=" + value + b"; Path=/")
+
+    ((name, held),) = jar.pairs_for(_URL, handshake=False)
+    assert (name, cookie_bytes(held)) == ("sid", value)
+
+
+def test_a_rotation_to_a_value_outside_ascii_is_taken() -> None:
+    """The live path: a held name rotates to a non-ASCII value and the next request has it."""
+    jar = _committed_raw(_URL, b"sid=first; Path=/")
+    jar.absorb(_raw_response(_URL, "sid=café; Path=/".encode()), handshake=False)
+
+    ((_name, held),) = jar.pairs_for(_URL, handshake=False)
+    assert cookie_bytes(held) == "café".encode()
+
+
+def test_two_cookies_in_different_encodings_each_keep_their_bytes() -> None:
+    """One response can mix them, so the encoding is never decided for the whole header set."""
+    jar = _committed_raw(_URL, "a=café; Path=/".encode(), b"b=caf\xe9; Path=/")
+
+    held = {name: cookie_bytes(value) for name, value in jar.pairs_for(_URL, handshake=False)}
+    assert held == {"a": "café".encode(), "b": b"caf\xe9"}
+
+
+def test_a_name_outside_ascii_is_kept_and_reads_as_text() -> None:
+    """The jar's form of a name goes back to the same bytes and to readable text."""
+    jar = _committed_raw(_URL, "sessão=v; Path=/".encode())
+
+    ((name, _value),) = jar.pairs_for(_URL, handshake=False)
+    assert (cookie_bytes(name), readable_cookie(name)) == ("sessão".encode(), "sessão")
+
+
+@pytest.mark.parametrize(
+    ("raw", "text"),
+    [(b"plain", "plain"), ("café".encode(), "café"), (b"caf\xe9", "café")],
+    ids=["ascii", "utf8", "latin1"],
+)
+def test_readable_cookie_prefers_utf8_and_falls_back_to_latin1(raw: bytes, text: str) -> None:
+    """Never a private-use character or a surrogate, which a report could not show or write."""
+    assert readable_cookie(jar_text(raw)) == text
+
+
+@pytest.mark.parametrize(
+    ("url", "kept"),
+    [("http://demo.test/signin", {"sid"}), ("https://demo.test/signin", {"sid", "tok"})],
+    ids=["http-drops-secure", "https-keeps-secure"],
+)
+def test_the_secure_rule_still_applies_beside_a_value_outside_ascii(
+    url: str, kept: set[str]
+) -> None:
+    """Over ``http`` the ``Secure`` line goes and the non-ASCII one stays; ``https`` keeps both."""
+    jar = _committed_raw(url, "sid=café; Path=/".encode(), b"tok=abc; Path=/; Secure")
+
+    assert {name for name, _value in jar.pairs_for(url, handshake=False)} == kept
+
+
+def test_a_path_attribute_outside_ascii_still_matches_the_request() -> None:
+    """Attributes stay text: the jar compares ``Path`` with the percent-encoded URL."""
+    jar = _committed_raw("http://demo.test/café/", "sid=v; Path=/café".encode())
+
+    assert jar.pairs_for("http://demo.test/caf%C3%A9/page", handshake=False) == [("sid", "v")]
+    assert jar.pairs_for("http://demo.test/other", handshake=False) == []
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("café1234".encode(), {"café1234", "cafÃ©1234"}),
+        (b"caf\xe91234", {"café1234"}),
+        (b"plain1234", {"plain1234"}),
+    ],
+    ids=["utf8", "latin1", "ascii"],
+)
+def test_the_scrub_list_holds_the_value_as_a_page_would_show_it(
+    raw: bytes, expected: set[str]
+) -> None:
+    """The report quotes decoded pages, so the jar's private form would never match them."""
+    jar = _committed_raw(_URL, b"sid=" + raw + b"; Path=/")
+
+    assert jar.values == expected

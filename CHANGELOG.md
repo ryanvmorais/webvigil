@@ -11,6 +11,12 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 ## [Unreleased]
 
+### Fixed
+
+- A session cookie or a `--cookie` value outside ASCII no longer stops the scan or ends its later
+  passes early. The scanner now sends the value back byte for byte, and the report shows and
+  redacts it as text.
+
 ## [1.4.6] - 2026-11-22
 
 A patch release that reads a backslash in a link or a redirect the way a browser does, keeps a
