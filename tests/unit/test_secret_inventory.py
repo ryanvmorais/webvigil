@@ -113,11 +113,6 @@ EXEMPT_ENDINGS: Final = (
     "hours",
 )
 
-# Modules the field gate does not import: the migrations run Alembic at import time, and a
-# ``__main__`` runs its program.
-SKIPPED_MODULES: Final = re.compile(r"^webvigil\.api\.migrations(\.|$)|(^|\.)__main__$")
-
-
 # ---------------------------------------------------------------------------
 # Reveal inventory: the walk
 # ---------------------------------------------------------------------------
@@ -210,31 +205,50 @@ def walk_source(source: str, module: str) -> _Walk:
     return walk
 
 
-def _module_name(path: Path) -> str:
+def _module_name(path: Path, root: Path, package: str) -> str:
     """
     Args:
-        path (Path): A ``.py`` file under :data:`SRC`.
+        path (Path): A ``.py`` file under ``root``.
+        root (Path): The package's directory.
+        package (str): The package's name.
 
     Returns:
         str: Its dotted module name (a package's ``__init__`` is the package).
     """
-    parts = ("webvigil", *path.relative_to(SRC).with_suffix("").parts)
+    parts = (package, *path.relative_to(root).with_suffix("").parts)
     return ".".join(parts[:-1] if parts[-1] == "__init__" else parts)
 
 
-def walk_package() -> tuple[_Walk, int]:
+def walk_package(root: Path = SRC, package: str = "webvigil") -> tuple[_Walk, int]:
     """
+    Args:
+        root (Path): The package's directory. Defaults to :data:`SRC`.
+        package (str): The package's name. Defaults to ``webvigil``.
+
     Returns:
-        tuple[_Walk, int]: The merged walk of every module under :data:`SRC`, and how many
-            modules it parsed.
+        tuple[_Walk, int]: The merged walk of every module under ``root``, and how many modules
+            it parsed.
     """
     merged = _Walk()
-    paths = sorted(SRC.rglob("*.py"))
+    paths = sorted(root.rglob("*.py"))
     for path in paths:
-        walk = walk_source(path.read_text(encoding="utf-8"), _module_name(path))
+        walk = walk_source(path.read_text(encoding="utf-8"), _module_name(path, root, package))
         merged.sites |= walk.sites
         merged.refused += walk.refused
     return merged, len(paths)
+
+
+def inventory_problems(sites: set[str], allowed: Mapping[str, str]) -> tuple[set[str], set[str]]:
+    """
+    Args:
+        sites (set[str]): The reveal sites the walk found.
+        allowed (Mapping[str, str]): The inventory.
+
+    Returns:
+        tuple[set[str], set[str]]: The sites missing from the inventory, and the inventoried sites
+            with no call left.
+    """
+    return sites - allowed.keys(), allowed.keys() - sites
 
 
 # ---------------------------------------------------------------------------
@@ -246,8 +260,7 @@ def test_every_reveal_is_in_the_inventory() -> None:
     """The reveal calls of the source are exactly the inventoried sites, none missing or stale."""
     walk, parsed = walk_package()
     assert parsed > 100  # the walk read the package, so an empty result means something
-    unlisted = walk.sites - ALLOWED_REVEALS.keys()
-    stale = ALLOWED_REVEALS.keys() - walk.sites
+    unlisted, stale = inventory_problems(walk.sites, ALLOWED_REVEALS)
     assert not unlisted, f"reveal() outside ALLOWED_REVEALS: {sorted(unlisted)}"
     assert not stale, f"ALLOWED_REVEALS sites with no reveal() left: {sorted(stale)}"
 
@@ -323,6 +336,25 @@ def test_the_secrets_module_may_use_its_own_slot() -> None:
     assert walk_source(_THROWAWAY, SECRETS_MODULE).refused == []
 
 
+def test_the_package_walk_merges_every_module(tmp_path: Path) -> None:
+    """Positive control over a throwaway package: every module's sites and refusals arrive."""
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "__init__.py").write_text("def top(secret):\n    return secret.reveal()\n")
+    (tmp_path / "sub" / "__init__.py").write_text("")
+    (tmp_path / "sub" / "client.py").write_text(
+        "def send(secret):\n    return secret.reveal(), secret._value\n"
+    )
+    walk, parsed = walk_package(tmp_path, "pkg")
+    assert parsed == 3
+    assert walk.sites == {"pkg:top", "pkg.sub.client:send"}
+    assert walk.refused == ["pkg.sub.client:2: ._value"]
+    allowed = {"pkg:top": "a reason", "pkg.sub.client:gone": "a reason"}
+    assert inventory_problems(walk.sites, allowed) == (
+        {"pkg.sub.client:send"},
+        {"pkg.sub.client:gone"},
+    )
+
+
 # ---------------------------------------------------------------------------
 # Credential-field gate: the walk
 # ---------------------------------------------------------------------------
@@ -331,12 +363,12 @@ def test_the_secrets_module_may_use_its_own_slot() -> None:
 def _modules() -> Iterator[Any]:
     """
     Yields:
-        Any: Every module of the package but :data:`SKIPPED_MODULES`, imported.
+        Any: Every module of the package, imported. The Alembic migrations are not a package
+            (no ``__init__``), so the walk never runs them.
     """
     yield webvigil
     for info in pkgutil.walk_packages(webvigil.__path__, "webvigil."):
-        if not SKIPPED_MODULES.search(info.name):
-            yield importlib.import_module(info.name)
+        yield importlib.import_module(info.name)
 
 
 def _models() -> list[type]:
@@ -444,16 +476,45 @@ def credential_fields(
     return seen, plain
 
 
+def field_problems(
+    seen: set[str],
+    plain: set[str],
+    *,
+    exempt: Mapping[str, str] = EXEMPT,
+    pending: frozenset[str] = PENDING_CONVERSION,
+    declared: frozenset[str] = DECLARED,
+) -> dict[str, set[str]]:
+    """
+    Args:
+        seen (set[str]): Every field key the gate looked at.
+        plain (set[str]): The keys holding a credential as a plain string.
+        exempt (Mapping[str, str]): The exemptions. Defaults to :data:`EXEMPT`.
+        pending (frozenset[str]): The fields still to convert. Defaults to
+            :data:`PENDING_CONVERSION`.
+        declared (frozenset[str]): The declared fields. Defaults to :data:`DECLARED`.
+
+    Returns:
+        dict[str, set[str]]: What fails, by reason: ``failing`` (a plain credential with no
+            entry), ``converted`` (a pending entry that holds a ``Secret`` already), ``stale``
+            (an exemption that no longer matches) and ``missing`` (a declared field not found).
+    """
+    return {
+        "failing": plain - exempt.keys() - pending,
+        "converted": set(pending - plain),
+        "stale": exempt.keys() - plain,
+        "missing": set(declared - seen),
+    }
+
+
 @pytest.fixture(scope="module")
-def package_fields() -> tuple[set[str], set[str], int]:
+def package_fields() -> tuple[dict[str, set[str]], int]:
     """
     Returns:
-        tuple[set[str], set[str], int]: :func:`credential_fields` over the whole package, and how
+        tuple[dict[str, set[str]], int]: :func:`field_problems` over the whole package, and how
             many classes it walked.
     """
     classes = _models()
-    seen, plain = credential_fields(classes)
-    return seen, plain, len(classes)
+    return field_problems(*credential_fields(classes)), len(classes)
 
 
 # ---------------------------------------------------------------------------
@@ -462,35 +523,49 @@ def package_fields() -> tuple[set[str], set[str], int]:
 
 
 def test_no_credential_field_is_a_plain_string(
-    package_fields: tuple[set[str], set[str], int],
+    package_fields: tuple[dict[str, set[str]], int],
 ) -> None:
     """Every field that holds a credential is a ``Secret``, but the exempt and the pending ones."""
-    _, plain, walked = package_fields
+    problems, walked = package_fields
     assert walked > 50  # the gate saw the package's models
-    failing = plain - EXEMPT.keys() - PENDING_CONVERSION
-    assert not failing, f"credential fields typed str: {sorted(failing)}"
+    assert not problems["failing"], f"credential fields typed str: {sorted(problems['failing'])}"
 
 
 def test_a_pending_entry_still_holds_a_string(
-    package_fields: tuple[set[str], set[str], int],
+    package_fields: tuple[dict[str, set[str]], int],
 ) -> None:
     """A field already converted to ``Secret`` leaves ``PENDING_CONVERSION`` in the same change."""
-    _, plain, _ = package_fields
-    converted = PENDING_CONVERSION - plain
+    converted = package_fields[0]["converted"]
     assert not converted, f"already converted, drop from PENDING_CONVERSION: {sorted(converted)}"
 
 
-def test_every_exemption_still_matches(package_fields: tuple[set[str], set[str], int]) -> None:
+def test_every_exemption_still_matches(package_fields: tuple[dict[str, set[str]], int]) -> None:
     """An exemption whose field is gone or no longer matches is removed."""
-    _, plain, _ = package_fields
-    stale = EXEMPT.keys() - plain
+    stale = package_fields[0]["stale"]
     assert not stale, f"exemptions that no longer match: {sorted(stale)}"
 
 
-def test_every_declared_field_exists(package_fields: tuple[set[str], set[str], int]) -> None:
+def test_every_declared_field_exists(package_fields: tuple[dict[str, set[str]], int]) -> None:
     """A declared field that was renamed or moved is noticed, not silently dropped."""
-    seen, _, _ = package_fields
-    assert seen >= DECLARED, f"declared fields not found: {sorted(DECLARED - seen)}"
+    missing = package_fields[0]["missing"]
+    assert not missing, f"declared fields not found: {sorted(missing)}"
+
+
+def test_field_problems_names_each_failure() -> None:
+    """Positive control: each kind of problem is reported, from synthetic sets."""
+    problems = field_problems(
+        {"m:A.token", "m:A.done", "m:A.cookie", "m:A.pairs"},
+        {"m:A.token", "m:A.cookie"},
+        exempt={"m:A.cookie": "a name", "m:A.gone": "a name"},
+        pending=frozenset({"m:A.done"}),
+        declared=frozenset({"m:A.pairs", "m:A.renamed"}),
+    )
+    assert problems == {
+        "failing": {"m:A.token"},
+        "converted": {"m:A.done"},
+        "stale": {"m:A.gone"},
+        "missing": {"m:A.renamed"},
+    }
 
 
 class _PlainToken(BaseModel):
@@ -503,6 +578,12 @@ class _SecretToken(BaseModel):
     """The same model with the credential as a secret field."""
 
     api_token: Annotated[Secret, secret_field(SecretKind.HEADER)]
+
+
+class _SecretMap(BaseModel):
+    """A credential map keyed by name, as the login record will be."""
+
+    cookies: dict[str, Secret] = {}
 
 
 class _Described(BaseModel):
@@ -521,6 +602,18 @@ class _PlainLogin:
     password: str | None = None
 
 
+# An alias, which only a resolved annotation shows to be a string.
+_Text = str
+
+
+@dataclasses.dataclass
+class _AliasedLogin:
+    """A dataclass whose credentials hide behind an alias and a camel-case name."""
+
+    password: _Text
+    sessionToken: str
+
+
 @dataclasses.dataclass
 class _Undeclared:
     """A field whose name does not say it is a credential."""
@@ -530,15 +623,20 @@ class _Undeclared:
 
 def test_the_gate_flags_a_plain_credential() -> None:
     """Positive control: a model and a dataclass with a credential typed ``str`` are flagged."""
-    _, plain = credential_fields([_PlainToken, _PlainLogin])
-    assert plain == {f"{__name__}:_PlainToken.api_token", f"{__name__}:_PlainLogin.password"}
+    _, plain = credential_fields([_PlainToken, _PlainLogin, _AliasedLogin])
+    assert plain == {
+        f"{__name__}:_PlainToken.api_token",
+        f"{__name__}:_PlainLogin.password",
+        f"{__name__}:_AliasedLogin.password",
+        f"{__name__}:_AliasedLogin.sessionToken",
+    }
 
 
 def test_the_gate_accepts_a_secret_and_a_describing_name() -> None:
     """A secret field, a describing ending and a field with no string are not flagged."""
-    seen, plain = credential_fields([_SecretToken, _Described, _Undeclared])
+    seen, plain = credential_fields([_SecretToken, _SecretMap, _Described, _Undeclared])
     assert plain == set()
-    assert len(seen) == 5  # the fields were looked at
+    assert len(seen) == 6  # the fields were looked at
 
 
 def test_a_declared_field_is_checked_whatever_its_name() -> None:
@@ -546,6 +644,12 @@ def test_a_declared_field_is_checked_whatever_its_name() -> None:
     key = f"{__name__}:_Undeclared.pairs"
     assert credential_fields([_Undeclared])[1] == set()
     assert credential_fields([_Undeclared], declared=frozenset({key}))[1] == {key}
+
+
+def test_a_package_init_is_named_as_the_package() -> None:
+    """``core/__init__.py`` is ``webvigil.core``, as a qualified site names it."""
+    assert _module_name(SRC / "core" / "__init__.py", SRC, "webvigil") == "webvigil.core"
+    assert _module_name(SRC / "core" / "secrets.py", SRC, "webvigil") == SECRETS_MODULE
 
 
 @pytest.mark.parametrize(
