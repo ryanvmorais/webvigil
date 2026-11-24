@@ -19,6 +19,7 @@ import pytest
 
 from webvigil.core import ConfigError, ScanConfig
 from webvigil.core.findings import ScanMode
+from webvigil.core.secrets import Secret, SecretKind
 
 
 def _write(tmp_path: Path, toml: str) -> Path:
@@ -62,12 +63,16 @@ def test_load_reads_toml(tmp_path: Path) -> None:
     assert config.active is not None and config.active.authorized_by == "Jane / #1"
 
 
-def test_web_section_is_tolerated_as_passthrough(tmp_path: Path) -> None:
-    """The ``[web]`` table is kept verbatim for the API to read, not validated here."""
-    path = _write(tmp_path, "[scan]\nmax_pages = 7\n\n[web]\nport = 9000\ndatabase_path = 'x.db'\n")
-    config = ScanConfig.load(path)
-    assert config.scan.max_pages == 7
-    assert config.web == {"port": 9000, "database_path": "x.db"}
+def test_the_web_section_is_accepted_and_keeps_no_value(tmp_path: Path) -> None:
+    """The ``[web]`` table loads, and none of its values stays in the config (spec 024, RF-06)."""
+    toml = "[scan]\nmax_pages = 7\n\n[web]\nport = 9000\nsession_secret = 'w3b-s1gning-k3y'\n"
+    config = ScanConfig.load(_write(tmp_path, toml))
+    assert config.scan.max_pages == 7  # the rest of the file was read
+    assert config.web == {}
+    assert "w3b-s1gning-k3y" not in repr(config) + config.model_dump_json()
+    assert ScanConfig().web is None  # no table, nothing
+    with pytest.raises(ConfigError, match="web"):  # still a table, or nothing
+        ScanConfig.model_validate_or_raise({"web": "not a table"})
 
 
 def test_a_missing_file_is_a_config_error(tmp_path: Path) -> None:
@@ -234,24 +239,47 @@ def test_deps_section_defaults_and_round_trips(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_auth_cookies_default_empty_and_round_trip(tmp_path: Path) -> None:
-    """``[auth] cookies`` defaults empty and its ``as_header`` join round-trips from TOML."""
+def _shown(secrets: list[Secret]) -> list[tuple[SecretKind, str | None, str]]:
+    """
+    Args:
+        secrets (list[Secret]): Parsed ``[auth]`` entries.
+
+    Returns:
+        list[tuple[SecretKind, str | None, str]]: Each entry's kind, name and value.
+    """
+    return [(secret.kind, secret.name, secret.reveal()) for secret in secrets]
+
+
+def test_auth_cookies_default_empty_and_parse_into_named_secrets(tmp_path: Path) -> None:
+    """Each ``[auth] cookies`` entry is a named ``COOKIE`` secret (spec 024, RF-04)."""
     assert ScanConfig().auth.cookies == []
-    assert ScanConfig().auth.as_header == ""
-    loaded = ScanConfig.load(
-        _write(tmp_path, "[auth]\ncookies = ['session=abc', 'csrf=xyz']\n")
-    ).auth
-    assert loaded.cookies == ["session=abc", "csrf=xyz"]
-    assert loaded.as_header == "session=abc; csrf=xyz"
+    toml = "[auth]\ncookies = ['session=abc', 'csrf=x=y', ' pad = v ']\n"
+    loaded = ScanConfig.load(_write(tmp_path, toml)).auth
+    assert all(isinstance(cookie, Secret) for cookie in loaded.cookies)
+    # the value keeps any '=' after the first; around the first, the entry is kept as written
+    assert _shown(loaded.cookies) == [
+        (SecretKind.COOKIE, "session", "abc"),
+        (SecretKind.COOKIE, "csrf", "x=y"),
+        (SecretKind.COOKIE, "pad ", " v"),
+    ]
 
 
-def test_auth_headers_default_empty_and_round_trip(tmp_path: Path) -> None:
-    """``[auth] headers`` defaults empty; ``header_pairs`` splits on the first colon (spec 013)."""
+def test_auth_headers_default_empty_and_parse_into_named_secrets(tmp_path: Path) -> None:
+    """``header_pairs`` splits on the first colon (spec 013) and holds ``HEADER`` secrets."""
     assert ScanConfig().auth.headers == []
     assert ScanConfig().auth.header_pairs == ()
-    path = _write(tmp_path, "[auth]\nheaders = ['Authorization: Bearer a:b:c', 'X-Tenant: acme']\n")
+    path = _write(
+        tmp_path, "[auth]\nheaders = ['Authorization: Bearer a:b:c', ' X-Tenant :acme ']\n"
+    )
     loaded = ScanConfig.load(path).auth
-    assert loaded.header_pairs == (("Authorization", "Bearer a:b:c"), ("X-Tenant", "acme"))
+    assert _shown(loaded.headers) == [
+        (SecretKind.HEADER, "Authorization", "Bearer a:b:c"),
+        (SecretKind.HEADER, "X-Tenant", "acme"),
+    ]
+    assert [(name, value.reveal()) for name, value in loaded.header_pairs] == [
+        ("Authorization", "Bearer a:b:c"),
+        ("X-Tenant", "acme"),
+    ]
 
 
 def test_auth_list_overrides_replace_the_file_list() -> None:
@@ -260,8 +288,46 @@ def test_auth_list_overrides_replace_the_file_list() -> None:
         {"auth": {"cookies": ["a=1", "b=2"], "headers": ["Authorization: Bearer old"]}}
     )
     merged = base.with_overrides(auth={"cookies": ["c=3"], "headers": ["X-API-Key: new"]})
-    assert merged.auth.cookies == ["c=3"]
-    assert merged.auth.headers == ["X-API-Key: new"]
+    assert _shown(merged.auth.cookies) == [(SecretKind.COOKIE, "c", "3")]
+    assert _shown(merged.auth.headers) == [(SecretKind.HEADER, "X-API-Key", "new")]
+
+
+def test_a_config_validated_again_keeps_its_secrets() -> None:
+    """An override of another section validates the dump again; its secrets pass unchanged."""
+    base = ScanConfig.model_validate(
+        {"auth": {"cookies": ["sid=abc"], "headers": ["Authorization: Bearer t"]}}
+    )
+    merged = base.with_overrides(scan={"max_pages": 3})
+    assert merged.scan.max_pages == 3
+    assert merged.auth.cookies[0] is base.auth.cookies[0]
+    assert merged.auth.headers[0] is base.auth.headers[0]
+    # a list mixing a kept secret and a new entry, as a Python caller may build it
+    mixed = ScanConfig.model_validate({"auth": {"cookies": [*base.auth.cookies, "b=2"]}})
+    assert _shown(mixed.auth.cookies) == [
+        (SecretKind.COOKIE, "sid", "abc"),
+        (SecretKind.COOKIE, "b", "2"),
+    ]
+
+
+def test_printing_or_dumping_the_config_shows_no_credential_value() -> None:
+    """``repr``, ``str`` and a JSON-mode dump show the marker, never a cookie or header value."""
+    cookie, token = "c00kie-VALUE", "t0ken-VALUE"
+    cfg = ScanConfig.model_validate(
+        {"auth": {"cookies": [f"sid={cookie}"], "headers": [f"Authorization: Bearer {token}"]}}
+    )
+    shown = repr(cfg) + str(cfg) + repr(cfg.auth) + cfg.model_dump_json()
+    assert cookie not in shown and token not in shown
+    assert "sid" in shown and "Authorization" in shown  # names are not secret
+    # positive control: the values are held, and a plain-string dump would have shown them
+    assert cfg.auth.cookies[0].reveal() == cookie
+    assert token in cfg.auth.headers[0].reveal()
+
+
+def test_an_auth_list_that_is_not_a_list_is_a_type_error() -> None:
+    """A bare string for ``cookies`` or ``headers`` gets the list type error, not a parse."""
+    for key in ("cookies", "headers"):
+        with pytest.raises(ConfigError, match=f"auth.{key}: Input should be a valid list"):
+            ScanConfig.model_validate_or_raise({"auth": {key: "a=b"}})
 
 
 def test_auth_login_defaults_helpers_and_round_trip(tmp_path: Path) -> None:
@@ -340,7 +406,8 @@ _LEAK = "s3cr3t-LEAK-value"
             "invalid extra field #1",
         ),
         ({"login": {"url": "http://x/in", "username": "u", "password": _LEAK}}, "password_env"),
-        ({"cookies": [_LEAK, 7]}, "auth.cookies.1"),
+        ({"cookies": [f"sid={_LEAK}", 7]}, "invalid cookie #2"),
+        ({"headers": [f"Authorization: {_LEAK}", 7]}, "invalid header #2"),
     ],
 )
 def test_a_config_error_names_the_setting_but_never_its_value(

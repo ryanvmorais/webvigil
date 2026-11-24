@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 import tomllib
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Literal
 
@@ -23,6 +24,7 @@ from pydantic import (
 
 from webvigil.core.errors import ConfigError
 from webvigil.core.findings import ScanMode
+from webvigil.core.secrets import Secret, SecretKind
 from webvigil.core.target import Scope
 from webvigil.core.urls import display_path
 
@@ -282,83 +284,103 @@ class AuthSection(_Section):
     """
     Static credentials for an authenticated scan (spec 007, spec 013).
 
-    Each ``cookies`` entry is a ``name=value`` string; each ``headers`` entry
-    is a ``Name: Value`` string (a bearer token, an API key, a tenant header —
-    spec 013). :class:`~webvigil.http.client.HttpClient` attaches both to
-    requests whose host is the target host and to no other, and no cookie or
-    header ever reaches a report, a log line, or the scan metadata (RF-01,
-    RF-02, spec 013 RF-03, RF-04).
+    Each ``cookies`` entry is given as a ``name=value`` string; each ``headers`` entry as a
+    ``Name: Value`` string (a bearer token, an API key, a tenant header — spec 013). Both are
+    held as :class:`~webvigil.core.secrets.Secret` values that carry their name (spec 024,
+    ADR-2), so printing the configuration or dumping it in JSON mode never shows a value.
+    :class:`~webvigil.http.client.HttpClient` attaches both to requests whose host is the
+    target host and to no other, and no cookie or header ever reaches a report, a log line, or
+    the scan metadata (RF-01, RF-02, spec 013 RF-03, RF-04).
 
     Attributes:
-        cookies (list[str]): Cookie pairs, each ``"name=value"``. Defaults to
-            empty (an unauthenticated scan).
-        headers (list[str]): Request headers, each ``"Name: Value"``. Defaults
-            to empty. ``Host`` and ``Content-Length`` are rejected — the
-            transport computes them.
+        cookies (list[Secret]): One ``COOKIE`` secret per entry, named. The name and the value
+            are kept as written around the ``=``, so the ``Cookie`` header is what the entries
+            say. Defaults to empty (an unauthenticated scan).
+        headers (list[Secret]): One ``HEADER`` secret per entry, named, with the name and the
+            value stripped. Defaults to empty. ``Host`` and ``Content-Length`` are rejected —
+            the transport computes them.
         login (LoginSection | None): An automated login (spec 019). Defaults
             to ``None``.
     """
 
-    cookies: list[str] = []
-    headers: list[str] = []
+    cookies: list[Secret] = []
+    headers: list[Secret] = []
     login: LoginSection | None = None
 
-    @field_validator("cookies")
+    @field_validator("cookies", mode="before")
     @classmethod
-    def _check_pairs(cls, raw: list[str]) -> list[str]:
+    def _parse_cookies(cls, raw: Any) -> Any:
         """
-        Reject any cookie entry that is not a ``name=value`` pair.
+        Turn each ``name=value`` entry into a named secret, and reject a malformed one.
 
         The message names the entry by its position, never by its text: a malformed entry
-        is often the session value pasted without its name.
+        is often the session value pasted without its name. A secret passes unchanged (a
+        configuration validated again), and an input that is not a list is left to the field's
+        own type error.
 
         Args:
-            raw (list[str]): The configured cookie entries.
+            raw (Any): The configured cookie entries.
 
         Returns:
-            list[str]: ``raw`` unchanged when every entry is well formed.
+            Any: One secret per entry, or ``raw`` itself when it is not a list.
 
         Raises:
-            ValueError: If an entry has no ``=`` or an empty name.
+            ValueError: If an entry is not a string, has no ``=`` or has an empty name.
         """
+        if not isinstance(raw, list | tuple):
+            return raw
+        parsed: list[Secret] = []
         for index, entry in enumerate(raw, start=1):
-            name, sep, _value = entry.partition("=")
+            if isinstance(entry, Secret):
+                parsed.append(entry)
+                continue
+            name, sep, value = (
+                entry.strip().partition("=") if isinstance(entry, str) else ("", "", "")
+            )
             if not sep or not name.strip():
                 raise ValueError(f"invalid cookie #{index}: expected 'name=value'")
-        return raw
+            parsed.append(Secret(value, kind=SecretKind.COOKIE, name=name))
+        return parsed
 
-    @field_validator("headers")
+    @field_validator("headers", mode="before")
     @classmethod
-    def _check_headers(cls, raw: list[str]) -> list[str]:
+    def _parse_headers(cls, raw: Any) -> Any:
         """
-        Reject a header entry that is not a ``Name: Value`` pair or names a reserved header.
+        Turn each ``Name: Value`` entry into a named secret; reject a malformed or reserved one.
 
         The value may be empty and may itself contain ``:`` (a URL, a
         timestamp); only the name — everything before the first ``:`` — is
         constrained. ``Host`` and ``Content-Length`` are computed by the
         transport and a user override would corrupt the request. A malformed entry is named
         by its position, never by its text (it may be a bare token); a reserved name is named,
-        since a header name is no secret.
+        since a header name is no secret. A secret passes unchanged.
 
         Args:
-            raw (list[str]): The configured header entries.
+            raw (Any): The configured header entries.
 
         Returns:
-            list[str]: ``raw`` unchanged when every entry is well formed.
+            Any: One secret per entry, or ``raw`` itself when it is not a list.
 
         Raises:
-            ValueError: If an entry has no ``:``, an empty name, or names a
+            ValueError: If an entry is not a string, has no ``:``, has an empty name, or names a
                 reserved header.
         """
+        if not isinstance(raw, list | tuple):
+            return raw
+        parsed: list[Secret] = []
         for index, entry in enumerate(raw, start=1):
-            name, sep, _value = entry.partition(":")
+            if isinstance(entry, Secret):
+                parsed.append(entry)
+                continue
+            name, sep, value = entry.partition(":") if isinstance(entry, str) else ("", "", "")
             if not sep or not name.strip():
                 raise ValueError(f"invalid header #{index}: expected 'Name: Value'")
             if name.strip().lower() in {"host", "content-length"}:
                 raise ValueError(
                     f"header {name.strip()!r} is computed by the transport and cannot be set"
                 )
-        return raw
+            parsed.append(Secret(value.strip(), kind=SecretKind.HEADER, name=name.strip()))
+        return parsed
 
     @property
     def configured(self) -> bool:
@@ -378,41 +400,13 @@ class AuthSection(_Section):
         return bool(self.cookies or self.login)
 
     @property
-    def as_header(self) -> str:
+    def header_pairs(self) -> tuple[tuple[str, Secret], ...]:
         """
         Returns:
-            str: The joined ``Cookie:`` header value, or ``""`` when no cookies
-                are configured.
+            tuple[tuple[str, Secret], ...]: One ``(name, value)`` per ``headers`` entry; the
+                value keeps any ``:`` after the first.
         """
-        return "; ".join(entry.strip() for entry in self.cookies)
-
-    @property
-    def header_pairs(self) -> tuple[tuple[str, str], ...]:
-        """
-        Returns:
-            tuple[tuple[str, str], ...]: One ``(name, value)`` per ``headers``
-                entry, each stripped; the value keeps any ``:`` after the first.
-        """
-        return tuple(
-            (name.strip(), value.strip())
-            for name, _sep, value in (entry.partition(":") for entry in self.headers)
-        )
-
-    @property
-    def secret_values(self) -> frozenset[str]:
-        """
-        Returns:
-            frozenset[str]: What the report must be scrubbed of (spec 019 RF-11, applied to the
-                static credentials): each cookie value, and each header value both whole and
-                without its scheme (``Bearer <token>`` gives the token on its own too).
-        """
-        values = {entry.partition("=")[2].strip() for entry in self.cookies}
-        for _name, value in self.header_pairs:
-            values.add(value)
-            scheme, _sep, credential = value.partition(" ")
-            if scheme and credential.strip():
-                values.add(credential.strip())
-        return frozenset(value for value in values if value)
+        return tuple((header.name or "", header) for header in self.headers)
 
 
 class ChecksSection(_Section):
@@ -579,10 +573,10 @@ class ScanConfig(_Section):
         injection (InjectionSection): Active-injection tuning.
         deps (DepsSection): Dependency-fingerprint tuning.
         session (SessionSection): The session-security checks (spec 020).
-        web (dict[str, Any] | None): Passthrough for the Web API's ``[web]``
-            table so one ``webvigil.toml`` serves both tools. The engine and
-            CLI never read it; ``webvigil.api`` parses it into its own strict
-            ``WebConfig``. Section-level typos elsewhere are still hard errors.
+        web (dict[str, Any] | None): The Web API's ``[web]`` table, accepted so one
+            ``webvigil.toml`` serves both tools and kept empty: ``{}`` when the file has it,
+            ``None`` otherwise. ``webvigil.api`` reads the table from the file into its own
+            strict ``WebConfig``. Section-level typos elsewhere are still hard errors.
     """
 
     scan: ScanSection = ScanSection()
@@ -596,6 +590,23 @@ class ScanConfig(_Section):
     deps: DepsSection = DepsSection()
     session: SessionSection = SessionSection()
     web: dict[str, Any] | None = None
+
+    @field_validator("web", mode="before")
+    @classmethod
+    def _drop_web(cls, raw: Any) -> Any:
+        """
+        Accept the Web API's ``[web]`` table and keep none of its values (spec 024, RF-06).
+
+        The table holds the Web API's ``session_secret``, which the scanner has no use for;
+        kept here, it would ride along in every dump and copy of the scan configuration.
+
+        Args:
+            raw (Any): The ``[web]`` table, or ``None``.
+
+        Returns:
+            Any: ``{}`` for a table, otherwise ``raw`` (left to the field's type check).
+        """
+        return {} if isinstance(raw, Mapping) else raw
 
     @classmethod
     def load(cls, path: str | Path | None) -> ScanConfig:

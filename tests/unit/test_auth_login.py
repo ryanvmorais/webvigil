@@ -23,6 +23,7 @@ from tests.support import HandlerTransport
 from webvigil.auth.login import Authenticator, Credentials
 from webvigil.core.config import LoginSection, ScanConfig
 from webvigil.core.errors import LoginFailedError
+from webvigil.core.secrets import Secret, SecretKind, collect_secrets
 from webvigil.core.target import Scope, Target
 from webvigil.http import client as client_mod
 from webvigil.http.client import HttpClient
@@ -198,11 +199,14 @@ async def test_the_handshake_posts_the_form_once_and_commits_every_hop() -> None
     assert post.headers["cookie"] == "pre=pre-77aa"  # the pre-login cookie rides on the POST
 
 
-async def test_the_password_and_every_cookie_value_are_registered_as_secrets() -> None:
-    """The session knows what to scrub: the password and the values the target issued."""
+async def test_the_session_holds_what_the_target_issued_and_the_credentials_the_password() -> None:
+    """The scrub list's two sources: the session's issued values, the login's own password."""
     async with _open(_Site()) as auth:
         await auth.login()
-        assert {_PASSWORD, "pre-77aa", "sess-9f3a"} <= auth.session.secrets
+        assert {"pre-77aa", "sess-9f3a"} <= auth.session.secrets
+        # spec 024, RF-07: the password reaches the scrub through the credentials, not the jar
+        assert _PASSWORD not in auth.session.secrets
+        assert collect_secrets(auth.credentials) == {Secret(_PASSWORD, kind=SecretKind.PASSWORD)}
 
 
 # ---------------------------------------------------------------------------
@@ -526,10 +530,17 @@ async def test_confirm_dropped_reads_the_check_url_with_the_live_session() -> No
 def test_credentials_hide_the_password_in_repr_and_read_it_from_the_environment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """``repr`` never prints the password; a missing variable is a clear failure."""
-    assert _PASSWORD not in repr(Credentials(_USER, _PASSWORD))
+    """The password is a secret however it arrives; a missing variable is a clear failure."""
+    given = Credentials(_USER, _PASSWORD)  # a plain string, wrapped at once
+    assert isinstance(given.password, Secret)
+    assert (given.password.kind, given.password.reveal()) == (SecretKind.PASSWORD, _PASSWORD)
+    assert _PASSWORD not in repr(given) + str(given)
+    kept = Secret(_PASSWORD, kind=SecretKind.PASSWORD)
+    assert Credentials(_USER, kept).password is kept  # a secret is kept as it is
     monkeypatch.setenv("WV_TEST_PW", _PASSWORD)
-    assert Credentials.from_environment(_USER, "WV_TEST_PW").password == _PASSWORD
+    read = Credentials.from_environment(_USER, "WV_TEST_PW").password
+    assert isinstance(read, Secret)
+    assert (read.kind, read.reveal()) == (SecretKind.PASSWORD, _PASSWORD)
     monkeypatch.delenv("WV_TEST_PW")
     with pytest.raises(LoginFailedError, match="WV_TEST_PW"):
         Credentials.from_environment(_USER, "WV_TEST_PW")

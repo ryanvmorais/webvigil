@@ -24,9 +24,33 @@ from webvigil.auth.scrub import (
 )
 from webvigil.core.findings import EvidenceItem, Severity
 from webvigil.core.result import CheckError, ScanResult
+from webvigil.core.secrets import Secret, SecretKind
 from webvigil.core.technology import DetectionMethod, Technology
 
 _SECRET = "hunter2-pw"
+
+
+def _given(*values: str, kind: SecretKind = SecretKind.PASSWORD) -> list[Secret]:
+    """
+    Args:
+        *values (str): Values the user gave.
+        kind (SecretKind): Their kind. Defaults to ``PASSWORD``.
+
+    Returns:
+        list[Secret]: One secret per value.
+    """
+    return [Secret(value, kind=kind) for value in values]
+
+
+def _issued(*values: str) -> list[Secret]:
+    """
+    Args:
+        *values (str): Values the target issued.
+
+    Returns:
+        list[Secret]: One ``SESSION`` secret per value.
+    """
+    return [Secret(value, kind=SecretKind.SESSION) for value in values]
 
 
 def _leaky(secret: str = _SECRET) -> ScanResult:
@@ -72,7 +96,7 @@ def _all_text(result: ScanResult) -> str:
 
 def test_every_free_text_field_is_scrubbed() -> None:
     """Title, description, remediation, evidence, location, error, technology and warning."""
-    scrubbed = scrub_result(_leaky(), [_SECRET])
+    scrubbed = scrub_result(_leaky(), _given(_SECRET))
 
     assert _SECRET not in _all_text(scrubbed)
     (finding,) = scrubbed.findings
@@ -94,7 +118,7 @@ def test_every_spelling_a_target_echoes_is_scrubbed() -> None:
         warnings=[f"echo {spelling}" for spelling in spellings],
     )
 
-    scrubbed = scrub_result(result, [secret])
+    scrubbed = scrub_result(result, _given(secret))
 
     for spelling in spellings:
         assert spelling not in _all_text(scrubbed).replace("\\\\", "\\"), spelling
@@ -104,7 +128,7 @@ def test_every_spelling_a_target_echoes_is_scrubbed() -> None:
 def test_a_secret_that_is_a_structural_value_never_rewrites_structure() -> None:
     """A password of ``high`` / ``passive`` leaves severity, mode, ids and fingerprints alone."""
     result = make_result(make_finding(severity=Severity.HIGH, check_id="http.headers.csp"))
-    scrubbed = scrub_result(result, ["high", "passive", "headers"])
+    scrubbed = scrub_result(result, _given("high", "passive", "headers"))
 
     assert scrubbed.findings[0].severity is Severity.HIGH
     assert scrubbed.findings[0].check_id == "http.headers.csp"
@@ -116,7 +140,7 @@ def test_a_secret_that_is_a_structural_value_never_rewrites_structure() -> None:
 def test_a_scrubbed_result_keeps_its_fingerprints() -> None:
     """A scrub never changes a fingerprint, so dedup and diffs between runs still work."""
     result = _leaky()
-    scrubbed = scrub_result(result, [_SECRET])
+    scrubbed = scrub_result(result, _given(_SECRET))
     assert [f.fingerprint for f in scrubbed.findings] == [f.fingerprint for f in result.findings]
 
 
@@ -125,16 +149,21 @@ def test_secrets_under_the_floor_are_left_alone() -> None:
     short = "a" * (MIN_SECRET_LENGTH - 1)
     result = _leaky(short)
 
-    scrubbed = scrub_result(result, [short, ""])
+    scrubbed = scrub_result(result, _given(short, ""))
     assert scrubbed.findings == result.findings
     assert scrubbed.warnings[-1].startswith("1 configured credential value shorter than 4")
-    assert scrub_result(result, []) is result
+    assert scrub_result(result, _given()) is result
+    # at the floor a value is scrubbed, and is not called short
+    floor = "b" * MIN_SECRET_LENGTH
+    at_floor = scrub_result(_leaky(floor), _given(floor))
+    assert floor not in at_floor.model_dump_json()
+    assert not any("shorter than" in warning for warning in at_floor.warnings)
 
 
 def test_a_secret_containing_another_is_replaced_whole() -> None:
     """The longer secret wins, so no fragment of it is left behind."""
     result = make_result(warnings=["x abcdefgh y"])
-    scrubbed = scrub_result(result, ["abcd", "abcdefgh"])
+    scrubbed = scrub_result(result, _given("abcd", "abcdefgh"))
     assert scrubbed.warnings[0] == f"x {REDACTED} y"
 
 
@@ -145,7 +174,7 @@ def test_html_escaped_and_lower_case_percent_echoes_are_scrubbed() -> None:
     spellings.append(spellings[-1].lower())
     result = make_result(make_finding().model_copy(update={"description": " | ".join(spellings)}))
 
-    scrubbed = scrub_result(result, [secret])
+    scrubbed = scrub_result(result, _given(secret))
 
     assert scrubbed.findings[0].description == " | ".join([REDACTED] * len(spellings))
 
@@ -162,9 +191,9 @@ def test_a_latin1_percent_echo_is_scrubbed(spelling: str, kind: str) -> None:
     result = make_result(make_finding().model_copy(update={"title": f"echo {spelling}"}))
 
     scrubbed = (
-        scrub_result(result, [secret])
+        scrub_result(result, _given(secret))
         if kind == "given"
-        else scrub_result(result, [], issued=[secret])
+        else scrub_result(result, _issued(secret))
     )
 
     assert scrubbed.findings[0].title == f"echo {REDACTED}"
@@ -176,7 +205,7 @@ def test_a_secret_outside_latin1_keeps_its_utf8_spelling() -> None:
     echo = quote(secret, safe="")
     result = make_result(make_finding().model_copy(update={"title": f"echo {echo}"}))
 
-    assert scrub_result(result, [secret]).findings[0].title == f"echo {REDACTED}"
+    assert scrub_result(result, _given(secret)).findings[0].title == f"echo {REDACTED}"
 
 
 def test_a_target_value_that_is_no_session_id_cannot_blank_its_percent_form() -> None:
@@ -184,7 +213,7 @@ def test_a_target_value_that_is_no_session_id_cannot_blank_its_percent_form() ->
     title = "page /%E9%E9%E9%E9 and /%C3%A9%C3%A9%C3%A9%C3%A9"
     result = make_result(make_finding().model_copy(update={"title": title}))
 
-    assert scrub_result(result, [], issued=["éééé"]) is result
+    assert scrub_result(result, _issued("éééé")) is result
 
 
 def test_references_and_technology_names_are_scrubbed() -> None:
@@ -199,15 +228,15 @@ def test_references_and_technology_names_are_scrubbed() -> None:
         source_url="https://example.com/a.js",
         advisories=(f"X-{_SECRET}",),
     )
-    scrubbed = scrub_result(make_result(finding, technologies=[tech]), [_SECRET])
+    scrubbed = scrub_result(make_result(finding, technologies=[tech]), _given(_SECRET))
     assert _SECRET not in _all_text(scrubbed)
 
 
 def test_a_redaction_is_counted_in_a_warning() -> None:
     """A redaction is visible: the last warning says how many fields were changed."""
-    scrubbed = scrub_result(_leaky(), [_SECRET])
+    scrubbed = scrub_result(_leaky(), _given(_SECRET))
     assert scrubbed.warnings[-1].startswith("the report hides a credential or session value in")
-    assert scrub_result(make_result(), [_SECRET]).warnings == ()  # nothing hidden, no warning
+    assert scrub_result(make_result(), _given(_SECRET)).warnings == ()  # nothing hidden, no warning
 
 
 @pytest.mark.parametrize(
@@ -233,16 +262,16 @@ def test_a_target_cookie_of_a_common_word_cannot_blank_the_report() -> None:
     result = make_result(
         make_finding().model_copy(update={"title": "evidence of https://example.com/"})
     )
-    assert scrub_result(result, [], issued=["evidence", "https://"]) is result
+    assert scrub_result(result, _issued("evidence", "https://")) is result
     issued = "p7k2m9q4r1s8t3v6w5x0"
     leaky = make_result(make_finding().model_copy(update={"title": f"sid {issued}"}))
-    assert scrub_result(leaky, [], issued=[issued]).findings[0].title == f"sid {REDACTED}"
+    assert scrub_result(leaky, _issued(issued)).findings[0].title == f"sid {REDACTED}"
 
 
 def test_a_given_secret_is_scrubbed_even_when_it_is_a_plain_word() -> None:
     """What the user gave is always hidden: the session-id shape applies to the target's values."""
     result = make_result(warnings=["echo swordfish"])
-    assert scrub_result(result, ["swordfish"]).warnings[0] == f"echo {REDACTED}"
+    assert scrub_result(result, _given("swordfish")).warnings[0] == f"echo {REDACTED}"
 
 
 @pytest.mark.parametrize(
@@ -264,6 +293,57 @@ def test_a_value_quoted_as_bytes_is_scrubbed(secret: str, quoted: str) -> None:
         make_finding().model_copy(update={"description": f"refused b'{quoted}' here"})
     )
 
-    scrubbed = scrub_result(result, [secret])
+    scrubbed = scrub_result(result, _given(secret))
 
     assert scrubbed.findings[0].description == f"refused b'{REDACTED}' here"
+
+
+# ---------------------------------------------------------------------------
+# The kind of a secret decides its treatment (spec 024, RF-07)
+# ---------------------------------------------------------------------------
+
+
+def test_a_header_value_is_also_scrubbed_without_its_scheme() -> None:
+    """A ``HEADER`` secret hides ``Bearer <token>`` and the token on its own."""
+    token = "t0ken-abc123"
+    result = make_result(
+        make_finding().model_copy(
+            update={"title": f"sent Bearer {token}", "description": f"the page echoed {token}"}
+        )
+    )
+    scrubbed = scrub_result(result, _given(f"Bearer {token}", kind=SecretKind.HEADER))
+    assert scrubbed.findings[0].title == f"sent {REDACTED}"
+    assert scrubbed.findings[0].description == f"the page echoed {REDACTED}"
+    # the scheme rule is the header's: a password with a space is hidden whole, never in parts
+    as_password = scrub_result(result, _given(f"Bearer {token}"))
+    assert as_password.findings[0].title == f"sent {REDACTED}"
+    assert as_password.findings[0].description == f"the page echoed {token}"
+    # spaces between the scheme and the credential are not part of the credential
+    spaced = scrub_result(result, _given(f"Bearer   {token}", kind=SecretKind.HEADER))
+    assert spaced.findings[0].description == f"the page echoed {REDACTED}"
+    # a value with no space is one text, and nothing empty is scrubbed
+    bare = scrub_result(result, _given(token, kind=SecretKind.HEADER))
+    assert bare.findings[0].title == f"sent Bearer {REDACTED}"
+
+
+def test_a_cookie_value_is_scrubbed_without_the_spaces_around_it() -> None:
+    """A cookie written ``sid = value`` is held as `` value`` and scrubbed as ``value``."""
+    result = make_result(
+        make_finding().model_copy(update={"description": "the page echoed c00kie-v4lue."})
+    )
+    scrubbed = scrub_result(result, _given(" c00kie-v4lue ", kind=SecretKind.COOKIE))
+    assert scrubbed.findings[0].description == f"the page echoed {REDACTED}."
+    # positive control: the same value with its spaces, as a password, is not in the text
+    assert scrub_result(result, _given(" c00kie-v4lue ")).findings == result.findings
+
+
+def test_a_short_header_credential_is_counted_and_a_short_session_value_is_not() -> None:
+    """The warning counts what the user gave, the token without its scheme included."""
+    result = make_result(make_finding().model_copy(update={"description": "nothing to hide"}))
+    header = scrub_result(result, _given("Bearer ab", kind=SecretKind.HEADER))
+    assert header.warnings == (
+        "1 configured credential value shorter than 4 characters cannot be redacted from the "
+        "report",
+    )
+    # what the target issued is never the user's to fix, so it is never counted
+    assert scrub_result(result, _issued("ab")) is result

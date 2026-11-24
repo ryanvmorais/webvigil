@@ -32,6 +32,7 @@ from webvigil.core.config import ScanConfig
 from webvigil.core.errors import HarError, LoginFailedError
 from webvigil.core.findings import ScanMode, Severity
 from webvigil.core.result import LoginSummary, ScanResult
+from webvigil.core.secrets import Secret, SecretKind
 from webvigil.core.target import Scope
 from webvigil.core.technology import DetectionMethod, Technology
 from webvigil.reporting import get_reporter
@@ -428,10 +429,14 @@ def test_cookie_and_header_flags_populate_and_replace_the_auth_config(tmp_path: 
             *["--header", "Authorization: Bearer abc", "--header", "X-API-Key: k"],
         ],
     )
-    assert _config().auth.cookies == ["session=abc", "csrf=xyz"]  # type: ignore[attr-defined]
-    assert _config().auth.headers == [  # type: ignore[attr-defined]
-        "Authorization: Bearer abc",
-        "X-API-Key: k",
+    auth = _config().auth  # type: ignore[attr-defined]
+    assert [(c.kind, c.name, c.reveal()) for c in auth.cookies] == [
+        (SecretKind.COOKIE, "session", "abc"),
+        (SecretKind.COOKIE, "csrf", "xyz"),
+    ]
+    assert [(h.kind, h.name, h.reveal()) for h in auth.headers] == [
+        (SecretKind.HEADER, "Authorization", "Bearer abc"),
+        (SecretKind.HEADER, "X-API-Key", "k"),
     ]
     cfg = tmp_path / "webvigil.toml"
     cfg.write_text("[auth]\ncookies = ['from=file']\nheaders = ['X-Old: 1']\n", "utf-8")
@@ -439,8 +444,9 @@ def test_cookie_and_header_flags_populate_and_replace_the_auth_config(tmp_path: 
         app_mod.app,
         [*_SCAN, "--config", str(cfg), "--cookie", "from=cli", "--header", "X-New: 2"],
     )
-    assert _config().auth.cookies == ["from=cli"]  # type: ignore[attr-defined]
-    assert _config().auth.headers == ["X-New: 2"]  # type: ignore[attr-defined]
+    auth = _config().auth  # type: ignore[attr-defined]
+    assert [(c.name, c.reveal()) for c in auth.cookies] == [("from", "cli")]
+    assert [(h.name, h.reveal()) for h in auth.headers] == [("X-New", "2")]
 
 
 def test_a_malformed_cookie_or_header_is_a_clean_error() -> None:
@@ -557,7 +563,10 @@ def test_the_password_comes_from_the_environment_and_never_from_a_flag() -> None
     result = runner.invoke(app_mod.app, [*_ACTIVE, *_LOGIN], env=_PASSWORD_ENV)
     assert result.exit_code == ExitCode.OK
     credentials = _StubOrchestrator.last_credentials
-    assert (credentials.username, credentials.password) == ("scanner", "pw-from-env")  # type: ignore[attr-defined]
+    assert credentials.username == "scanner"  # type: ignore[attr-defined]
+    assert isinstance(credentials.password, Secret)  # type: ignore[attr-defined]
+    assert credentials.password.kind is SecretKind.PASSWORD  # type: ignore[attr-defined]
+    assert credentials.password.reveal() == "pw-from-env"  # type: ignore[attr-defined]
     assert "pw-from-env" not in result.stderr + result.stdout
     # there is deliberately no --password flag (shell history)
     refused = runner.invoke(app_mod.app, [*_ACTIVE, *_LOGIN, "--password", "x"])
@@ -583,7 +592,9 @@ def test_without_a_password_the_cli_prompts_on_a_terminal_and_fails_without_one(
     on = runner.invoke(app_mod.app, [*_ACTIVE, *_LOGIN])
     assert on.exit_code == ExitCode.OK
     assert asked == [True]  # asked without echo
-    assert _StubOrchestrator.last_credentials.password == "typed-pw"  # type: ignore[attr-defined]
+    typed = _StubOrchestrator.last_credentials.password  # type: ignore[attr-defined]
+    assert isinstance(typed, Secret)
+    assert (typed.kind, typed.reveal()) == (SecretKind.PASSWORD, "typed-pw")
 
 
 def test_a_passive_scan_with_a_login_does_not_ask_for_a_password() -> None:

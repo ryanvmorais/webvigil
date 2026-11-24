@@ -505,3 +505,31 @@ async def test_a_location_that_is_not_a_url_fails_the_request(
         with pytest.raises(RequestFailed):
             await http.get("https://example.com/")
     assert all(r.url.path == "/" for r in httpx_mock.get_requests())  # type: ignore[attr-defined]
+
+
+# ---------------------------------------------------------------------------
+# The configured credentials stay secrets until a request is built (spec 024)
+# ---------------------------------------------------------------------------
+
+
+async def test_a_cookie_is_sent_as_it_was_written(httpx_mock: object) -> None:
+    """Spaces around the ``=`` and a non-ASCII value go out as the entry says (RF-10)."""
+    httpx_mock.add_response(status_code=200)  # type: ignore[attr-defined]
+    async with _http(cookies=[" pad = v ", "name=café"]) as http:
+        await http.get("https://example.com/")
+    sent = httpx_mock.get_requests()  # type: ignore[attr-defined]
+    cookies = [value for name, value in sent[0].headers.raw if name.lower() == b"cookie"]
+    assert cookies == ["pad = v; name=café".encode()]
+
+
+async def test_the_client_holds_its_credentials_as_secrets(httpx_mock: object) -> None:
+    """Printing the client's state shows no cookie or header value, which still go out."""
+    httpx_mock.add_response(status_code=200)  # type: ignore[attr-defined]
+    cookie, token = "c00kie-VALUE", "t0ken-VALUE"
+    async with _http(cookies=[f"sid={cookie}"], headers=[f"Authorization: Bearer {token}"]) as http:
+        shown = repr(vars(http))
+        assert cookie not in shown and token not in shown
+        await http.get("https://example.com/")
+    sent = httpx_mock.get_requests()  # type: ignore[attr-defined]
+    assert sent[0].headers["cookie"] == f"sid={cookie}"  # positive control: the values are held
+    assert sent[0].headers["authorization"] == f"Bearer {token}"

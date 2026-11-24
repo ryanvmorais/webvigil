@@ -18,7 +18,7 @@ import asyncio
 import contextlib
 import contextvars
 import random
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
 from http.cookiejar import CookieJar, DefaultCookiePolicy
 from types import TracebackType
@@ -28,6 +28,7 @@ import httpx2
 
 from webvigil.core.config import ScanConfig
 from webvigil.core.errors import RequestFailed, ScanDeadlineExceeded
+from webvigil.core.secrets import Secret, SecretKind
 from webvigil.core.target import Target
 from webvigil.core.text import replace_surrogates
 from webvigil.core.urls import resolve_url
@@ -282,6 +283,25 @@ def _host_of(url: str) -> str:
     return (urlsplit(url).hostname or "").lower()
 
 
+def _static_cookie_header(cookies: Sequence[Secret]) -> Secret | None:
+    """
+    Join the ``[auth]`` cookies into one ``Cookie`` header value, kept a secret.
+
+    Each entry is ``name=value`` as written, the entries joined by ``"; "``, in the session jar's
+    text form, because one ``Cookie`` header can carry both (UTF-8 on the wire).
+
+    Args:
+        cookies (Sequence[Secret]): The configured cookies, each named.
+
+    Returns:
+        Secret | None: The header value, or ``None`` when no cookie is configured.
+    """
+    if not cookies:
+        return None
+    joined = "; ".join(f"{cookie.name}={cookie.reveal()}" for cookie in cookies)
+    return Secret(jar_text(joined.encode("utf-8")), kind=SecretKind.COOKIE, name="Cookie")
+
+
 def _is_sendable(url: str) -> bool:
     """
     Whether ``httpx2`` can encode ``url`` and its host is a name DNS can carry.
@@ -360,9 +380,9 @@ class HttpClient:
         """
         self._target = target
         self._config = config
-        # spec 007 / spec 013: attached to target-host requests only, never stored or logged.
-        # in the session jar's form, because one Cookie header can carry both (UTF-8 on the wire)
-        self._cookie_header = jar_text(config.auth.as_header.encode("utf-8"))
+        # spec 007 / spec 013: attached to target-host requests only, never stored or logged;
+        # secrets until a request is built (spec 024)
+        self._cookie_header = _static_cookie_header(config.auth.cookies)
         self._auth_headers = config.auth.header_pairs
         self._guard = ScopeGuard(target)
         self.addresses = AddressGuard(target.host, resolver=resolver)
@@ -693,7 +713,7 @@ class HttpClient:
             bool: ``True`` when the redirect must not be followed with the data.
         """
         has_credentials = (
-            self._session is not None or bool(self._cookie_header) or bool(self._auth_headers)
+            self._session is not None or self._cookie_header is not None or bool(self._auth_headers)
         )
         if _ANON.get() or not has_credentials:
             return False
@@ -901,7 +921,9 @@ class HttpClient:
         anonymous = _ANON.get()
         session = None if anonymous else self._session
         handshake = _HANDSHAKE.get()
-        cookie_header = "" if anonymous else self._cookie_header
+        # the static cookies, revealed for this request only (spec 024)
+        static_header = "" if self._cookie_header is None else self._cookie_header.reveal()
+        cookie_header = "" if anonymous else static_header
         if session is not None and on_target:
             session_pairs = session.jar.pairs_for(url, handshake=handshake)
             if session_pairs:
@@ -909,7 +931,7 @@ class HttpClient:
                 # a cookie the login set wins over a static one of the same name (spec 019)
                 static = [
                     part.strip()
-                    for part in self._cookie_header.split(";")
+                    for part in static_header.split(";")
                     if part.strip() and part.strip().partition("=")[0] not in held
                 ]
                 cookie_header = "; ".join([*static, *(f"{n}={v}" for n, v in session_pairs)])
@@ -923,7 +945,7 @@ class HttpClient:
             present = {name.lower() for name in req_headers}
             for name, value in self._auth_headers:
                 if name.lower() not in present:
-                    req_headers[name] = value
+                    req_headers[name] = value.reveal()
         # httpx2 encodes a text header as ASCII, so a cookie outside it goes out as its own bytes
         wire_headers: dict[str, str] | httpx2.Headers = req_headers
         if jar_cookie is not None and not jar_cookie.isascii():

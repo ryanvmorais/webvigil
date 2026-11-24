@@ -46,6 +46,7 @@ from webvigil.core.errors import (
 )
 from webvigil.core.findings import Category, Finding, ScanMode
 from webvigil.core.result import CheckError, ScanMetadata, ScanResult
+from webvigil.core.secrets import Secret, SecretKind, collect_secrets
 from webvigil.core.target import Target
 from webvigil.core.technology import Technology
 from webvigil.crawler.crawler import Crawler
@@ -278,13 +279,16 @@ class Orchestrator:
             pass_failed=any(isinstance(warning, _PassFailure) for warning in warnings),
         )
         # spec 019, RF-11: a target may have reflected the password, a configured cookie or
-        # header, or a session id into a page. The static credentials are scrubbed with or
-        # without a login; the jar's values only when they look like a session id.
-        given = set(self._config.auth.secret_values)
+        # header, or a session id into a page. Spec 024, RF-07: the list is every secret the
+        # scan held, collected rather than assembled by hand; what the user gave is always
+        # scrubbed, the jar's values only when they look like a session id. The password is the
+        # one the login used, which may have come from the environment.
+        credentials = authenticator.credentials if authenticator is not None else None
+        secrets = collect_secrets(self._config, credentials)
         if session is not None:
-            given |= session.given_secrets
-        issued = session.jar.values if session is not None else frozenset()
-        return scrub_result(result, given, issued=issued)
+            # the jar holds its values as plain strings, so they are wrapped here
+            secrets |= {Secret(value, kind=SecretKind.SESSION) for value in session.jar.values}
+        return scrub_result(result, secrets)
 
     async def _log_in(
         self, http: HttpClient, target: Target, warnings: list[str]

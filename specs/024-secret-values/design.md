@@ -591,6 +591,24 @@ every surviving mutant is triaged, and the score goes in the pull request (RNF-0
 7. **A default shows the marker in the JSON schema (RF-06).** A secret field with a default writes
    `"default": "[redacted]"`, because the default is dumped in JSON mode. The Web API's password fields have no
    default.
+8. **The scrub collects the credentials the login used (RF-07).** The orchestrator calls
+   `collect_secrets(self._config, authenticator.credentials)`, through a read-only `Authenticator.credentials`, not
+   `self._credentials`. A password read from the environment is resolved inside the login step, so
+   `self._credentials` is `None` for it, and the scrub would miss it. In Stage 1 the authenticator no longer hands
+   the password to `Session`; its `secrets=` argument stays, unused, until Stage 2 removes it.
+9. **The scrub's reveal is `_texts`, not `_spellings` (RF-07).** `_texts(secret)` returns the plain texts a secret
+   stands for: the value, a header's credential without its scheme, and a session value only when it looks like a
+   session id. `_spellings` still works on strings. The short-value warning therefore still counts a header's
+   credential without its scheme (`Bearer ab` warns about `ab`), as it did.
+10. **A cookie keeps its name and value as written around the `=` (ADR-2, RF-10).** The `Cookie` header joined each
+    entry as written, stripped only at its ends, so `sid = v` went out with its spaces. Stripping the name and the
+    value would change those bytes. The scrub strips the cookie value, as `secret_values` did. A header's name and
+    value are stripped, as `header_pairs` did.
+11. **The send-side reveal is in `HttpClient._request_with_retry` (RF-04).** That is the function the design calls
+    `_send`. The joined static cookie header is a `COOKIE` secret named `Cookie`.
+12. **A non-string cookie or header entry gets the position-only message (RF-08).** For example,
+    `invalid cookie #2: expected 'name=value'`. Pydantic's item type error is not used, because the `mode="before"`
+    validator parses the list itself.
 
 ## Implementation notes
 
@@ -599,3 +617,7 @@ every surviving mutant is triaged, and the score goes in the pull request (RNF-0
   repository. The login scan runs in Active Mode, because a login requires it, with the time-delay detectors off. A
   second run of the cookie-and-header scan and of the login scan gave the same check ids, severities and
   fingerprints, so the Stage 5 comparison has no noise floor in those fields.
+- **Stage 1.** The bytes sent did not change: the HTTP client's tests of the `Cookie` and `[auth]` headers, and of
+  the credentials kept off a redirect, pass as they were. Four `reveal()` sites entered the inventory: the login
+  body, the scrub's `_texts`, the joined `Cookie` header and the request builder. The scan configuration, the
+  orchestrator and the HTTP client, printed, show the names and no value.

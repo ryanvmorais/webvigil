@@ -11,6 +11,16 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 ## [Unreleased]
 
+### Changed
+
+- **In the Python API, the scan's credentials are `Secret` values.** `ScanConfig.auth.cookies` and
+  `headers` hold `webvigil.core.secrets.Secret` objects that carry the cookie or header name, and
+  `Credentials.password` is one too. A secret shows `[redacted]` when printed, logged or dumped in
+  JSON mode, and `reveal()` returns the value. The inputs do not change: TOML, `--cookie`,
+  `--header` and Python callers still give strings. `AuthSection.header_pairs` yields
+  `(name, Secret)` pairs, and `AuthSection.as_header` and `secret_values` are gone. The scan
+  configuration accepts a `[web]` table and keeps none of its values.
+
 ### Removed
 
 - **ReDoc (`/redoc`) is no longer served.** It loaded a floating CDN release and Google Fonts, and
