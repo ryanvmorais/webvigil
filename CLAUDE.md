@@ -115,17 +115,18 @@ Camadas, de cima para baixo:
    `web/src/lib/text.ts`) no resumo do terminal, nas linhas de erro, no Markdown, no HTML e no dashboard,
    e escape `\uNNNN` no JSON; o SARIF escapa `[`/`]` na mensagem. O resumo
    (`cli/_render.py`) nunca interpreta texto de achado ou aviso como marcação do Rich (`Text` por partes).
-5. **Persistência** (só Web, `webvigil.api.db`) — SQLite via SQLModel + Alembic; scans
-   executados por um `ScanRunner` in-process (1 por vez, fila). O login tem espera crescente após 5
-   falhas (`api/throttle.py`, em memória), que é só do cliente que errou; um limite curto por usuário
-   (20 em 30 s) contém palpites espalhados por muitos endereços, e só 4 checagens Argon2 rodam ao mesmo
+5. **Persistência** (só Web, `webvigil.api.db`) — SQLite via SQLModel + Alembic; scans executados
+   por um `ScanRunner` in-process (1 por vez, fila). O login tem espera crescente após 5 falhas
+   (`api/throttle.py`, em memória), que é só do cliente que errou; um limite curto por usuário (20
+   em 30 s) contém palpites espalhados por muitos endereços, e só 4 checagens Argon2 rodam ao mesmo
    tempo (o excesso leva `429` com `Retry-After`). O cliente é o endereço da conexão, ou o
-   `X-Forwarded-For` só quando a conexão vem de um proxy de `web.trusted_proxies` (`api/client_address.py`;
-   o Compose confia só no dashboard). Trocar a senha encerra as
-   outras sessões (o JWT carrega `iat` e é recusado se for anterior a `User.updated_at`). A tabela
-   do throttle é limitada (10 mil chaves: a que falhou há mais tempo sai, e uma chave com mais de 128
-   caracteres vira SHA-256), `LoginIn` tem teto (usuário 64, senha 256, como o setup) e um middleware
-   ASGI (`api/body_limit.py`) recusa corpo acima de 1 MiB com `413`; o `scan_id` das rotas fica em
+   `X-Forwarded-For` só quando a conexão vem de um proxy de `web.trusted_proxies`
+   (`api/client_address.py`; o Compose confia só no dashboard). Trocar a senha encerra as outras
+   sessões (o JWT carrega `iat` e é recusado se for anterior a `User.updated_at`). A tabela do
+   throttle é limitada (10 mil chaves: sai a que falhou há mais tempo entre as que não estão
+   esperando, e uma chave com mais de 128 caracteres vira SHA-256), `LoginIn` tem teto (usuário 64,
+   senha 256, como o setup) e um middleware ASGI (`api/body_limit.py`) recusa corpo acima de 1 MiB
+   com `413`; o `scan_id` das rotas fica em
    `1..2**63-1` (`ScanId` em `api/deps.py`, `422` fora disso). Antes de tudo, `api/host_check.py` recusa com `400` um `Host` ou `X-Forwarded-Host` que não seja IP, `localhost`, o `host` do bind ou um nome de `web.allowed_hosts` (o Compose lista `api`); o throttle do login confere e conta a tentativa num passo só, com trava, e o setup inicial cria uma conta só. Um `POST`/`PUT`/`PATCH`/`DELETE` com `Origin`
    que não seja o do próprio servidor (o `Host`, ou o `X-Forwarded-Host` do proxy do dashboard) nem esteja em
    `web.cors_origins` leva `403` (`api/origin_check.py`); sem `Origin` (curl, CLI) passa. Toda resposta de

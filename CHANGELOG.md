@@ -13,7 +13,8 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 ## [1.6.0] - 2026-11-24
 
-A minor release of security and reliability fixes, with one new Web API setting. It is backward
+A minor release of security and reliability fixes (GHSA-hhpx-9q93-mv55, GHSA-38gf-jvgw-g2pq,
+GHSA-jh8f-87gj-2mw7 and GHSA-wfp3-jwpm-7j2x), with one new Web API setting. It is backward
 compatible with [docs/stability.md](docs/stability.md): no check id, JSON report field or existing
 configuration key changes. Exit code `4` now covers the cases the policy already lists, so a CI job
 that uses `--fail-on` can fail on a scan left incomplete, and a site's `robots.txt` can lead the
@@ -43,67 +44,70 @@ crawl to different pages.
 
 ### Security
 
-- **Credentials stay on the target origin through redirects.** In a scan with credentials, a
-  `307` or `308` that would resend a request body or query parameters to a URL that may not receive
-  credentials (plain `http` from an `https` target, or another subdomain) is no longer followed, and
-  an automated login that ends there fails with an error that says the destination may not receive
-  the password. Scans without credentials follow their redirects as before.
-- **The session tests keep the session's cookies on the target origin.** When the reference page
-  is in scope but off that origin, the fixation and logout tests are skipped with a warning; set
-  `[auth.login] check_url` to a page on the origin to run them.
-- **A cookie the target sets stays out of later requests.** The HTTP client no longer keeps a
-  `Set-Cookie` between requests, so a retry, an anonymous request or a request to another subdomain
-  in scope carries only the cookies that request may receive.
-- **IPv6 forms of internal addresses are recognized.** The address guard now reads the IPv4 address
-  inside IPv4-compatible and IPv4-translated IPv6 addresses, and any other IPv6 address counts as
-  public only in global unicast (`2000::/3`). A public target can no longer send the scan to an
-  internal host through the deprecated site-local range or a reserved one.
-- **Error output no longer repeats raw failure text or the secret parts of a URL.** The terminal,
-  CI logs, reports, the database and the Web API now name a network failure by its type, with a
-  plain description for an untrusted TLS certificate and for an address the scan refuses, and show
-  a URL as `scheme://host[:port]/path`, without userinfo, query, fragment or path parameters, or
-  only its scheme when the address cannot be told apart from a credential. A failed scan pass
-  reports its exception type. A failed check reports its type, frames and chain without exception
-  messages; WebVigil's own errors keep their message.
-- **Redaction recognizes a credential quoted as Python bytes**, the form libraries use in their
-  errors, including values with non-ASCII or control characters.
-- **A target with an invalid port now exits with `4`**, as documented, instead of `1`, and the
-  message for an invalid target no longer repeats it, since a mistyped one can hold a password. The
-  same goes for a value given to `--config`, `--openapi` or `--har` that may be a URL typed without
-  its scheme, and a config file that cannot be read now exits with `4` instead of a traceback.
+- **Credentials stay on the target origin through redirects** (GHSA-hhpx-9q93-mv55). In a scan with
+  credentials, a `307` or `308` that would resend a request body or query parameters to a URL that
+  may not receive credentials (plain `http` from an `https` target, or another subdomain) is no
+  longer followed, and an automated login that ends there fails with an error that says the
+  destination may not receive the password. Scans without credentials follow their redirects as
+  before.
+- **The session tests keep the session's cookies on the target origin** (GHSA-hhpx-9q93-mv55). When
+  the reference page is in scope but off that origin, the fixation and logout tests are skipped with
+  a warning; set `[auth.login] check_url` to a page on the origin to run them.
+- **A cookie the target sets stays out of later requests** (GHSA-hhpx-9q93-mv55). The HTTP client no
+  longer keeps a `Set-Cookie` between requests, so a retry, an anonymous request or a request to
+  another subdomain in scope carries only the cookies that request may receive.
+- **IPv6 forms of internal addresses are recognized** (GHSA-hhpx-9q93-mv55). The address guard now
+  reads the IPv4 address inside IPv4-compatible and IPv4-translated IPv6 addresses, and any other
+  IPv6 address counts as public only in global unicast (`2000::/3`). A public target can no longer
+  send the scan to an internal host through the deprecated site-local range or a reserved one.
+- **Error output no longer repeats raw failure text or the secret parts of a URL**
+  (GHSA-38gf-jvgw-g2pq). The terminal, CI logs, reports, the database and the Web API now name a
+  network failure by its type, with a plain description for an untrusted TLS certificate and for an
+  address the scan refuses, and show a URL as `scheme://host[:port]/path`, without userinfo, query,
+  fragment or path parameters, or only its scheme when the address cannot be told apart from a
+  credential. A failed scan pass reports its exception type. A failed check reports its type, frames
+  and chain without exception messages; WebVigil's own errors keep their message.
+- **Redaction recognizes a credential quoted as Python bytes** (GHSA-38gf-jvgw-g2pq), the form
+  libraries use in their errors, including values with non-ASCII or control characters.
+- **A target with an invalid port now exits with `4`** (GHSA-38gf-jvgw-g2pq), as documented, instead
+  of `1`, and the message for an invalid target no longer repeats it, since a mistyped one can hold
+  a password. The same goes for a value given to `--config`, `--openapi` or `--har` that may be a
+  URL typed without its scheme, and a config file that cannot be read now exits with `4` instead of
+  a traceback.
 - **What a site or a report file holds can no longer stall the CLI, abort a scan or lose its
-  result.** `webvigil report` on a damaged file says it is not a valid report and names a few
-  field paths, never a value from the file, and validation stops at the first bad item of a
-  list. Error messages, status lines and the terminal summary have a size limit, the summary lists
-  up to 100 warnings and counts the rest, and a failed login names a few forms and fields. The
-  dashboard shows a failed scan's error with its hidden characters made visible. A sitemap or an
-  OpenAPI server URL that cannot be read no longer ends the scan, and a link or redirect to a URL
-  that cannot be sent costs that URL alone. A character UTF-8 cannot encode is replaced with U+FFFD
-  wherever text enters a result, so every report format, the database and the Web API keep
-  working, also for rows stored by an earlier version.
-- **`robots.txt` rules now follow RFC 9309 on every supported Python version.** WebVigil reads the
-  file with its own parser, so groups, the most specific rule, `*`, `$` and percent-encoding give
-  the same decision whichever Python runs the scan, and no content of the file can end the crawl.
-  This can change which pages a scan reaches. A file or a URL beyond what the crawl can evaluate
-  is not followed, and the scan warns about it.
-- **A single client guessing a password now delays only itself.** The login wait belongs to each
-  client, so failures from one address do not delay another. A short limit per username still
-  contains guesses spread over many addresses, so those can delay that login for as long as the
-  guessing lasts. Only a few password checks run at once, with the excess answered `429` and
-  `Retry-After`, and a client already waiting does not compete for them. A full table of failed
+  result** (GHSA-jh8f-87gj-2mw7). `webvigil report` on a damaged file says it is not a valid report
+  and names a few field paths, never a value from the file, and validation stops at the first bad
+  item of a list. Error messages, status lines and the terminal summary have a size limit, the
+  summary lists up to 100 warnings and counts the rest, and a failed login names a few forms and
+  fields. The dashboard shows a failed scan's error with its hidden characters made visible. A
+  sitemap or an OpenAPI server URL that cannot be read no longer ends the scan, and a link or
+  redirect to a URL that cannot be sent costs that URL alone. A character UTF-8 cannot encode is
+  replaced with U+FFFD wherever text enters a result, so every report format, the database and the
+  Web API keep working, also for rows stored by an earlier version.
+- **`robots.txt` rules now follow RFC 9309 on every supported Python version**
+  (GHSA-jh8f-87gj-2mw7). WebVigil reads the file with its own parser, so groups, the most specific
+  rule, `*`, `$` and percent-encoding give the same decision whichever Python runs the scan, and no
+  content of the file can end the crawl. This can change which pages a scan reaches. A file or a URL
+  beyond what the crawl can evaluate is not followed, and the scan warns about it.
+- **A single client guessing a password now delays only itself** (GHSA-wfp3-jwpm-7j2x). The login
+  wait belongs to each client, so failures from one address do not delay another. A short limit per
+  username still contains guesses spread over many addresses, so those can delay that login for as
+  long as the guessing lasts. Only a few password checks run at once, with the excess answered `429`
+  and `Retry-After`, and a client already waiting does not compete for them. A full table of failed
   logins no longer drops a client that is waiting.
-- **The new `trusted_proxies` setting** (`WEBVIGIL_TRUSTED_PROXIES`, empty by default) says which
-  proxies may name the client through `X-Forwarded-For`; any other request is counted by the
-  address of its connection, whatever forwarding headers it carries. The Compose file trusts only
-  its dashboard, whose image now reports the real connection. If you run your own reverse proxy in
-  front of the API, list it, or all its clients share one wait. A network broader than `/8` in IPv4
-  or `/7` in IPv6 is refused.
-- **A Web API redirect keeps the scheme the client used.** A path with a stray trailing slash is
-  answered with a relative `Location`, so a client behind a TLS proxy is not sent to plain `http`.
-- **A password change now ends a login that was still being verified**, and of two changes made
-  at the same time one is stored and the other gets `409` instead of overwriting it. A change
-  overtaken by `reset-password` also gets `409` and no new session, and a reset overtaken by another
-  change says so and exits with `1`.
+- **The new `trusted_proxies` setting** (`WEBVIGIL_TRUSTED_PROXIES`, empty by default,
+  GHSA-wfp3-jwpm-7j2x) says which proxies may name the client through `X-Forwarded-For`; any other
+  request is counted by the address of its connection, whatever forwarding headers it carries. The
+  Compose file trusts only its dashboard, whose image now reports the real connection. If you run
+  your own reverse proxy in front of the API, list it, or all its clients share one wait. A network
+  broader than `/8` in IPv4 or `/7` in IPv6 is refused.
+- **A Web API redirect keeps the scheme the client used** (GHSA-wfp3-jwpm-7j2x). A path with a stray
+  trailing slash is answered with a relative `Location`, so a client behind a TLS proxy is not sent
+  to plain `http`.
+- **A password change now ends a login that was still being verified** (GHSA-wfp3-jwpm-7j2x), and of
+  two changes made at the same time one is stored and the other gets `409` instead of overwriting
+  it. A change overtaken by `reset-password` also gets `409` and no new session, and a reset
+  overtaken by another change says so and exits with `1`.
 
 ## [1.5.0] - 2026-11-23
 

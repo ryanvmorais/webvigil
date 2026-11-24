@@ -164,11 +164,12 @@ All requests go through one typed wrapper (`web/src/lib/api.ts`) that sets
 
 ## Containers
 
-`docker compose up --build` starts `api` and `web`; the dashboard is on
-`http://localhost:3000` and reaches the API through the in-network proxy
-(`API_PROXY_TARGET=http://api:8000`). The `web` image runs the Next standalone output as a
-non-root user. The SQLite volume (`webvigil-data`) is the only state to back up — unchanged
-from the API alone.
+`docker compose up --build` starts `api` and `web`; the dashboard is on `http://localhost:3000` and
+reaches the API through the in-network proxy (`API_PROXY_TARGET=http://api:8000`). The `web` image
+runs the Next standalone output as a non-root user, and preloads `web/src/server/preload.mjs`, which
+appends the address of each connection to `X-Forwarded-For`, so the API can tell its clients apart
+when it trusts the dashboard (see [Authentication](web-api.md#authentication)). The SQLite volume
+(`webvigil-data`) is the only state to back up — unchanged from the API alone.
 
 ## CI
 
