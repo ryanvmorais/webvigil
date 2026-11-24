@@ -1,6 +1,6 @@
 ---
 feature: Secret values — one type for every credential and session value, which cannot be printed, logged or serialized by accident
-status: approved
+status: in progress
 date: 2026-11-24
 related:
   - 007-auth-flows/requirements.md

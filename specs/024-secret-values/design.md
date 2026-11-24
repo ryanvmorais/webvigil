@@ -1,6 +1,6 @@
 ---
 feature: Secret values — one type for every credential and session value, which cannot be printed, logged or serialized by accident
-status: approved
+status: in progress
 date: 2026-11-24
 related:
   - 007-auth-flows/requirements.md
@@ -567,3 +567,35 @@ the scrub's kind split, the `422` handler and the migration. Every changed funct
 every surviving mutant is triaged, and the score goes in the pull request (RNF-06).
 
 **No network.** Every test stays offline: the fixture app in process, `httpx_mock`, and the API's test client.
+
+## Deviations
+
+1. **`secret_field` returns the field's metadata (ADR-1, RNF-04).** It returns a `SecretField`, and a model declares
+   `Annotated[Secret, secret_field(kind, …)]`. `mypy` refuses a call used as an annotation, so returning the
+   `Annotated` itself would not type-check.
+2. **Validation is a chain, not a wrap over `str_schema` (RF-01, RF-08).** The first step wraps a string, or passes a
+   `Secret` through. The second checks the length with pydantic's own error types and messages, one error per
+   field. The error's `input` is then the `Secret`, so neither `errors()` nor the text of a `ValidationError` carries
+   the value. A wrap over `str_schema` reports the raw string as the input.
+3. **A bare `Secret` annotation validates (ADR-2).** `list[Secret]`, filled by a `mode="before"` validator, needs a
+   schema for the type itself. It accepts only a `Secret`, because it has no kind to wrap a string with, and it shares
+   the serializer and the JSON schema of `secret_field`.
+4. **`__getstate__` refuses too (RF-02).** The default `object.__getstate__` hands out the slots, value included, to
+   any caller. `pickle` still fails from `__reduce_ex__`, and the redundant `__reduce__` was left out.
+5. **The inventory also refuses an uncalled `.reveal` (ADR-3).** That covers the alias the ADR names as an escape. It
+   refuses the strings `"reveal"` and `"_value"` anywhere, and `_value` as an attribute. A local variable named
+   `_value` (`auth/login.py`) is a different name and is not refused.
+6. **The field gate's keys and checks (ADR-4).** A field is keyed `module:Class.field`, with the module named without
+   the `webvigil.` prefix. Besides a pending entry that holds a `Secret`, the gate fails on an exemption that no
+   longer matches and on a declared field that is not found. `StoredMarker` is in `checks/injection/models.py`.
+7. **A default shows the marker in the JSON schema (RF-06).** A secret field with a default writes
+   `"default": "[redacted]"`, because the default is dumped in JSON mode. The Web API's password fields have no
+   default.
+
+## Implementation notes
+
+- **Stage 0.** The RF-10 baseline was taken on `main` at `dc4e23e` (Python 3.15.2): 3224 tests, 97 % line and branch
+  coverage in total, the per-file table, and the three JSON reports of the fixture app. They are kept outside the
+  repository. The login scan runs in Active Mode, because a login requires it, with the time-delay detectors off. A
+  second run of the cookie-and-header scan and of the login scan gave the same check ids, severities and
+  fingerprints, so the Stage 5 comparison has no noise floor in those fields.

@@ -1,6 +1,6 @@
 ---
 feature: Secret values — one type for every credential and session value, which cannot be printed, logged or serialized by accident
-status: approved
+status: in progress
 date: 2026-11-24
 related:
   - 007-auth-flows/requirements.md
@@ -46,7 +46,7 @@ Each stage also runs mutation testing in batch over the guards it adds or change
 
 ## Stage 0 — The type and its gates
 
-- [ ] Record the baseline on `main`, on one Python version:
+- [x] Record the baseline on `main`, on one Python version:
   - the test count;
   - `uv run pytest --cov` per file;
   - three JSON reports of the fixture application (anonymous, with `[auth]` cookies and headers, and with the
@@ -54,19 +54,19 @@ Each stage also runs mutation testing in batch over the guards it adds or change
     for Stage 5.
 
   — RF-10, RNF-06
-- [ ] `src/webvigil/core/secrets.py`: `REDACTED`, `SecretKind`, `Secret` with every operation of the design's
+- [x] `src/webvigil/core/secrets.py`: `REDACTED`, `SecretKind`, `Secret` with every operation of the design's
   table, and `secret_field()` with the wrap validator, the two serialization modes and the JSON schema.
   — RF-01, RF-02, RF-03, ADR-1, ADR-5
-- [ ] `src/webvigil/core/secrets.py`: `collect_secrets(*roots)` over pydantic models, dataclasses, mappings and
+- [x] `src/webvigil/core/secrets.py`: `collect_secrets(*roots)` over pydantic models, dataclasses, mappings and
   sequences, with the depth cap. — RF-07
-- [ ] `tests/unit/test_core_secrets.py`: the contract table of the design, one row per way out, each with its
+- [x] `tests/unit/test_core_secrets.py`: the contract table of the design, one row per way out, each with its
   positive control on the revealed string. Add equality, hash, immutability, subclassing, `len`/`bool`,
   `secret_field` errors and schema, and `collect_secrets`, including a model with one more secret field.
   — RF-01, RF-02, RF-03, RF-07, RF-11
-- [ ] `tests/unit/test_secret_inventory.py`: the reveal inventory over the syntax tree of `src/webvigil`, with
+- [x] `tests/unit/test_secret_inventory.py`: the reveal inventory over the syntax tree of `src/webvigil`, with
   `ALLOWED_REVEALS` empty. It refuses `getattr(…, "reveal")` and `_value` outside `core/secrets.py`. Its
   positive control is a throwaway source with an unlisted call. — RF-03, ADR-3
-- [ ] `tests/unit/test_secret_inventory.py`: the credential-field gate of ADR-4, with its exemption table,
+- [x] `tests/unit/test_secret_inventory.py`: the credential-field gate of ADR-4, with its exemption table,
   its declared list and its two positive controls.
   - **Today's fields.** The ten credential fields still typed `str` go in a `PENDING_CONVERSION` set: the
     seven of the design's dry run, plus the declared `AuthSection.headers` and `CookieTransition.pre`/`post`.
@@ -74,9 +74,19 @@ Each stage also runs mutation testing in batch over the guards it adds or change
   - **Stale entries.** An entry that already holds a `Secret` fails.
 
   — RF-11, ADR-4
-- [ ] Apply the sabotage of the design for `core/secrets.py` and the two gates, and watch each test fail. — RF-11
-- [ ] Mutation in batch over `core/secrets.py`. — RNF-06
-- [ ] Quality gate.
+- [x] Apply the sabotage of the design for `core/secrets.py` and the two gates, and watch each test fail. — RF-11
+  — 17 breaks, each red: `__str__`, `__format__` and `__repr__` showing the value, `__reduce_ex__` and
+  `__getstate__` dropped, `__eq__` taking a `str`, the JSON serializer returning the value, assignment and
+  subclassing allowed, the length check skipped, `collect_secrets` skipping dataclasses or off by one at the cap,
+  an unlisted `reveal()` in `src`, a stale inventory line, and a pending, exempt or declared entry removed.
+- [x] Mutation in batch over `core/secrets.py`. — RNF-06
+  — `core/secrets.py`: 117 of 118 mutants killed, 1 equivalent (a constant `__hash__` keeps the contract). The
+  gates' own logic, in the test file: 87 of 90 killed; 1 equivalent (the module filter only keeps third-party
+  classes out), and 2 are the final assertions over today's clean source, proven by the sabotage above. Every
+  new test is failed by some mutant except the `json.dumps` refusal, which has no project code to mutate.
+- [x] Quality gate. — 3336 passed, 2 skipped (3222 and 2 before) in 104 s with coverage; ruff, black, mypy,
+  `lint-imports` and the package check green; no file of `src/webvigil` loses a line or a branch, and
+  `core/secrets.py` is fully covered.
 
 ## Stage 1 — The scan's configured credentials
 
