@@ -110,11 +110,14 @@ directive would rewrite its own requests to `https`.
 - **Where the proxy does not run.** `/api/*` (Next only proxies it; the answer carries the API's own
   headers, and the report responses send `nosniff` and a sandbox policy: see [web-api.md](web-api.md)),
   `/_next/static`, `/_next/image`, the icon, and prefetch requests. A static file therefore has the four
-  headers above and no policy, which would do nothing on a script file.
+  headers above and no policy, which would do nothing on a script file. Each exclusion is a whole path
+  segment or file name: a path that only starts the same way (`/apis`, `/favicon.icon`) is a page and
+  gets the policy.
 - **No `Strict-Transport-Security`.** It only means something over HTTPS, so whoever terminates TLS
   in front of the dashboard sets it.
 - **Left for later.** Trusted Types, a `report-to` endpoint and Next's experimental SRI hash policy.
-- **Tests.** `csp.test.ts` and `proxy.test.ts` pin the policy and the matcher; the e2e suite reads one
+- **Tests.** `csp.test.ts` and `proxy.test.ts` pin the policy and the matcher (compiled by Next's own
+  function, as `next build` does); the e2e suite reads one
   header with a matching nonce off the built dashboard, and the end-to-end flow (including opening the
   report preview) fails on any CSP violation or uncaught page error.
 
