@@ -10,13 +10,17 @@ and the rules the login depends on (``Secure``, ``Path``, expiry, odd hosts).
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 import httpx2
 import pytest
 
+from webvigil.core.secrets import Secret, SecretKind
 from webvigil.http.session import (
     _MAX_JAR_COOKIES,
     _MAX_SCRUB_VALUES,
     _MAX_VARIANTS_PER_NAME,
+    Session,
     SessionJar,
     cookie_bytes,
     jar_text,
@@ -24,6 +28,17 @@ from webvigil.http.session import (
 )
 
 _URL = "http://demo.test/signin"
+
+
+def _texts(values: Iterable[Secret]) -> set[str]:
+    """
+    Args:
+        values (Iterable[Secret]): What the jar hands out.
+
+    Returns:
+        set[str]: The plain values, for comparison.
+    """
+    return {value.reveal() for value in values}
 
 
 def _response(url: str, *set_cookie: str) -> httpx2.Response:
@@ -104,7 +119,41 @@ def test_every_value_that_enters_the_jar_is_remembered_for_scrubbing() -> None:
     jar.commit()
     jar.absorb(_response(_URL, "sid=v-two; Path=/"), handshake=False)
 
-    assert jar.values == {"v-pre", "v-one", "v-two"}
+    assert _texts(jar.values) == {"v-pre", "v-one", "v-two"}
+    assert {(value.kind, value.name) for value in jar.values} == {
+        (SecretKind.SESSION, "pre"),
+        (SecretKind.SESSION, "sid"),
+    }
+
+
+def test_the_pending_cookies_are_handed_out_as_session_secrets() -> None:
+    """``pending_items`` names each cookie and holds its value as a ``SESSION`` secret."""
+    jar = SessionJar("demo.test")
+    assert jar.pending_items() == frozenset()
+    jar.begin()
+    jar.absorb(_response(_URL, "sid=v-one; Path=/"), handshake=True)
+
+    ((name, value),) = jar.pending_items()
+    assert (name, value.reveal(), value.kind, value.name) == (
+        "sid",
+        "v-one",
+        SecretKind.SESSION,
+        "sid",
+    )
+
+
+def test_the_jar_and_the_session_show_names_and_no_value() -> None:
+    """The ``repr`` of the jar and of its session carry the cookie names only."""
+    jar = SessionJar("demo.test")
+    jar.begin()
+    jar.absorb(_response(_URL, "sid=v-canary-1234; Path=/"), handshake=True)
+    jar.commit()
+    session = Session(jar=jar, is_login_url=lambda _url: False)
+
+    for shown in (repr(jar), repr(session), str(session), f"{jar}"):
+        assert "v-canary-1234" not in shown
+        assert "sid" in shown  # the positive control: the name is there
+    assert jar.pairs_for(_URL, handshake=False) == [("sid", "v-canary-1234")]
 
 
 # ---------------------------------------------------------------------------
@@ -356,7 +405,7 @@ def test_the_scrub_list_holds_the_value_as_a_page_would_show_it(
     """The report quotes decoded pages, so the jar's private form would never match them."""
     jar = _committed_raw(_URL, b"sid=" + raw + b"; Path=/")
 
-    assert jar.values == expected
+    assert _texts(jar.values) == expected
 
 
 @pytest.mark.parametrize("char", ["\x00", "\x1b", "\x7f"], ids=["nul", "escape", "delete"])

@@ -15,11 +15,14 @@ summary notes one table; every assertion they made is still made.
 
 from __future__ import annotations
 
+import html
 import io
 import json
 import sys
 from pathlib import Path
+from urllib.parse import quote, quote_plus
 
+import httpx2
 import pytest
 from typer.testing import CliRunner
 
@@ -31,6 +34,7 @@ from webvigil.cli._exit import ExitCode
 from webvigil.core.config import ScanConfig
 from webvigil.core.errors import HarError, LoginFailedError
 from webvigil.core.findings import ScanMode, Severity
+from webvigil.core.orchestrator import Orchestrator
 from webvigil.core.result import LoginSummary, ScanResult
 from webvigil.core.secrets import Secret, SecretKind
 from webvigil.core.target import Scope
@@ -470,6 +474,86 @@ def test_authenticated_summary_counts_cookies_and_headers_but_never_shows_them()
     assert "Authenticated scan: 1 cookie supplied" in cookie_only.stderr
     header_only = runner.invoke(app_mod.app, [*_SCAN, "--header", "X-API-Key: k"])
     assert "Authenticated scan: 1 header supplied" in header_only.stderr
+
+
+_CANARY_COOKIE = "wv-cli-canary-cookie-81f2"
+_CANARY_TOKEN = "wv-cli-canary-token-4a7b"
+
+
+def _echoes_the_credentials(request: httpx2.Request) -> httpx2.Response:
+    """
+    A hostile site: every page puts the request's ``Cookie`` and ``Authorization`` into its
+    ``Server`` header, which the passive checks quote as evidence.
+
+    Args:
+        request (httpx2.Request): A request of the scan.
+
+    Returns:
+        httpx2.Response: A small HTML page.
+    """
+    echoed = f"{request.headers.get('cookie', '')} {request.headers.get('authorization', '')}"
+    return httpx2.Response(
+        200,
+        text="<html><body><p>hello</p></body></html>",
+        headers={"content-type": "text/html", "server": f"Echo/1.0 ({echoed.strip()})"},
+    )
+
+
+@pytest.mark.httpx_mock(assert_all_responses_were_requested=False)
+def test_the_cli_output_never_shows_a_configured_credential(
+    httpx_mock: object, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """
+    The CLI canary of spec 024 (RF-08, RF-11): a real scan with a canary cookie and bearer token
+    against a site that echoes both, in every report format; neither value appears in stdout,
+    stderr or the report files, in any spelling built here.
+    """
+    monkeypatch.setattr(app_mod, "Orchestrator", Orchestrator)
+    httpx_mock.add_callback(_echoes_the_credentials, is_reusable=True)  # type: ignore[attr-defined]
+    canaries = (_CANARY_COOKIE, _CANARY_TOKEN)
+    spellings = {
+        form
+        for canary in canaries
+        for form in (
+            canary,
+            quote(canary, safe=""),
+            quote_plus(canary),
+            json.dumps(canary)[1:-1],
+            html.escape(canary),
+        )
+    }
+    flags = [
+        "--cookie",
+        f"sid={_CANARY_COOKIE}",
+        "--header",
+        f"Authorization: Bearer {_CANARY_TOKEN}",
+    ]
+    outputs: dict[str, str] = {}
+    for fmt in ("json", "sarif", "html", "md"):
+        report = tmp_path / f"report.{fmt}"
+        result = runner.invoke(
+            app_mod.app, [*_SCAN, *flags, "--format", fmt, "--output", str(report)]
+        )
+        assert result.exit_code in (ExitCode.OK, ExitCode.FINDINGS), result.stderr
+        outputs |= {
+            f"{fmt} stdout": result.stdout,
+            f"{fmt} stderr": result.stderr,
+            f"{fmt} file": report.read_text("utf-8"),
+        }
+    summary = runner.invoke(app_mod.app, [*_SCAN, *flags])
+    outputs |= {"summary stdout": summary.stdout, "summary stderr": summary.stderr}
+
+    # the positive control: both values went out, the site echoed them, and the scrub removed them
+    sent = httpx_mock.get_requests()  # type: ignore[attr-defined]
+    assert any(
+        _CANARY_COOKIE in r.headers.get("cookie", "")
+        and r.headers.get("authorization") == f"Bearer {_CANARY_TOKEN}"
+        for r in sent
+    )
+    assert "[redacted]" in outputs["json file"]
+    for where, text in outputs.items():
+        for form in spellings:
+            assert form not in text, (where, form)
 
 
 # ---------------------------------------------------------------------------

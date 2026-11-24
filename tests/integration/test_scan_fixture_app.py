@@ -15,7 +15,7 @@ inspects a result the same one (issue #101: the suite used to run ``("insecure",
 * ``scan("insecure", **_ACTIVE)`` — the default Active scan, with the time-delay detectors on;
 * ``scan(profile, **_full(profile))`` — **every** switch on at once (stored XSS, XXE, file upload,
   CSRF confirmation, POST crawl, an OpenAPI import, a HAR import, an automated login, session-id
-  sampling, the logout test and a bearer header),
+  sampling, the logout test, a bearer header and a static canary cookie),
   with the time-delay detectors off (issue #58: they decide on wall-clock time). The hardened twin
   of that scan is the "reports nothing" check for every spec at once;
 * ``scan("hardened", ..., login=True, session_ttl=2)`` — the one extra scan of spec 019: the
@@ -23,14 +23,17 @@ inspects a result the same one (issue #101: the suite used to run ``("insecure",
 
 ``scan.fresh(...)`` bypasses the cache — a determinism test needs a second, independent run.
 ``scan.holder["app"]`` is the app of the scan the last call returned, so a test can read
-``app.state.requests`` / ``csrf_log`` / ``post_log`` / ``osv_providers`` right after the call.
+``app.state.requests`` / ``csrf_log`` / ``post_log`` / ``auth_log`` / ``osv_providers`` right after
+the call, and ``app.state.log_lines``, every log record the scan emitted at ``DEBUG`` and above.
 ``_OSV_JQUERY_RECORD`` + ``_osv_up`` / ``_osv_down`` stub the OSV.dev API.
 """
 
 from __future__ import annotations
 
 import functools
+import html
 import json
+import logging
 import re
 from urllib.parse import quote, quote_plus
 
@@ -38,7 +41,13 @@ import httpx2
 import pytest
 from starlette.applications import Starlette
 
-from tests.fixtures.app import _INSECURE_PAGE, SIGNIN_PASSWORD, SIGNIN_USER, make_app
+from tests.fixtures.app import (
+    _INSECURE_PAGE,
+    CANARY_COOKIE,
+    SIGNIN_PASSWORD,
+    SIGNIN_USER,
+    make_app,
+)
 from tests.support import make_finding, make_result
 from webvigil.auth.login import Credentials
 from webvigil.checks.deps.osv import OsvProvider
@@ -63,7 +72,10 @@ _HAR: dict[str, str] = {}
 
 # The default Active scan: the only one with the time-delay detectors on.
 _ACTIVE = {"active": True}
-_BEARER = "Authorization: Bearer wv-secret-123"
+_BEARER_TOKEN = "wv-secret-123"
+_BEARER = f"Authorization: Bearer {_BEARER_TOKEN}"
+# spec 024: a static cookie of the full scan, whose value must reach the app and no output.
+_CANARY_VALUE = "wv-canary-cookie-5d1e"
 # Every opt-in switch, for the scans that need all of them on.
 _OPT_INS = {
     "stored_xss": True,
@@ -82,7 +94,8 @@ def _full(profile: str) -> dict[str, object]:
     Returns:
         dict[str, object]: The keyword arguments of the one scan that turns everything on: Active,
             every opt-in, an OpenAPI import, an automated login (spec 019; it sets the session
-            cookie the profile expects) and a bearer header, with the time-delay detectors off.
+            cookie the profile expects), a bearer header and a static canary cookie (spec 024),
+            with the time-delay detectors off.
     """
     return {
         "active": True,
@@ -93,6 +106,7 @@ def _full(profile: str) -> dict[str, object]:
         "sample_sessions": True,
         "test_logout": True,
         "headers": [_BEARER],
+        "cookies": [f"{CANARY_COOKIE}={_CANARY_VALUE}"],
         **_OPT_INS,
     }
 
@@ -246,6 +260,28 @@ def _har_file(tmp_path_factory: pytest.TempPathFactory) -> None:
     _HAR["path"] = str(path)
 
 
+class _LogLines(logging.Handler):
+    """
+    A handler that keeps each record as text: the message, its arguments and every attribute,
+    the traceback and any ``extra`` included.
+
+    Attributes:
+        lines (list[str]): One entry per record, in the order they were emitted.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(logging.DEBUG)
+        self.setFormatter(logging.Formatter("%(levelname)s %(name)s %(message)s"))
+        self.lines: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        """
+        Args:
+            record (logging.LogRecord): One record of any logger.
+        """
+        self.lines.append(f"{self.format(record)} {record.args!r} {vars(record)!r}")
+
+
 @pytest.fixture
 def scan(monkeypatch: pytest.MonkeyPatch):
     """
@@ -375,9 +411,20 @@ def scan(monkeypatch: pytest.MonkeyPatch):
 
         monkeypatch.setattr(orch_mod, "OsvProvider", _osv_provider)
         credentials = Credentials(SIGNIN_USER, SIGNIN_PASSWORD) if login else None
-        result = await Orchestrator(ScanConfig.model_validate(raw), credentials=credentials).run(
-            _TARGET
-        )
+        # spec 024, RF-11: every log record of the scan, at DEBUG, kept with the cached result
+        records = _LogLines()
+        root = logging.getLogger()
+        level = root.level
+        root.addHandler(records)
+        root.setLevel(logging.DEBUG)
+        try:
+            result = await Orchestrator(
+                ScanConfig.model_validate(raw), credentials=credentials
+            ).run(_TARGET)
+        finally:
+            root.removeHandler(records)
+            root.setLevel(level)
+        app.state.log_lines = records.lines
         return result, app
 
     async def _run(
@@ -453,22 +500,41 @@ def _log(scan) -> list[str]:
     return scan.holder["app"].state.requests  # type: ignore[no-any-return]
 
 
+def _spellings(secret: str) -> set[str]:
+    """
+    Args:
+        secret (str): A password, a token or a session value.
+
+    Returns:
+        set[str]: The ways an output could spell it, built here rather than by the engine's
+            scrub (spec 024, RF-11): as typed, percent-encoded, form-encoded, JSON-escaped and
+            HTML-escaped.
+    """
+    return {
+        secret,
+        quote(secret, safe=""),
+        quote_plus(secret),
+        json.dumps(secret)[1:-1],
+        html.escape(secret),
+    }
+
+
 def _leaks(secret: str, text: str) -> bool:
     """
     Args:
         secret (str): A password, a token or a session value.
-        text (str): A rendered report, a finding or a warning.
+        text (str): A rendered report, a finding, a warning or a log line.
 
     Returns:
-        bool: ``True`` when ``secret`` appears in ``text`` as a whole token, as typed or
-            percent-encoded (a form body or a URL carries ``correct+horse``). The insecure
+        bool: ``True`` when ``secret`` appears in ``text`` as a whole token, in any of its
+            :func:`_spellings` (a form body or a URL carries ``correct+horse``). The insecure
             profile issues sequential session ids (``100001``), which can turn up by chance inside
             the random hex marker of another check (``wvb1100001ce3a``); a real leak shows the
             value on its own (``session=100001``).
     """
     return any(
         re.search(rf"(?<![0-9A-Za-z]){re.escape(form)}(?![0-9A-Za-z])", text) is not None
-        for form in {secret, quote(secret, safe=""), quote_plus(secret)}
+        for form in _spellings(secret)
     )
 
 
@@ -1105,17 +1171,28 @@ async def test_the_hardened_app_passes_every_session_check(scan) -> None:
     assert not any("session" in w and "skipped" in w for w in result.warnings)
 
 
-async def test_secrets_never_appear_in_any_report(scan) -> None:
-    """The login password, the session values and a bearer token reach no report format."""
+async def test_secrets_never_appear_in_any_output(scan) -> None:
+    """
+    The canary of spec 024 (RF-11): the static cookie, the bearer token, the password and the
+    session ids the login was issued reach no report format, no warning and no log line.
+    """
     result = await scan("insecure", **_full("insecure"))
-    issued = set(scan.holder["app"].state.sessions) | scan.holder["app"].state.expired
-    assert issued  # the scan really logged in, so there is a session value to look for
-    secrets = {SIGNIN_PASSWORD, "wv-secret-123", *issued}
-    for fmt in ("json", "sarif", "html", "md"):
-        rendered = get_reporter(fmt).render(result)
+    app = scan.holder["app"]
+    issued = set(app.state.sessions) | app.state.expired
+    # the positive control: every value really went out, and the login worked with the password
+    assert issued  # the scan logged in, so there is a session value to look for
+    assert "ok" in app.state.login_log
+    assert result.metadata.login is not None and result.metadata.login.confirmed
+    assert (f"Bearer {_BEARER_TOKEN}", _CANARY_VALUE) in app.state.auth_log
+    assert app.state.log_lines  # the scan's log records were captured
+
+    secrets = {SIGNIN_PASSWORD, _BEARER_TOKEN, _CANARY_VALUE, *issued}
+    outputs = {fmt: get_reporter(fmt).render(result) for fmt in ("json", "sarif", "html", "md")}
+    outputs |= {f"warning {i}": text for i, text in enumerate(result.warnings)}
+    outputs |= {f"log {i}": text for i, text in enumerate(app.state.log_lines)}
+    for where, text in outputs.items():
         for secret in secrets:
-            assert not _leaks(secret, rendered), (fmt, secret)  # not even via the TRACE echo
-    assert not any(_leaks(secret, warning) for warning in result.warnings for secret in secrets)
+            assert not _leaks(secret, text), (where, secret)  # not even via the TRACE echo
 
 
 async def test_csrf_confirmation_flags_the_unenforced_forms_only(scan) -> None:

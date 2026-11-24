@@ -23,6 +23,29 @@ from webvigil.checks.session.cookies import (
     is_session_cookie,
     session_cookies,
 )
+from webvigil.core.secrets import Secret, SecretKind
+
+
+def _secret(text: str) -> Secret:
+    """
+    Args:
+        text (str): A cookie value.
+
+    Returns:
+        Secret: The value as the session checks hold it.
+    """
+    return Secret(text, kind=SecretKind.SESSION)
+
+
+def _plain(pairs: list[tuple[str, Secret]]) -> list[tuple[str, str]]:
+    """
+    Args:
+        pairs (list[tuple[str, Secret]]): What ``session_cookies`` returns.
+
+    Returns:
+        list[tuple[str, str]]: The pairs with each value revealed, for comparison.
+    """
+    return [(name, value.reveal()) for name, value in pairs]
 
 
 def _b64(obj: object) -> str:
@@ -78,7 +101,7 @@ def test_a_session_cookie_is_recognised_by_its_name(name: str, expected: bool) -
 )
 def test_a_jwt_is_recognised_by_its_shape_only(value: str, expected: bool) -> None:
     """Three base64url segments with a JSON-object header: enough to skip it, nothing more."""
-    assert is_jwt(value) is expected
+    assert is_jwt(_secret(value)) is expected
 
 
 def test_session_cookies_reads_every_set_cookie_line_and_skips_what_is_not_an_id() -> None:
@@ -94,7 +117,9 @@ def test_session_cookies_reads_every_set_cookie_line_and_skips_what_is_not_an_id
         ]
     )
 
-    assert session_cookies(headers) == [("PHPSESSID", "abc123def"), ("sid", "9f8e7d")]
+    found = session_cookies(headers)
+    assert _plain(found) == [("PHPSESSID", "abc123def"), ("sid", "9f8e7d")]
+    assert all(value.kind is SecretKind.SESSION and value.name == name for name, value in found)
 
 
 def test_a_cookie_whose_name_and_value_pass_the_browser_limit_is_ignored() -> None:
@@ -106,14 +131,14 @@ def test_a_cookie_whose_name_and_value_pass_the_browser_limit_is_ignored() -> No
             ("set-cookie", f"session={at_limit}"),
         ]
     )
-    assert session_cookies(headers) == [("session", at_limit)]
+    assert _plain(session_cookies(headers)) == [("session", at_limit)]
 
 
 def test_long_attributes_do_not_hide_a_session_cookie() -> None:
     """Attributes a browser ignores, however long, leave the cookie readable."""
     junk = "; x=" + "q" * 50_000
     headers = httpx2.Headers([("set-cookie", f"sid=abc123{junk}; Path=/")])
-    assert session_cookies(headers) == [("sid", "abc123")]
+    assert _plain(session_cookies(headers)) == [("sid", "abc123")]
 
 
 def test_the_pair_is_counted_in_octets() -> None:
@@ -150,4 +175,4 @@ def test_a_response_without_cookies_has_no_session_ids() -> None:
 def test_a_jwt_shaped_value_with_a_deeply_nested_header_is_not_a_jwt() -> None:
     """A header nested past the JSON parser's depth is rejected, not raised."""
     header = base64.urlsafe_b64encode(b"[" * 200_000).decode().rstrip("=")
-    assert is_jwt(f"{header}.e30.sig") is False
+    assert is_jwt(_secret(f"{header}.e30.sig")) is False

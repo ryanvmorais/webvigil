@@ -8,7 +8,9 @@ hex characters, exactly 64 bits, pass), and the structure rules (numeric, repeat
 a timestamp) are what catch an id that uses a large alphabet badly.
 
 None of these functions returns the value, a part of it, or a hash of it: a rule is a code, a
-sentence and a severity, and the callers add the length and the estimated bits.
+sentence and a severity, and :func:`id_facts` gives the length, the alphabet and the estimated
+bits. The public functions take :class:`~webvigil.core.secrets.Secret` values (spec 024, RF-05)
+and read each one once, to analyse it.
 """
 
 from __future__ import annotations
@@ -20,6 +22,7 @@ from dataclasses import dataclass
 from itertools import pairwise
 
 from webvigil.core.findings import Severity
+from webvigil.core.secrets import Secret
 
 MIN_LENGTH = 16
 MIN_BITS = 64
@@ -125,16 +128,34 @@ def _in_epoch(number: int) -> bool:
     return _EPOCH_S[0] <= number <= _EPOCH_S[1] or _EPOCH_MS[0] <= number <= _EPOCH_MS[1]
 
 
-def judge_value(value: str) -> list[Rule]:
+def id_facts(value: Secret) -> tuple[tuple[str, str], ...]:
+    """
+    Args:
+        value (Secret): A session id.
+
+    Returns:
+        tuple[tuple[str, str], ...]: Its length, alphabet and estimated bits, as
+            ``(label, content)`` pairs of numbers and words.
+    """
+    text = value.reveal()
+    return (
+        ("length", str(len(text))),
+        ("alphabet", alphabet_of(text)[0]),
+        ("estimated bits", str(int(estimated_bits(text)))),
+    )
+
+
+def judge_value(secret: Secret) -> list[Rule]:
     """
     Judge one session id on its own (RF-03).
 
     Args:
-        value (str): The id (never logged or returned).
+        secret (Secret): The id (never logged or returned).
 
     Returns:
         list[Rule]: Every rule that fires; empty for an id that passes.
     """
+    value = secret.reveal()
     rules: list[Rule] = []
     if len(value) < MIN_LENGTH:
         rules.append(Rule("short", f"shorter than {MIN_LENGTH} characters", Severity.MEDIUM))
@@ -186,19 +207,20 @@ def _constant_share(values: Sequence[str]) -> float:
     return constant / length
 
 
-def judge_samples(values: Sequence[str]) -> list[Rule]:
+def judge_samples(secrets: Sequence[Secret]) -> list[Rule]:
     """
     Judge a series of anonymous visits to the same cookie (RF-04).
 
     Args:
-        values (Sequence[str]): The ids, in the order they were issued (never logged).
+        secrets (Sequence[Secret]): The ids, in the order they were issued (never logged).
 
     Returns:
         list[Rule]: Every series rule that fires; empty for fewer than three samples or a
             series that looks independent.
     """
-    if len(values) < _MIN_SAMPLES:
+    if len(secrets) < _MIN_SAMPLES:
         return []
+    values = [secret.reveal() for secret in secrets]
     rules: list[Rule] = []
     repeated = len(values) - len(set(values))
     if repeated:
@@ -251,6 +273,7 @@ __all__ = [
     "Rule",
     "alphabet_of",
     "estimated_bits",
+    "id_facts",
     "judge_samples",
     "judge_value",
 ]

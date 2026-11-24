@@ -1,7 +1,8 @@
 """
 The session-id analysers — spec 020 RF-03 / RF-04, ADR-6.
 
-``judge_value`` and ``judge_samples`` are pure functions of strings, so the tests are tables:
+``judge_value`` and ``judge_samples`` are pure functions of the ids (``Secret`` values since spec
+024, built here from strings), so the tests are tables:
 a value (or a series) and the set of rule codes that must fire. The cases that matter are the
 boundaries: the 16-character / 64-bit floor (16 lower-case hex characters pass, 15 do not), the
 structure rules that catch a good-looking alphabet used badly, and a random series that must
@@ -17,10 +18,35 @@ import pytest
 from webvigil.checks.session.ids import (
     alphabet_of,
     estimated_bits,
+    id_facts,
     judge_samples,
     judge_value,
 )
 from webvigil.core.findings import Severity
+from webvigil.core.secrets import Secret, SecretKind
+
+
+def _id(text: str) -> Secret:
+    """
+    Args:
+        text (str): A session id.
+
+    Returns:
+        Secret: The id as the session checks receive it.
+    """
+    return Secret(text, kind=SecretKind.SESSION, name="sid")
+
+
+def _ids(texts: list[str]) -> list[Secret]:
+    """
+    Args:
+        texts (list[str]): Session ids, in the order they were issued.
+
+    Returns:
+        list[Secret]: The ids as the session checks receive them.
+    """
+    return [_id(text) for text in texts]
+
 
 _HEX32 = "9f8e7d6c5b4a39281706f5e4d3c2b1a0"
 _B64_22 = "Xk3_9aZq-1LmN0pR7sTuVw"
@@ -47,13 +73,14 @@ _VALUES = [
 @pytest.mark.parametrize(("value", "codes"), _VALUES)
 def test_a_value_fires_exactly_the_rules_that_apply(value: str, codes: set[str]) -> None:
     """The floor, the structure rules and the passes, one table."""
-    assert {rule.code for rule in judge_value(value)} == codes
+    assert {rule.code for rule in judge_value(_id(value))} == codes
 
 
 def test_severity_follows_the_rules_not_the_value() -> None:
     """A short alphanumeric id is MEDIUM; a numeric, repeating or counter-like one is HIGH."""
     top = {
-        value: max((r.severity for r in judge_value(value)), default=None) for value, _ in _VALUES
+        value: max((r.severity for r in judge_value(_id(value))), default=None)
+        for value, _ in _VALUES
     }
     assert top["abc123"] is Severity.MEDIUM
     assert top["42"] is Severity.HIGH
@@ -114,13 +141,13 @@ def test_a_series_fires_exactly_the_series_rules_that_apply(
     values: list[str], codes: set[str]
 ) -> None:
     """Duplicates, sequences, timestamp series, low variance, and a random series that is clean."""
-    assert {rule.code for rule in judge_samples(values)} == codes
+    assert {rule.code for rule in judge_samples(_ids(values))} == codes
 
 
 def test_series_rules_are_marked_as_needing_samples() -> None:
     """Every rule from ``judge_samples`` says it is sampled; the value rules never do."""
-    assert all(rule.sampled for rule in judge_samples(["1001", "1002", "1003"]))
-    assert not any(rule.sampled for rule in judge_value("42"))
+    assert all(rule.sampled for rule in judge_samples(_ids(["1001", "1002", "1003"])))
+    assert not any(rule.sampled for rule in judge_value(_id("42")))
 
 
 # ---------------------------------------------------------------------------
@@ -131,9 +158,21 @@ def test_series_rules_are_marked_as_needing_samples() -> None:
 def test_a_digit_run_past_the_int_limit_is_numeric_but_not_a_number() -> None:
     """5000 digits are flagged as digits only; no epoch or counter rule, and no exception."""
     value = "1234567890" * 500
-    codes = {rule.code for rule in judge_value(value)}
+    codes = {rule.code for rule in judge_value(_id(value))}
     assert "numeric" in codes
     assert not codes & {"timestamp", "counter"}
-    assert {rule.code for rule in judge_samples([value, value + "1", value + "2"])} <= {
+    assert {rule.code for rule in judge_samples(_ids([value, value + "1", value + "2"]))} <= {
         "low-variance"
     }
+
+
+# ---------------------------------------------------------------------------
+# The facts of a weak-id finding
+# ---------------------------------------------------------------------------
+
+
+def test_the_facts_of_an_id_are_its_length_alphabet_and_bits() -> None:
+    """``id_facts`` gives numbers and words, and none of them is the id."""
+    facts = id_facts(_id(_HEX32))
+    assert facts == (("length", "32"), ("alphabet", "lower hex"), ("estimated bits", "128"))
+    assert _HEX32 not in repr(facts)

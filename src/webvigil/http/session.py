@@ -15,13 +15,14 @@ from __future__ import annotations
 
 import asyncio
 import re
-from collections.abc import Awaitable, Callable, Iterable
+from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
 import httpx2
 
 from webvigil.core.result import LoginSummary
+from webvigil.core.secrets import Secret, SecretKind
 
 if TYPE_CHECKING:
     from webvigil.http.client import Response
@@ -130,6 +131,18 @@ _MAX_VARIANTS_PER_NAME = 4
 _MAX_SCRUB_VALUES = 1024
 
 
+def _session_value(value: str, name: str) -> Secret:
+    """
+    Args:
+        value (str): A cookie value the target set.
+        name (str): The cookie's name, in the jar's form.
+
+    Returns:
+        Secret: The value as a ``SESSION`` secret, named after its cookie in readable text.
+    """
+    return Secret(value, kind=SecretKind.SESSION, name=readable_cookie(name))
+
+
 def _prune(jar: httpx2.Cookies) -> None:
     """
     Keep at most ``_MAX_VARIANTS_PER_NAME`` cookies of one name and ``_MAX_JAR_COOKIES`` in all.
@@ -162,7 +175,10 @@ class SessionJar:
       stateless contract of spec 007 for everything but the session.
 
     Every cookie value that ever enters the jar is remembered in :attr:`values`, so the report
-    can be scrubbed of it.
+    can be scrubbed of it. Everything the jar hands out is a
+    :class:`~webvigil.core.secrets.Secret` (spec 024, ADR-6), except :meth:`pairs_for`, which
+    builds the ``Cookie`` header inside the HTTP layer; the library's own storage holds the
+    plain values, because the standard cookie rules run on it.
 
     Attributes:
         overflowed (bool): ``True`` once the target set more distinct values than the scrub
@@ -178,14 +194,22 @@ class SessionJar:
         self._live = httpx2.Cookies()
         self._pending: httpx2.Cookies | None = None
         self._names: frozenset[str] = frozenset()
-        self._values: set[str] = set()
+        self._values: set[Secret] = set()
         self.overflowed = False
 
-    @property
-    def values(self) -> frozenset[str]:
+    def __repr__(self) -> str:
         """
         Returns:
-            frozenset[str]: Every non-empty cookie value that ever entered the jar.
+            str: The host and the names of the committed session; never a value.
+        """
+        return f"SessionJar(host={self._host!r}, names={sorted(self._names)!r})"
+
+    @property
+    def values(self) -> frozenset[Secret]:
+        """
+        Returns:
+            frozenset[Secret]: Every non-empty cookie value that ever entered the jar, as
+                ``SESSION`` secrets named after their cookie.
         """
         return frozenset(self._values)
 
@@ -197,15 +221,19 @@ class SessionJar:
         """
         return self._names
 
-    def pending_items(self) -> frozenset[tuple[str, str]]:
+    def pending_items(self) -> frozenset[tuple[str, Secret]]:
         """
         Returns:
-            frozenset[tuple[str, str]]: The ``(name, value)`` of every cookie in the pending
-                jar; empty outside a handshake. A rotated value counts as a new item.
+            frozenset[tuple[str, Secret]]: The ``(name, value)`` of every cookie in the pending
+                jar, both in the jar's form (:func:`jar_text`) and the value as a ``SESSION``
+                secret; empty outside a handshake. A rotated value counts as a new item.
         """
         if self._pending is None:
             return frozenset()
-        return frozenset((cookie.name, cookie.value or "") for cookie in self._pending.jar)
+        return frozenset(
+            (cookie.name, _session_value(cookie.value or "", cookie.name))
+            for cookie in self._pending.jar
+        )
 
     def begin(self) -> None:
         """Start a handshake: an empty pending jar that collects the handshake's cookies."""
@@ -270,7 +298,8 @@ class SessionJar:
             list[tuple[str, str]]: ``(name, value)`` pairs in the jar's form (:func:`jar_text`),
                 empty for any host but the target host, for a URL ``httpx2`` cannot build and
                 for a cookie the browser rules would not send (``Secure`` on ``http``, another
-                path, expired).
+                path, expired). The values are plain: they are read from the library's storage
+                to build the request's ``Cookie`` header (spec 024, ADR-6).
         """
         if (urlsplit(url).hostname or "").lower() != self._host:
             return []
@@ -300,7 +329,8 @@ class SessionJar:
                 # the report quotes pages, so it holds the value as text, not in the jar's form;
                 # a page can show the same bytes as UTF-8 or as Latin-1
                 raw = cookie_bytes(cookie.value)
-                self._values |= {readable_cookie(cookie.value), raw.decode("latin-1")}
+                forms = {readable_cookie(cookie.value), raw.decode("latin-1")}
+                self._values |= {_session_value(form, cookie.name) for form in forms}
         if len(self._values) > _MAX_SCRUB_VALUES:
             self.overflowed = True
             self._live = httpx2.Cookies()
@@ -339,7 +369,6 @@ class Session:
         max_relogins: int = 3,
         relogin: Callable[[], Awaitable[bool]] | None = None,
         confirm_dropped: Callable[[], Awaitable[bool]] | None = None,
-        secrets: Iterable[str] = (),
     ) -> None:
         """
         Args:
@@ -353,7 +382,6 @@ class Session:
             confirm_dropped (Callable[[], Awaitable[bool]] | None): Fetches the configured
                 ``check_url`` and returns whether it looks logged out. ``None`` skips the
                 confirmation. Defaults to ``None``.
-            secrets (Iterable[str]): Extra values to scrub from the report (the password).
         """
         self.jar = jar
         self.generation = 0
@@ -369,26 +397,28 @@ class Session:
         self._marker = re.compile(logged_out_marker) if logged_out_marker else None
         self._relogin = relogin
         self._confirm = confirm_dropped
-        self._secrets: set[str] = {s for s in secrets if s}
         self._lock = asyncio.Lock()
 
-    @property
-    def secrets(self) -> frozenset[str]:
+    def __repr__(self) -> str:
         """
         Returns:
-            frozenset[str]: The password and every session cookie value ever held.
+            str: The jar's names-only form and the session's counters; never a value.
         """
-        return frozenset(self._secrets | self.jar.values)
+        return (
+            f"Session(jar={self.jar!r}, generation={self.generation}, "
+            f"relogins={self.relogins}, lost={self.lost}, closed={self.closed})"
+        )
 
     @property
-    def given_secrets(self) -> frozenset[str]:
+    def secrets(self) -> frozenset[Secret]:
         """
         Returns:
-            frozenset[str]: The values the user gave (the password), always scrubbed; the jar's
-                values are the target's and are scrubbed only when they look like a session id
-                (``webvigil.auth.scrub.looks_like_session_value``).
+            frozenset[Secret]: Every session cookie value the jar ever held. They are the
+                target's, so the scrub removes them only when they look like a session id
+                (``webvigil.auth.scrub.looks_like_session_value``); the password reaches it from
+                the credentials (spec 024, RF-07).
         """
-        return frozenset(self._secrets)
+        return self.jar.values
 
     def looks_dropped(self, response: Response) -> bool:
         """

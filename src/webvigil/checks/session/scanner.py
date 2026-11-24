@@ -20,17 +20,12 @@ from selectolax.lexbor import LexborHTMLParser as HTMLParser
 
 from webvigil.auth.login import Authenticator
 from webvigil.checks.session.cookies import is_jwt, is_session_cookie, session_cookies
-from webvigil.checks.session.ids import (
-    Rule,
-    alphabet_of,
-    estimated_bits,
-    judge_samples,
-    judge_value,
-)
+from webvigil.checks.session.ids import Rule, id_facts, judge_samples, judge_value
 from webvigil.core.config import ScanConfig
 from webvigil.core.context import Page
 from webvigil.core.errors import OutOfScopeError, RequestFailed
 from webvigil.core.findings import Confidence, Severity
+from webvigil.core.secrets import Secret
 from webvigil.core.target import Target
 from webvigil.core.urls import resolve_url
 from webvigil.crawler.forms import Form, form_body
@@ -76,8 +71,8 @@ class _Observed:
     """The ids of one cookie name: the first value the crawl saw, and the anonymous samples."""
 
     url: str
-    first: str | None = None
-    samples: list[str] | None = None
+    first: Secret | None = None
+    samples: list[Secret] | None = None
 
 
 class SessionScanner:
@@ -190,7 +185,7 @@ class SessionScanner:
         """
         count = self._config.session.sample_count
         entry = self._target.entry_url
-        series: dict[str, list[str]] = {}
+        series: dict[str, list[Secret]] = {}
         new_names = 0
         for _ in range(count):
             try:
@@ -233,11 +228,7 @@ class SessionScanner:
             rules += judge_samples(item.samples)
         if not rules:
             return None
-        facts: list[tuple[str, str]] = [
-            ("length", str(len(first))),
-            ("alphabet", alphabet_of(first)[0]),
-            ("estimated bits", str(int(estimated_bits(first)))),
-        ]
+        facts: list[tuple[str, str]] = list(id_facts(first))
         if item.samples:
             facts.append(("samples", str(len(item.samples))))
         facts.append(("rules", "; ".join(rule.text for rule in rules)))

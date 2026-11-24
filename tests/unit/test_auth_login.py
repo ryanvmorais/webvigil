@@ -203,9 +203,11 @@ async def test_the_session_holds_what_the_target_issued_and_the_credentials_the_
     """The scrub list's two sources: the session's issued values, the login's own password."""
     async with _open(_Site()) as auth:
         await auth.login()
-        assert {"pre-77aa", "sess-9f3a"} <= auth.session.secrets
+        issued = {value.reveal() for value in auth.session.secrets}
+        assert {"pre-77aa", "sess-9f3a"} <= issued
+        assert {value.kind for value in auth.session.secrets} == {SecretKind.SESSION}
         # spec 024, RF-07: the password reaches the scrub through the credentials, not the jar
-        assert _PASSWORD not in auth.session.secrets
+        assert _PASSWORD not in issued
         assert collect_secrets(auth.credentials) == {Secret(_PASSWORD, kind=SecretKind.PASSWORD)}
 
 
@@ -577,8 +579,16 @@ async def test_the_transition_holds_the_cookies_before_and_after_the_post() -> N
         await auth.login()
 
     assert auth.transition is not None
-    assert auth.transition.pre == {"pre": "pre-77aa"}
-    assert auth.transition.post == {"pre": "pre-77aa", "sid": "sess-9f3a"}
+    pre, post = auth.transition.pre, auth.transition.post
+    assert {name: value.reveal() for name, value in pre.items()} == {"pre": "pre-77aa"}
+    assert {name: value.reveal() for name, value in post.items()} == {
+        "pre": "pre-77aa",
+        "sid": "sess-9f3a",
+    }
+    # spec 024, RF-05: the values are session secrets, and the record prints no value
+    assert all(value.kind is SecretKind.SESSION for value in [*pre.values(), *post.values()])
+    assert "sess-9f3a" not in repr(auth.transition)
+    assert "sid" in repr(auth.transition)  # the positive control: the names are there
 
 
 async def test_a_failed_login_records_no_transition_and_a_relogin_replaces_it() -> None:
