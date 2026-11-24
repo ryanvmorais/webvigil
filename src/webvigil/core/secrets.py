@@ -123,8 +123,6 @@ class Secret:
         """
         raise TypeError("Secret cannot be subclassed")
 
-    # --- the one way to the value ---------------------------------------------------------
-
     def reveal(self) -> str:
         """
         Returns:
@@ -158,8 +156,6 @@ class Secret:
         """
         return self._kind is not SecretKind.SESSION
 
-    # --- text ------------------------------------------------------------------------------
-
     def __str__(self) -> str:
         return REDACTED
 
@@ -172,15 +168,11 @@ class Secret:
         name = "" if self._name is None else f", name={self._name!r}"
         return f"Secret({REDACTED!r}, kind={self._kind.value!r}{name})"
 
-    # --- size --------------------------------------------------------------------------------
-
     def __len__(self) -> int:
         return len(self._value)
 
     def __bool__(self) -> bool:
         return bool(self._value)
-
-    # --- comparison ------------------------------------------------------------------------
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Secret):
@@ -192,8 +184,6 @@ class Secret:
     def __hash__(self) -> int:
         # Tagged, so a secret never shares a hash slot with the bare string by design.
         return hash((Secret, self._value))
-
-    # --- immutability ------------------------------------------------------------------------
 
     def __setattr__(self, name: str, value: object) -> NoReturn:
         raise AttributeError("a Secret is immutable")
@@ -207,8 +197,6 @@ class Secret:
     def __deepcopy__(self, memo: dict[int, object]) -> Secret:
         return self
 
-    # --- serialization -----------------------------------------------------------------------
-
     def __reduce_ex__(self, protocol: object) -> NoReturn:
         raise TypeError("a Secret cannot be pickled")
 
@@ -216,8 +204,6 @@ class Secret:
         # object.__getstate__ would hand the slots, value included, to any caller; refusing here
         # also closes copyreg's path for a pickler that skips __reduce_ex__.
         raise TypeError("a Secret cannot be pickled")
-
-    # --- pydantic ----------------------------------------------------------------------------
 
     @classmethod
     def __get_pydantic_core_schema__(
@@ -267,6 +253,8 @@ def _serialize(value: Secret, info: core_schema.SerializationInfo) -> Secret | s
     return REDACTED if info.mode_is_json() else value
 
 
+# One serializer for the bare type and every secret field: the marker in JSON mode, the object in
+# Python mode, so model_dump followed by model_validate keeps the value.
 _SERIALIZER: Final = core_schema.plain_serializer_function_ser_schema(_serialize, info_arg=True)
 
 

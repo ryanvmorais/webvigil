@@ -68,18 +68,18 @@ EXEMPT: Final[Mapping[str, str]] = {
     ),
 }
 
-# The credentials still typed ``str``, converted by the later stages of spec 024. Each stage
-# removes its own lines, and the set goes when it is empty.
+# The credentials still typed ``str``, which spec 024 converts. A converted field leaves this set in
+# the same change, and the set goes when it is empty.
 PENDING_CONVERSION: Final[frozenset[str]] = frozenset(
     {
-        # Stage 1: the scan's configured credentials
+        # the scan's configured credentials
         "core.config:AuthSection.cookies",
         "core.config:AuthSection.headers",
         "auth.login:Credentials.password",
-        # Stage 2: session values
+        # session values
         "auth.login:CookieTransition.pre",
         "auth.login:CookieTransition.post",
-        # Stage 4: the Web API
+        # the Web API
         "api.config:WebConfig.session_secret",
         "api.schemas:SetupIn.password",
         "api.schemas:LoginIn.password",
