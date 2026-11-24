@@ -5,9 +5,11 @@
  *
  * Nothing is mocked: `NextRequest` and `NextResponse` run for real (hence the `node` environment,
  * which has the `Request` and `Headers` classes jsdom lacks), and the policy comes from the real
- * builder. The matcher is read as the regular expression Next compiles from `source`. That the
+ * builder. The matcher is compiled by Next's own function, as `next build` does. That the
  * browser enforces the policy is the e2e suite's job.
  */
+import { createRequire } from "node:module";
+
 import { NextRequest } from "next/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -100,8 +102,17 @@ describe("proxy", () => {
 
 describe("matcher", () => {
   const [rule] = config.matcher;
-  // Next anchors the `source` the way path-to-regexp does: the whole path must match.
-  const pattern = new RegExp(`^${rule.source}$`);
+  // Next's own compiler, the one `next build` runs on `config.matcher`: it is not part of Next's
+  // typed API, so a minimal type is declared here. A hand-built `new RegExp(source)` reads the
+  // pattern differently (path-to-regexp drops the backslash of `\.`, and Next adds a `_next/data`
+  // prefix and an `.rsc` suffix), so it would test another matcher.
+  const { getMiddlewareMatchers } = createRequire(import.meta.url)(
+    "next/dist/build/analysis/get-page-static-info",
+  ) as {
+    getMiddlewareMatchers: (matchers: unknown, nextConfig: object) => { regexp: string }[];
+  };
+  const [compiled] = getMiddlewareMatchers([rule], {});
+  const pattern = new RegExp(compiled.regexp);
 
   it.each(["/", "/login", "/setup", "/scans", "/scans/12", "/scans/new", "/checks", "/settings"])(
     "runs on the page %s",
@@ -110,7 +121,30 @@ describe("matcher", () => {
     },
   );
 
+  it.each(["/scans/12.rsc", "/login.rsc"])("runs on the RSC request of a page, %s", (path) => {
+    expect(pattern.test(path)).toBe(true);
+  });
+
+  // Paths that only start like an excluded one are pages (such as the not-found page), so they get
+  // the policy; the dot cases show the exclusion is the file name, not any character in its place.
   it.each([
+    "/apis",
+    "/api-keys",
+    "/apix/y",
+    "/_next/static-x",
+    "/_next/imagex",
+    "/favicon.icox",
+    "/favicon.ico/x",
+    "/faviconXico",
+    "/icon.svgz",
+    "/iconXsvg",
+  ])("runs on %s, which only looks like an excluded path", (path) => {
+    expect(pattern.test(path)).toBe(true);
+  });
+
+  it.each([
+    "/api",
+    "/api/",
     "/api/scans",
     "/api/auth/me",
     "/_next/static/chunks/a.js",

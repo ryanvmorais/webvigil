@@ -23,6 +23,10 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
   CDN served under that name, on the API's origin. It now names an exact release, with the SHA-384
   of each file and `crossorigin="anonymous"`, and no longer loads a favicon from another site.
   `scripts/update-swagger-ui.py` moves the pin.
+- **Every dashboard page gets its Content-Security-Policy, including ones whose path starts like an
+  excluded one.** The proxy skipped any path that began with `api`, `_next/static`, `_next/image`,
+  `favicon.ico` or `icon.svg`, so a page such as `/apis` (the not-found page) was served with
+  no policy. Each exclusion is now a whole path segment or file name.
 
 ## [1.6.0] - 2026-11-24
 
