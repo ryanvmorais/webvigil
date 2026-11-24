@@ -11,6 +11,19 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 ## [Unreleased]
 
+### Removed
+
+- **ReDoc (`/redoc`) is no longer served.** It loaded a floating CDN release and Google Fonts, and
+  showed the same OpenAPI document as `/docs`, which stays.
+
+### Security
+
+- **The Web API's `/docs` page loads a pinned Swagger UI, checked by its hash.** It named a
+  floating `swagger-ui-dist@5` on jsDelivr with no `integrity`, so the page ran whatever script the
+  CDN served under that name, on the API's origin. It now names an exact release, with the SHA-384
+  of each file and `crossorigin="anonymous"`, and no longer loads a favicon from another site.
+  `scripts/update-swagger-ui.py` moves the pin.
+
 ## [1.6.0] - 2026-11-24
 
 A minor release of security and reliability fixes (GHSA-hhpx-9q93-mv55, GHSA-38gf-jvgw-g2pq,
