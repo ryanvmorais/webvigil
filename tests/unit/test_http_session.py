@@ -234,6 +234,85 @@ async def test_without_a_session_the_client_sends_only_what_is_configured() -> N
     assert app.cookie_seen == ["lang=en"]
 
 
+@pytest.mark.parametrize("value", [b"plain", "café".encode()], ids=["ascii", "non-ascii"])
+async def test_a_retry_carries_no_cookie_the_target_set(value: bytes) -> None:
+    """A cookie set by the failed attempt stays out of the retry, whatever its bytes."""
+    seen: list[str | None] = []
+
+    def handle(request: httpx2.Request) -> httpx2.Response:
+        """Fail the first attempt with a ``Set-Cookie``, then answer."""
+        seen.append(request.headers.get("cookie"))
+        if len(seen) == 1:
+            return httpx2.Response(503, headers=[(b"set-cookie", b"picked=" + value + b"; Path=/")])
+        return httpx2.Response(200)
+
+    target = Target.parse(_BASE, scope=Scope.HOST)
+    async with HttpClient(target, ScanConfig(), transport=HandlerTransport(handle)) as http:
+        response = await http.get(f"{_BASE}/page")
+
+    assert response.status_code == 200
+    assert seen == [None, None]  # two attempts, neither with a cookie
+
+
+class _HeldTransport(httpx2.AsyncBaseTransport):
+    """Holds the first request open, so another one is waiting when its answer lands."""
+
+    def __init__(self) -> None:
+        self.entered = asyncio.Event()
+        self.release = asyncio.Event()
+        self.cookies: dict[str, str | None] = {}
+
+    async def handle_async_request(self, request: httpx2.Request) -> httpx2.Response:
+        """
+        Args:
+            request (httpx2.Request): The request; its path and ``Cookie`` header are recorded.
+
+        Returns:
+            httpx2.Response: A ``200``; the first request's also sets a parent-domain cookie.
+        """
+        self.cookies[request.url.path] = request.headers.get("cookie")
+        if request.url.path != "/first":
+            return httpx2.Response(200, stream=httpx2.ByteStream(b""))
+        self.entered.set()
+        await self.release.wait()
+        cookie = (b"set-cookie", b"sid=held; Domain=demo.test; Path=/")
+        return httpx2.Response(200, headers=[cookie], stream=httpx2.ByteStream(b""))
+
+
+@pytest.mark.parametrize(
+    ("url", "anonymous"),
+    [("http://other.demo.test/second", False), ("http://app.demo.test/second", True)],
+    ids=["sibling-host", "anonymous"],
+)
+async def test_a_cookie_the_target_set_never_rides_on_a_waiting_request(
+    url: str, anonymous: bool
+) -> None:
+    """An answer landing while another request waits for its slot leaves that request alone."""
+    transport = _HeldTransport()
+    config = ScanConfig.model_validate({"http": {"concurrency": 1, "delay_ms": 0}})
+    target = Target.parse("http://app.demo.test", scope=Scope.SUBDOMAINS)
+
+    async def second(http: HttpClient) -> None:
+        """Send the request that waits for the slot the first one holds."""
+        if anonymous:
+            async with http.anonymous():
+                await http.get(url)
+        else:
+            await http.get(url)
+
+    async with HttpClient(target, config, transport=transport) as http:
+        first = asyncio.create_task(http.get("http://app.demo.test/first"))
+        await transport.entered.wait()
+        waiting = asyncio.create_task(second(http))
+        for _ in range(10):  # let it run up to the slot the first request holds
+            await asyncio.sleep(0)
+        assert "/second" not in transport.cookies
+        transport.release.set()
+        await asyncio.gather(first, waiting)
+
+    assert transport.cookies == {"/first": None, "/second": None}
+
+
 # ---------------------------------------------------------------------------
 # A dropped session
 # ---------------------------------------------------------------------------

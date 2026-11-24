@@ -8,6 +8,7 @@ that records where it was asked to connect, so no test opens a socket or asks a 
 
 from __future__ import annotations
 
+import ipaddress
 from collections.abc import Iterable
 
 import httpcore2
@@ -22,6 +23,7 @@ from webvigil.http.addresses import (
     AddressGuard,
     BlockedAddressError,
     GuardedBackend,
+    _embedded_ipv4,
     install,
     is_public,
 )
@@ -130,6 +132,23 @@ _PUBLIC_2 = "93.184.216.35"
         "2002:7f00:1::1",  # 6to4 around 127.0.0.1
         "2002:a00:5::1",  # 6to4 around 10.0.0.5
         "64:ff9b::a00:5",  # NAT64 around 10.0.0.5
+        "::a00:5",  # IPv4-compatible around 10.0.0.5
+        "::7f00:1",  # IPv4-compatible around 127.0.0.1
+        "::ffff:ffff",  # last IPv4-compatible address
+        "::ffff:0:0:0",  # first IPv4-translated address
+        "::ffff:0:a00:5",  # IPv4-translated around 10.0.0.5
+        "::ffff:0:ffff:ffff",  # last IPv4-translated address
+        "fec0::",  # first site-local address
+        "fec0::1",
+        "feff:ffff:ffff:ffff:ffff:ffff:ffff:ffff",  # last site-local address
+        "febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff",  # just below: link-local
+        "ff00::",  # just above: multicast
+        "1fff:ffff:ffff:ffff:ffff:ffff:ffff:ffff",  # just below global unicast
+        "4000::",  # just above global unicast
+        "2001:db8::1",  # documentation, inside global unicast
+        "::1:0:0",  # reserved, next to the IPv4-compatible range
+        "::ffff:1:0:0",  # reserved, next to the IPv4-translated range
+        "400::1",  # reserved
         "not-an-address",
     ],
 )
@@ -139,11 +158,52 @@ def test_internal_addresses_are_not_public(address: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "address", [_PUBLIC, "8.8.8.8", "2606:4700:4700::1111", "::ffff:8.8.8.8", "64:ff9b::808:808"]
+    "address",
+    [
+        _PUBLIC,
+        "8.8.8.8",
+        "2606:4700:4700::1111",
+        "::ffff:8.8.8.8",
+        "64:ff9b::808:808",
+        "::808:808",  # IPv4-compatible around a public address
+        "::ffff:0:808:808",  # IPv4-translated around a public address
+        "2000::",  # first global unicast address
+        "3000::1",
+        "3fff:ffff:ffff:ffff:ffff:ffff:ffff:ffff",  # last global unicast address
+    ],
 )
 def test_public_addresses_are_public(address: str) -> None:
     """A globally reachable unicast address, in any form, is public."""
     assert is_public(address)
+
+
+@pytest.mark.parametrize(
+    ("address", "inner"),
+    [
+        ("::", "0.0.0.0"),
+        ("::a00:5", "10.0.0.5"),
+        ("::ffff:ffff", "255.255.255.255"),
+        ("::ffff:0:0:0", "0.0.0.0"),
+        ("::ffff:0:a00:5", "10.0.0.5"),
+        ("::ffff:0:ffff:ffff", "255.255.255.255"),
+    ],
+)
+def test_the_ipv4_inside_each_end_of_the_embedding_ranges_is_read(address: str, inner: str) -> None:
+    """Both ends of the IPv4-compatible and IPv4-translated ranges yield their IPv4 address."""
+    assert str(_embedded_ipv4(ipaddress.IPv6Address(address))) == inner
+
+
+@pytest.mark.parametrize(
+    "address",
+    [
+        "::1:0:0",  # just past the IPv4-compatible range
+        "::fffe:ffff:ffff:ffff",  # just before the IPv4-translated range
+        "::ffff:1:0:0",  # just past it
+    ],
+)
+def test_a_neighbour_of_the_embedding_ranges_carries_no_ipv4(address: str) -> None:
+    """The address next to a range is not read as if it held an IPv4 address."""
+    assert _embedded_ipv4(ipaddress.IPv6Address(address)) is None
 
 
 # ---------------------------------------------------------------------------

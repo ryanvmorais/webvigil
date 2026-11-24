@@ -20,6 +20,7 @@ import contextvars
 import random
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
+from http.cookiejar import CookieJar, DefaultCookiePolicy
 from types import TracebackType
 from urllib.parse import urlsplit
 
@@ -213,10 +214,11 @@ class Response:
             milliseconds.
         history (tuple[RedirectHop, ...]): Redirect hops followed. Defaults to
             empty.
-        redirected_out_of_scope (bool): ``True`` when a redirect left scope and
-            was not followed. Defaults to ``False``.
-        final_location (str | None): The out-of-scope ``Location`` that was not
-            followed, when applicable.
+        redirected_out_of_scope (bool): ``True`` when a redirect left scope, or would
+            have replayed a body with credentials to a URL that may not receive them,
+            and was not followed. Defaults to ``False``.
+        final_location (str | None): The ``Location`` that was not followed, when
+            applicable.
         truncated (bool): ``True`` when the body was larger than ``max_body_bytes`` and
             ``content`` / ``text`` hold only the first part.
     """
@@ -360,6 +362,11 @@ class HttpClient:
             },
             transport=self._transport,  # type: ignore[arg-type]
             event_hooks={"response": [_hide_location]},
+            # The scanner sends the cookies of ``[auth]`` and of the login session, each under
+            # its own destination rule, and nothing it picked up implicitly (spec 007). A jar
+            # that accepts no cookie holds for retries and concurrent requests, which emptying
+            # a shared jar before each request does not.
+            cookies=CookieJar(policy=DefaultCookiePolicy(allowed_domains=[])),
         )
         if self._max_duration > 0:
             self._deadline = asyncio.get_running_loop().time() + self._max_duration
@@ -554,7 +561,8 @@ class HttpClient:
         Returns:
             Response: The final response. A 301/302/303 redirect drops the
                 method to GET and drops ``params`` and ``data``; a 307/308
-                replays them.
+                replays them, unless the body may hold a credential and the
+                new URL may not receive one: that redirect is not followed.
 
         Raises:
             OutOfScopeError: When ``url`` is out of scope and
@@ -621,6 +629,32 @@ class HttpClient:
             return headers
         secret = _CREDENTIAL_HEADERS | {name.lower() for name, _value in self._auth_headers}
         return {name: value for name, value in headers.items() if name.lower() not in secret}
+
+    def _withholds_data(self, current_url: str, next_url: str) -> bool:
+        """
+        Whether a redirect from ``current_url`` may not replay its data to ``next_url``.
+
+        Headers can be filtered hop by hop, a request's data cannot: the login form holds the
+        password, and a body or query parameters sent with the scan's credentials can hold what
+        they unlocked (an anti-CSRF token, an account field). Such data stays off a URL
+        :meth:`~webvigil.core.target.Target.carries_credentials` refuses. A request that carried
+        no credential (an anonymous one, one off the target origin, any in a scan without
+        credentials) has none to protect, so its redirects are followed.
+
+        Args:
+            current_url (str): The URL that answered with the redirect.
+            next_url (str): The URL the redirect points to.
+
+        Returns:
+            bool: ``True`` when the redirect must not be followed with the data.
+        """
+        has_credentials = (
+            self._session is not None or bool(self._cookie_header) or bool(self._auth_headers)
+        )
+        if _ANON.get() or not has_credentials:
+            return False
+        carries = self._target.carries_credentials
+        return carries(current_url) and not carries(next_url)
 
     async def _send_with_redirects(
         self,
@@ -696,7 +730,12 @@ class HttpClient:
             target_url = resolve_url(current_url, location)
             if target_url is None:
                 raise RequestFailed(current_url, "the Location header is not a valid URL")
-            if not self._guard.allows(target_url):
+            replays_data = raw.status_code in _REDIRECT_KEEPS_METHOD and bool(
+                content or current_data or current_files or current_params
+            )
+            if not self._guard.allows(target_url) or (
+                replays_data and self._withholds_data(current_url, target_url)
+            ):
                 redirected_out = True
                 final_location = target_url
                 break
@@ -810,10 +849,6 @@ class HttpClient:
                 the URL or decode the body.
         """
         idempotent = method in _IDEMPOTENT
-        # The scanner sends exactly the cookies configured in ``[auth]`` and nothing it
-        # picked up implicitly: drop anything the target set via ``Set-Cookie`` so a scan is
-        # deterministic and authentication stays config-driven (spec 007).
-        self._active_client.cookies.clear()
         req_headers = dict(headers or {})
         on_target = self._target.carries_credentials(url)
         anonymous = _ANON.get()

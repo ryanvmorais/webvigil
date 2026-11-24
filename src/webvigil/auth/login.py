@@ -326,12 +326,19 @@ class Authenticator:
             response (Response): A handshake response.
 
         Raises:
-            LoginFailedError: If it redirected out of scope (an SSO provider) — the chain is
-                not followed and the credentials have only gone to the in-scope form.
+            LoginFailedError: If a redirect was not followed: to another host out of scope (an
+                SSO provider), or to the target's host or an in-scope URL that may not receive
+                the password. The credentials have only gone to the in-scope form.
         """
-        if response.redirected_out_of_scope:
-            host = urlsplit(response.final_location or "").hostname or "another host"
-            raise LoginFailedError(f"login redirects to {host}: delegated login is not supported")
+        if not response.redirected_out_of_scope:
+            return
+        location = response.final_location or ""
+        host = urlsplit(location).hostname or "another host"
+        if host == self._target.host or self._target.in_scope(location):
+            raise LoginFailedError(
+                "login redirects to a destination that may not receive the password"
+            )
+        raise LoginFailedError(f"login redirects to {host}: delegated login is not supported")
 
     def _origin(self) -> str:
         """

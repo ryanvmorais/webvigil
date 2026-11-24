@@ -27,6 +27,13 @@ Resolver = Callable[[str, int], Awaitable[list[str]]]
 
 # RFC 6052's well-known NAT64 prefix carries an IPv4 address in its last 32 bits.
 _NAT64 = ipaddress.IPv6Network("64:ff9b::/96")
+# The IPv4-compatible (RFC 4291, deprecated) and IPv4-translated (RFC 2765) forms keep one there
+# too, and ``ipaddress`` calls them global whatever that IPv4 address is.
+_IPV4_COMPATIBLE = ipaddress.IPv6Network("::/96")
+_IPV4_TRANSLATED = ipaddress.IPv6Network("::ffff:0:0:0/96")
+# The only IPv6 range allocated for global unicast (RFC 4291). An allow-list keeps every reserved
+# range out, including one the ``ipaddress`` table of this Python does not know yet.
+_GLOBAL_UNICAST = ipaddress.IPv6Network("2000::/3")
 
 
 class BlockedAddressError(httpcore2.ConnectError):
@@ -39,8 +46,8 @@ def _embedded_ipv4(address: ipaddress.IPv6Address) -> ipaddress.IPv4Address | No
         address (ipaddress.IPv6Address): An IPv6 address.
 
     Returns:
-        ipaddress.IPv4Address | None: The IPv4 address it carries (mapped, 6to4, Teredo client
-            or NAT64), or ``None``.
+        ipaddress.IPv4Address | None: The IPv4 address it carries (mapped, 6to4, Teredo client,
+            NAT64, IPv4-compatible or IPv4-translated), or ``None``.
     """
     if address.ipv4_mapped is not None:
         return address.ipv4_mapped
@@ -48,7 +55,7 @@ def _embedded_ipv4(address: ipaddress.IPv6Address) -> ipaddress.IPv4Address | No
         return address.sixtofour
     if address.teredo is not None:
         return address.teredo[1]
-    if address in _NAT64:
+    if address in _NAT64 or address in _IPV4_COMPATIBLE or address in _IPV4_TRANSLATED:
         return ipaddress.IPv4Address(int(address) & 0xFFFFFFFF)
     return None
 
@@ -62,9 +69,10 @@ def is_public(address: str) -> bool:
             allowed).
 
     Returns:
-        bool: ``False`` for loopback, private, link-local, shared, reserved, multicast and
-            unspecified addresses, for an IPv6 address that carries one of them, and for a
-            string that is not an address.
+        bool: ``False`` for loopback, private, link-local, site-local, shared, reserved,
+            multicast and unspecified addresses, for an IPv6 address that carries one of them,
+            for an IPv6 address with no IPv4 address inside it that is outside global unicast
+            (``2000::/3``), and for a string that is not an address.
     """
     try:
         ip = ipaddress.ip_address(address)
@@ -76,6 +84,7 @@ def is_public(address: str) -> bool:
         inner = _embedded_ipv4(ip)
         if inner is not None:
             return is_public(str(inner))
+        return ip in _GLOBAL_UNICAST and ip.is_global
     return ip.is_global and not ip.is_multicast
 
 

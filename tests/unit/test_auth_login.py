@@ -140,12 +140,13 @@ class _Site:
 
 @contextlib.asynccontextmanager
 async def _open(
-    site: _Site, *, base: str = "http://demo.test/", **login: object
+    site: _Site, *, base: str = "http://demo.test/", scope: Scope = Scope.HOST, **login: object
 ) -> AsyncIterator[Authenticator]:
     """
     Args:
         site (_Site): The target to play.
         base (str): The scan target. Defaults to ``http://demo.test/``.
+        scope (Scope): The target scope. Defaults to ``Scope.HOST``.
         **login (object): ``[auth.login]`` keys; ``url`` defaults to ``<base>signin``.
 
     Yields:
@@ -154,7 +155,7 @@ async def _open(
     options: dict[str, object] = {"url": f"{base}signin", "username": _USER}
     options.update(login)
     section = LoginSection(**options)  # type: ignore[arg-type]
-    target = Target.parse(base, scope=Scope.HOST)
+    target = Target.parse(base, scope=scope)
     http = HttpClient(target, ScanConfig(), transport=HandlerTransport(site.handle))
     async with http:
         auth = Authenticator(http, target, section, Credentials(_USER, _PASSWORD))
@@ -328,6 +329,49 @@ async def test_the_password_is_never_sent_in_clear_to_an_https_target() -> None:
     assert site.posts == []
 
 
+@pytest.mark.parametrize(
+    ("location", "scope"),
+    [
+        ("http://demo.test/home?next=1", Scope.HOST),
+        ("https://other.demo.test/home?next=1", Scope.SUBDOMAINS),
+        ("https://demo.test:8443/home?next=1", Scope.HOST),
+    ],
+    ids=["plain-http", "in-scope-subdomain", "same-host-other-port"],
+)
+async def test_a_login_body_is_not_replayed_where_the_password_may_not_go(
+    location: str, scope: Scope
+) -> None:
+    """The login fails with an error that names the reason and no URL; the password stays."""
+    site = _Site(post=lambda r, b: httpx2.Response(307, headers={"location": location}))
+    async with _open(site, base="https://demo.test/", scope=scope) as auth:
+        with pytest.raises(LoginFailedError) as caught:
+            await auth.login()
+    assert str(caught.value) == (
+        "login redirects to a destination that may not receive the password"
+    )
+    _no_secret(caught.value)
+    assert [(r.method, str(r.url)) for r in site.requests] == [
+        ("GET", "https://demo.test/signin"),
+        ("POST", "https://demo.test/signin"),
+    ]
+    assert auth.session.jar.names == frozenset()
+
+
+async def test_a_login_body_still_follows_the_https_upgrade() -> None:
+    """The ``https`` form of an ``http`` target may get the password: the ``307`` is followed."""
+    site = _Site(
+        post=lambda r, b: httpx2.Response(307, headers={"location": "https://demo.test/signin2"}),
+        pages={"/signin2": lambda r: _html("<p>Welcome</p>")},
+    )
+    async with _open(site) as auth:
+        await auth.login()
+    assert [str(r.url) for r in site.posts] == [
+        "http://demo.test/signin",
+        "https://demo.test/signin2",
+    ]
+    assert dict(parse_qsl(site.posts[1].content.decode()))["pass"] == _PASSWORD
+
+
 async def test_a_login_that_redirects_to_another_host_is_delegated_and_refused() -> None:
     """An SSO hop stops the handshake; the credentials only went to the in-scope action."""
     site = _Site(
@@ -336,8 +380,9 @@ async def test_a_login_that_redirects_to_another_host_is_delegated_and_refused()
         )
     )
     async with _open(site) as auth:
-        with pytest.raises(LoginFailedError, match=r"idp\.example: delegated login") as caught:
+        with pytest.raises(LoginFailedError) as caught:
             await auth.login()
+    assert str(caught.value) == "login redirects to idp.example: delegated login is not supported"
     _no_secret(caught.value)
     assert auth.session.jar.names == frozenset()
 

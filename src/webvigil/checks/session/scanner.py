@@ -272,6 +272,13 @@ class SessionScanner:
         login = self._config.auth.login
         url = login.url if login else self._target.entry_url
         reference = auth.reference_url
+        if (
+            candidates
+            and reference is not None
+            and session.confirmed
+            and not self._may_get_cookies(reference, "session fixation check")
+        ):
+            return []
         hits: list[SessionHit] = []
         for name in candidates:
             shown = readable_cookie(name)
@@ -301,6 +308,28 @@ class SessionScanner:
                 )
             )
         return hits
+
+    def _may_get_cookies(self, reference: str, test: str) -> bool:
+        """
+        Whether a test may send the session's cookies to the reference page, warning if not.
+
+        These tests pass the cookies as an explicit header, which the client sends as given on the
+        first hop, and the page a login lands on can be in scope yet off the target origin.
+
+        Args:
+            reference (str): The reference page URL.
+            test (str): The test's name, for the warning.
+
+        Returns:
+            bool: ``True`` when the page is where the scan's credentials may go.
+        """
+        if self._target.carries_credentials(reference):
+            return True
+        self.warnings.append(
+            f"{test} skipped: the reference page is not on the target origin, the only place the "
+            "session's cookies may go (set [auth.login] check_url to a page there)"
+        )
+        return False
 
     async def _dropped_without(self, session: Session, reference: str, *, drop: str) -> bool:
         """
@@ -337,6 +366,8 @@ class SessionScanner:
         reference = auth.reference_url
         if reference is None:
             self.warnings.append("session logout test skipped: no authenticated reference page")
+            return []
+        if not self._may_get_cookies(reference, "session logout test"):
             return []
         endpoint = self._find_logout(login.logout_url)
         if endpoint is None:

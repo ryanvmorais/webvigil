@@ -40,6 +40,12 @@ from webvigil.http.session import Session, SessionJar, jar_text
 _BASE = "http://demo.test"
 _REF = f"{_BASE}/account"
 _HEX32 = "9f8e7d6c5b4a39281706f5e4d3c2b1a0"
+# An ``https`` target: its plain ``http`` form (``_REF``) is in scope but gets no credential.
+_HTTPS_BASE = "https://demo.test"
+_OFF_ORIGIN = (
+    "{test} skipped: the reference page is not on the target origin, the only place the "
+    "session's cookies may go (set [auth.login] check_url to a page there)"
+)
 
 
 @pytest.fixture(autouse=True)
@@ -150,6 +156,7 @@ def _scanner(
     forms: tuple = (),
     session: Session | None = None,
     auth: SimpleNamespace | None = None,
+    base: str = _BASE,
 ) -> tuple[SessionScanner, HttpClient]:
     """
     Args:
@@ -160,11 +167,12 @@ def _scanner(
         forms (tuple): The form inventory.
         session (Session | None): The login session.
         auth (SimpleNamespace | None): The authenticator stand-in.
+        base (str): The scan target. Defaults to ``http://demo.test``.
 
     Returns:
         tuple[SessionScanner, HttpClient]: The scanner and its (not yet opened) client.
     """
-    target = Target.parse(_BASE, scope=Scope.HOST)
+    target = Target.parse(base, scope=Scope.HOST)
     cfg = config or _config()
     http = HttpClient(target, cfg, transport=HandlerTransport(site.handle))
     scanner = SessionScanner(
@@ -339,6 +347,7 @@ async def _fixation(
     reference: str | None = _REF,
     confirmed: bool = True,
     cookies: tuple[str, ...] = ("sid=ok; Path=/", "lang=en; Path=/"),
+    base: str = _BASE,
 ) -> tuple[list[SessionHit], SessionScanner]:
     """
     Args:
@@ -348,6 +357,7 @@ async def _fixation(
         reference (str | None): The reference page. Defaults to ``/account``.
         confirmed (bool): Whether the login was confirmed. Defaults to ``True``.
         cookies (tuple[str, ...]): What the live session holds.
+        base (str): The scan target. Defaults to ``http://demo.test``.
 
     Returns:
         tuple[list[SessionHit], SessionScanner]: The hits and the scanner (for warnings).
@@ -355,7 +365,7 @@ async def _fixation(
     session = _committed_session(*cookies)
     session.confirmed = confirmed
     scanner, http = _scanner(
-        site, kinds={"fixation"}, session=session, auth=_auth(pre, post, reference)
+        site, kinds={"fixation"}, session=session, auth=_auth(pre, post, reference), base=base
     )
     async with http:
         return await scanner.run(), scanner
@@ -435,6 +445,43 @@ async def test_without_a_reference_or_a_confirmed_login_the_hit_is_medium_and_sa
     assert site.log == []
 
 
+async def test_a_reference_off_the_target_origin_skips_the_fixation_check() -> None:
+    """The cookies do not go to a page that may not receive them: a warning, no request."""
+    site = _Site()
+    hits, scanner = await _fixation(site, {"sid": "ok"}, {"sid": "ok"}, base=_HTTPS_BASE)
+    assert hits == [] and site.log == []
+    assert scanner.warnings == [_OFF_ORIGIN.format(test="session fixation check")]
+
+
+async def test_a_reference_on_the_https_target_still_confirms_the_fixation() -> None:
+    """The control of the skip: on the target's own origin the confirming request goes out."""
+    site = _Site()
+    hits, scanner = await _fixation(
+        site, {"sid": "ok"}, {"sid": "ok"}, base=_HTTPS_BASE, reference=f"{_HTTPS_BASE}/account"
+    )
+    (hit,) = hits
+    assert hit.confidence is Confidence.HIGH and scanner.warnings == []
+    assert site.log == [("GET", "/account", "lang=en")]
+
+
+async def test_an_unconfirmed_login_keeps_its_unverified_hit_off_the_origin() -> None:
+    """No request would carry a cookie there, so the MEDIUM hit stands and nothing is skipped."""
+    site = _Site()
+    hits, scanner = await _fixation(
+        site, {"sid": "ok"}, {"sid": "ok"}, base=_HTTPS_BASE, confirmed=False
+    )
+    (hit,) = hits
+    assert dict(hit.facts)["verified"] == "no" and site.log == []
+    assert scanner.warnings == []
+
+
+async def test_no_candidate_means_no_warning_about_the_reference() -> None:
+    """With nothing to confirm there is no test to skip."""
+    site = _Site()
+    hits, scanner = await _fixation(site, {"sid": "a"}, {"sid": "b"}, base=_HTTPS_BASE)
+    assert hits == [] and scanner.warnings == [] and site.log == []
+
+
 async def test_at_most_three_candidates_are_confirmed() -> None:
     """Five unchanged session cookies cost three confirming requests, in name order."""
     site = _Site()
@@ -460,6 +507,8 @@ async def _logout(
     forms: tuple = (),
     logout_url: str | None = None,
     cookies: tuple[str, ...] = ("sid=ok; Path=/",),
+    base: str = _BASE,
+    reference: str = _REF,
 ) -> tuple[list[SessionHit], SessionScanner, Session]:
     """
     Args:
@@ -468,6 +517,8 @@ async def _logout(
         forms (tuple): The form inventory (where a logout form is looked for).
         logout_url (str | None): ``[auth.login] logout_url``. Defaults to ``None``.
         cookies (tuple[str, ...]): What the live session holds. Defaults to one ``sid``.
+        base (str): The scan target. Defaults to ``http://demo.test``.
+        reference (str): The reference page. Defaults to ``/account``.
 
     Returns:
         tuple[list[SessionHit], SessionScanner, Session]: The hits, the scanner and the session.
@@ -488,7 +539,8 @@ async def _logout(
         pages=pages,
         forms=forms,
         session=session,
-        auth=_auth({}, {}),
+        auth=_auth({}, {}, reference),
+        base=base,
     )
     async with http:
         hits = await scanner.run()
@@ -598,6 +650,31 @@ async def test_a_public_reference_page_makes_the_test_meaningless_so_it_is_skipp
     assert hits == [] and not session.closed
     assert [p for _m, p, _c in site.log] == ["/account"]  # the oracle only
     assert any("reference page is public" in w for w in scanner.warnings)
+
+
+async def test_a_reference_off_the_target_origin_skips_the_logout_test() -> None:
+    """No oracle, no logout, no replay: the session stays open and a warning says why."""
+    site = _Site()
+    hits, scanner, session = await _logout(
+        site, pages=(_page(f"{_HTTPS_BASE}/", text=_LOGOUT_PAGE),), base=_HTTPS_BASE
+    )
+    assert hits == [] and not session.closed and site.log == []
+    assert scanner.warnings == [_OFF_ORIGIN.format(test="session logout test")]
+
+
+async def test_a_reference_on_the_https_target_still_runs_the_logout_test() -> None:
+    """The control of the skip: on the target's own origin the snapshot is replayed."""
+    site = _Site()
+    site.logout_invalidates = False
+    hits, scanner, session = await _logout(
+        site,
+        pages=(_page(f"{_HTTPS_BASE}/", text=_LOGOUT_PAGE),),
+        base=_HTTPS_BASE,
+        reference=f"{_HTTPS_BASE}/account",
+    )
+    (hit,) = hits
+    assert hit.kind == "logout" and session.closed and scanner.warnings == []
+    assert site.log[-1] == ("GET", "/account", "sid=ok")
 
 
 async def test_a_failing_logout_request_is_skipped_and_leaves_the_session_open() -> None:

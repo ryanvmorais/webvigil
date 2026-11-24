@@ -33,6 +33,24 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 - **The dashboard's Docker build no longer takes local `.env*` files.** A build from a working
   copy that had one sent it to the build context and copied it into the build stage.
 
+### Security
+
+- **Credentials stay on the target origin through redirects.** In a scan with credentials, a
+  `307` or `308` that would resend a request body or query parameters to a URL that may not receive
+  credentials (plain `http` from an `https` target, or another subdomain) is no longer followed, and
+  an automated login that ends there fails with an error that says the destination may not receive
+  the password. Scans without credentials follow their redirects as before.
+- **The session tests keep the session's cookies on the target origin.** When the reference page
+  is in scope but off that origin, the fixation and logout tests are skipped with a warning; set
+  `[auth.login] check_url` to a page on the origin to run them.
+- **A cookie the target sets stays out of later requests.** The HTTP client no longer keeps a
+  `Set-Cookie` between requests, so a retry, an anonymous request or a request to another subdomain
+  in scope carries only the cookies that request may receive.
+- **IPv6 forms of internal addresses are recognized.** The address guard now reads the IPv4 address
+  inside IPv4-compatible and IPv4-translated IPv6 addresses, and any other IPv6 address counts as
+  public only in global unicast (`2000::/3`). A public target can no longer send the scan to an
+  internal host through the deprecated site-local range or a reserved one.
+
 ## [1.5.0] - 2026-11-23
 
 A minor release that moves the engine's HTTP client to `httpx2`. It is backward compatible with
