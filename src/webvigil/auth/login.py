@@ -16,12 +16,13 @@ from __future__ import annotations
 import os
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from urllib.parse import urlencode, urlsplit
 
 from webvigil.core.bounded import truncate
 from webvigil.core.config import LoginSection
 from webvigil.core.errors import LoginFailedError, OutOfScopeError, RequestFailed
+from webvigil.core.secrets import Secret, SecretKind
 from webvigil.core.target import Target
 from webvigil.core.urls import display_url
 from webvigil.crawler.forms import Form, form_body, parse_forms_html
@@ -49,16 +50,23 @@ class Credentials:
     """
     The account to log in with.
 
-    The password is hidden from ``repr`` so an accidental log line or traceback cannot print
-    it, and it is never a :class:`~webvigil.core.config.ScanConfig` field (ADR-8).
+    The password is a :class:`~webvigil.core.secrets.Secret` (spec 024), so an accidental log
+    line, ``repr`` or traceback shows a marker, and it is never a
+    :class:`~webvigil.core.config.ScanConfig` field (ADR-8). A plain string given here is
+    wrapped at once, so ``Credentials("user", "pw")`` keeps working.
 
     Attributes:
         username (str): The account name or e-mail.
-        password (str): The password.
+        password (Secret): The password, of kind ``PASSWORD``.
     """
 
     username: str
-    password: str = field(repr=False)
+    password: Secret
+
+    def __post_init__(self) -> None:
+        given: object = self.password  # typed Secret, but a Python caller may pass a str
+        if isinstance(given, str):
+            object.__setattr__(self, "password", Secret(given, kind=SecretKind.PASSWORD))
 
     @classmethod
     def from_environment(cls, username: str, env_name: str) -> Credentials:
@@ -75,7 +83,7 @@ class Credentials:
         Raises:
             LoginFailedError: If the variable is unset or empty.
         """
-        password = os.environ.get(env_name, "")
+        password = Secret(os.environ.get(env_name, ""), kind=SecretKind.PASSWORD)
         if not password:
             raise LoginFailedError(
                 f"no password for the login: set the environment variable {env_name}"
@@ -162,8 +170,16 @@ class Authenticator:
             max_relogins=login.max_relogins,
             relogin=self.relogin,
             confirm_dropped=self.confirm_dropped,
-            secrets=[credentials.password],
         )
+
+    @property
+    def credentials(self) -> Credentials:
+        """
+        Returns:
+            Credentials: The account this login submits; the orchestrator collects its password
+                into the report's scrub list (spec 024, RF-07).
+        """
+        return self._credentials
 
     @property
     def reference_url(self) -> str | None:
@@ -456,7 +472,7 @@ class Authenticator:
         """
         extras = dict(self._login.extra_pairs)
         replace = {**extras, user_field: self._credentials.username}
-        replace[password_field] = self._credentials.password
+        replace[password_field] = self._credentials.password.reveal()
         pairs = form_body(form, sentinel="", replace=replace)
         present = {name for name, _value in pairs}
         pairs.extend((n, v) for n, v in extras.items() if n not in present)

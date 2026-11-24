@@ -48,7 +48,14 @@ SECRETS_MODULE: Final = "webvigil.core.secrets"
 
 # Every site that reads a secret's value, as ``module:qualname``, with the reason it needs it.
 # A new sink is a new line here, in the pull request that adds it, so a reviewer sees it.
-ALLOWED_REVEALS: Final[Mapping[str, str]] = {}
+ALLOWED_REVEALS: Final[Mapping[str, str]] = {
+    "webvigil.auth.login:Authenticator._build_body": "the login form's body carries the password",
+    "webvigil.auth.scrub:_texts": "the report's scrub searches the free-text fields for each value",
+    "webvigil.http.client:_static_cookie_header": "joins the [auth] cookies into one Cookie header",
+    "webvigil.http.client:HttpClient._request_with_retry": (
+        "a target-host request carries the Cookie header and the [auth] header values"
+    ),
+}
 
 # A field whose name does not say it holds a credential, checked as if it did.
 DECLARED: Final[frozenset[str]] = frozenset(
@@ -72,10 +79,6 @@ EXEMPT: Final[Mapping[str, str]] = {
 # the same change, and the set goes when it is empty.
 PENDING_CONVERSION: Final[frozenset[str]] = frozenset(
     {
-        # the scan's configured credentials
-        "core.config:AuthSection.cookies",
-        "core.config:AuthSection.headers",
-        "auth.login:Credentials.password",
         # session values
         "auth.login:CookieTransition.pre",
         "auth.login:CookieTransition.post",

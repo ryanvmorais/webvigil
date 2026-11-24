@@ -37,6 +37,7 @@ from webvigil.core.errors import TargetUnreachableError
 from webvigil.core.findings import Category, Finding, Severity
 from webvigil.core.orchestrator import Orchestrator
 from webvigil.core.result import CheckError, ScanResult
+from webvigil.core.secrets import Secret, SecretKind
 from webvigil.http import client as client_mod
 from webvigil.reporting import get_reporter
 
@@ -276,7 +277,7 @@ def test_scrubbing_a_result_keeps_it_incomplete() -> None:
     result = make_result(warnings=[f"session checks failed: {secret}"]).model_copy(
         update={"pass_failed": True}
     )
-    scrubbed = scrub_result(result, {secret})
+    scrubbed = scrub_result(result, [Secret(secret, kind=SecretKind.PASSWORD)])
     assert scrubbed.warnings[0] == f"session checks failed: {REDACTED}"
     assert scrubbed.pass_failed is True
 

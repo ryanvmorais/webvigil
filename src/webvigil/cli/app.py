@@ -30,6 +30,7 @@ from webvigil.core.errors import ActiveModeNotAuthorized, ConfigError, WebVigilE
 from webvigil.core.findings import ScanMode
 from webvigil.core.orchestrator import Orchestrator
 from webvigil.core.result import ScanResult
+from webvigil.core.secrets import Secret, SecretKind
 from webvigil.core.target import Scope
 from webvigil.reporting import get_reporter, load_result
 
@@ -597,14 +598,18 @@ def _resolve_credentials(cfg: ScanConfig) -> Credentials | None:
     login = cfg.auth.login
     if login is None or cfg.scan.mode is not ScanMode.ACTIVE:
         return None
-    password = os.environ.get(login.password_env, "")
+    # a secret from the moment it is read (spec 024, RF-04)
+    password = Secret(os.environ.get(login.password_env, ""), kind=SecretKind.PASSWORD)
     if not password:
         if not _interactive():
             _render.error(
                 f"no password for the login: set the environment variable {login.password_env}"
             )
             raise typer.Exit(ExitCode.USAGE)
-        password = typer.prompt(f"Password for {login.username}", hide_input=True)
+        password = Secret(
+            typer.prompt(f"Password for {login.username}", hide_input=True),
+            kind=SecretKind.PASSWORD,
+        )
     return Credentials(username=login.username, password=password)
 
 

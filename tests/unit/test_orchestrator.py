@@ -236,6 +236,23 @@ async def test_a_static_cookie_or_header_echoed_into_evidence_is_redacted() -> N
     assert "[redacted]" in result.findings[0].description
 
 
+def test_printing_the_orchestrator_shows_no_credential() -> None:
+    """Its state, printed, keeps the names and hides every value (spec 024, RF-04)."""
+    config = ScanConfig.model_validate(
+        {
+            "auth": {
+                "cookies": ["sid=c00kie-VALUE"],
+                "headers": ["Authorization: Bearer t0ken-VALUE"],
+            }
+        }
+    )
+    orchestrator = Orchestrator(config, credentials=Credentials("scanner", "pa55-VALUE"))
+    shown = repr(vars(orchestrator))
+    assert "sid" in shown and "Authorization" in shown and "scanner" in shown  # it was printed
+    for value in ("c00kie-VALUE", "t0ken-VALUE", "pa55-VALUE"):
+        assert value not in shown
+
+
 async def test_active_mode_without_authorization_is_rejected() -> None:
     """Active mode with no ``authorized_by`` raises :class:`ActiveModeNotAuthorized`."""
     config = ScanConfig.model_validate({"scan": {"mode": "active"}})
@@ -453,7 +470,6 @@ class _StubAuth:
         self.session = Session(
             jar=SessionJar("example.com"),
             is_login_url=lambda _url: False,
-            secrets=[credentials.password],  # type: ignore[attr-defined]
         )
         type(self).instances.append(self)
 
@@ -502,7 +518,7 @@ async def test_an_active_scan_logs_in_once_before_the_openapi_load(
 
     assert _stub_auth.events == ["login", "openapi"]
     (auth,) = _stub_auth.instances
-    assert auth.credentials.password == _PASSWORD  # type: ignore[attr-defined]
+    assert auth.credentials.password.reveal() == _PASSWORD  # type: ignore[attr-defined]
     assert result.metadata.authenticated is True
     assert result.metadata.login == LoginSummary(relogins=0, session_lost=False, confirmed=True)
 
@@ -513,7 +529,8 @@ async def test_without_explicit_credentials_the_password_comes_from_the_environm
     """The variable ``[auth.login] password_env`` names is read; unset is a failed login."""
     monkeypatch.setenv("WV_ORCH_PW", _PASSWORD)
     await Orchestrator(_login_config(), check_types=[ActiveOne]).run(_TARGET)
-    assert _stub_auth.instances[0].credentials.password == _PASSWORD  # type: ignore[attr-defined]
+    used = _stub_auth.instances[0].credentials  # type: ignore[attr-defined]
+    assert used.password.reveal() == _PASSWORD
 
     monkeypatch.delenv("WV_ORCH_PW")
     with pytest.raises(LoginFailedError, match="WV_ORCH_PW"):
@@ -566,6 +583,19 @@ async def test_the_password_a_target_reflected_is_scrubbed_from_the_result(
     assert result.findings[0].description == "the page echoed [redacted]"
 
 
+async def test_a_password_read_from_the_environment_is_scrubbed_from_the_result(
+    _stub_auth: type[_StubAuth], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The password the login used is collected, though the orchestrator was given none."""
+    monkeypatch.setenv("WV_ORCH_PW", _PASSWORD)
+    result = await Orchestrator(_login_config(), check_types=[_Leaky]).run(_TARGET)
+
+    used = _stub_auth.instances[0].credentials  # type: ignore[attr-defined]
+    assert used.password.reveal() == _PASSWORD
+    assert _PASSWORD not in result.model_dump_json()
+    assert result.findings[0].description == "the page echoed [redacted]"
+
+
 # Long and mixed-case, as a generated session id is: the scrubber treats it as a secret.
 _ISSUED_ID = "Ab12Cd34Ef56Gh78Ij90"
 
@@ -573,12 +603,14 @@ _ISSUED_ID = "Ab12Cd34Ef56Gh78Ij90"
 class _IssuingAuth(_StubAuth):
     """A login whose answer sets a session cookie, as a real one does."""
 
+    issued: ClassVar[str] = _ISSUED_ID
+
     async def login(self) -> LoginResult:
         jar = self.session.jar
         jar.begin()
         request = httpx2.Request("POST", "https://example.com/signin")
         jar.absorb(
-            httpx2.Response(200, headers={"set-cookie": f"sid={_ISSUED_ID}"}, request=request),
+            httpx2.Response(200, headers={"set-cookie": f"sid={self.issued}"}, request=request),
             handshake=True,
         )
         jar.commit()
@@ -593,7 +625,8 @@ class _EchoesTheSession(_Base):
 
     async def run(self, ctx: ScanContext) -> list[object]:
         finding = self._finding("session")
-        return [finding.model_copy(update={"description": f"the page echoed {_ISSUED_ID}"})]
+        echoed = f"the page echoed {_IssuingAuth.issued}"
+        return [finding.model_copy(update={"description": echoed})]
 
 
 async def test_the_session_id_the_login_was_issued_is_scrubbed_from_the_result(
@@ -608,6 +641,20 @@ async def test_the_session_id_the_login_was_issued_is_scrubbed_from_the_result(
     assert _IssuingAuth.instances[0].session.jar.values == {_ISSUED_ID}  # the login set it
     assert _ISSUED_ID not in result.model_dump_json()
     assert result.findings[0].description == "the page echoed [redacted]"
+
+
+async def test_a_session_value_that_is_a_common_word_is_left_in_the_result(
+    _stub_auth: type[_StubAuth], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """What the target issued is scrubbed only when it looks like a session id (RF-07)."""
+    monkeypatch.setattr(orch_mod, "Authenticator", _IssuingAuth)
+    monkeypatch.setattr(_IssuingAuth, "issued", "echoed")
+    result = await Orchestrator(
+        _login_config(), check_types=[_EchoesTheSession], credentials=Credentials("s", _PASSWORD)
+    ).run(_TARGET)
+
+    assert _IssuingAuth.instances[0].session.jar.values == {"echoed"}  # the login set it
+    assert result.findings[0].description == "the page echoed echoed"
 
 
 # ---------------------------------------------------------------------------

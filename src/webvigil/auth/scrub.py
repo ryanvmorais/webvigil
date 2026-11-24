@@ -6,10 +6,12 @@ the session id into a page, an error message or a URL, and a check can quote tha
 evidence. Rather than make every check know about secrets, the orchestrator runs
 :func:`scrub_result` once over the result.
 
-Two kinds of value are scrubbed. What the user gave (the password, the ``[auth]`` cookies and
-headers) is always hidden. What the *target* issued (the session cookies of an automated login)
-is hidden only when it looks like a session identifier (:func:`looks_like_session_value`): a
-hostile target could otherwise set a cookie to a common word and blank out what the scan found.
+The values come as :class:`~webvigil.core.secrets.Secret` objects, and their kind says which
+of two treatments applies (spec 024, RF-07). What the user gave (the password, the ``[auth]``
+cookies and headers) is always hidden. What the *target* issued (``SESSION``: the session
+cookies of an automated login) is hidden only when it looks like a session identifier
+(:func:`looks_like_session_value`): a hostile target could otherwise set a cookie to a common
+word and blank out what the scan found. :func:`_texts` is the module's one reveal.
 
 It works **field by field** on the free-text fields (titles, descriptions, evidence, locations,
 references, technologies, warnings, check errors), never over the serialised JSON: a password
@@ -28,8 +30,8 @@ from urllib.parse import quote, quote_plus
 
 from webvigil.core.findings import EvidenceItem, Finding, Location
 from webvigil.core.result import CheckError, ScanResult
+from webvigil.core.secrets import REDACTED, Secret, SecretKind
 
-REDACTED = "[redacted]"
 # A secret shorter than this is left alone: replacing a 1-3 character string would shred the
 # report (every "a" in a title). The result says so in a warning instead.
 MIN_SECRET_LENGTH = 4
@@ -43,6 +45,31 @@ _MIN_ISSUED_CLASSES = 2
 # ``quote`` writes upper-case hex (``%2F``); some servers echo it lower case (``%2f``), so each
 # encoded spelling is also scrubbed with its escapes lowered.
 _PERCENT_RE = re.compile(r"%[0-9A-F]{2}")
+
+
+def _texts(secret: Secret) -> tuple[str, ...]:
+    """
+    The texts a secret stands for in a report, before their spellings.
+
+    Args:
+        secret (Secret): A value the scan held.
+
+    Returns:
+        tuple[str, ...]: For what the user gave, the value; a ``HEADER`` value also gives its
+            credential without the scheme (``Bearer <token>`` gives the token on its own too),
+            and a ``COOKIE`` value is stripped of the spaces around it. For a ``SESSION``
+            value, the value only when :func:`looks_like_session_value` says so, else nothing.
+    """
+    value = secret.reveal()
+    if not secret.given:
+        return (value,) if looks_like_session_value(value) else ()
+    if secret.kind is SecretKind.COOKIE:
+        return (value.strip(),)
+    if secret.kind is SecretKind.HEADER:
+        # a value without a space gives an empty credential, which the caller drops
+        _scheme, _sep, credential = value.partition(" ")
+        return (value, credential.strip())
+    return (value,)
 
 
 def _spellings(secret: str) -> set[str]:
@@ -183,19 +210,17 @@ def _scrub_finding(finding: Finding, scrub: _Scrubber) -> Finding:
     )
 
 
-def scrub_result(
-    result: ScanResult, secrets: Iterable[str], *, issued: Iterable[str] = ()
-) -> ScanResult:
+def scrub_result(result: ScanResult, secrets: Iterable[Secret]) -> ScanResult:
     """
     Hide the configured credentials and the session values from a scan result.
 
     Args:
         result (ScanResult): The finished scan.
-        secrets (Iterable[str]): What the user gave: the password, each ``[auth]`` cookie value
-            and each header value. Values under :data:`MIN_SECRET_LENGTH` characters are not
-            scrubbed, and the result says so.
-        issued (Iterable[str]): The session cookie values the target set. Only the ones that
-            pass :func:`looks_like_session_value` are scrubbed. Defaults to none.
+        secrets (Iterable[Secret]): Every secret the scan held. What the user gave (the
+            password, each ``[auth]`` cookie value and each header value) is always scrubbed,
+            except a value under :data:`MIN_SECRET_LENGTH` characters, which the result warns
+            about. A ``SESSION`` value the target set is scrubbed only when it passes
+            :func:`looks_like_session_value`.
 
     Returns:
         ScanResult: ``result`` itself when there is nothing to scrub or to warn about, otherwise
@@ -203,9 +228,10 @@ def scrub_result(
             warning that counts the fields changed. Structural fields (severity, mode, check
             ids, fingerprints) are never touched.
     """
-    given = {value for value in secrets if value}
-    short = sum(1 for value in given if len(value) < MIN_SECRET_LENGTH)
-    scrub = _Scrubber(given | {value for value in issued if looks_like_session_value(value)})
+    texts = {text for secret in secrets for text in _texts(secret) if text}
+    # only what the user gave can be short: an issued value is a text only from 8 characters
+    short = sum(1 for text in texts if len(text) < MIN_SECRET_LENGTH)
+    scrub = _Scrubber(texts)
     if scrub.empty and not short:
         return result
     findings = tuple(_scrub_finding(f, scrub) for f in result.findings)
