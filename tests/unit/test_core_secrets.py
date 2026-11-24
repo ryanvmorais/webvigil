@@ -643,9 +643,27 @@ class _Opaque:
         self.secret = _secret("o-value")
 
 
+_DEFAULT = Secret("d-value", kind=SecretKind.PASSWORD)
+
+
+@dataclasses.dataclass
+class _WithDefault:
+    """
+    A dataclass whose default is a secret, so its class holds one.
+
+    Attributes:
+        password (Secret): Defaults to a secret.
+    """
+
+    password: Secret = _DEFAULT
+
+
 def test_collect_does_not_enter_other_types() -> None:
-    """A string, a class and an arbitrary object are not entered."""
-    assert collect_secrets(VALUE, _Opaque(), _Config, [_Opaque()], None, 1) == frozenset()
+    """A string, a model or dataclass class, and an arbitrary object are not entered."""
+    assert collect_secrets(VALUE, _Opaque(), _Config, _WithDefault, [_Opaque()], None, 1) == (
+        frozenset()
+    )
+    assert collect_secrets(_WithDefault()) == {_WithDefault.password}  # the instance is entered
     assert collect_secrets(_Config()) == frozenset()
 
 
