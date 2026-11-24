@@ -36,14 +36,19 @@ export function proxy(request: NextRequest): NextResponse {
 }
 
 /**
- * Pages only (RF-09, ADR-8). `/api/*` is Next proxying the FastAPI service, whose answers are the
- * API's own; static files and images must stay static; the icon is a file; a prefetch is not a
- * document and would only cost a nonce.
+ * Pages only (RF-09, ADR-8). `/api` and `/api/*` are Next proxying the FastAPI service, whose
+ * answers are the API's own; static files and images must stay static; the icons are files; a
+ * prefetch is not a document and would only cost a nonce.
+ *
+ * Each exclusion is a whole segment (`api` followed by `/` or the end) or a whole file name, so a
+ * page whose path only starts the same way (`/apis`, `/favicon.icon`) is still a page and gets the
+ * policy. The dot is `[.]`: Next compiles `source` with path-to-regexp, which drops the backslash
+ * of `\.` and leaves a dot that matches any character.
  */
 export const config = {
   matcher: [
     {
-      source: "/((?!api|_next/static|_next/image|favicon.ico|icon.svg).*)",
+      source: "/((?!(?:api|_next/static|_next/image)(?:/|$)|(?:favicon[.]ico|icon[.]svg)$).*)",
       missing: [
         { type: "header", key: "next-router-prefetch" },
         { type: "header", key: "purpose", value: "prefetch" },
