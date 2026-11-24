@@ -19,6 +19,7 @@ from webvigil.api.body_limit import BodyLimitMiddleware
 from webvigil.api.client_address import TrustedProxies
 from webvigil.api.config import WebConfig
 from webvigil.api.db import make_engine, run_alembic_upgrade
+from webvigil.api.docs_ui import install_docs
 from webvigil.api.host_check import HostCheckMiddleware
 from webvigil.api.origin_check import OriginCheckMiddleware
 from webvigil.api.redirects import RelativeRedirectMiddleware
@@ -73,7 +74,16 @@ def create_app(
             await runner.stop()
             engine.dispose()
 
-    app = FastAPI(title="WebVigil API", version=__version__, lifespan=lifespan)
+    # FastAPI's own /docs and /redoc load floating CDN releases without integrity; /docs is
+    # served pinned by docs_ui, and ReDoc is off.
+    app = FastAPI(
+        title="WebVigil API",
+        version=__version__,
+        lifespan=lifespan,
+        docs_url=None,
+        redoc_url=None,
+    )
+    install_docs(app)
     app.state.login_throttle = LoginThrottle()
     app.state.trusted_proxies = TrustedProxies(cfg.trusted_proxies)
     # Innermost: it reads the redirect the router answers with.
