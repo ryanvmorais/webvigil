@@ -11,6 +11,14 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-11-24
+
+A minor release of security and reliability fixes, with one new Web API setting. It is backward
+compatible with [docs/stability.md](docs/stability.md): no check id, JSON report field or existing
+configuration key changes. Exit code `4` now covers the cases the policy already lists, so a CI job
+that uses `--fail-on` can fail on a scan left incomplete, and a site's `robots.txt` can lead the
+crawl to different pages.
+
 ### Changed
 
 - **With `--fail-on`, a scan left incomplete now exits with `4`.** When a scan pass or a check
@@ -881,7 +889,8 @@ confirmed against a per-request baseline)
 - A security policy with private vulnerability reporting, a code of conduct, and the
   [stability policy](docs/stability.md).
 
-[Unreleased]: https://github.com/ryanvmorais/webvigil/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/ryanvmorais/webvigil/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/ryanvmorais/webvigil/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/ryanvmorais/webvigil/compare/v1.4.7...v1.5.0
 [1.4.7]: https://github.com/ryanvmorais/webvigil/compare/v1.4.6...v1.4.7
 [1.4.6]: https://github.com/ryanvmorais/webvigil/compare/v1.4.5...v1.4.6

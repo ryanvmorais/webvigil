@@ -37,7 +37,7 @@ uv run mypy src
 uv run lint-imports      # contrato: engine não importa Typer/Rich/FastAPI/SQLModel/Alembic/pyjwt/argon2/Uvicorn
 uv run pytest
 uv run pytest --cov       # per-file line + branch coverage of src/webvigil (the guard of issue #101)
-# A suíte inteira leva ~1,5 min com cobertura (cerca de 2400 testes; os scans de integração zeram o backoff
+# A suíte inteira leva ~1,5 min com cobertura (cerca de 3200 testes; os scans de integração zeram o backoff
 # de retry do cliente, que custava ~3 s por sonda 5xx: #307). Specs novas seguem as regras de teste
 # de specs/README.md ("Testing a spec"): lógica em unit, integração anexa a um scan compartilhado.
 uv run webvigil scan <url>
@@ -117,7 +117,11 @@ Camadas, de cima para baixo:
    (`cli/_render.py`) nunca interpreta texto de achado ou aviso como marcação do Rich (`Text` por partes).
 5. **Persistência** (só Web, `webvigil.api.db`) — SQLite via SQLModel + Alembic; scans
    executados por um `ScanRunner` in-process (1 por vez, fila). O login tem espera crescente após 5
-   falhas (`api/throttle.py`, em memória, por cliente e por usuário) e trocar a senha encerra as
+   falhas (`api/throttle.py`, em memória), que é só do cliente que errou; um limite curto por usuário
+   (20 em 30 s) contém palpites espalhados por muitos endereços, e só 4 checagens Argon2 rodam ao mesmo
+   tempo (o excesso leva `429` com `Retry-After`). O cliente é o endereço da conexão, ou o
+   `X-Forwarded-For` só quando a conexão vem de um proxy de `web.trusted_proxies` (`api/client_address.py`;
+   o Compose confia só no dashboard). Trocar a senha encerra as
    outras sessões (o JWT carrega `iat` e é recusado se for anterior a `User.updated_at`). A tabela
    do throttle é limitada (10 mil chaves: a que falhou há mais tempo sai, e uma chave com mais de 128
    caracteres vira SHA-256), `LoginIn` tem teto (usuário 64, senha 256, como o setup) e um middleware
