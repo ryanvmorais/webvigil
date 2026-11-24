@@ -49,6 +49,7 @@ uv run webvigil-web migrate
 uv run python scripts/dump-openapi.py  # regenera web/openapi.json após mudar a API
 uv run python scripts/update-retirejs-db.py  # atualiza a base Retire.js vendorada (spec 004)
 uv run python scripts/update-public-suffix-list.py  # atualiza a Public Suffix List vendorada (--scope subdomains)
+uv run python scripts/update-swagger-ui.py  # move o pin do Swagger UI do /docs (versão + SRI; cooldown de 7 dias)
 uv run python scripts/tidy-demo-svg.py assets/cli-scan-demo.svg  # alinha a gravação do README à grade (depois do svg-term)
 ```
 

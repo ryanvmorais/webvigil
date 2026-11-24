@@ -127,6 +127,12 @@ page gets a unique origin with no script, form or fetch, and keeps its inline `<
 all the self-contained report uses. The dashboard's preview does not depend on it (it renders a
 `blob:` in a sandboxed iframe).
 
+**The `/docs` page loads a pinned Swagger UI.** The page runs on the API's own origin, so it names
+an exact `swagger-ui-dist` release on jsDelivr and the SHA-384 of each file (Subresource
+Integrity): the browser refuses a file that does not match, and the request carries no cookie. The
+page needs internet access to load; the API itself does not. `scripts/update-swagger-ui.py` moves
+the pin to a newer release. ReDoc (`/redoc`) is not served.
+
 **Session secret:** if `session_secret` is unset the server generates one and stores it in
 the database (a `setting` row), so sessions survive restarts. Pin `session_secret`
 explicitly for a shared or containerised deployment. A pinned secret must be at least 32
