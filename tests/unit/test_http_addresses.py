@@ -397,7 +397,9 @@ async def test_the_tls_probe_does_not_connect_to_a_refused_host() -> None:
     guard = AddressGuard("www.example.com", resolver=resolver)
     result = await probe("intra.example.com", 443, guard=guard)
     assert not result.reachable
-    assert "BlockedAddressError" in (result.error or "")
+    assert result.error == (
+        "BlockedAddressError: the host resolves to an address the scan may not reach"
+    )
 
 
 async def test_the_httpx2_error_keeps_the_guard_refusal_as_its_cause() -> None:

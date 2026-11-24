@@ -64,7 +64,9 @@ and the `fingerprint` for you. Pass a short `dedup_key` describing the specific 
 collapses to one finding.
 
 An exception raised from `run` is caught by the orchestrator, recorded as a `CheckError`,
-and does not abort the scan — but prefer to handle expected failures yourself.
+and does not abort the scan — but prefer to handle expected failures yourself. The record keeps
+the exception's type, frames and chain. Only a `WebVigilError` keeps its message, because the
+text of a library's exception can quote a credential and the report gets shared.
 
 `ctx.observations` is an advanced, opt-in side channel. The `deps.*` checks (spec 004) call
 `add_technology(...)` / `add_warning(...)` to contribute to the scan result beyond their

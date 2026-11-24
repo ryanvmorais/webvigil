@@ -26,7 +26,10 @@ app = typer.Typer(
     add_completion=False,
 )
 
-_ConfigOpt = Annotated[Path | None, typer.Option("--config", help="Path to webvigil.toml.")]
+# not ``readable``: the loader reads it and reports a failure with the operational exit code
+_ConfigOpt = Annotated[
+    Path | None, typer.Option("--config", help="Path to webvigil.toml.", readable=False)
+]
 
 # The engine's CLI uses the same code for an operational error; this package must not import it.
 _EXIT_OPERATIONAL = 4

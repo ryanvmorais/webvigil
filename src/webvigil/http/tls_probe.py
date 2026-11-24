@@ -18,6 +18,7 @@ from dataclasses import dataclass
 import httpcore2
 
 from webvigil.http.addresses import AddressGuard
+from webvigil.http.failures import failure_kind
 from webvigil.http.policy import RateLimiter
 
 _DEFAULT_TIMEOUT = 10.0
@@ -147,7 +148,7 @@ def _unreachable(exc: BaseException) -> TlsProbeResult:
         negotiated_version=None,
         offered_versions=dict.fromkeys(_VERSIONS, UNAVAILABLE),
         peer_cert_der=None,
-        error=f"{type(exc).__name__}: {exc}",
+        error=failure_kind(exc),
     )
 
 

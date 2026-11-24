@@ -143,7 +143,7 @@ class SessionScanner:
                 hits.extend(await step())
             except Exception as exc:  # a step bug must cost a warning, not the whole pass
                 self.warnings.append(
-                    f"session checks: the {name} step failed: {exc or type(exc).__name__}"
+                    f"session checks: the {name} step failed: {type(exc).__name__}"
                 )
         return hits
 

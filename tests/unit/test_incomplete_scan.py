@@ -252,7 +252,7 @@ async def test_every_pass_that_raises_marks_the_scan_incomplete(
     """The warning names the pass, and the result knows the scan is incomplete."""
     monkeypatch.setattr(orch_mod, pass_name, _Raises)
     result = await Orchestrator(ScanConfig.model_validate(raw), check_types=[check]).run(_TARGET)
-    assert f"{label}: kaboom" in result.warnings
+    assert f"{label}: RuntimeError" in result.warnings
     assert result.pass_failed is True
     assert result.incomplete is True
 

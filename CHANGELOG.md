@@ -50,6 +50,19 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
   inside IPv4-compatible and IPv4-translated IPv6 addresses, and any other IPv6 address counts as
   public only in global unicast (`2000::/3`). A public target can no longer send the scan to an
   internal host through the deprecated site-local range or a reserved one.
+- **Error output no longer repeats raw failure text or the secret parts of a URL.** The terminal,
+  CI logs, reports, the database and the Web API now name a network failure by its type, with a
+  plain description for an untrusted TLS certificate and for an address the scan refuses, and show
+  a URL as `scheme://host[:port]/path`, without userinfo, query, fragment or path parameters, or
+  only its scheme when the address cannot be told apart from a credential. A failed scan pass
+  reports its exception type. A failed check reports its type, frames and chain without exception
+  messages; WebVigil's own errors keep their message.
+- **Redaction recognizes a credential quoted as Python bytes**, the form libraries use in their
+  errors, including values with non-ASCII or control characters.
+- **A target with an invalid port now exits with `4`**, as documented, instead of `1`, and the
+  message for an invalid target no longer repeats it, since a mistyped one can hold a password. The
+  same goes for a value given to `--config`, `--openapi` or `--har` that may be a URL typed without
+  its scheme, and a config file that cannot be read now exits with `4` instead of a traceback.
 
 ## [1.5.0] - 2026-11-23
 

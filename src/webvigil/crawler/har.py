@@ -29,6 +29,7 @@ from urllib.parse import parse_qsl, unquote, urlsplit, urlunsplit
 
 from webvigil.core.errors import HarError
 from webvigil.core.target import Target
+from webvigil.core.urls import display_path, display_url
 from webvigil.crawler.openapi import (
     _MAX_BODY_DEPTH,
     _MAX_BODY_KEYS,
@@ -365,26 +366,28 @@ def _read_entries(path: str) -> tuple[list[Any], list[str]]:
             document without ``log.entries``.
     """
     if "://" in path:
-        raise HarError(f"--har takes a local file, not a URL: {path}")
+        raise HarError(f"--har takes a local file, not a URL: {display_url(path)}")
+    shown = display_path(path)  # a URL typed without its scheme reads as a path
     source = Path(path)
-    if not source.is_file():
-        raise HarError(f"HAR file not found: {path}")
     try:
+        if not source.is_file():
+            raise HarError(f"HAR file not found: {shown}")
         size = source.stat().st_size
         if size > _MAX_FILE_BYTES:
             raise HarError(
-                f"{path} is {size // (1024 * 1024)} MiB, over the {_MAX_FILE_BYTES // 2**20} MiB "
+                f"{shown} is {size // (1024 * 1024)} MiB, over the {_MAX_FILE_BYTES // 2**20} MiB "
                 "limit: export the HAR without response bodies"
             )
         doc = json.loads(source.read_bytes().decode("utf-8-sig"))
     except OSError as exc:
-        raise HarError(f"could not read {path}: {exc}") from exc
+        # the text of an ``OSError`` quotes the path, so it is not chained either
+        raise HarError(f"could not read {shown}: {type(exc).__name__}") from None
     except (ValueError, RecursionError) as exc:  # includes UnicodeDecodeError / JSONDecodeError
-        raise HarError(f"{path} is not a HAR file: not valid JSON ({type(exc).__name__})") from exc
+        raise HarError(f"{shown} is not a HAR file: not valid JSON ({type(exc).__name__})") from exc
     log = doc.get("log") if isinstance(doc, dict) else None
     entries = log.get("entries") if isinstance(log, dict) else None
     if not isinstance(entries, list):
-        raise HarError(f"{path} is not a HAR file: no log.entries")
+        raise HarError(f"{shown} is not a HAR file: no log.entries")
     warnings: list[str] = []
     if len(entries) > _MAX_ENTRIES:
         warnings.append(f"HAR import read the first {_MAX_ENTRIES} of {len(entries)} entries")

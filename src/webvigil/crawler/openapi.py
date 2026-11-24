@@ -27,6 +27,7 @@ from urllib.parse import quote, urlencode, urlsplit
 
 from webvigil.core.errors import OpenApiError, OutOfScopeError, RequestFailed
 from webvigil.core.target import Target
+from webvigil.core.urls import display_path, display_url
 from webvigil.http.client import HttpClient
 
 # A JSON document is untyped; every node is walked with ``isinstance`` guards.
@@ -226,39 +227,43 @@ async def _fetch_document(source: str, *, http: HttpClient, target: Target) -> _
             non-JSON response, invalid JSON, or JSON that is not an OpenAPI /
             Swagger document.
     """
+    # what the messages call it: a URL may carry a token in its query or userinfo
+    shown = display_url(source) if "://" in source else display_path(source)
     if "://" in source:
         if not target.in_scope(source):
-            raise OpenApiError(f"--openapi URL is out of scope: {source}")
+            raise OpenApiError(f"--openapi URL is out of scope: {shown}")
         try:
             response = await http.get(source)
         except (RequestFailed, OutOfScopeError) as exc:
-            raise OpenApiError(f"could not fetch {source}: {exc}") from exc
+            # ``exc`` names the URL and the kind of failure, both already safe to show
+            raise OpenApiError(f"could not fetch {shown}: {exc}") from exc
         if response.status_code != 200:
-            raise OpenApiError(f"{source} returned HTTP {response.status_code}")
+            raise OpenApiError(f"{shown} returned HTTP {response.status_code}")
         text = response.text
     else:
         path = Path(source)
-        if not path.is_file():
-            raise OpenApiError(f"OpenAPI file not found: {source}")
         try:
+            if not path.is_file():
+                raise OpenApiError(f"OpenAPI file not found: {shown}")
             if path.stat().st_size > MAX_DOCUMENT_BYTES:
                 raise OpenApiError(
-                    f"{source} is larger than {MAX_DOCUMENT_BYTES // (1024 * 1024)} MiB"
+                    f"{shown} is larger than {MAX_DOCUMENT_BYTES // (1024 * 1024)} MiB"
                 )
             text = path.read_text("utf-8")
         except (OSError, UnicodeDecodeError) as exc:
-            raise OpenApiError(f"could not read {source}: {exc}") from exc
+            # the text of an ``OSError`` quotes the path, so it is not chained either
+            raise OpenApiError(f"could not read {shown}: {type(exc).__name__}") from None
 
     try:
         doc = json.loads(text)
     except RecursionError as exc:
-        raise OpenApiError(f"{source} is nested too deeply") from exc
+        raise OpenApiError(f"{shown} is nested too deeply") from exc
     except ValueError as exc:
-        raise OpenApiError(f"{source} is not valid JSON: {exc}") from exc
+        raise OpenApiError(f"{shown} is not valid JSON: {exc}") from exc
     if _nests_deeper_than(doc, _MAX_NESTING):
-        raise OpenApiError(f"{source} is nested too deeply")
+        raise OpenApiError(f"{shown} is nested too deeply")
     if not isinstance(doc, dict) or not ("openapi" in doc or "swagger" in doc):
-        raise OpenApiError(f"{source} is not an OpenAPI or Swagger document")
+        raise OpenApiError(f"{shown} is not an OpenAPI or Swagger document")
     return doc
 
 

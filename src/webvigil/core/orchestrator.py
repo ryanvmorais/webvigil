@@ -39,7 +39,11 @@ from webvigil.checks.session.scanner import SessionHit, SessionScanner, kinds_fo
 from webvigil.checks.upload.scanner import UploadHit, UploadScanner
 from webvigil.core.config import LoginSection, ScanConfig
 from webvigil.core.context import Detection, Observations, Page, ScanContext
-from webvigil.core.errors import ActiveModeNotAuthorized, TargetUnreachableError
+from webvigil.core.errors import (
+    ActiveModeNotAuthorized,
+    TargetUnreachableError,
+    WebVigilError,
+)
 from webvigil.core.findings import Category, Finding, ScanMode
 from webvigil.core.result import CheckError, ScanMetadata, ScanResult
 from webvigil.core.target import Target
@@ -421,7 +425,7 @@ class Orchestrator:
             result = await fingerprinter.scan(pages)
         except Exception as exc:  # a pass bug must not abort the whole scan
             warnings.append(
-                _PassFailure(f"dependency fingerprint pass failed: {exc or type(exc).__name__}")
+                _PassFailure(f"dependency fingerprint pass failed: {type(exc).__name__}")
             )
             return ()
         warnings.extend(result.warnings)
@@ -511,9 +515,7 @@ class Orchestrator:
         try:
             report = await probe.run()
         except Exception as exc:  # a pass bug must not abort the whole scan
-            warnings.append(
-                _PassFailure(f"disclosure probe pass failed: {exc or type(exc).__name__}")
-            )
+            warnings.append(_PassFailure(f"disclosure probe pass failed: {type(exc).__name__}"))
             return ()
         warnings.extend(report.warnings)
         return tuple(report.hits)
@@ -553,9 +555,7 @@ class Orchestrator:
             scanner = EnvelopeScanner(http, target, self._config, pages, forms)
             hits = await scanner.run()
         except Exception as exc:  # a pass bug must not abort the whole scan
-            warnings.append(
-                _PassFailure(f"request-envelope pass failed: {exc or type(exc).__name__}")
-            )
+            warnings.append(_PassFailure(f"request-envelope pass failed: {type(exc).__name__}"))
             return ()
         warnings.extend(scanner.warnings)
         return tuple(hits)
@@ -597,7 +597,7 @@ class Orchestrator:
             scanner = UploadScanner(http, target, self._config, pages, forms)
             hits = await scanner.run()
         except Exception as exc:  # a pass bug must not abort the whole scan
-            warnings.append(_PassFailure(f"file-upload pass failed: {exc or type(exc).__name__}"))
+            warnings.append(_PassFailure(f"file-upload pass failed: {type(exc).__name__}"))
             return ()
         warnings.extend(scanner.warnings)
         return tuple(hits)
@@ -651,7 +651,7 @@ class Orchestrator:
             )
             hits = await scanner.run()
         except Exception as exc:  # a pass bug must not abort the whole scan
-            warnings.append(_PassFailure(f"session checks failed: {exc or type(exc).__name__}"))
+            warnings.append(_PassFailure(f"session checks failed: {type(exc).__name__}"))
             return ()
         warnings.extend(scanner.warnings)
         return tuple(hits)
@@ -693,9 +693,7 @@ class Orchestrator:
             scanner = CsrfScanner(http, target, self._config, pages, forms)
             hits = await scanner.run()
         except Exception as exc:  # a pass bug must not abort the whole scan
-            warnings.append(
-                _PassFailure(f"CSRF confirmation pass failed: {exc or type(exc).__name__}")
-            )
+            warnings.append(_PassFailure(f"CSRF confirmation pass failed: {type(exc).__name__}"))
             return ()
         warnings.extend(scanner.warnings)
         return tuple(hits)
@@ -749,9 +747,7 @@ class Orchestrator:
                 operations=operations,
             ).run()
         except Exception as exc:  # a detector bug must not abort the whole scan
-            warnings.append(
-                _PassFailure(f"active injection pass failed: {exc or type(exc).__name__}")
-            )
+            warnings.append(_PassFailure(f"active injection pass failed: {type(exc).__name__}"))
             return ()
         warnings.extend(report.warnings)
         return tuple(report.hits)
@@ -797,7 +793,7 @@ class Orchestrator:
                 http, target, self._config, pages, forms, crawler=crawler
             ).run()
         except Exception as exc:  # a detector bug must not abort the whole scan
-            warnings.append(_PassFailure(f"stored-XSS pass failed: {exc or type(exc).__name__}"))
+            warnings.append(_PassFailure(f"stored-XSS pass failed: {type(exc).__name__}"))
             return ()
         warnings.extend(report.warnings)
         return tuple(report.hits)
@@ -873,7 +869,7 @@ class Orchestrator:
                 errors.append(
                     CheckError(
                         check_id=check_cls.id,
-                        message=str(exc) or type(exc).__name__,
+                        message=_check_error_message(exc),
                         traceback=_portable_traceback(exc),
                     )
                 )
@@ -953,28 +949,78 @@ def _local_prefixes() -> list[tuple[str, str]]:
     return sorted(pairs, key=lambda pair: len(pair[0]), reverse=True)
 
 
+def _check_error_message(exc: Exception) -> str:
+    """
+    Args:
+        exc (Exception): The exception a check raised.
+
+    Returns:
+        str: The message of a :class:`~webvigil.core.errors.WebVigilError`, written by this
+            project and free of raw failure text, or else the exception's type. The text of any
+            other exception may come from a library that quotes a header value or response
+            bytes, and the result is shared; the check id, the type and the frames locate it.
+    """
+    return str(exc) if isinstance(exc, WebVigilError) else type(exc).__name__
+
+
+def _typed_frames(exc: BaseException, seen: set[int], depth: int = 0) -> list[str]:
+    """
+    Format one exception and what it chained as frames and type names, without any message.
+
+    Args:
+        exc (BaseException): The exception to format.
+        seen (set[int]): The ids already formatted, since a chain can loop.
+        depth (int): How many links led here. Defaults to ``0``.
+
+    Returns:
+        list[str]: The lines, oldest exception first, stopping after
+            :data:`_MAX_CHAINED_EXCEPTIONS` links.
+    """
+    if depth >= _MAX_CHAINED_EXCEPTIONS or id(exc) in seen:
+        return []
+    seen.add(id(exc))
+    lines: list[str] = []
+    linked = exc.__cause__ or (None if exc.__suppress_context__ else exc.__context__)
+    if linked is not None and (earlier := _typed_frames(linked, seen, depth + 1)):
+        lines += [*earlier, "\nThe above exception led to the one below:\n\n"]
+    lines.append("Traceback (most recent call last):\n")
+    lines += traceback.format_tb(exc.__traceback__)
+    kind = type(exc)
+    prefix = "" if kind.__module__ == "builtins" else f"{kind.__module__}."
+    lines.append(f"{prefix}{kind.__qualname__}\n")
+    if isinstance(exc, BaseExceptionGroup):
+        for inner in exc.exceptions:
+            lines += _typed_frames(inner, seen, depth + 1)
+    return lines
+
+
 def _portable_traceback(exc: BaseException) -> str:
     r"""
-    Format a check's exception for the result without the machine's paths.
+    Format a check's exception for the result without the machine's paths or any message.
 
     The traceback is stored in ``ScanResult.errors`` and travels with the JSON report, which
     gets shared. The install path names the OS user (``/home/<name>/...``), so each frame
     keeps only its path inside the install (``webvigil/checks/...``, ``httpx2/...``). A frame
     still absolute after that (a plugin in a directory outside the install and the home,
-    such as ``D:\work\plugin`` on Windows) keeps only its file name.
+    such as ``D:\work\plugin`` on Windows) keeps only its file name. Exception messages are
+    left out, chained ones included: a library's can quote a credential.
 
     Args:
         exc (BaseException): The exception a check raised.
 
     Returns:
-        str: The formatted traceback, chained exceptions included, with local directories cut.
+        str: The frames and exception types, chained exceptions included, with local
+            directories cut.
     """
-    text = "".join(traceback.format_exception(exc))
+    text = "".join(_typed_frames(exc, set()))
     for prefix, replacement in _local_prefixes():
         text = text.replace(prefix, replacement)
     return _FRAME_FILE_RE.sub(_frame_file_name, text)
 
 
+# How many chained exceptions a check error shows: enough for a real chain, and a long or
+# self-referencing one cannot exhaust the stack of the handler that records the failure.
+_MAX_CHAINED_EXCEPTIONS = 16
 # A traceback frame line, ``  File "<path>", line N``; the path is the second group.
 _FRAME_FILE_RE = re.compile(r'^(\s*File ")([^"\n]+)(", line )', re.MULTILINE)
 # An absolute path in either OS's form: ``/x``, ``\x``, ``C:\x`` or ``C:/x``.

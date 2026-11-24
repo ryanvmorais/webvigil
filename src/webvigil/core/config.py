@@ -24,6 +24,7 @@ from pydantic import (
 from webvigil.core.errors import ConfigError
 from webvigil.core.findings import ScanMode
 from webvigil.core.target import Scope
+from webvigil.core.urls import display_path
 
 # Type aliases (PEP 695) for the two closed sets that appear in the CLI help and
 # in the report section, kept in one place so the wording never drifts.
@@ -537,6 +538,32 @@ class SessionSection(_Section):
     test_logout: bool = False
 
 
+def read_toml(path: str | Path) -> dict[str, Any]:
+    """
+    Read a config file, naming it only in the form an error may repeat.
+
+    Args:
+        path (str | Path): The value given as the config file.
+
+    Returns:
+        dict[str, Any]: The parsed TOML.
+
+    Raises:
+        ConfigError: If the file is missing, cannot be read or is not valid TOML.
+    """
+    file = Path(path)
+    shown = display_path(str(file))  # a URL typed without its scheme reads as a path
+    try:
+        if not file.is_file():
+            raise ConfigError(f"config file not found: {shown}")
+        return tomllib.loads(file.read_text("utf-8"))
+    except tomllib.TOMLDecodeError as exc:
+        raise ConfigError(f"invalid TOML in {shown}: {exc}") from exc
+    except (OSError, UnicodeDecodeError, RecursionError) as exc:
+        # the text of an ``OSError`` quotes the path, so it is not chained either
+        raise ConfigError(f"could not read {shown}: {type(exc).__name__}") from None
+
+
 class ScanConfig(_Section):
     """
     The whole configuration for one scan.
@@ -588,14 +615,7 @@ class ScanConfig(_Section):
         """
         if path is None:
             return cls()
-        file = Path(path)
-        if not file.is_file():
-            raise ConfigError(f"config file not found: {file}")
-        try:
-            raw = tomllib.loads(file.read_text("utf-8"))
-        except tomllib.TOMLDecodeError as exc:
-            raise ConfigError(f"invalid TOML in {file}: {exc}") from exc
-        return cls.model_validate_or_raise(raw)
+        return cls.model_validate_or_raise(read_toml(path))
 
     @classmethod
     def model_validate_or_raise(cls, data: dict[str, Any]) -> ScanConfig:

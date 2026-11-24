@@ -179,7 +179,7 @@ async def test_a_raising_check_is_isolated() -> None:
     result = await Orchestrator(ScanConfig(), check_types=[PassiveOne, Boom]).run(_TARGET)
     assert len(result.findings) == 1
     assert [e.check_id for e in result.errors] == ["test.boom"]
-    assert "kaboom" in result.errors[0].message
+    assert result.errors[0].message == "RuntimeError"
 
 
 async def test_a_check_traceback_carries_no_local_path() -> None:
@@ -188,7 +188,7 @@ async def test_a_check_traceback_carries_no_local_path() -> None:
 
     result = await Orchestrator(ScanConfig(), check_types=[Boom]).run(_TARGET)
     traceback = result.errors[0].traceback
-    assert "RuntimeError: kaboom" in traceback
+    assert traceback.splitlines()[-1] == "RuntimeError"
     assert str(Path(__file__).resolve().parents[2]) not in traceback
     assert str(Path.home()) not in traceback
     assert "test_orchestrator.py" in traceback  # the frame is still named
@@ -700,7 +700,7 @@ async def test_a_session_pass_bug_becomes_a_warning(
     _stub_session_scanner.boom = True
     result = await Orchestrator(ScanConfig(), check_types=[WeakSessionIdCheck]).run(_TARGET)
     assert result.findings == ()
-    assert any("session checks failed: kaboom" in w for w in result.warnings)
+    assert "session checks failed: RuntimeError" in result.warnings
 
 
 async def test_the_session_pass_runs_after_the_csrf_pass(

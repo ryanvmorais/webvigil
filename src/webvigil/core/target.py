@@ -15,6 +15,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 from webvigil.core.errors import InvalidTargetError
 from webvigil.core.suffixes import load_rules
+from webvigil.core.urls import display_url
 
 _ALLOWED_SCHEMES = frozenset({"http", "https"})
 _DEFAULT_PORTS = {"http": 80, "https": 443}
@@ -165,32 +166,45 @@ class Target:
             Target: The parsed, normalized target.
 
         Raises:
-            InvalidTargetError: If ``raw`` is empty, carries a non-HTTP scheme,
-                or has no usable host (see :func:`is_valid_host`).
+            InvalidTargetError: If ``raw`` is empty, carries a non-HTTP scheme, has no usable
+                host (see :func:`is_valid_host`) or a port that is not a number in ``0..65535``.
+                The message never repeats ``raw``: a mistyped target can hold a password.
         """
         candidate = raw.strip()
         if not candidate:
             raise InvalidTargetError("target URL is empty")
         if "://" not in candidate:
             if _BARE_SCHEME_RE.match(candidate):
-                raise InvalidTargetError(f"unsupported target: {raw!r} (want an http/https URL)")
+                # ``user:password@host`` reads as a scheme too, so nothing of it is repeated
+                raise InvalidTargetError("unsupported target (want an http/https URL)")
             candidate = f"https://{candidate}"
 
         try:
             parts = urlsplit(candidate)
             hostname = parts.hostname  # a malformed bracketed host raises here
         except ValueError:
-            raise InvalidTargetError(f"could not determine a valid host from {raw!r}") from None
+            raise InvalidTargetError(
+                "could not determine a valid host from the target URL"
+            ) from None
+        try:
+            port = parts.port  # parsed lazily: a bad port raises only here
+        except ValueError:
+            raise InvalidTargetError(
+                "the target URL has an invalid port (want a number from 0 to 65535)"
+            ) from None
         if parts.scheme.lower() not in _ALLOWED_SCHEMES:
-            raise InvalidTargetError(f"unsupported scheme: {parts.scheme!r} (expected http/https)")
+            # what precedes the first colon can be the user name of a mistyped credential
+            raise InvalidTargetError("unsupported scheme (want an http/https URL)")
         host = (hostname or "").lower()
         if not is_valid_host(host):
-            raise InvalidTargetError(f"could not determine a valid host from {raw!r}")
+            raise InvalidTargetError(
+                f"could not determine a valid host from {display_url(candidate)}"
+            )
 
         scheme = parts.scheme.lower()
         origin_netloc = url_host(host)
-        if parts.port is not None and parts.port != _DEFAULT_PORTS.get(scheme):
-            origin_netloc = f"{origin_netloc}:{parts.port}"
+        if port is not None and port != _DEFAULT_PORTS.get(scheme):
+            origin_netloc = f"{origin_netloc}:{port}"
 
         entry_url = normalize_url(candidate)
         origin = urlunsplit((scheme, origin_netloc, "", "", ""))

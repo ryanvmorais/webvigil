@@ -475,6 +475,26 @@ async def test_transport_error_raises() -> None:
         await _provider(httpx2.MockTransport(handler)).lookup([_det("jquery", "3.4.1")])
 
 
+async def test_a_transport_error_is_named_without_its_text() -> None:
+    """The library's text may quote what it refused: only the failure's type is kept."""
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        raise httpx2.RemoteProtocolError("markerRAWTEXT")
+
+    with pytest.raises(OsvLookupError) as caught:
+        await _provider(httpx2.MockTransport(handler)).lookup([_det("jquery", "3.4.1")])
+    assert str(caught.value) == "RemoteProtocolError"
+    assert caught.value.__cause__ is None
+
+
+async def test_an_error_status_is_named_by_its_code() -> None:
+    """A status is the one detail of an HTTP error worth keeping, and it is a number."""
+    mock = _Transport(batch={}, batch_status=503)
+    with pytest.raises(OsvLookupError) as caught:
+        await _provider(mock.transport).lookup([_det("jquery", "3.4.1")])
+    assert str(caught.value) == "/v1/querybatch answered HTTP 503"
+
+
 async def test_partial_query_failure_keeps_the_rest_and_warns() -> None:
     """One failing per-package query is a warning; the packages that resolved still count."""
 

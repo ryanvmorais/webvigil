@@ -39,6 +39,7 @@ from webvigil.checks.deps.advisories import (
 from webvigil.core.context import Detection
 from webvigil.core.findings import Severity
 from webvigil.core.urls import is_http_url
+from webvigil.http.failures import failure_kind
 from webvigil.http.tls import client_ssl_context, pin_proxy_trust
 
 _ECOSYSTEM = "npm"
@@ -536,8 +537,10 @@ class OsvProvider:
                 raw = await self._read(client, path, json)
         except TimeoutError as exc:
             raise OsvLookupError(f"{path} timed out") from exc
+        except httpx2.HTTPStatusError as exc:
+            raise OsvLookupError(f"{path} answered HTTP {exc.response.status_code}") from None
         except httpx2.HTTPError as exc:
-            raise OsvLookupError(str(exc) or exc.__class__.__name__) from exc
+            raise OsvLookupError(failure_kind(exc)) from None
         try:
             data = jsonlib.loads(raw)
         except (ValueError, RecursionError) as exc:  # not JSON, or nested past the parser

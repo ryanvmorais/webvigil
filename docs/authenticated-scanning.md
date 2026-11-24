@@ -144,13 +144,13 @@ not a field), a report, a log line, a warning or the metadata. The JSON report g
 `metadata.login: {relogins, session_lost, confirmed}` (`null` without a login) and no username.
 If a target reflects the password, a configured cookie or header (a bearer token also on its
 own), or a session value into a page, an error or a URL, the final result is scrubbed of it
-(`[redacted]`, in the raw, JSON-escaped, HTML-escaped, percent-encoded and form-encoded
-spellings) in findings, locations, references, technologies, warnings and check errors, and a
-warning counts the fields changed. A session value the target set is scrubbed only when it looks
-like a session id (8 or more characters mixing two of lower case, upper case and digits), so a
-target cannot blank the report by setting a cookie to a common word. A configured value shorter
-than four characters is not scrubbed, since replacing it would shred the report, and the result
-says so in a warning.
+(`[redacted]`, in the raw, JSON-escaped, HTML-escaped, percent-encoded, form-encoded and
+Python bytes `repr` spellings) in findings, locations, references, technologies, warnings and
+check errors, and a warning counts the fields changed. A session value the target set is
+scrubbed only when it looks like a session id (8 or more characters mixing two of lower case,
+upper case and digits), so a target cannot blank the report by setting a cookie to a common word.
+A configured value shorter than four characters is not scrubbed, since replacing it would shred
+the report, and the result says so in a warning.
 
 **What it will not do.** CAPTCHA, MFA / TOTP, SSO and delegated logins, forms built by
 JavaScript, multi-page logins (the username on one page and the password on the next), JSON /

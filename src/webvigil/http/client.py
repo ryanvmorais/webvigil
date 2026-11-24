@@ -32,6 +32,7 @@ from webvigil.core.target import Target
 from webvigil.core.urls import resolve_url
 from webvigil.http.addresses import AddressGuard, BlockedAddressError, Resolver, install
 from webvigil.http.decoding import ACCEPT_ENCODING, BodyDecoder
+from webvigil.http.failures import failure_kind
 from webvigil.http.policy import RateLimiter
 from webvigil.http.scope_guard import ScopeGuard
 from webvigil.http.session import Session, cookie_bytes, jar_text
@@ -942,24 +943,27 @@ class HttpClient:
             except (httpx2.InvalidURL, httpx2.DecodingError) as exc:
                 # A URL httpx2 refuses to build (one over 64 KiB, say) or a body that does not
                 # decode as its Content-Encoding claims: the same answer on every attempt.
-                raise RequestFailed(url, f"{type(exc).__name__}: {exc}") from exc
+                # ``from None`` here and below: a chained library error would print its text
+                # again in any traceback of this one.
+                raise RequestFailed(url, failure_kind(exc)) from None
             except (httpx2.TransportError, httpx2.TimeoutException) as exc:
-                last_error = f"{type(exc).__name__}: {exc}"
+                last_error = failure_kind(exc)
                 if isinstance(exc.__cause__, BlockedAddressError):
                     # the resolution is pinned for the scan: a retry would be refused the same way
                     self.stats.blocked_address += 1
-                    raise RequestFailed(url, last_error) from exc
+                    raise RequestFailed(url, last_error) from None
                 # A server that used the whole total deadline once would use it again: the
                 # request is not retried, so a slow target costs one deadline per request.
                 if isinstance(exc, _TotalTimeout):
                     self.stats.failed += 1
-                    raise RequestFailed(url, last_error) from exc
+                    # this text is written above and names the setting to raise
+                    raise RequestFailed(url, f"{last_error}: {exc}") from None
                 # A non-idempotent request is only retried when it never reached the
                 # server (a pre-send connect error) — never on a read timeout.
                 if idempotent or isinstance(exc, httpx2.ConnectError):
                     continue
                 self.stats.failed += 1
-                raise RequestFailed(url, last_error) from exc
+                raise RequestFailed(url, last_error) from None
             if session is not None and on_target:
                 session.jar.absorb(response, handshake=handshake)
             if idempotent and response.status_code in _RETRY_STATUS and attempt < _MAX_ATTEMPTS - 1:

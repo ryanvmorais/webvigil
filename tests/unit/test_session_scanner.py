@@ -709,7 +709,7 @@ async def test_a_step_that_fails_costs_a_warning_not_the_other_steps(
         hits = await scanner.run()
 
     assert [h.kind for h in hits] == ["weak"]
-    assert any("fixation step failed: kaboom" in w for w in scanner.warnings)
+    assert "session checks: the fixation step failed: RuntimeError" in scanner.warnings
 
 
 def test_kinds_follow_the_selected_check_ids() -> None:

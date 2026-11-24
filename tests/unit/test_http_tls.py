@@ -36,7 +36,7 @@ from webvigil.http.client import HttpClient
 from webvigil.http.tls import client_ssl_context, pin_proxy_trust
 
 _BODY = b"served over tls"
-_VERIFY_FAILED = "CERTIFICATE_VERIFY_FAILED"
+_VERIFY_FAILED = "SSLCertVerificationError: the TLS certificate is not trusted"
 _PROXY_VARIABLES = ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY")
 
 

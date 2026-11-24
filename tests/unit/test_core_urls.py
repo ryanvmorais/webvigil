@@ -12,7 +12,15 @@ from __future__ import annotations
 
 import pytest
 
-from webvigil.core.urls import is_http_url, resolve_url
+from webvigil.core.urls import (
+    HIDDEN_ADDRESS,
+    HIDDEN_PATH,
+    UNREADABLE_URL,
+    display_path,
+    display_url,
+    is_http_url,
+    resolve_url,
+)
 
 
 @pytest.mark.parametrize(
@@ -120,3 +128,95 @@ def test_resolve_url_keeps_a_backslash_where_a_browser_keeps_it(ref: str, expect
 def test_resolve_url_gives_up_on_a_malformed_reference(ref: str) -> None:
     """An unclosed bracket, a bad IPv6 literal or a bad port is ``None``, never an exception."""
     assert resolve_url("https://example.com/", ref) is None
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("https://example.com/a/b", "https://example.com/a/b"),
+        ("https://example.com", "https://example.com"),
+        ("http://example.com:8080/a", "http://example.com:8080/a"),
+        ("https://user:pw@example.com/a", "https://example.com/a"),
+        ("https://user@example.com:8443/a", "https://example.com:8443/a"),
+        ("https://example.com/a?token=x", "https://example.com/a"),
+        ("https://example.com/a#frag", "https://example.com/a"),
+        ("https://u:p@[::1]:8000/a?b=c#d", "https://[::1]:8000/a"),
+        ("https://example.com:8443/a/b;sid=x", "https://example.com:8443/a/b"),
+        ("https://example.com/a;sid=x/b", "https://example.com/a/b"),
+        ("https://example.com/a;x=1/b;y=2;z=3/c;w", "https://example.com/a/b/c"),
+        ("https://example.com/;sid=x", "https://example.com/"),
+        ("https://example.com/a//b/%3Bc/d.e-f_g~h/", "https://example.com/a//b/%3Bc/d.e-f_g~h/"),
+    ],
+)
+def test_display_url_keeps_only_what_a_message_may_repeat(url: str, expected: str) -> None:
+    """Scheme, host, valid port and path; no userinfo, query, fragment or parameter."""
+    assert display_url(url) == expected
+
+
+@pytest.mark.parametrize(
+    ("url", "scheme"),
+    [
+        ("https://user:mark/er@example.com/a", "https"),
+        ("http://user:mark/er@example.com/a", "http"),
+        ("https://user:123/marker@example.com:8443/a", "https"),
+        ("https://user:123?marker@example.com/a", "https"),
+        ("https://user:123#marker@example.com/a", "https"),
+        ("https://user:marker@example.com:bad/a", "https"),
+        ("https://example.com:notaport/a", "https"),
+        ("https://example.com:99999/a", "https"),
+        ("https://example.com/users/@marker", "https"),
+    ],
+    ids=[
+        "delimiter-in-password",
+        "scheme-is-kept",
+        "number-before-the-delimiter",
+        "question-mark-in-password",
+        "hash-in-password",
+        "bad-port-after-userinfo",
+        "port-not-a-number",
+        "port-out-of-range",
+        "at-sign-in-the-path",
+    ],
+)
+def test_display_url_hides_an_address_it_cannot_trust(url: str, scheme: str) -> None:
+    """Nothing but the scheme and a fixed marker: no host, port, path or part of a password."""
+    assert display_url(url) == f"{scheme}://{HIDDEN_ADDRESS}"
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("https://example.com:8443/users/profile", "https://example.com:8443/users/profile"),
+        ("https://user:marker@example.com/users", "https://example.com/users"),
+        ("https://example.com/a%40b", "https://example.com/a%40b"),
+    ],
+    ids=["normal-path", "userinfo-in-the-authority", "escaped-at-sign"],
+)
+def test_display_url_still_shows_an_address_it_can_trust(url: str, expected: str) -> None:
+    """The control of the test above: a clean authority and path are shown as they are."""
+    assert display_url(url) == expected
+
+
+@pytest.mark.parametrize(
+    "url",
+    ["user:pw@example.com", "example.com/a", "https://", "https://user:pw@/", "http://[::1", ""],
+)
+def test_display_url_repeats_nothing_of_a_value_it_cannot_read(url: str) -> None:
+    """Without a scheme and a host the value may be anything, so none of it is shown."""
+    assert display_url(url) == UNREADABLE_URL
+
+
+@pytest.mark.parametrize("path", ["spec.json", "./api/spec.json", r"C:\specs\spec.json"])
+def test_display_path_repeats_a_plain_file_path(path: str) -> None:
+    """A path that holds no URL delimiter is what the user needs to see."""
+    assert display_path(path) == path
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["user:pw@host/doc", "host/doc?token=x", "host/doc#x", "host/doc;sid=x/y"],
+    ids=["userinfo", "query", "fragment", "parameter"],
+)
+def test_display_path_hides_what_may_be_a_url_without_its_scheme(path: str) -> None:
+    """Each delimiter alone is enough to hide the whole value."""
+    assert display_path(path) == HIDDEN_PATH

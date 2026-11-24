@@ -8,6 +8,8 @@ it to an exit code or an HTTP status instead of leaking a raw traceback.
 
 from __future__ import annotations
 
+from webvigil.core.urls import display_url
+
 
 class WebVigilError(Exception):
     """
@@ -27,7 +29,7 @@ class OutOfScopeError(WebVigilError):
     A request was attempted against a host outside the target scope.
 
     Attributes:
-        url (str): The out-of-scope URL whose request was blocked.
+        url (str): The out-of-scope URL, as :func:`~webvigil.core.urls.display_url` shows it.
     """
 
     def __init__(self, url: str) -> None:
@@ -35,28 +37,34 @@ class OutOfScopeError(WebVigilError):
         Args:
             url (str): The URL whose host falls outside the target scope.
         """
-        super().__init__(f"URL is out of scope: {url}")
-        self.url = url
+        self.url = display_url(url)
+        super().__init__(f"URL is out of scope: {self.url}")
 
 
 class RequestFailed(WebVigilError):
     """
     An HTTP request failed after exhausting retries.
 
+    The message reaches terminals, CI logs, reports and the Web API, so it carries neither the
+    text of the library's exception, which can quote header values and response bytes, nor the
+    secret parts of the URL.
+
     Attributes:
-        url (str): The URL that could not be fetched.
-        reason (str): Short description of the underlying transport failure.
+        url (str): The URL that could not be fetched, as
+            :func:`~webvigil.core.urls.display_url` shows it.
+        reason (str): The kind of failure, in words written by this project.
     """
 
     def __init__(self, url: str, reason: str) -> None:
         """
         Args:
             url (str): The URL that could not be fetched.
-            reason (str): Short description of the underlying transport failure.
+            reason (str): The kind of failure (:func:`webvigil.http.failures.failure_kind`),
+                never the text of an exception.
         """
-        super().__init__(f"request to {url} failed: {reason}")
-        self.url = url
+        self.url = display_url(url)
         self.reason = reason
+        super().__init__(f"request to {self.url} failed: {reason}")
 
 
 class ScanDeadlineExceeded(RequestFailed):

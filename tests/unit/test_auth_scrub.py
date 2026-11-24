@@ -243,3 +243,27 @@ def test_a_given_secret_is_scrubbed_even_when_it_is_a_plain_word() -> None:
     """What the user gave is always hidden: the session-id shape applies to the target's values."""
     result = make_result(warnings=["echo swordfish"])
     assert scrub_result(result, ["swordfish"]).warnings[0] == f"echo {REDACTED}"
+
+
+@pytest.mark.parametrize(
+    ("secret", "quoted"),
+    [
+        ("pässword", r"p\xc3\xa4ssword"),
+        ("pässword", r"p\xe4ssword"),
+        ("€uro-key", r"\xe2\x82\xacuro-key"),
+        ("pass\x01word", r"pass\x01word"),
+        ("pass\tword", r"pass\tword"),
+        ("back\\slash", r"back\\slash"),
+        ("it's\"both", "it\\'s\"both"),
+    ],
+    ids=["utf-8", "latin-1", "outside-latin-1", "control", "tab", "backslash", "both-quotes"],
+)
+def test_a_value_quoted_as_bytes_is_scrubbed(secret: str, quoted: str) -> None:
+    """A library's error quotes a value as the ``repr`` of its bytes, with its own escapes."""
+    result = make_result(
+        make_finding().model_copy(update={"description": f"refused b'{quoted}' here"})
+    )
+
+    scrubbed = scrub_result(result, [secret])
+
+    assert scrubbed.findings[0].description == f"refused b'{REDACTED}' here"

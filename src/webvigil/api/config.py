@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import ipaddress
 import os
-import tomllib
 from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 
-from webvigil.core.config import describe_validation_error
+from webvigil.core.config import describe_validation_error, read_toml
 from webvigil.core.errors import ConfigError
 
 _ENV_PREFIX = "WEBVIGIL_"
@@ -148,14 +147,7 @@ class WebConfig(BaseModel):
         path = path if path is not None else os.environ.get("WEBVIGIL_CONFIG")
         data: dict[str, Any] = {}
         if path is not None:
-            file = Path(path)
-            if not file.is_file():
-                raise ConfigError(f"config file not found: {file}")
-            try:
-                raw = tomllib.loads(file.read_text("utf-8"))
-            except tomllib.TOMLDecodeError as exc:
-                raise ConfigError(f"invalid TOML in {file}: {exc}") from exc
-            section = raw.get("web")
+            section = read_toml(path).get("web")
             if section is not None:
                 if not isinstance(section, dict):
                     raise ConfigError("[web] must be a table")

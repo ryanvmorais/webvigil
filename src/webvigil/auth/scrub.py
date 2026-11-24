@@ -53,15 +53,19 @@ def _spellings(secret: str) -> set[str]:
     Returns:
         set[str]: The ways a target is likely to echo it: raw, JSON-escaped (with and without
             ``\u`` escapes for non-ASCII), HTML-escaped (with and without the quotes),
-            percent-encoded and form-encoded (UTF-8 and Latin-1, upper- and lower-case hex).
+            percent-encoded and form-encoded (UTF-8 and Latin-1, upper- and lower-case hex), and
+            as a Python library quotes it in an error: the ``repr`` of its bytes, without the
+            ``b''``, in the same encodings.
     """
     encoded = {quote(secret, safe=""), quote_plus(secret)}
+    as_bytes = {repr(secret.encode("utf-8", "surrogatepass"))[2:-1]}
     # A page in Latin-1 escapes the same characters as other bytes (``é`` is ``%E9``).
     with suppress(UnicodeEncodeError):  # a character outside Latin-1 has no such spelling
         encoded |= {
             quote(secret, safe="", encoding="latin-1"),
             quote_plus(secret, encoding="latin-1"),
         }
+        as_bytes.add(repr(secret.encode("latin-1"))[2:-1])
     return {
         secret,
         json.dumps(secret)[1:-1],
@@ -69,6 +73,7 @@ def _spellings(secret: str) -> set[str]:
         html.escape(secret),
         html.escape(secret, quote=False),
         *encoded,
+        *as_bytes,
         *(_PERCENT_RE.sub(lambda m: m.group().lower(), text) for text in encoded),
     }
 

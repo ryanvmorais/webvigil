@@ -15,6 +15,9 @@ bad link costs that link and not the crawl, the check or the pass that met it. I
 backslash the way a browser does: in an ``http`` or ``https`` URL, ``\`` before the query is a
 ``/``, so ``/\other.example/`` leaves the site, where ``urljoin`` alone would keep it as a
 path on the same host.
+
+An error message or a warning is copied into terminals, CI logs and reports, so it names a URL
+through :func:`display_url`, which leaves out the parts that may hold a secret.
 """
 
 from __future__ import annotations
@@ -35,6 +38,12 @@ _SCHEME_RE = re.compile(r"[A-Za-z][A-Za-z0-9+.\-]*:")
 # and spaces. ``urljoin`` drops them too; the scheme is read after the same cleanup.
 _TAB_NEWLINE = str.maketrans("", "", "\t\n\r")
 _LEADING_JUNK = "".join(chr(code) for code in range(0x21))
+# Shown instead of a value that does not read as a URL: echoing it could repeat a credential.
+UNREADABLE_URL = "<unreadable URL>"
+# Shown after the scheme when the address cannot be told from a credential.
+HIDDEN_ADDRESS = "<address hidden>"
+# Shown instead of a file path that may be a URL typed without its scheme.
+HIDDEN_PATH = "<path hidden>"
 
 
 def is_http_url(value: str) -> bool:
@@ -78,6 +87,60 @@ def resolve_url(base: str, ref: str) -> str | None:
     except ValueError:
         return None
     return url
+
+
+def display_url(url: str) -> str:
+    """
+    The form of a URL an error message or a warning may repeat.
+
+    Args:
+        url (str): Any value given as a URL, well formed or not.
+
+    Returns:
+        str: ``scheme://host[:port]/path``, without userinfo, query, fragment or the
+            ``;parameters`` of any path segment, where a session id often travels, or
+            :data:`UNREADABLE_URL` when ``url`` has no scheme and host to show. When the parsed
+            address cannot be trusted, only the scheme and :data:`HIDDEN_ADDRESS`: an unescaped
+            delimiter inside a password ends the authority early, so what reads as a host, a
+            port or a path can be part of the credential.
+    """
+    try:
+        parts = urlsplit(url)
+        host = parts.hostname
+    except ValueError:
+        return UNREADABLE_URL
+    if not parts.scheme or not host:
+        return UNREADABLE_URL
+    hidden = f"{parts.scheme}://{HIDDEN_ADDRESS}"
+    # An ``@`` after the authority means the userinfo may have been cut short
+    if "@" in f"{parts.path}{parts.query}{parts.fragment}":
+        return hidden
+    try:
+        port = parts.port
+    except ValueError:
+        return hidden
+    authority = f"[{host}]" if ":" in host else host
+    if port is not None:
+        authority = f"{authority}:{port}"
+    path = "/".join(segment.partition(";")[0] for segment in parts.path.split("/"))
+    return f"{parts.scheme}://{authority}{path}"
+
+
+def display_path(value: str) -> str:
+    """
+    The form of a file path an error message may repeat.
+
+    A URL typed without its scheme reads as a relative path, and its userinfo, query, fragment
+    or path parameters can hold a credential.
+
+    Args:
+        value (str): A value given as a file path.
+
+    Returns:
+        str: ``value``, or :data:`HIDDEN_PATH` when it holds a character that delimits one of
+            those parts.
+    """
+    return HIDDEN_PATH if any(char in value for char in "@?#;") else value
 
 
 def _with_browser_slashes(base: str, ref: str) -> str:

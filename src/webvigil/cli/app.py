@@ -89,7 +89,10 @@ def scan(
     authorized_by: Annotated[
         str | None, typer.Option(help="Authorization attestation, required for --mode active.")
     ] = None,
-    config: Annotated[Path | None, typer.Option("--config", help="Path to webvigil.toml.")] = None,
+    # not ``readable``: the loader reads it and reports a failure with the operational exit code
+    config: Annotated[
+        Path | None, typer.Option("--config", help="Path to webvigil.toml.", readable=False)
+    ] = None,
     fail_on: Annotated[
         str | None,
         typer.Option(

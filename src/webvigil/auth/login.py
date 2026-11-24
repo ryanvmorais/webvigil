@@ -22,6 +22,7 @@ from urllib.parse import urlencode, urlsplit
 from webvigil.core.config import LoginSection
 from webvigil.core.errors import LoginFailedError, OutOfScopeError, RequestFailed
 from webvigil.core.target import Target
+from webvigil.core.urls import display_url
 from webvigil.crawler.forms import Form, form_body, parse_forms_html
 from webvigil.crawler.safety import is_login_url
 from webvigil.http.client import HttpClient, Response
@@ -110,19 +111,6 @@ class LoginResult:
 # ---------------------------------------------------------------------------
 # The authenticator
 # ---------------------------------------------------------------------------
-
-
-def _safe(url: str) -> str:
-    """
-    Args:
-        url (str): Any URL.
-
-    Returns:
-        str: ``scheme://host/path`` without the query or fragment, so a token in a URL never
-            reaches a message.
-    """
-    parts = urlsplit(url)
-    return f"{parts.scheme}://{parts.netloc}{parts.path}"
 
 
 class Authenticator:
@@ -266,10 +254,10 @@ class Authenticator:
                 not to plain ``http`` from an ``https`` target).
         """
         if not self._target.in_scope(url):
-            raise LoginFailedError(f"{what} {_safe(url)} is out of scope")
+            raise LoginFailedError(f"{what} {display_url(url)} is out of scope")
         if not self._target.carries_credentials(url):
             raise LoginFailedError(
-                f"{what} {_safe(url)} is not the target origin: the password stays home"
+                f"{what} {display_url(url)} is not the target origin: the password stays home"
             )
 
     async def _handshake(self) -> LoginResult:
@@ -284,7 +272,7 @@ class Authenticator:
         self._check_delegated(page)
         if page.status_code >= 400 or not page.is_html:
             raise LoginFailedError(
-                f"the login page {_safe(page.url)} answered {page.status_code}"
+                f"the login page {display_url(page.url)} answered {page.status_code}"
                 f"{'' if page.is_html else ' without HTML'}"
             )
         pre_login = dict(self.session.jar.pending_items())
@@ -377,11 +365,11 @@ class Authenticator:
             return candidates[0]
         if not candidates:
             raise LoginFailedError(
-                f"no login form (a POST form with a password input) on {_safe(page.url)}; "
+                f"no login form (a POST form with a password input) on {display_url(page.url)}; "
                 f"forms seen: {self._describe(forms)}"
             )
         raise LoginFailedError(
-            f"{len(candidates)} login forms on {_safe(page.url)} and no form_index: "
+            f"{len(candidates)} login forms on {display_url(page.url)} and no form_index: "
             f"{self._describe(candidates)}"
         )
 
@@ -397,7 +385,7 @@ class Authenticator:
         if not forms:
             return "none"
         return "; ".join(
-            f"{f.method} {_safe(f.action)}({', '.join(fld.name for fld in f.fields)})"
+            f"{f.method} {display_url(f.action)}({', '.join(fld.name for fld in f.fields)})"
             for f in forms
         )
 
@@ -475,7 +463,7 @@ class Authenticator:
         Raises:
             LoginFailedError: When the login is verified to have failed.
         """
-        where = _safe(response.url)
+        where = display_url(response.url)
         if response.status_code >= 500:
             raise LoginFailedError(f"the login answered {response.status_code} at {where}")
         # The markers read the head of the body only: a target answering the login with a huge
@@ -492,7 +480,7 @@ class Authenticator:
             check = await self._http.get(self._login.check_url)
             if self.session.looks_dropped(check):
                 raise LoginFailedError(
-                    f"check_url {_safe(self._login.check_url)} still looks logged out"
+                    f"check_url {display_url(self._login.check_url)} still looks logged out"
                 )
             self.session.jar.commit()
             return LoginResult(confirmed=True)
