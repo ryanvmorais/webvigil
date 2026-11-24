@@ -18,6 +18,7 @@ import pytest
 
 from tests.support import HandlerTransport
 from webvigil.core.config import ScanConfig
+from webvigil.core.errors import RequestFailed
 from webvigil.core.target import Scope, Target
 from webvigil.http import client as client_mod
 from webvigil.http.client import HttpClient, Response
@@ -311,6 +312,20 @@ async def test_a_cookie_the_target_set_never_rides_on_a_waiting_request(
         await asyncio.gather(first, waiting)
 
     assert transport.cookies == {"/first": None, "/second": None}
+
+
+async def test_a_url_that_cannot_be_built_fails_alone_in_a_logged_in_scan() -> None:
+    """The session reads the URL before the request: a bad link costs that URL, not the scan."""
+    app = _App()
+    async with _client(app) as http:
+        session = _session(http)
+        await _login(http, session)
+        with pytest.raises(RequestFailed, match="InvalidURL"):
+            await http.get(f"{_BASE}/page\x1b")
+        await http.get(f"{_BASE}/page")  # the session still works after it
+
+    assert app.cookie_seen == ["sid=tok1"]  # the bad URL was never sent
+    assert http.stats.failed == 0  # and does not read as a target that stopped answering
 
 
 # ---------------------------------------------------------------------------

@@ -100,13 +100,17 @@ async def system_resolver(host: str, port: int) -> list[str]:
         list[str]: The distinct addresses, in the resolver's order.
 
     Raises:
-        httpcore2.ConnectError: When the name does not resolve.
+        httpcore2.ConnectError: When the name does not resolve or is not a valid DNS name.
     """
     loop = asyncio.get_running_loop()
     try:
         infos = await loop.getaddrinfo(host, port, type=socket.SOCK_STREAM)
     except OSError as exc:
         raise httpcore2.ConnectError(f"{host}: {exc}") from exc
+    except ValueError:
+        # The name is encoded before any lookup, and a label it refuses (a link on the scanned
+        # site can hold one) raises ``UnicodeError``. Its text quotes the name, so it stays out.
+        raise httpcore2.ConnectError("the host name is not a valid DNS name") from None
     return list(dict.fromkeys(str(info[4][0]) for info in infos))
 
 

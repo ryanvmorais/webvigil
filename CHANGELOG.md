@@ -63,6 +63,21 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
   message for an invalid target no longer repeats it, since a mistyped one can hold a password. The
   same goes for a value given to `--config`, `--openapi` or `--har` that may be a URL typed without
   its scheme, and a config file that cannot be read now exits with `4` instead of a traceback.
+- **What a site or a report file holds can no longer stall the CLI, abort a scan or lose its
+  result.** `webvigil report` on a damaged file says it is not a valid report and names a few
+  field paths, never a value from the file, and validation stops at the first bad item of a
+  list. Error messages, status lines and the terminal summary have a size limit, the summary lists
+  up to 100 warnings and counts the rest, and a failed login names a few forms and fields. The
+  dashboard shows a failed scan's error with its hidden characters made visible. A sitemap or an
+  OpenAPI server URL that cannot be read no longer ends the scan, and a link or redirect to a URL
+  that cannot be sent costs that URL alone. A character UTF-8 cannot encode is replaced with U+FFFD
+  wherever text enters a result, so every report format, the database and the Web API keep
+  working, also for rows stored by an earlier version.
+- **`robots.txt` rules now follow RFC 9309 on every supported Python version.** WebVigil reads the
+  file with its own parser, so groups, the most specific rule, `*`, `$` and percent-encoding give
+  the same decision whichever Python runs the scan, and no content of the file can end the crawl.
+  This can change which pages a scan reaches. A file or a URL beyond what the crawl can evaluate
+  is not followed, and the scan warns about it.
 
 ## [1.5.0] - 2026-11-23
 

@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from webvigil.api.db import Finding as FindingRow
 from webvigil.api.db import Scan
+from webvigil.core.bounded import Encodable, Text
 from webvigil.core.errors import InvalidTargetError
 from webvigil.core.findings import Confidence, ScanMode, Severity
 from webvigil.core.target import Scope, Target
@@ -189,18 +190,18 @@ class ScanCreate(BaseModel):
 class LocationOut(BaseModel):
     """A finding's location in a response."""
 
-    url: str
-    method: str = "GET"
-    param: str | None = None
-    header: str | None = None
-    cookie: str | None = None
+    url: Encodable
+    method: Encodable = "GET"
+    param: Encodable | None = None
+    header: Encodable | None = None
+    cookie: Encodable | None = None
 
 
 class EvidenceOut(BaseModel):
     """One labelled evidence snippet."""
 
-    label: str
-    content: str
+    label: Encodable
+    content: Encodable
 
 
 class FindingOut(BaseModel):
@@ -215,7 +216,7 @@ class FindingOut(BaseModel):
     remediation: str
     evidence: list[EvidenceOut]
     cwe: list[int]
-    references: list[str]
+    references: list[Encodable]
     fingerprint: str
 
     @classmethod
@@ -292,12 +293,12 @@ class TechnologyOut(BaseModel):
         advisories (list[str]): Matching advisory identifiers.
     """
 
-    name: str
-    version: str | None
+    name: Encodable
+    version: Encodable | None
     detection: str
-    source_url: str
+    source_url: Encodable
     vulnerable: bool
-    advisories: list[str]
+    advisories: list[Encodable]
 
 
 class ScanOut(ScanSummary):
@@ -315,7 +316,7 @@ class ScanOut(ScanSummary):
 
     authorized_by: str | None
     tool_version: str | None
-    error: str | None
+    error: Text | None
     pages_scanned: int
     options: dict[str, Any]
     technologies: list[TechnologyOut]

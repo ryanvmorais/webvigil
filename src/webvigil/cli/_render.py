@@ -5,6 +5,10 @@ Text that came from the scanned site or from the command line (a finding's title
 a warning, the target, the authorization note) is never parsed as Rich markup: it goes in as a
 plain part of a :class:`~rich.text.Text`, with its control characters made visible, so a bracket
 in a cookie name is printed as a bracket and an escape sequence in a field name is shown, not run.
+
+Every message and every line built from such text has a ceiling (:data:`_MESSAGE_MAX_CHARS`): it
+is applied here, once, so no caller can print something that grows with what a site or a file
+holds, and the layout work Rich does on a line stays small.
 """
 
 from __future__ import annotations
@@ -13,11 +17,18 @@ from rich.console import Console
 from rich.table import Table
 from rich.text import Text
 
+from webvigil.core.bounded import truncate
 from webvigil.core.findings import ScanMode, Severity
 from webvigil.core.result import ScanResult
-from webvigil.core.text import show_controls
+from webvigil.core.text import replace_surrogates, show_controls
 
 _console = Console(stderr=True)
+
+# The most characters of one message or one field printed to the terminal (before the marker).
+# The full text stays in the report.
+_MESSAGE_MAX_CHARS = 4096
+# The most warnings the summary lists: the rest are counted, and every one stays in the report.
+_MAX_WARNINGS_SHOWN = 100
 
 # Disclosure checks that are NOT probe-fed "exposed path" findings — excluded from
 # the summary's exposed-path count (spec 013 added the last two).
@@ -39,16 +50,31 @@ _SEVERITY_STYLE = {
 }
 
 
+def _printable(value: str, *, one_line: bool = False) -> str:
+    r"""
+    Args:
+        value (str): Text that may have come from the scanned site or a file.
+        one_line (bool): Whether line breaks are escaped too. Defaults to ``False``.
+
+    Returns:
+        str: ``value`` with its control characters written as ``\xNN``, then cut at
+            :data:`_MESSAGE_MAX_CHARS`: the bound is on what is printed, and an escape is
+            longer than the character it stands for.
+    """
+    shown = show_controls(replace_surrogates(value), one_line=one_line)
+    return truncate(shown, _MESSAGE_MAX_CHARS)
+
+
 def _plain(value: str) -> str:
     r"""
     Args:
         value (str): Text from the scanned site or the command line.
 
     Returns:
-        str: ``value`` on one line, its control characters written as ``\xNN``. It is meant
-            to be a plain part of a :class:`~rich.text.Text`, never a markup string.
+        str: ``value`` on one line, bounded, its control characters written as ``\xNN``. It is
+            meant to be a plain part of a :class:`~rich.text.Text`, never a markup string.
     """
-    return show_controls(value, one_line=True)
+    return _printable(value, one_line=True)
 
 
 def error(message: str) -> None:
@@ -56,12 +82,10 @@ def error(message: str) -> None:
     Print an ``error: <message>`` line to stderr in bold red.
 
     Args:
-        message (str): The error text; printed literally, no Rich markup, its control
+        message (str): The error text; printed literally, no Rich markup, bounded, its control
             characters made visible (an exception message can quote what the site sent).
     """
-    _console.print(
-        f"error: {show_controls(message)}", style="bold red", markup=False, highlight=False
-    )
+    _console.print(f"error: {_printable(message)}", style="bold red", markup=False, highlight=False)
 
 
 def status(message: str) -> None:
@@ -69,10 +93,10 @@ def status(message: str) -> None:
     Print a plain status line to stderr.
 
     Args:
-        message (str): The text; printed literally, no Rich markup, its control characters
-            made visible.
+        message (str): The text; printed literally, no Rich markup, bounded, its control
+            characters made visible.
     """
-    _console.print(show_controls(message), markup=False, highlight=False)
+    _console.print(_printable(message), markup=False, highlight=False)
 
 
 def banner(authorized_by: str) -> None:
@@ -239,5 +263,10 @@ def summary(
 
     if result.errors:
         _console.print(f"[dim]{len(result.errors)} check(s) errored[/]")
-    for warning in result.warnings:
+    for warning in result.warnings[:_MAX_WARNINGS_SHOWN]:
         _console.print(Text(f"warning: {_plain(warning)}", style="dim"))
+    if len(result.warnings) > _MAX_WARNINGS_SHOWN:
+        hidden = len(result.warnings) - _MAX_WARNINGS_SHOWN
+        _console.print(
+            Text(f"... and {hidden} more warning(s): a report (--format) has them all", style="dim")
+        )

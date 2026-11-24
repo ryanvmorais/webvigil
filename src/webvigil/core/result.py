@@ -12,14 +12,25 @@ out again from the findings, and every free-text field is bounded
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Annotated, Any
 
-from pydantic import BaseModel, ConfigDict, Field, StrictInt, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    FailFast,
+    Field,
+    StrictInt,
+    field_validator,
+    model_validator,
+)
 
 from webvigil.core.bounded import Name, Text, Url
 from webvigil.core.findings import Finding, ScanMode, Severity
 from webvigil.core.target import Scope
 from webvigil.core.technology import Technology
+
+# Far above the number of severities, so no report a scan wrote comes near it.
+_MAX_SEVERITY_COUNTS = 64
 
 
 class LoginSummary(BaseModel):
@@ -78,6 +89,25 @@ class ScanMetadata(BaseModel):
     authenticated: bool = False
     login: LoginSummary | None = None
 
+    @field_validator("counts", mode="before")
+    @classmethod
+    def _few_counts(cls, value: Any) -> Any:
+        """
+        A mapping has no first-error mode, so its size is checked before its values.
+
+        Args:
+            value (Any): The ``counts`` of a report, as read.
+
+        Returns:
+            Any: ``value``, unchanged.
+
+        Raises:
+            ValueError: When it holds far more entries than there are severities.
+        """
+        if isinstance(value, dict) and len(value) > _MAX_SEVERITY_COUNTS:
+            raise ValueError("too many severity counts")
+        return value
+
 
 class CheckError(BaseModel):
     """
@@ -127,10 +157,11 @@ class ScanResult(BaseModel):
 
     schema_version: StrictInt = SCHEMA_VERSION
     metadata: ScanMetadata
-    findings: tuple[Finding, ...]
-    technologies: tuple[Technology, ...] = ()
-    errors: tuple[CheckError, ...] = ()
-    warnings: tuple[Text, ...] = ()
+    # One error per bad item would cost far more memory than the file that holds them
+    findings: Annotated[tuple[Finding, ...], FailFast()]
+    technologies: Annotated[tuple[Technology, ...], FailFast()] = ()
+    errors: Annotated[tuple[CheckError, ...], FailFast()] = ()
+    warnings: Annotated[tuple[Text, ...], FailFast()] = ()
     pass_failed: bool = Field(default=False, exclude=True)
 
     @property

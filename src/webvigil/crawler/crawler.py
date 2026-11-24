@@ -281,8 +281,10 @@ class Crawler:
         """
         while queue and len(pages) < max_pages:
             url = queue.popleft()
-            if self._config.scan.follow_robots and not robots.can_fetch(self._user_agent, url):
+            if not self._robots_allow(robots, url):
                 self._skipped_by_robots += 1
+                if self._http.past_deadline():  # a denied URL sends no request that would notice
+                    return
                 await asyncio.sleep(0)  # the rule check is CPU work: let other tasks run
                 continue
             page = await self._fetch(url)
@@ -402,9 +404,15 @@ class Crawler:
             url (str): The URL to be submitted to.
 
         Returns:
-            bool: ``True`` unless ``follow_robots`` is on and ``robots.txt`` disallows it.
+            bool: ``True`` unless ``follow_robots`` is on and ``robots.txt`` disallows it or
+                holds more than can be evaluated, which the scan's limit warning then names.
         """
-        return not self._config.scan.follow_robots or robots.can_fetch(self._user_agent, url)
+        if not self._config.scan.follow_robots:
+            return True
+        verdict = robots.verdict(self._user_agent, url)
+        if verdict is robots_mod.Verdict.OVER_LIMIT:
+            self._limits_hit.add("robots.txt rules")
+        return verdict is robots_mod.Verdict.ALLOW
 
     async def _submit_form(self, form: Form) -> Page:
         """

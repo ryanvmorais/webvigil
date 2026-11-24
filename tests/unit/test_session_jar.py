@@ -357,3 +357,13 @@ def test_the_scrub_list_holds_the_value_as_a_page_would_show_it(
     jar = _committed_raw(_URL, b"sid=" + raw + b"; Path=/")
 
     assert jar.values == expected
+
+
+@pytest.mark.parametrize("char", ["\x00", "\x1b", "\x7f"], ids=["nul", "escape", "delete"])
+def test_a_url_that_cannot_be_built_holds_no_cookie(char: str) -> None:
+    """The jar answers for such a URL instead of raising: the request path reports it."""
+    jar = SessionJar("demo.test")
+    _committed(jar, _URL, "sid=abc; Path=/")
+
+    assert jar.pairs_for(_URL, handshake=False) == [("sid", "abc")]  # the jar does hold it
+    assert jar.pairs_for(f"{_URL}{char}", handshake=False) == []

@@ -29,6 +29,7 @@ import httpx2
 from webvigil.core.config import ScanConfig
 from webvigil.core.errors import RequestFailed, ScanDeadlineExceeded
 from webvigil.core.target import Target
+from webvigil.core.text import replace_surrogates
 from webvigil.core.urls import resolve_url
 from webvigil.http.addresses import AddressGuard, BlockedAddressError, Resolver, install
 from webvigil.http.decoding import ACCEPT_ENCODING, BodyDecoder
@@ -48,6 +49,8 @@ _REDIRECT_KEEPS_METHOD = frozenset({307, 308})
 # Headers that carry a credential when a caller passes them itself; dropped on a redirect hop to a
 # URL the scan's credentials may not reach (see ``HttpClient._hop_headers``).
 _CREDENTIAL_HEADERS = frozenset({"cookie", "authorization"})
+# RFC 1035, 2.3.4: a DNS label holds at most 63 octets.
+_MAX_DNS_LABEL = 63
 
 # spec 019. Set only inside the task that called ``HttpClient.handshake()`` / ``quiet()``, so a
 # re-login running in one task never switches another task's requests into handshake mode.
@@ -253,16 +256,17 @@ def _decode_text(raw: httpx2.Response) -> str:
     are not text encodings (``base64``, ``zlib``, ``hex``) or that refuse the ``replace``
     error handler (``idna``): ``httpx2`` looks the name up and then fails inside ``.text`` with
     whatever that codec raises. Such a body is read as UTF-8 with replacement characters, as an
-    unknown charset already is.
+    unknown charset already is. Text that does decode can still hold a character no later step
+    could encode: it is replaced here, where the text enters the engine.
 
     Args:
         raw (httpx2.Response): A response with its body loaded.
 
     Returns:
-        str: The decoded body.
+        str: The decoded body, always encodable as UTF-8.
     """
     try:
-        return raw.text
+        return replace_surrogates(raw.text)
     except Exception:  # any codec's own error: the charset name came from the target
         return raw.content.decode("utf-8", errors="replace")
 
@@ -276,6 +280,34 @@ def _host_of(url: str) -> str:
         str: The lower-cased host, or ``""`` when the URL has none.
     """
     return (urlsplit(url).hostname or "").lower()
+
+
+def _is_sendable(url: str) -> bool:
+    """
+    Whether ``httpx2`` can encode ``url`` and its host is a name DNS can carry.
+
+    The URL comes from the scanned site. A host the IDNA encoder refuses or a character UTF-8
+    cannot encode raises a ``UnicodeError`` while the request is built, and an empty or
+    oversized DNS label raises one later, in the resolver or the TLS layer. None of them is a
+    transport error, so each would end the scan. Only the URL is read here: the same exception
+    from any other step is a defect, and it keeps propagating.
+
+    Args:
+        url (str): The absolute URL of a request.
+
+    Returns:
+        bool: ``False`` when the URL can never be sent. ``True`` for a URL ``httpx2`` refuses
+            with :class:`httpx2.InvalidURL`, which the request path already reports by name.
+    """
+    try:
+        parsed = httpx2.URL(url)
+        _ = parsed.host  # decoded lazily, and building the request reads it
+    except httpx2.InvalidURL:
+        return True
+    except UnicodeError:  # ``idna.IDNAError`` is one
+        return False
+    labels = parsed.raw_host.removesuffix(b".").split(b".")
+    return all(0 < len(label) <= _MAX_DNS_LABEL for label in labels)
 
 
 async def _hide_location(response: httpx2.Response) -> None:
@@ -386,6 +418,19 @@ class HttpClient:
             return None
         return self._deadline - asyncio.get_running_loop().time()
 
+    def past_deadline(self) -> bool:
+        """
+        For work that sends no request, so no request would notice the limit.
+
+        Returns:
+            bool: Whether the scan is past ``[scan] max_duration_s``, which is then recorded.
+        """
+        remaining = self._remaining()
+        if remaining is None or remaining > 0:
+            return False
+        self.stats.deadline_reached = True
+        return True
+
     def _check_deadline(self, url: str) -> None:
         """
         Args:
@@ -394,9 +439,7 @@ class HttpClient:
         Raises:
             ScanDeadlineExceeded: When the scan is past ``[scan] max_duration_s``.
         """
-        remaining = self._remaining()
-        if remaining is not None and remaining <= 0:
-            self.stats.deadline_reached = True
+        if self.past_deadline():
             raise ScanDeadlineExceeded(url, "the scan reached [scan] max_duration_s")
 
     async def __aexit__(
@@ -849,6 +892,9 @@ class HttpClient:
             RequestFailed: When every attempt fails, or at once when ``httpx2`` cannot build
                 the URL or decode the body.
         """
+        if not _is_sendable(url):
+            # the same on every attempt, and not a target that stopped answering: not counted
+            raise RequestFailed(url, "malformed URL")
         idempotent = method in _IDEMPOTENT
         req_headers = dict(headers or {})
         on_target = self._target.carries_credentials(url)

@@ -9,8 +9,9 @@ checks turn the vulnerable ones into findings.
 from __future__ import annotations
 
 from enum import StrEnum
+from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, FailFast
 
 from webvigil.core.bounded import Name, Url
 
@@ -59,4 +60,4 @@ class Technology(BaseModel):
     detection: DetectionMethod
     source_url: Url
     vulnerable: bool = False
-    advisories: tuple[Name, ...] = ()
+    advisories: Annotated[tuple[Name, ...], FailFast()] = ()

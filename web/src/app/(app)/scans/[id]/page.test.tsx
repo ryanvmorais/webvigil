@@ -295,6 +295,14 @@ describe("ScanDetailPage", () => {
     expect(screen.queryByText("Error")).not.toBeInTheDocument();
   });
 
+  it("makes the hidden characters of a failed scan's error visible", async () => {
+    mockScan(makeScanOut({ id: 7, status: "failed", error: "bad\u202ename\u001bx" }));
+    renderWithClient(<ScanDetailPage />);
+
+    await screen.findByText("bad\\u202ename\\x1bx");
+    expect(screen.queryByText("bad\u202ename\u001bx")).not.toBeInTheDocument();
+  });
+
   it("shows who authorized an active scan and the tool version", async () => {
     mockScan(
       makeScanOut({

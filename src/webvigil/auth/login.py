@@ -19,6 +19,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from urllib.parse import urlencode, urlsplit
 
+from webvigil.core.bounded import truncate
 from webvigil.core.config import LoginSection
 from webvigil.core.errors import LoginFailedError, OutOfScopeError, RequestFailed
 from webvigil.core.target import Target
@@ -30,6 +31,12 @@ from webvigil.http.session import MARKER_BODY_CHARS, Session, SessionJar
 
 # Input types a username can live in (a missing ``type`` is parsed as ``text``).
 _USERNAME_TYPES = frozenset({"text", "email", "tel"})
+# How much of what a login page declares a failure message repeats. The page is the target's to
+# write: the message must not grow with it, and a few names are enough to fix a config.
+_MAX_FORMS_SHOWN = 5
+_MAX_FIELDS_SHOWN = 10
+_MAX_NAME_CHARS = 64
+_MAX_ACTION_CHARS = 256
 
 
 # ---------------------------------------------------------------------------
@@ -380,14 +387,20 @@ class Authenticator:
             forms (list[Form]): Forms found on a page.
 
         Returns:
-            str: ``method action(field, field)`` per form — names only, never values.
+            str: ``method action(field, field)`` per form — names only, never values — for
+                the first :data:`_MAX_FORMS_SHOWN` forms, then how many were left out.
         """
         if not forms:
             return "none"
-        return "; ".join(
-            f"{f.method} {display_url(f.action)}({', '.join(fld.name for fld in f.fields)})"
-            for f in forms
-        )
+        shown = [
+            f"{truncate(f.method, _MAX_NAME_CHARS)} "
+            f"{truncate(display_url(f.action), _MAX_ACTION_CHARS)}"
+            f"({_name_list([fld.name for fld in f.fields])})"
+            for f in forms[:_MAX_FORMS_SHOWN]
+        ]
+        if len(forms) > _MAX_FORMS_SHOWN:
+            shown.append(f"and {len(forms) - _MAX_FORMS_SHOWN} more form(s)")
+        return "; ".join(shown)
 
     def _pick_fields(self, form: Form) -> tuple[str, str]:
         """
@@ -405,14 +418,14 @@ class Authenticator:
         password = self._login.password_field
         if password is not None and password not in names:
             raise LoginFailedError(
-                f"password_field {password!r} is not in the login form ({', '.join(names)})"
+                f"password_field {password!r} is not in the login form ({_name_list(names)})"
             )
         if password is None:
             password = next(fld.name for fld in form.fields if fld.type == "password")
         username = self._login.username_field
         if username is not None and username not in names:
             raise LoginFailedError(
-                f"username_field {username!r} is not in the login form ({', '.join(names)})"
+                f"username_field {username!r} is not in the login form ({_name_list(names)})"
             )
         if username is None:
             before = list(form.fields[: names.index(password)])
@@ -421,7 +434,7 @@ class Authenticator:
                 usable = [fld for fld in form.fields if fld.type in _USERNAME_TYPES]
             if not usable:
                 raise LoginFailedError(
-                    f"no username input in the login form ({', '.join(names)}); "
+                    f"no username input in the login form ({_name_list(names)}); "
                     "set username_field"
                 )
             username = usable[-1].name  # the nearest one before the password
@@ -494,6 +507,21 @@ class Authenticator:
         new_cookie = self.session.jar.pending_items() - before
         self.session.jar.commit()
         return LoginResult(confirmed=bool(new_cookie))
+
+
+def _name_list(names: list[str]) -> str:
+    """
+    Args:
+        names (list[str]): Field names a page declared.
+
+    Returns:
+        str: The first :data:`_MAX_FIELDS_SHOWN`, each cut at :data:`_MAX_NAME_CHARS`, then how
+            many were left out.
+    """
+    shown = [truncate(name, _MAX_NAME_CHARS) for name in names[:_MAX_FIELDS_SHOWN]]
+    if len(names) > _MAX_FIELDS_SHOWN:
+        shown.append(f"and {len(names) - _MAX_FIELDS_SHOWN} more")
+    return ", ".join(shown)
 
 
 __all__ = ["Authenticator", "CookieTransition", "Credentials", "LoginResult"]

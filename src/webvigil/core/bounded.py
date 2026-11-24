@@ -6,6 +6,9 @@ and ``webvigil report`` reloads one from a file that someone else may have writt
 free-text field has a ceiling. A longer value is cut and marked, never refused: the engine meets
 the same bound when it builds a finding, so it never writes a report it could not read back, and
 a value already cut (marker included) is left as it is, so a report reloads unchanged.
+
+Every bounded field also replaces an unpaired surrogate with U+FFFD: UTF-8 cannot encode one, and
+a result holding one could be scanned but never written.
 """
 
 from __future__ import annotations
@@ -13,6 +16,8 @@ from __future__ import annotations
 from typing import Annotated
 
 from pydantic import BeforeValidator
+
+from webvigil.core.text import replace_surrogates
 
 # ---------------------------------------------------------------------------
 # Limits
@@ -60,11 +65,14 @@ def bounded(limit: int, marker: str = TRUNCATION_MARKER) -> BeforeValidator:
             :data:`TRUNCATION_MARKER`.
 
     Returns:
-        BeforeValidator: A validator that applies :func:`truncate` to a string and passes
-            anything else on, so the field's own type check still runs.
+        BeforeValidator: A validator that replaces the unpaired surrogates of a string and
+            applies :func:`truncate` to it, and passes anything else on, so the field's own type
+            check still runs.
     """
     return BeforeValidator(
-        lambda value: truncate(value, limit, marker) if isinstance(value, str) else value
+        lambda value: (
+            truncate(replace_surrogates(value), limit, marker) if isinstance(value, str) else value
+        )
     )
 
 
@@ -75,3 +83,8 @@ def bounded(limit: int, marker: str = TRUNCATION_MARKER) -> BeforeValidator:
 Name = Annotated[str, bounded(NAME_MAX_CHARS)]
 Text = Annotated[str, bounded(TEXT_MAX_CHARS)]
 Url = Annotated[str, bounded(URL_MAX_CHARS)]
+# Text bounded when it was stored, read back from a row an older version may have written.
+Encodable = Annotated[
+    str,
+    BeforeValidator(lambda value: replace_surrogates(value) if isinstance(value, str) else value),
+]

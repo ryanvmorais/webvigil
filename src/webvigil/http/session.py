@@ -268,13 +268,17 @@ class SessionJar:
 
         Returns:
             list[tuple[str, str]]: ``(name, value)`` pairs in the jar's form (:func:`jar_text`),
-                empty for any host but the target host and for a cookie the browser rules would
-                not send (``Secure`` on ``http``, another path, expired).
+                empty for any host but the target host, for a URL ``httpx2`` cannot build and
+                for a cookie the browser rules would not send (``Secure`` on ``http``, another
+                path, expired).
         """
         if (urlsplit(url).hostname or "").lower() != self._host:
             return []
         jar = self._pending if handshake and self._pending is not None else self._live
-        request = httpx2.Request("GET", url)
+        try:
+            request = httpx2.Request("GET", url)
+        except httpx2.InvalidURL:
+            return []  # it is never sent: the HTTP client reports it as that URL's failure
         request.headers.encoding = "utf-8"  # an all-ASCII request would refuse the jar's form
         jar.set_cookie_header(request)
         header = request.headers.get("cookie", "")

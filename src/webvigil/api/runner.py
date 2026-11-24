@@ -13,6 +13,8 @@ from sqlmodel import Session, select
 from webvigil.api.db import TERMINAL_STATUSES, Scan, ScanStatus, utcnow
 from webvigil.api.mapping import build_scan_config, store_result
 from webvigil.core import Orchestrator, ScanConfig, ScanResult, WebVigilError
+from webvigil.core.bounded import TEXT_MAX_CHARS, truncate
+from webvigil.core.text import replace_surrogates
 
 logger = logging.getLogger("webvigil.api")
 
@@ -339,7 +341,10 @@ class ScanRunner:
             if only_from is not None and scan.status != only_from:
                 return False
             scan.status = status
-            scan.error = error
+            # The message can quote the site, and the column takes only what UTF-8 can encode.
+            scan.error = (
+                None if error is None else truncate(replace_surrogates(error), TEXT_MAX_CHARS)
+            )
             scan.finished_at = utcnow()
             session.add(scan)
             session.commit()

@@ -11,11 +11,16 @@ The bidirectional controls and the zero-width characters do the same to whoever 
 in a terminal or a browser: an override reverses what follows it and a zero-width space hides
 inside a name, so a title, a URL or a piece of evidence reads differently from what it holds
 (the "Trojan Source" characters). They are written as a visible ``\uNNNN`` escape.
+
+An unpaired surrogate is a different problem: a Python string can hold one, but UTF-8 cannot
+encode it, so a single one in a page makes every later write of that text fail. It is replaced
+where the text enters the engine (:func:`replace_surrogates`).
 """
 
 from __future__ import annotations
 
 import re
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Patterns
@@ -32,6 +37,11 @@ _CONTROL_RE = re.compile(rf"[\x00-\x08\x0b-\x1f\x7f-\x9f{INVISIBLE_CHARS}]")
 # On one line, the tab and the line feed are escaped too: a line break in a title would let the
 # site print a line of its own under the scanner's.
 _ONE_LINE_CONTROL_RE = re.compile(rf"[\x00-\x1f\x7f-\x9f{INVISIBLE_CHARS}]")
+# A surrogate code point on its own. A decoder or a JSON parser joins a valid pair into one
+# character, so whatever is left here has no partner.
+_SURROGATE_RE = re.compile(r"[\ud800-\udfff]")
+# What Unicode reserves for a character that could not be represented.
+_REPLACEMENT_CHAR = "\ufffd"
 
 
 # ---------------------------------------------------------------------------
@@ -54,6 +64,57 @@ def show_controls(value: str, *, one_line: bool = False) -> str:
     if one_line:
         return _ONE_LINE_CONTROL_RE.sub(_escape, value)
     return _CONTROL_RE.sub(_escape, value.replace("\r\n", "\n"))
+
+
+def replace_surrogates(value: str) -> str:
+    """
+    Args:
+        value (str): Text that may have come from the scanned site or from a file.
+
+    Returns:
+        str: ``value`` with every unpaired surrogate replaced by U+FFFD, one for one, so its
+            length does not change and the result always encodes to UTF-8.
+    """
+    if value.isascii():  # nearly every value, and the check costs nothing
+        return value
+    return _SURROGATE_RE.sub(_REPLACEMENT_CHAR, value)
+
+
+def replace_surrogates_in(document: Any) -> Any:
+    """
+    Replace the unpaired surrogates of a parsed JSON document, keys included.
+
+    An escape in a JSON document can parse into one, so a document from the scanned site can
+    hold them in any string. The walk uses an explicit stack: how deep the document nests is the
+    site's.
+
+    Args:
+        document (Any): A value returned by :func:`json.loads`; its lists and objects are
+            changed in place.
+
+    Returns:
+        Any: The same document, or a new string when ``document`` is one.
+    """
+    if isinstance(document, str):
+        return replace_surrogates(document)
+    stack = [document]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, dict):
+            for key, value in list(node.items()):
+                clean = replace_surrogates(key)
+                if clean != key:
+                    del node[key]
+                node[clean] = replace_surrogates(value) if isinstance(value, str) else value
+                if isinstance(value, dict | list):
+                    stack.append(value)
+        elif isinstance(node, list):
+            for index, value in enumerate(node):
+                if isinstance(value, str):
+                    node[index] = replace_surrogates(value)
+                elif isinstance(value, dict | list):
+                    stack.append(value)
+    return document
 
 
 def _escape(match: re.Match[str]) -> str:

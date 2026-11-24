@@ -283,7 +283,7 @@ async def test_only_the_first_500_kib_of_robots_txt_is_parsed(httpx_mock: object
     """RFC 9309's minimum is also the maximum: rules past 500 KiB are not read (audit 2026-11)."""
     from webvigil.crawler import robots
 
-    filler = "".join(f"Disallow: /filler/{i}/\n" for i in range(40_000))  # about 1 MiB
+    filler = "".join(f"# filler line {i} {'x' * 60}\n" for i in range(14_000))  # about 1 MiB
     body = f"User-agent: *\nDisallow: /early/\n{filler}Disallow: /late/\n"
     assert len(body.encode()) > robots.MAX_ROBOTS_BYTES + 400_000
     router = _Router({f"{_SEED}robots.txt": (200, body, "text/plain")})

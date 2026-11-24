@@ -45,7 +45,7 @@ def parse(text: str, *, limit: int = MAX_URLS) -> list[str]:
         return []
     try:
         root = ElementTree.fromstring(text)
-    except ElementTree.ParseError:
+    except (ElementTree.ParseError, ValueError):  # ValueError: text that cannot be encoded
         return []
     locations: list[str] = []
     for element in root.iter():

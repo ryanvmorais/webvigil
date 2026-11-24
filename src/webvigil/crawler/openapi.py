@@ -27,6 +27,7 @@ from urllib.parse import quote, urlencode, urlsplit
 
 from webvigil.core.errors import OpenApiError, OutOfScopeError, RequestFailed
 from webvigil.core.target import Target
+from webvigil.core.text import replace_surrogates_in
 from webvigil.core.urls import display_path, display_url
 from webvigil.http.client import HttpClient
 
@@ -255,7 +256,7 @@ async def _fetch_document(source: str, *, http: HttpClient, target: Target) -> _
             raise OpenApiError(f"could not read {shown}: {type(exc).__name__}") from None
 
     try:
-        doc = json.loads(text)
+        doc = replace_surrogates_in(json.loads(text))
     except RecursionError as exc:
         raise OpenApiError(f"{shown} is nested too deeply") from exc
     except ValueError as exc:
@@ -318,7 +319,13 @@ def _base_url(doc: _Doc, target: Target, warnings: list[str]) -> str:
         if isinstance(servers, list) and servers and isinstance(servers[0], dict):
             raw = str(servers[0].get("url") or "/")
 
-    parts = urlsplit(raw)
+    try:
+        parts = urlsplit(raw)
+    except ValueError:  # a malformed bracketed host: the document is the site's to write
+        warnings.append(
+            f"OpenAPI server URL is malformed; paths are resolved against {target.origin}"
+        )
+        return target.origin
     if parts.scheme and parts.hostname and parts.hostname.lower() != target.host:
         warnings.append(
             f"OpenAPI server host {parts.hostname!r} differs from the scan target; "

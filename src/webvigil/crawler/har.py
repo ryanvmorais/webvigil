@@ -29,6 +29,7 @@ from urllib.parse import parse_qsl, unquote, urlsplit, urlunsplit
 
 from webvigil.core.errors import HarError
 from webvigil.core.target import Target
+from webvigil.core.text import replace_surrogates_in
 from webvigil.core.urls import display_path, display_url
 from webvigil.crawler.openapi import (
     _MAX_BODY_DEPTH,
@@ -378,7 +379,7 @@ def _read_entries(path: str) -> tuple[list[Any], list[str]]:
                 f"{shown} is {size // (1024 * 1024)} MiB, over the {_MAX_FILE_BYTES // 2**20} MiB "
                 "limit: export the HAR without response bodies"
             )
-        doc = json.loads(source.read_bytes().decode("utf-8-sig"))
+        doc = replace_surrogates_in(json.loads(source.read_bytes().decode("utf-8-sig")))
     except OSError as exc:
         # the text of an ``OSError`` quotes the path, so it is not chained either
         raise HarError(f"could not read {shown}: {type(exc).__name__}") from None

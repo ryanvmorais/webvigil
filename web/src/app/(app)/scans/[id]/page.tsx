@@ -29,6 +29,7 @@ import { ApiError, REPORTABLE_STATUSES, TERMINAL_STATUSES, errorMessage } from "
 import { absoluteTime, optionsText } from "@/lib/format";
 import { pageTitle } from "@/lib/page-title";
 import { keys } from "@/lib/query-keys";
+import { showControls } from "@/lib/text";
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -159,7 +160,10 @@ function ScanDetail({ id }: { id: number }) {
         {s.authorized_by ? <Row label="Authorized by" value={s.authorized_by} /> : null}
         <Row label="Options" value={optionsText(s.options)} />
         {s.status === "failed" && s.error ? (
-          <Row label="Error" value={<span className="text-destructive">{s.error}</span>} />
+          <Row
+            label="Error"
+            value={<span className="text-destructive">{showControls(s.error)}</span>}
+          />
         ) : null}
       </dl>
 

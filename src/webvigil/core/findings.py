@@ -13,7 +13,7 @@ import hashlib
 from enum import IntEnum, StrEnum
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, FailFast, Field
 
 from webvigil.core.bounded import Name, Text, Url, bounded
 
@@ -221,7 +221,9 @@ def compute_fingerprint(check_id: str, location: Location, dedup_key: str) -> st
         str: Hex SHA-256 digest truncated to 16 characters.
     """
     raw = "\n".join([check_id, location.url, location.key, dedup_key])
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:_FINGERPRINT_CHARS]
+    # ``dedup_key`` is the check's own string and may quote the site: it must not raise here.
+    digest = hashlib.sha256(raw.encode("utf-8", "surrogatepass"))
+    return digest.hexdigest()[:_FINGERPRINT_CHARS]
 
 
 # ---------------------------------------------------------------------------
@@ -258,7 +260,7 @@ class Finding(BaseModel):
     description: Text
     location: Location
     remediation: Text
-    evidence: tuple[EvidenceItem, ...] = ()
-    cwe: tuple[int, ...] = ()
-    references: tuple[Url, ...] = ()
+    evidence: Annotated[tuple[EvidenceItem, ...], FailFast()] = ()
+    cwe: Annotated[tuple[int, ...], FailFast()] = ()
+    references: Annotated[tuple[Url, ...], FailFast()] = ()
     fingerprint: str = Field(min_length=1)
