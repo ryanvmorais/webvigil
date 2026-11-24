@@ -165,13 +165,14 @@ login from a page that is not a login page (learned once, ADR-6), or `logged_out
 or `5xx`** (a blocked payload does not spend a login); `check_url` confirms first. Re-login is serialized
 by generation number, 1 retry, cap `max_relogins` (3), then the session is marked "lost" with a warning. The
 password is **not a `ScanConfig` field** (it travels as `Credentials`, taken from the env or a prompt; a `password`
-key in the TOML is an error); `scrub_result` clears the password, cookies and fixed headers (the `Bearer` token
-alone too) and session values (raw, JSON, HTML and percent-encoded upper/lower case spellings)
-from the free-text fields at the end of the scan, with or without login, and warns how many fields it changed; a value
-emitted by the target is only included if it looks like a session id (`looks_like_session_value`: 8+ chars, 2
-classes), and a user secret < 4 chars stays, with a warning. `metadata.login` keeps `relogins` /
-`session_lost` / `confirmed`, never the username. With no login configured the client is byte for byte the one from before
-(the 007 rule of discarding `Set-Cookie` still holds). Details in
+key in the TOML is an error); `scrub_result` takes every `Secret` the scan held (spec 024: `collect_secrets` over
+the configuration and the login's credentials, plus the jar's values) and clears the password, cookies and fixed
+headers (the `Bearer` token alone too) and session values (raw, JSON, HTML and percent-encoded upper/lower case
+spellings) from the free-text fields at the end of the scan, with or without login, and warns how many fields it
+changed; a value emitted by the target (kind `SESSION`) is only included if it looks like a session id
+(`looks_like_session_value`: 8+ chars, 2 classes), and a user secret < 4 chars stays, with a warning.
+`metadata.login` keeps `relogins` / `session_lost` / `confirmed`, never the username. With no login configured the
+client is byte for byte the one from before (the 007 rule of discarding `Set-Cookie` still holds). Details in
 [`docs/authenticated-scanning.md`](authenticated-scanning.md#automated-login----login-url-opt-in).
 Session checks (spec 020, `v0.20`, `Category.SESSION`): `session.id.weak` (PASSIVE),
 `session.fixation` and `session.logout.not-invalidated` (ACTIVE). A `SessionScanner` pass

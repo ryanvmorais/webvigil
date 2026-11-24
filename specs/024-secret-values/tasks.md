@@ -90,48 +90,67 @@ Each stage also runs mutation testing in batch over the guards it adds or change
 
 ## Stage 1 — The scan's configured credentials
 
-- [ ] `src/webvigil/core/config.py`:
+- [x] `src/webvigil/core/config.py`:
   - **`AuthSection`.** `cookies` and `headers` become `list[Secret]`, parsed in the `mode="before"` validators
     into named secrets. The position-only messages and the reserved-header rule stay as they are.
     `header_pairs` returns `(name, Secret)`. `as_header` and `secret_values` are removed.
 
   — RF-04, ADR-2
-- [ ] `src/webvigil/core/config.py`: `ScanConfig.web` keeps no values (`{}` for any table). — RF-06
-- [ ] `src/webvigil/auth/login.py`: `Credentials.password: Secret`, with `__post_init__` wrapping a `str`.
+- [x] `src/webvigil/core/config.py`: `ScanConfig.web` keeps no values (`{}` for any table). — RF-06
+- [x] `src/webvigil/auth/login.py`: `Credentials.password: Secret`, with `__post_init__` wrapping a `str`.
   `from_environment` builds the secret, and `_build_body` reveals it. Add the site to `ALLOWED_REVEALS`.
   — RF-04, RF-03
-- [ ] `src/webvigil/cli/app.py`: the password prompt and the environment value become a `Secret` at once.
+- [x] `src/webvigil/cli/app.py`: the password prompt and the environment value become a `Secret` at once.
   — RF-04
-- [ ] `src/webvigil/http/client.py`:
+- [x] `src/webvigil/http/client.py`:
   - `_cookie_header: Secret | None`, built by `_static_cookie_header`;
   - `_send` reveals the cookie header and each `[auth]` header value per request;
   - `_hop_headers` filters by name;
   - both sites are added to `ALLOWED_REVEALS`.
 
   — RF-04, RF-10
-- [ ] `src/webvigil/auth/scrub.py`:
+- [x] `src/webvigil/auth/scrub.py`:
   - `scrub_result(result, secrets: Iterable[Secret])` with the kind split and the `HEADER` scheme rule;
   - `REDACTED` comes from `core/secrets.py` and is re-exported;
   - `_spellings` is added to `ALLOWED_REVEALS`.
 
   — RF-07
-- [ ] `src/webvigil/core/orchestrator.py`: the scrub list comes from `collect_secrets(self._config,
+- [x] `src/webvigil/core/orchestrator.py`: the scrub list comes from `collect_secrets(self._config,
   self._credentials) | session.secrets`. For now, `Session` keeps its jar values as strings, wrapped here as
   `SESSION` secrets until Stage 2. — RF-07
-- [ ] `tests/unit/`: adapt the tests listed below, with no assertion about the bytes sent changing.
+- [x] `tests/unit/`: adapt the tests listed below, with no assertion about the bytes sent changing.
   - `test_config.py`, `test_auth_scrub.py` and `test_auth_login.py`;
   - `test_http_client.py` and `test_http_redirect_credentials.py`;
   - `test_cli.py`.
 
   Remove `AuthSection.cookies`, `AuthSection.headers` and `Credentials.password` from `PENDING_CONVERSION`.
   — RF-04, RF-07, RF-10
-- [ ] Apply the stage's sabotage (the `HEADER` scheme rule, `collect_secrets` skipping dataclasses) and watch
+- [x] Apply the stage's sabotage (the `HEADER` scheme rule, `collect_secrets` skipping dataclasses) and watch
   each test fail. — RF-11
-- [ ] Mutation in batch over the `AuthSection` validators, the scrub's kind split and `collect_secrets` as
+  — 21 breaks, each red but one: the scheme rule, `collect_secrets` skipping dataclasses, the orchestrator
+  collecting `self._credentials` or dropping the jar values, the cookie value unstripped in the scrub, the
+  short count missing the credential without its scheme, the cookie stripped or the header unstripped in the
+  config, a secret entry not passed through, a bare string parsed as a list, a non-string entry left to the type
+  error, the `[web]` table kept, `Credentials` keeping a string or re-wrapping a secret, the wrong kind from the
+  environment, the CLI or the prompt, the client holding header values as text, and the login's credentials
+  replaced. The one green break, counting issued values as short, is equivalent: an issued value is a text only
+  from 8 characters, so the code was simplified to one count.
+- [x] Mutation in batch over the `AuthSection` validators, the scrub's kind split and `collect_secrets` as
   used by the orchestrator. — RNF-06
-- [ ] `CHANGELOG.md`, `[Unreleased]`, **Changed**: `AuthSection.cookies` and `headers` and
+  — 120 mutants over every changed function (the validators, `header_pairs`, the `[web]` drop, `_texts`,
+  `scrub_result`, `_static_cookie_header`, the client's credential checks, `Credentials`, the CLI's password and
+  the orchestrator's scrub list), run against the whole unit suite: 119 killed. The survivor, `on_target` dropped
+  from the session-cookie branch of `_request_with_retry`, is equivalent and on a line this stage did not change:
+  the jar gives pairs for the target only, and the header is added only on the target. The first run, against
+  the stage's own test files, also showed the `if scheme and credential.strip()` condition redundant (an empty
+  credential is dropped by the caller), so it was removed, and it asked for three tests: the 4-character floor,
+  spaces after the scheme, and a common-word session value left in the result. Its survivors on anonymous
+  requests are killed by `test_http_session.py`. Every new or changed test is failed by a mutant or by the
+  sabotage above.
+- [x] `CHANGELOG.md`, `[Unreleased]`, **Changed**: `AuthSection.cookies` and `headers` and
   `Credentials.password` hold `Secret` in the Python API. — RNF-02, ADR-10
-- [ ] Quality gate.
+- [x] Quality gate. — 3348 passed, 2 skipped (3336 and 2 before); ruff, black, mypy, `lint-imports` and the
+  package check green; no file of `src/webvigil` loses a line or a branch against the Stage 0 baseline.
 
 ## Stage 2 — Session values and the scanner's canary
 
