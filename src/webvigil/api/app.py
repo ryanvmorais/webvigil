@@ -16,10 +16,12 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from webvigil import __version__
 from webvigil.api.body_limit import BodyLimitMiddleware
+from webvigil.api.client_address import TrustedProxies
 from webvigil.api.config import WebConfig
 from webvigil.api.db import make_engine, run_alembic_upgrade
 from webvigil.api.host_check import HostCheckMiddleware
 from webvigil.api.origin_check import OriginCheckMiddleware
+from webvigil.api.redirects import RelativeRedirectMiddleware
 from webvigil.api.routes import auth, meta, reports, scans, setup
 from webvigil.api.runner import OrchestratorFactory, ScanRunner, recover_interrupted_scans
 from webvigil.api.security import dummy_password_hash, resolve_session_secret
@@ -73,6 +75,9 @@ def create_app(
 
     app = FastAPI(title="WebVigil API", version=__version__, lifespan=lifespan)
     app.state.login_throttle = LoginThrottle()
+    app.state.trusted_proxies = TrustedProxies(cfg.trusted_proxies)
+    # Innermost: it reads the redirect the router answers with.
+    app.add_middleware(RelativeRedirectMiddleware)
     if cfg.cors_origins:
         app.add_middleware(
             CORSMiddleware,

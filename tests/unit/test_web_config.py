@@ -142,6 +142,72 @@ def test_an_allowed_hosts_entry_that_is_not_a_plain_name_is_refused(entry: str) 
         WebConfig(allowed_hosts=[entry])
 
 
+def test_trusted_proxies_default_to_none() -> None:
+    """Out of the box no forwarding header is believed."""
+    assert WebConfig().trusted_proxies == []
+
+
+def test_trusted_proxies_are_normalised_and_read_from_the_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Networks in canonical form, names in lower case; the env var is split on commas."""
+    entries = [" 10.1.2.3/24 ", "192.0.2.1", "2001:DB8::/32", " Web. ", "proxy-1.internal"]
+    assert WebConfig(trusted_proxies=entries).trusted_proxies == [
+        "10.1.2.0/24",
+        "192.0.2.1/32",
+        "2001:db8::/32",
+        "web",
+        "proxy-1.internal",
+    ]
+    monkeypatch.setenv("WEBVIGIL_TRUSTED_PROXIES", "web, 10.0.0.0/8")
+    assert WebConfig.load().trusted_proxies == ["web", "10.0.0.0/8"]
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        "*",
+        "",
+        "  ",
+        "0.0.0.0/0",
+        "::/0",
+        "10.0.0.0/33",
+        "999.1.1.1",
+        "10",
+        "http://web",
+        "web:3000",
+        "10.0.0.1:3000",
+        "web/path",
+        "a b",
+    ],
+)
+def test_a_trusted_proxies_entry_that_is_no_address_or_name_is_refused(entry: str) -> None:
+    """Trusting everyone would let any client pick its address; the rest could never match."""
+    with pytest.raises(ValidationError, match="trusted_proxies"):
+        WebConfig(trusted_proxies=[entry])
+
+
+@pytest.mark.parametrize(
+    "entry",
+    ["8.0.0.0/7", "128.0.0.0/1", "fc00::/6", "8000::/1"],
+    ids=["ipv4-one-past-the-limit", "ipv4-broad", "ipv6-one-past-the-limit", "ipv6-broad"],
+)
+def test_a_trusted_proxies_network_too_broad_is_refused(entry: str) -> None:
+    """A network wider than the limit would let its clients choose their own address."""
+    with pytest.raises(ValidationError, match="trusted_proxies network is too broad"):
+        WebConfig(trusted_proxies=[entry])
+
+
+@pytest.mark.parametrize(
+    "entry",
+    ["10.0.0.0/8", "10.128.0.0/9", "fc00::/7", "fd00::/8"],
+    ids=["ipv4-at-the-limit", "ipv4-one-inside", "ipv6-at-the-limit", "ipv6-one-inside"],
+)
+def test_a_trusted_proxies_network_at_the_limit_is_kept(entry: str) -> None:
+    """The private ranges real deployments list stay accepted, in canonical form."""
+    assert WebConfig(trusted_proxies=[entry]).trusted_proxies == [entry]
+
+
 def test_a_short_session_secret_is_not_echoed_in_the_error(tmp_path: Path) -> None:
     """The refused secret is still a secret: the message names the field, not the value."""
     toml = tmp_path / "web.toml"

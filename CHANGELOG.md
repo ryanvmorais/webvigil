@@ -78,6 +78,24 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
   the same decision whichever Python runs the scan, and no content of the file can end the crawl.
   This can change which pages a scan reaches. A file or a URL beyond what the crawl can evaluate
   is not followed, and the scan warns about it.
+- **A single client guessing a password now delays only itself.** The login wait belongs to each
+  client, so failures from one address do not delay another. A short limit per username still
+  contains guesses spread over many addresses, so those can delay that login for as long as the
+  guessing lasts. Only a few password checks run at once, with the excess answered `429` and
+  `Retry-After`, and a client already waiting does not compete for them. A full table of failed
+  logins no longer drops a client that is waiting.
+- **The new `trusted_proxies` setting** (`WEBVIGIL_TRUSTED_PROXIES`, empty by default) says which
+  proxies may name the client through `X-Forwarded-For`; any other request is counted by the
+  address of its connection, whatever forwarding headers it carries. The Compose file trusts only
+  its dashboard, whose image now reports the real connection. If you run your own reverse proxy in
+  front of the API, list it, or all its clients share one wait. A network broader than `/8` in IPv4
+  or `/7` in IPv6 is refused.
+- **A Web API redirect keeps the scheme the client used.** A path with a stray trailing slash is
+  answered with a relative `Location`, so a client behind a TLS proxy is not sent to plain `http`.
+- **A password change now ends a login that was still being verified**, and of two changes made
+  at the same time one is stored and the other gets `409` instead of overwriting it. A change
+  overtaken by `reset-password` also gets `409` and no new session, and a reset overtaken by another
+  change says so and exits with `1`.
 
 ## [1.5.0] - 2026-11-23
 

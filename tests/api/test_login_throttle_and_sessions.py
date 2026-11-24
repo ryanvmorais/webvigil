@@ -1,10 +1,9 @@
 """
 Login throttling and session revocation through the real app — security audit for 1.0.0.
 
-``TestClient`` has one client address, so a second client with another address is how the
-per-username key is told apart from the per-address one. Tokens are minted by hand with
-``jwt.encode`` and an issue time in the past, so a test sets the order of the token and the
-credential change without waiting for the clock.
+``TestClient`` has one client address. Tokens are minted by hand with ``jwt.encode`` and an issue
+time in the past, so a test sets the order of the token and the credential change without waiting
+for the clock. How the limits behave across clients and proxies is in ``test_login_abuse.py``.
 """
 
 from __future__ import annotations
@@ -79,25 +78,6 @@ def test_a_good_login_forgets_the_earlier_failures(client: TestClient) -> None:
     assert client.post("/api/auth/login", json=ADMIN).status_code == 204
     for _ in range(4):
         assert client.post("/api/auth/login", json=_WRONG).status_code == 401  # not 429 yet
-
-
-def test_the_username_is_slowed_from_any_address(client: TestClient) -> None:
-    """Guessing from many addresses is still slowed by the per-username key."""
-    assert client.post("/api/setup", json=ADMIN).status_code == 201
-    for _ in range(5):
-        client.post("/api/auth/login", json=_WRONG)
-    elsewhere = TestClient(client.app, client=("203.0.113.9", 4000))
-    assert elsewhere.post("/api/auth/login", json=ADMIN).status_code == 429
-
-
-def test_behind_the_proxy_a_strangers_failures_do_not_slow_the_owner(client: TestClient) -> None:
-    """Every proxied request has the proxy's address, so only the username key counts there."""
-    assert client.post("/api/setup", json=ADMIN).status_code == 201
-    proxied = {"X-Forwarded-Host": "localhost"}
-    stranger = {"username": "someone-else", "password": "a-guess"}
-    for _ in range(6):
-        client.post("/api/auth/login", json=stranger, headers=proxied)
-    assert client.post("/api/auth/login", json=ADMIN, headers=proxied).status_code == 204
 
 
 def test_a_direct_client_is_still_slowed_by_its_address(client: TestClient) -> None:

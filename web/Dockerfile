@@ -29,8 +29,10 @@ RUN addgroup -g 1001 -S nodejs && adduser -u 1001 -G nodejs -S nextjs
 COPY --from=build --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=build --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=build --chown=nextjs:nodejs /app/public ./public
+# Appends the real connection to X-Forwarded-For, which Next alone does not do.
+COPY --from=build --chown=nextjs:nodejs /app/src/server ./preload
 USER nextjs
 EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
-CMD ["node", "server.js"]
+CMD ["node", "--import", "./preload/preload.mjs", "server.js"]

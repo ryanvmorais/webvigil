@@ -9,6 +9,7 @@ of the real Typer app operates on a fresh DB. ``serve`` is tested with
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -75,6 +76,58 @@ def test_reset_password_updates_the_hash(_config_env: Path) -> None:
         user = session.exec(select(User).where(User.username == "admin")).one()
         assert verify_password("new-password", user.password_hash)
         assert not verify_password("old-password", user.password_hash)
+    engine.dispose()
+
+
+def test_reset_password_writes_through_the_shared_stamp(
+    _config_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The reset ends sessions the way the API's change does, with no condition on the old hash."""
+    config = WebConfig.load()
+    run_alembic_upgrade(config)
+    engine = make_engine(config)
+    with Session(engine) as session:
+        session.add(User(username="admin", password_hash=hash_password("old-password")))
+        session.commit()
+    calls: list[str | None] = []
+    real_store = cli.store_password_hash
+
+    def spy(
+        session: Session, user_id: int, new_hash: str, *, expected_hash: str | None = None
+    ) -> datetime | None:
+        calls.append(expected_hash)
+        return real_store(session, user_id, new_hash, expected_hash=expected_hash)
+
+    monkeypatch.setattr(cli, "store_password_hash", spy)
+    result = runner.invoke(cli.app, ["reset-password"], input="new-password\nnew-password\n")
+    assert result.exit_code == 0
+    assert "password updated for admin" in result.output
+    assert calls == [None]
+    engine.dispose()
+
+
+def test_reset_password_says_so_when_another_change_replaced_it(
+    _config_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A reset overtaken before its stamp did not set the current password: it must not say so."""
+    config = WebConfig.load()
+    run_alembic_upgrade(config)
+    engine = make_engine(config)
+    with Session(engine) as session:
+        session.add(User(username="admin", password_hash=hash_password("old-password")))
+        session.commit()
+    calls: list[int] = []
+
+    def overtaken(_session: Session, user_id: int, _new_hash: str) -> None:
+        calls.append(user_id)
+
+    monkeypatch.setattr(cli, "store_password_hash", overtaken)
+    result = runner.invoke(cli.app, ["reset-password"], input="new-password\nnew-password\n")
+
+    assert calls == [1]
+    assert result.exit_code == 1
+    assert "error: the password was changed by another request; run this again" in result.output
+    assert "password updated" not in result.output
     engine.dispose()
 
 
@@ -170,6 +223,8 @@ def test_serve_invokes_uvicorn(_config_env: Path, monkeypatch: pytest.MonkeyPatc
     assert calls["target"] == "webvigil.api.app:app"
     assert calls["port"] == 9123
     assert calls["host"] == "127.0.0.1"
+    # uvicorn's own handling would let a loopback peer choose the address the API sees.
+    assert calls["proxy_headers"] is False
 
 
 def _stub_uvicorn(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:

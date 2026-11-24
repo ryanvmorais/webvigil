@@ -20,7 +20,7 @@ from fastapi.testclient import TestClient
 from tests.api.conftest import ADMIN
 from webvigil.api import security
 from webvigil.api.routes import auth, setup
-from webvigil.api.throttle import FREE_ATTEMPTS
+from webvigil.api.throttle import FREE_ATTEMPTS, LoginThrottle
 
 _PARALLEL = FREE_ATTEMPTS * 2
 _SLOW_S = 0.3
@@ -56,6 +56,11 @@ def test_parallel_wrong_passwords_get_no_more_than_the_free_attempts(
         return real_verify(password, stored_hash)
 
     monkeypatch.setattr(auth, "verify_password", slow_verify)
+    # Room for the whole burst, so that only the counting of attempts decides who gets through.
+    # ``TestClient.app`` is typed as a bare ASGI app, which declares no ``state``.
+    auth_client.app.state.login_throttle = LoginThrottle(  # type: ignore[attr-defined]
+        max_concurrent_checks=_PARALLEL
+    )
     wrong = {"username": ADMIN["username"], "password": "not-the-password"}
     codes = _together(
         _PARALLEL, lambda _i: auth_client.post("/api/auth/login", json=wrong).status_code

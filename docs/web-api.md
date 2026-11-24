@@ -43,6 +43,7 @@ The API reads the `[web]` table of `webvigil.toml` (or `--config PATH`, or
 | `auto_migrate` | `WEBVIGIL_AUTO_MIGRATE` | `true` | migrate on startup |
 | `cors_origins` | `WEBVIGIL_CORS_ORIGINS` | *(none)* | browser origins allowed to send the cookie; `*` is refused |
 | `allowed_hosts` | `WEBVIGIL_ALLOWED_HOSTS` | *(none)* | host names the API answers for besides IP addresses, `localhost` and a named `host`; `*` is refused — see below |
+| `trusted_proxies` | `WEBVIGIL_TRUSTED_PROXIES` | *(none)* | proxies whose `X-Forwarded-For` is believed: IP addresses, CIDR networks or host names; a network broader than `/8` (IPv4) or `/7` (IPv6) is refused — see below |
 
 ## Authentication
 
@@ -53,21 +54,40 @@ argon2id hashes.
 
 **A credential change ends the other sessions.** Changing the password (or running
 `webvigil-web reset-password`) rejects every token minted before the change, down to the
-fraction of a second; the session that changed it gets a fresh cookie and stays signed in. A
-session token must carry its subject, issue time and expiry, or it is refused. `reset-password`
-enforces the same policy as the API: 8 to 256 characters.
+fraction of a second; the session that changed it gets a fresh cookie and stays signed in. That
+includes a login still being verified when the change lands: its session ends with the others. Of
+two changes made at the same time one is stored and the other gets `409`. A session token must
+carry its subject, issue time and expiry, or it is refused. `reset-password` enforces the same
+policy as the API: 8 to 256 characters.
 
-**Login attempts are throttled.** After 5 failed attempts a client address, or a username, must
-wait before trying again, whatever the password: 1 second, doubling with each further failure up
-to 5 minutes, answered with `429` and `Retry-After`; a successful login forgets the failures. The
-state is in memory, per process. Behind the dashboard's proxy every request carries the proxy's
-address (`X-Forwarded-For` is not trusted: the client controls it), so a request the proxy
-forwarded (it has `X-Forwarded-Host`) counts against the username only, and one stranger's
-failures do not make everyone wait. The password change re-checks the current password under the
-same limit, per user, so a stolen session cannot guess it without limit. Someone guessing can
-delay you by a few minutes, never lock you out. A username that does
-not exist takes the same time as a wrong password (one Argon2 check each) and gets the same
-answer, so the response does not say which usernames are real.
+**Login attempts are throttled, per client.** After 5 failed attempts a client must wait before
+trying again, whatever the password: 1 second, doubling with each further failure up to 5 minutes,
+answered with `429` and `Retry-After`; a successful login forgets that client's failures. The wait
+belongs to the client, so a single client guessing from another address delays only itself. The
+state is in memory, per process.
+
+Guesses spread over many addresses are contained by a shared limit per username: 20 attempts in
+30 seconds, after which that username waits for the rest of the window. That wait falls on everyone
+using the username, so guesses from many addresses can still delay your login for as long as they
+last. It is set so one client is always stopped by its own wait first, and a successful login does
+not count against it. At most 4 password checks of a login run at once, because each one costs a
+full Argon2 in memory and CPU; the excess gets `429` with `Retry-After: 1`, and a client already
+waiting is answered before it competes for one. The password change re-checks the current password
+under its own limit, per user, so a stolen session cannot guess it without limit. A username that
+does not exist takes the same time as a wrong password (one Argon2 check each) and gets the same
+answers, so the response does not say which usernames are real.
+
+**Who the client is.** By default, the address of the connection, and every forwarding header is
+ignored. List a reverse proxy in `trusted_proxies` and, for a connection from it, the client is
+read from `X-Forwarded-For`, from the right, up to the first address that is not a trusted proxy:
+the hops further left were written by the client. `X-Forwarded-Host` never identifies a client. An
+IPv6 client is counted by its `/64`. An entry may be a host name, resolved when needed and again
+every 30 seconds, which is how the Compose file trusts its `web` service and nothing else on that
+network. Without an entry for your proxy all its clients share one wait, so **add it** if you run
+one in front of the API, and list only proxies that replace or append to the header: Next's own
+proxy forwards what the client sent, so the dashboard's Docker image appends the connection's
+address itself, and a dashboard started another way must not be listed. `webvigil-web serve` turns
+off uvicorn's handling of these headers, so `trusted_proxies` is the only switch.
 
 **Only known host names are answered.** A request whose `Host`, or whose `X-Forwarded-Host` (the
 browser's `Host`, as the dashboard's proxy forwards it), names a host the server does not know gets
@@ -94,8 +114,9 @@ list the dashboard's origin in `cors_origins`.
 **Request sizes are bounded.** A request body over 1 MiB is refused with `413` before the API reads
 the rest of it (a scan request is a few kilobytes), the login username and password are capped at
 64 and 256 characters like the ones `POST /api/setup` takes, and the table of failed logins keeps at
-most 10,000 keys, dropping the one that failed longest ago. A reverse proxy that limits body size
-as well is still better.
+most 10,000 keys. When it is full it drops the key that failed longest ago among those not waiting;
+a key that is waiting is kept, and if every key is waiting, a client not yet in the table waits too,
+until the first of those waits ends. A reverse proxy that limits body size as well is still better.
 
 **Reports are served contained.** A report is built from what the scanned site sent, and
 `GET /api/scans/{id}/report?format=html&download=false` shows the HTML one inline, from the API's
@@ -129,7 +150,8 @@ only. Two things make that the right default:
 
 If you expose it on purpose (another machine, a reverse proxy), do it over HTTPS with
 `cookie_secure = true`, pin a long random `session_secret`, list `cors_origins` explicitly (a `*`
-is refused: the API sends the session cookie) and add the public host name to `allowed_hosts`. `webvigil-web serve` prints a warning when it
+is refused: the API sends the session cookie), add the public host name to `allowed_hosts` and list
+the proxy in `trusted_proxies`. `webvigil-web serve` prints a warning when it
 listens beyond this machine with `cookie_secure` off; `docker compose` binds every interface
 inside the container and publishes the port on `127.0.0.1` only, so the warning shows there and is
 expected. Login attempts are throttled (see Authentication), but that state is per process and

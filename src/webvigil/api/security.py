@@ -12,10 +12,11 @@ import jwt
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError
 from fastapi import Response
-from sqlalchemy import Engine
+from sqlalchemy import Engine, update
+from sqlmodel import Session, col
 
 from webvigil.api.config import WebConfig
-from webvigil.api.db import Setting, User, session_scope
+from webvigil.api.db import Setting, User, session_scope, utcnow
 
 logger = logging.getLogger("webvigil.api")
 
@@ -83,7 +84,8 @@ def create_token(
         ttl_hours (int): Token lifetime, in hours.
         issued_at (datetime | None): The issue time, timezone-aware. A password change passes the
             moment it stored as ``User.updated_at``, so the fresh cookie is never older than the
-            change it follows. Defaults to now.
+            change it follows, and a login the moment before it read the hash, so a change that
+            lands while the password is being verified ends this session too. Defaults to now.
 
     Returns:
         str: The encoded JWT.
@@ -131,13 +133,26 @@ def decode_token(token: str, secret: str) -> TokenClaims | None:
         return None
 
 
-def credentials_changed_at(user: User) -> float:
+def credentials_stamp(user: User) -> datetime:
     """
     When the user's credentials last changed: a password change or ``reset-password``.
 
-    ``User.updated_at`` is set by exactly those two paths. A token minted before that moment was
-    issued against the old credentials and is no longer accepted. SQLite hands the timestamp back
-    without a zone; it is UTC, and reading it as local time would shift it by the machine's offset.
+    ``User.updated_at`` is set by exactly those two paths. SQLite hands the timestamp back without
+    a zone; it is UTC, and reading it as local time would shift it by the machine's offset.
+
+    Args:
+        user (User): The user row.
+
+    Returns:
+        datetime: That moment, timezone-aware.
+    """
+    stamp = user.updated_at
+    return stamp.replace(tzinfo=UTC) if stamp.tzinfo is None else stamp
+
+
+def credentials_changed_at(user: User) -> float:
+    """
+    :func:`credentials_stamp` as a number: a token minted before it is no longer accepted.
 
     Args:
         user (User): The user row.
@@ -145,10 +160,51 @@ def credentials_changed_at(user: User) -> float:
     Returns:
         float: That moment, in seconds since the epoch, with its fractional part.
     """
-    stamp = user.updated_at
-    if stamp.tzinfo is None:
-        stamp = stamp.replace(tzinfo=UTC)
-    return stamp.timestamp()
+    return credentials_stamp(user).timestamp()
+
+
+def store_password_hash(
+    session: Session, user_id: int, new_hash: str, *, expected_hash: str | None = None
+) -> datetime | None:
+    """
+    Replace the stored hash and end every session issued against the old one.
+
+    Written in two commits, because a reader keeps seeing the old hash until the first one lands:
+    a login that read it began before that commit, so only a stamp taken *after* the commit is
+    certain to be later than that login's token. The extra microsecond keeps the two apart on a
+    clock too coarse to tell them.
+
+    Args:
+        session (Session): The session to write with. It is committed.
+        user_id (int): The user whose password changes.
+        new_hash (str): The new Argon2 hash.
+        expected_hash (str | None): Write only if this is still the stored hash, so that of two
+            changes that verified the same password one cannot overwrite the other. Defaults to
+            an unconditional write.
+
+    Returns:
+        datetime | None: The moment stored as the change, for the caller's fresh token; ``None``
+            when the stored hash was no longer ``expected_hash``, or when another change replaced
+            this hash before it was stamped: the password just written is then not the current
+            one, and no token may be issued for it.
+    """
+    swap = update(User).where(col(User.id) == user_id)
+    if expected_hash is not None:
+        swap = swap.where(col(User.password_hash) == expected_hash)
+    swapped_at = utcnow()
+    written = session.exec(swap.values(password_hash=new_hash, updated_at=swapped_at))
+    session.commit()
+    if written.rowcount != 1:
+        return None
+    changed_at = max(utcnow(), swapped_at) + timedelta(microseconds=1)
+    # Only over this very hash: a later change has already stamped a later moment.
+    stamped = session.exec(
+        update(User)
+        .where(col(User.id) == user_id, col(User.password_hash) == new_hash)
+        .values(updated_at=changed_at)
+    )
+    session.commit()
+    return changed_at if stamped.rowcount == 1 else None
 
 
 def set_session_cookie(response: Response, token: str, config: WebConfig) -> None:

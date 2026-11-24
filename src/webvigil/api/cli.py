@@ -14,9 +14,9 @@ import typer
 from sqlmodel import Session, select
 
 from webvigil.api.config import WebConfig, insecure_bind_warning
-from webvigil.api.db import User, make_engine, run_alembic_upgrade, utcnow
+from webvigil.api.db import User, make_engine, run_alembic_upgrade
 from webvigil.api.schemas import PASSWORD_MAX_CHARS, PASSWORD_MIN_CHARS
-from webvigil.api.security import hash_password
+from webvigil.api.security import hash_password, store_password_hash
 from webvigil.core.errors import ConfigError
 
 app = typer.Typer(
@@ -76,6 +76,9 @@ def serve(
         host=bind,
         port=port or cfg.port,
         reload=reload,
+        # Off, or uvicorn would replace the connection's address with what a loopback peer wrote
+        # in X-Forwarded-For. The API reads that header itself, under `web.trusted_proxies`.
+        proxy_headers=False,
     )
 
 
@@ -119,11 +122,15 @@ def reset_password(
                     err=True,
                 )
                 raise typer.Exit(1)
-            user.password_hash = hash_password(new_password)
-            user.updated_at = utcnow()
-            session.add(user)
-            session.commit()
-            typer.echo(f"password updated for {user.username}")
+            assert user.id is not None
+            name = user.username
+            if store_password_hash(session, user.id, hash_password(new_password)) is None:
+                typer.echo(
+                    "error: the password was changed by another request; run this again",
+                    err=True,
+                )
+                raise typer.Exit(1)
+            typer.echo(f"password updated for {name}")
     finally:
         engine.dispose()  # also on the refusals, which leave through typer.Exit
 

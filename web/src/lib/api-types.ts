@@ -75,7 +75,8 @@ export interface paths {
         put?: never;
         /**
          * Change Password
-         * @description Change the password after re-checking the current one. 403 if it is wrong, 429 after too many.
+         * @description Change the password after re-checking the current one. 403 if it is wrong, 429 after too many,
+         *     409 if another change got there first.
          *
          *     The re-check is throttled like a login: a stolen session must not become an unlimited oracle
          *     for the current password. Every other session is signed out; this one gets a fresh cookie and

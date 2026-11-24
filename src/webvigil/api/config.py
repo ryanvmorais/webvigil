@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ipaddress
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +17,11 @@ _ENV_PREFIX = "WEBVIGIL_"
 # HS256 wants a key as long as its 32-byte digest; PyJWT already warns below that. A pinned secret
 # shorter than this is refused at start (the generated one is 64 characters).
 MIN_SESSION_SECRET_LENGTH = 32
+# A proxy's host name. At least one letter, so a mistyped address is an error and not a "name".
+# The broadest network ``trusted_proxies`` accepts, by IP version: the widest private ranges
+# (``10.0.0.0/8``, ``fc00::/7``). A wider one would trust public addresses to name their client.
+_BROADEST_PROXY_PREFIX = {4: 8, 6: 7}
+_PROXY_NAME = re.compile(r"(?=[a-z0-9._-]*[a-z])[a-z0-9]([a-z0-9._-]*[a-z0-9])?")
 
 
 class WebConfig(BaseModel):
@@ -40,6 +46,10 @@ class WebConfig(BaseModel):
             ``localhost`` and a bind host that is a name (GHSA-q373-8m5q-qwww): a reverse proxy's
             public name, or the API's service name in Docker Compose. Names only, no scheme or
             port; ``*`` is refused. Defaults to empty.
+        trusted_proxies (list[str]): The proxies whose ``X-Forwarded-For`` is believed when they
+            are the direct peer: IP addresses, CIDR networks, or host names such as a Compose
+            service. A network that spans every address is refused. Defaults to empty: the
+            client is always the connection's address.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -53,6 +63,7 @@ class WebConfig(BaseModel):
     auto_migrate: bool = True
     cors_origins: list[str] = []
     allowed_hosts: list[str] = []
+    trusted_proxies: list[str] = []
 
     @field_validator("session_secret")
     @classmethod
@@ -127,6 +138,44 @@ class WebConfig(BaseModel):
             names.append(name)
         return names
 
+    @field_validator("trusted_proxies")
+    @classmethod
+    def _proxy_entries(cls, value: list[str]) -> list[str]:
+        """
+        Args:
+            value (list[str]): The trusted proxies.
+
+        Returns:
+            list[str]: Each network in canonical form, and each name in lower case without a
+                trailing dot.
+
+        Raises:
+            ValueError: If an entry is neither an address, a network nor a host name, or is a
+                network broader than :data:`_BROADEST_PROXY_PREFIX` allows: trusting so many
+                addresses would let their clients choose the address they are limited by.
+        """
+        entries = []
+        for raw in value:
+            entry = raw.strip().lower().rstrip(".")
+            try:
+                network = ipaddress.ip_network(entry, strict=False)
+            except ValueError:
+                if not _PROXY_NAME.fullmatch(entry):
+                    raise ValueError(
+                        "trusted_proxies entries are IP addresses, CIDR networks or host names "
+                        f"without scheme or port: {raw!r}"
+                    ) from None
+                entries.append(entry)
+                continue
+            if network.prefixlen < _BROADEST_PROXY_PREFIX[network.version]:
+                raise ValueError(
+                    f"trusted_proxies network is too broad: {raw!r} would let its clients choose "
+                    "the address they are limited by (the broadest allowed are /8 in IPv4 and "
+                    "/7 in IPv6)"
+                )
+            entries.append(str(network))
+        return entries
+
     @classmethod
     def load(cls, path: str | Path | None = None) -> WebConfig:
         """
@@ -168,7 +217,7 @@ def _env_overrides() -> dict[str, Any]:
     Returns:
         dict[str, Any]: The overrides, with ``port`` / ``session_ttl_hours``
             coerced to ``int``, the boolean flags parsed loosely, and
-            ``cors_origins`` and ``allowed_hosts`` split on commas.
+            ``cors_origins``, ``allowed_hosts`` and ``trusted_proxies`` split on commas.
     """
     out: dict[str, Any] = {}
     mapping = {
@@ -181,6 +230,7 @@ def _env_overrides() -> dict[str, Any]:
         "AUTO_MIGRATE": "auto_migrate",
         "CORS_ORIGINS": "cors_origins",
         "ALLOWED_HOSTS": "allowed_hosts",
+        "TRUSTED_PROXIES": "trusted_proxies",
     }
     for env_suffix, field in mapping.items():
         value = os.environ.get(f"{_ENV_PREFIX}{env_suffix}")
@@ -190,7 +240,7 @@ def _env_overrides() -> dict[str, Any]:
             out[field] = int(value)
         elif field in ("cookie_secure", "auto_migrate"):
             out[field] = value.strip().lower() in ("1", "true", "yes", "on")
-        elif field in ("cors_origins", "allowed_hosts"):
+        elif field in ("cors_origins", "allowed_hosts", "trusted_proxies"):
             out[field] = [item.strip() for item in value.split(",") if item.strip()]
         else:
             out[field] = value
