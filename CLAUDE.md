@@ -97,6 +97,9 @@ Camadas, de cima para baixo:
    `SSL_CERT_DIR`, e a conexão com um proxy `https://` confia também no repositório do sistema.
    ⚠️ Todo cliente novo passa `verify=client_ssl_context()` e chama `pin_proxy_trust`, nunca o
    `verify=True` da biblioteca.
+   ⚠️ Toda credencial ou valor de sessão novo é um `Secret` (`core/secrets.py`, spec 024), e um
+   `reveal()` só entra num ponto listado, com o motivo, em `ALLOWED_REVEALS`
+   (`tests/unit/test_secret_inventory.py`).
    Todo campo de texto livre do resultado tem teto (`core/bounded.py`: `Name` 1 Ki caracteres,
    `Text` 16 Ki, `Url` 64 Ki, evidência 4 Ki), cortado com `...[truncated]` na criação e na
    leitura, sem recusar; o `webvigil report` lê no máximo 256 MiB (`MAX_REPORT_BYTES`), exige
@@ -163,6 +166,6 @@ no CI. `webvigil.cli` e `webvigil.api` não se importam. A Web UI só fala com a
 ## Fluxo de trabalho
 
 - **Spec-driven development.** Specs em `specs/NNN-nome/` (requirements → design → tasks → implementação), com portão de aprovação humana em cada fase. Convenções e roadmap em [`specs/README.md`](specs/README.md).
-- Estado: as specs `001` a `023` estão **concluídas**; a `024` (secret values) está **em andamento**, com a implementação em etapas (uma por PR, no `tasks.md` dela); escopo, issue e entrega de cada uma na tabela "Roadmap" do [`specs/README.md`](specs/README.md), e o que cada versão trouxe no [`CHANGELOG.md`](CHANGELOG.md). Os limites (detecção cega/OAST, request smuggling, YAML no `--openapi`) estão em "Scope and limitations" do [`README.md`](README.md).
+- Estado: as specs `001` a `024` estão **concluídas**; escopo, issue e entrega de cada uma na tabela "Roadmap" do [`specs/README.md`](specs/README.md), e o que cada versão trouxe no [`CHANGELOG.md`](CHANGELOG.md). Os limites (detecção cega/OAST, request smuggling, YAML no `--openapi`) estão em "Scope and limitations" do [`README.md`](README.md).
 - **Releases:** PyPI, `ghcr.io/ryanvmorais/webvigil` e GitHub Releases desde a `v1.0.0`. Como cortar uma versão e o molde das notas: [`docs/releasing.md`](docs/releasing.md); compatibilidade: [`docs/stability.md`](docs/stability.md). ⚠️ Toda mudança visível ao usuário entra em `[Unreleased]` do [`CHANGELOG.md`](CHANGELOG.md) **no mesmo PR**. ⚠️ Ao subir a versão, rode `uv run python scripts/dump-openapi.py` e `pnpm gen:api` (o `web/openapi.json` carrega `info.version`). ⚠️ `schema_version` (`SCHEMA_VERSION` em `core/result.py`): campo novo mantém; remover, renomear ou retipar sobe a versão e é major. O engine usa só o backend Lexbor do `selectolax` (`selectolax.lexbor`). Publicar uma versão é ato do mantenedor.
 - Commits em inglês, padrão Conventional Commits.

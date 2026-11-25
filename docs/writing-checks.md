@@ -68,6 +68,17 @@ and does not abort the scan — but prefer to handle expected failures yourself.
 the exception's type, frames and chain. Only a `WebVigilError` keeps its message, because the
 text of a library's exception can quote a credential and the report gets shared.
 
+A credential or a session value reaches a check as a `Secret` (`webvigil.core.secrets`, spec 024):
+the `[auth]` cookies and headers in `ctx.config.auth`, each named, and any session value a check
+reads from a response, which it wraps at once (`Secret(value, kind=SecretKind.SESSION, name=...)`).
+A `Secret` turns into `[redacted]` in `str`, `repr`, an f-string, a log line, a traceback and a
+JSON-mode dump, and `pickle` refuses it, so a finding built from one never carries the value. When a
+check needs the characters themselves, it calls `reveal()`, and every call of it is listed in
+`ALLOWED_REVEALS` (`tests/unit/test_secret_inventory.py`) with the reason the site needs the value:
+a new call fails the suite until it gets that line. A new model or dataclass field whose name says
+it holds a credential and that is typed `str` fails the same test. Put what the finding states
+about a value (its length, its alphabet) in the evidence, never the value.
+
 `ctx.observations` is an advanced, opt-in side channel. The `deps.*` checks (spec 004) call
 `add_technology(...)` / `add_warning(...)` to contribute to the scan result beyond their
 findings; the probe-fed `disclosure.*` checks (spec 005) read `ctx.observations.probe_hits`
