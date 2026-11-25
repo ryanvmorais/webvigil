@@ -17,6 +17,12 @@ It works **field by field** on the free-text fields (titles, descriptions, evide
 references, technologies, warnings, check errors), never over the serialised JSON: a password
 such as ``high`` or ``passive`` must not rewrite a severity or a mode, and a naive text replace
 over the whole document would.
+
+A field can hold only part of a secret where it was cut (spec 025, RF-02). Every field is matched
+at the cut markers (:data:`~webvigil.core.output.CUT_MARKERS`); a piece of evidence is matched at
+its start and its end too, because a check cuts a snippet out of a body without a marker
+(``body[:N]``, one line of a page). A title is never matched at its edges, so one that merely ends
+with the first letters of a password is left alone.
 """
 
 from __future__ import annotations
@@ -82,8 +88,9 @@ def _scrub_finding(finding: Finding, scrub: Redactor) -> Finding:
         scrub (Redactor): The scan's redactor.
 
     Returns:
-        Finding: A copy with the free-text fields scrubbed; the stored fingerprint, severity
-            and every other structural field are untouched.
+        Finding: A copy with the free-text fields scrubbed, the evidence content at its edges
+            too; the stored fingerprint, severity and every other structural field are
+            untouched.
     """
     location: Location = finding.location
     return finding.model_copy(
@@ -101,7 +108,7 @@ def _scrub_finding(finding: Finding, scrub: Redactor) -> Finding:
                 }
             ),
             "evidence": tuple(
-                EvidenceItem(label=item.label, content=scrub(item.content))
+                EvidenceItem(label=item.label, content=scrub(item.content, cut_edges=True))
                 for item in finding.evidence
             ),
         }
