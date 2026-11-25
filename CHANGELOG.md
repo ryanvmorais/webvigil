@@ -20,6 +20,12 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
   `--header` and Python callers still give strings. `AuthSection.header_pairs` yields
   `(name, Secret)` pairs, and `AuthSection.as_header` and `secret_values` are gone. The scan
   configuration accepts a `[web]` table and keeps none of its values.
+- **A Web API `422` carries `type`, `loc` and `msg` only.** FastAPI's `input`, `ctx` and `url`
+  keys are gone from every validation error, so the body no longer repeats the value that was
+  sent. The dashboard reads only `loc` and `msg`.
+- **A pinned `session_secret` needs 32 characters, not 32 bytes.** A non-ASCII secret of fewer
+  than 32 characters used to pass on its byte length; it is now refused at start, like any other
+  short secret.
 
 ### Removed
 
@@ -33,7 +39,13 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
   anonymously. `webvigil scan` now exits `4` with a message that repeats no part of the URL, and
   `[auth.login]` `url`, `check_url` and `logout_url`, `[scan] openapi` and `[deps] osv_base_url`
   are a configuration error that names the setting. HTTP Basic credentials go in
-  `--header "Authorization: Basic …"` or the `[auth]` table.
+  `--header "Authorization: Basic …"` or the `[auth]` table. `POST /api/scans` answers `422`
+  to such a target without repeating it, and stores nothing.
+- **The Web API holds its signing secret and every password as a secret.** `session_secret` and
+  the password fields of setup, login, the password change and `webvigil-web reset-password` show
+  `[redacted]` in a log line, a traceback or an error; only signing and checking a session token,
+  and hashing and verifying a password, read them. A `422` no longer echoes a too-long password
+  back to the client.
 - **The Web API's `/docs` page loads a pinned Swagger UI, checked by its hash.** It named a
   floating `swagger-ui-dist@5` on jsDelivr with no `integrity`, so the page ran whatever script the
   CDN served under that name, on the API's origin. It now names an exact release, with the SHA-384
