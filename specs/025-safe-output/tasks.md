@@ -149,25 +149,27 @@ makes it.
 
 ## Stage 3 — Dashboard
 
-- [ ] `web/src/lib/text.ts`: `display(value, { multiLine })`. — RF-07
-- [ ] `web/src/lib/text.test.ts`: run every case of `../tests/data/text-controls-cases.json` through
+- [x] `web/src/lib/text.ts`: `display(value, { multiLine })`. — RF-07
+- [x] `web/src/lib/text.test.ts`: run every case of `../tests/data/text-controls-cases.json` through
   `showControls`; a missing file fails with a message that names it. — RF-07, ADR-7
-- [ ] `web/src/components/scan-list-table.tsx`, `web/src/app/(app)/scans/[id]/page.tsx`: target (heading and
+- [x] `web/src/components/scan-list-table.tsx`, `web/src/app/(app)/scans/[id]/page.tsx`: target (heading and
   page title), tool version, `authorized_by`, the error message through `display`. — RF-07
-- [ ] `web/src/components/findings-table.tsx`, `findings-filters.tsx`: the check id and the filter labels
+- [x] `web/src/components/findings-table.tsx`, `findings-filters.tsx`: the check id and the filter labels
   through `display`; the existing `showControls` calls become `display`. — RF-07
-- [ ] `web/src/components/technologies-table.tsx`, `checks-table.tsx`: name, version, the advisories tooltip,
+- [x] `web/src/components/technologies-table.tsx`, `checks-table.tsx`: name, version, the advisories tooltip,
   the source URL, the check's name, id and category through `display`. — RF-07
-- [ ] `web/src/lib/api.ts`: `errorMessage` and `fieldErrors` through `display`; `report-preview.tsx`: its
+- [x] `web/src/lib/api.ts`: `errorMessage` and `fieldErrors` through `display`; `report-preview.tsx`: its
   error text. — RF-07
-- [ ] `web/src/lib/hostile-render.test.tsx`: the payload helper that fills every string at any depth, and a
+- [x] `web/src/lib/hostile-render.test.tsx`: the payload helper that fills every string at any depth, and a
   render of each page with no raw control, bidirectional or zero-width character in the text, the attributes
   or `document.title`. — RF-07, RF-09, ADR-8
-- [ ] `docs/web-ui.md`: `display()` for every API value. `CHANGELOG.md` `[Unreleased]`: the dashboard fields
+- [x] `docs/web-ui.md`: `display()` for every API value. `CHANGELOG.md` `[Unreleased]`: the dashboard fields
   under **Changed**. — RF-07
-- [ ] Apply the sabotage of the design and watch each test fail: `display()` removed from the scan list's
-  target, a range dropped from `HIDDEN_RANGES`. — RF-11
-- [ ] Quality gate, the Python one and the dashboard's. —
+- [x] Apply the sabotage of the design and watch each test fail: `display()` removed from the scan list's
+  target, a range dropped from `HIDDEN_RANGES`. — RF-11; 27 sabotages, one per `display` call and both of these,
+  all red
+- [x] Quality gate, the Python one and the dashboard's. — Python: 3609 passed, 4 skipped, 98 %; ruff, black,
+  mypy, lint-imports and the package check green. Dashboard: 576 passed; lint, format, typecheck and build green
 
 ## Stage 4 — Cross-check and documentation
 

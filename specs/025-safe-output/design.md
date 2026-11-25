@@ -614,6 +614,23 @@ has a killed mutant, every survivor is triaged, and the score goes in the pull r
     test of `test_hostile_text.py`, which now also pins that the column keeps control characters as written. The
     migration engine's `hide_parameters` has a test of its own.
 
+14. **Four dashboard outputs the design did not list go through `display` (RF-07, ADR-8).** The hostile render
+    found them: the scan form's list of checks to disable (id, name and category), the scan's options, the
+    technologies table's detection column and the category labels of the check catalogue's filter. The
+    technologies table shows no source URL, so that field needs nothing. The report preview's error reaches the
+    page through `errorMessage`, so it needs no call of its own.
+15. **Enums and timestamps are shown as they come (RF-07, ADR-8).** Status, mode, scope, severity and confidence
+    come from a fixed list in the API's schema, and the timestamps are written by the API, so the pages show them
+    without `display`. The hostile payload keeps those keys, `fingerprint` (the engine's hex digest) and `loc` (a
+    field of the request model) as the fixtures set them: the pages branch on them, and a status that is not
+    `failed` would hide the error row under test.
+16. **The check catalogue links only an `http(s)` reference (RF-07).** It linked every reference a check declares;
+    it now uses `isHttpUrl`, as the findings table does, and shows any other reference as text.
+17. **The hostile render lists every option of a select (ADR-8).** The dashboard's select shows its options only
+    while open, so the test replaces it with a list of the labels each page passes. The scan page's case puts a
+    check id from a shared link in the address, one the scan has no finding for, so both kinds of filter label
+    are on the page.
+
 ## Implementation notes
 
 - **Stage 0.** The RF-10 baseline was taken on `main` at `eb66900` (Python 3.15.2, Windows): 3415 tests collected
@@ -648,3 +665,10 @@ has a killed mutant, every survivor is triaged, and the score goes in the pull r
   keeps failing on the record. The two survivors had no observable difference under the tests: a cancelled scan
   stored `""` instead of no error, and `Scan.error` stored its control characters escaped. A test now pins each, and
   the rerun killed both.
+- **Stage 3.** The dashboard's suite has 576 tests, 91 more than Stage 2: 85 in `text.test.ts` (the 80 shared
+  cases, the file's guard and `display`) and the 6 of the hostile render. The Python suite does not change: 3613
+  tests collected (4 skipped on Windows), 98 % line and branch coverage. The project has no mutation tool for
+  TypeScript, so the batch was a sabotage per guard: each of the 25 `display` calls the hostile render covers
+  removed in turn, a range dropped from `HIDDEN_RANGES`, and `display` keeping line breaks by default. All 27
+  failed a test. The first run left three green: two filter labels the closed select did not show (deviation 17)
+  and the check catalogue's mode, an enum (deviation 15), whose `display` was removed.
