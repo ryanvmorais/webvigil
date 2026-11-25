@@ -97,17 +97,18 @@ class CookieTransition:
     The cookies across one login (spec 020, ADR-3): what an attacker's pre-login visit holds,
     and what the account holds afterwards. The session-fixation check compares the two.
 
-    The values are secrets: they stay in memory, are never serialised or logged, and the
-    findings built from them carry names and numbers only.
+    The values are :class:`~webvigil.core.secrets.Secret` objects (spec 024): they stay in
+    memory, cannot be printed, serialised or logged by accident, and the findings built from
+    them carry names and numbers only. The fixation check compares them with ``==``.
 
     Attributes:
-        pre (Mapping[str, str]): ``name -> value`` after the ``GET`` of the login page.
-        post (Mapping[str, str]): ``name -> value`` after the ``POST`` and its redirect chain,
-            before the commit.
+        pre (Mapping[str, Secret]): ``name -> value`` after the ``GET`` of the login page.
+        post (Mapping[str, Secret]): ``name -> value`` after the ``POST`` and its redirect
+            chain, before the commit.
     """
 
-    pre: Mapping[str, str]
-    post: Mapping[str, str]
+    pre: Mapping[str, Secret]
+    post: Mapping[str, Secret]
 
 
 @dataclass(frozen=True, slots=True)
@@ -478,13 +479,15 @@ class Authenticator:
         pairs.extend((n, v) for n, v in extras.items() if n not in present)
         return pairs
 
-    async def _verify(self, response: Response, before: frozenset[tuple[str, str]]) -> LoginResult:
+    async def _verify(
+        self, response: Response, before: frozenset[tuple[str, Secret]]
+    ) -> LoginResult:
         """
         Decide whether the login worked, first rule that applies (RF-06, ADR-5).
 
         Args:
             response (Response): The final response of the handshake.
-            before (frozenset[tuple[str, str]]): The pending cookies before the ``POST``.
+            before (frozenset[tuple[str, Secret]]): The pending cookies before the ``POST``.
 
         Returns:
             LoginResult: Confirmed, or not confirmed when nothing could tell.

@@ -6,7 +6,9 @@ of an attribute named ``reveal`` is recorded as ``module:qualname`` of the funct
 set must equal :data:`ALLOWED_REVEALS`, whose entries say why each site needs the value: an unlisted
 call fails, and so does a listed site with no call left. Outside ``core/secrets.py`` the walk also
 refuses the other ways to the value: a ``.reveal`` that is not called (an alias), any ``._value``,
-and the strings ``"reveal"`` and ``"_value"`` (``getattr``, ``attrgetter``).
+and the strings ``"reveal"`` and ``"_value"`` (``getattr``, ``attrgetter``). :data:`LIBRARY_READS`
+lists the sites that hand out a session value without a reveal, because a library holds it plain
+(ADR-6); each must exist and call no reveal.
 
 **Credential-field gate.** Every module of the engine and the Web API is imported (the suite runs
 with every extra) and every pydantic model and dataclass defined there is listed. A field fails
@@ -51,9 +53,26 @@ SECRETS_MODULE: Final = "webvigil.core.secrets"
 ALLOWED_REVEALS: Final[Mapping[str, str]] = {
     "webvigil.auth.login:Authenticator._build_body": "the login form's body carries the password",
     "webvigil.auth.scrub:_texts": "the report's scrub searches the free-text fields for each value",
+    "webvigil.checks.session.cookies:is_jwt": "skips a JWT-shaped session value by its shape",
+    "webvigil.checks.session.ids:id_facts": (
+        "a weak-id finding states the id's length, alphabet and estimated bits"
+    ),
+    "webvigil.checks.session.ids:judge_value": "the weak-id rules read the id's characters",
+    "webvigil.checks.session.ids:judge_samples": (
+        "the series rules compare the characters of several anonymous ids"
+    ),
     "webvigil.http.client:_static_cookie_header": "joins the [auth] cookies into one Cookie header",
     "webvigil.http.client:HttpClient._request_with_retry": (
         "a target-host request carries the Cookie header and the [auth] header values"
+    ),
+}
+
+# Every site that hands out a session value as plain text without a ``reveal()``, because it reads
+# a library's own storage, with the reason (ADR-6). It is checked to exist and to call no reveal.
+LIBRARY_READS: Final[Mapping[str, str]] = {
+    "webvigil.http.session:SessionJar.pairs_for": (
+        "builds the Cookie header from httpx2's jar, which holds the plain values for the "
+        "standard cookie rules"
     ),
 }
 
@@ -79,9 +98,6 @@ EXEMPT: Final[Mapping[str, str]] = {
 # the same change, and the set goes when it is empty.
 PENDING_CONVERSION: Final[frozenset[str]] = frozenset(
     {
-        # session values
-        "auth.login:CookieTransition.pre",
-        "auth.login:CookieTransition.post",
         # the Web API
         "api.config:WebConfig.session_secret",
         "api.schemas:SetupIn.password",
@@ -269,9 +285,22 @@ def test_every_reveal_is_in_the_inventory() -> None:
 
 
 def test_every_inventoried_site_says_why() -> None:
-    """Each line of the inventory and of the exemptions carries a reason."""
+    """Each line of the inventory, of the library reads and of the exemptions carries a reason."""
     assert all(reason.strip() for reason in ALLOWED_REVEALS.values())
+    assert all(reason.strip() for reason in LIBRARY_READS.values())
     assert all(reason.strip() for reason in EXEMPT.values())
+
+
+def test_every_library_read_is_a_function_of_the_package_with_no_reveal() -> None:
+    """A library read names a function that exists, and it is not a reveal site as well."""
+    walk, _ = walk_package()
+    for site in LIBRARY_READS:
+        module, _, qualname = site.partition(":")
+        target: object = importlib.import_module(module)
+        for part in qualname.split("."):
+            target = getattr(target, part)  # an AttributeError names a stale line
+        assert inspect.isfunction(target), site
+    assert not LIBRARY_READS.keys() & walk.sites
 
 
 def test_there_is_no_other_way_to_the_value() -> None:

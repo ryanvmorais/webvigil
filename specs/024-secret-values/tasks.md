@@ -154,44 +154,60 @@ Each stage also runs mutation testing in batch over the guards it adds or change
 
 ## Stage 2 — Session values and the scanner's canary
 
-- [ ] `src/webvigil/http/session.py`:
+- [x] `src/webvigil/http/session.py`:
   - `SessionJar._remember` stores `Secret(…, kind=SESSION, name=…)`;
   - `values` and `pending_items()` return secrets;
   - `SessionJar` and `Session` get names-only `repr`s;
   - `Session` loses `secrets=` and `given_secrets`;
   - `pairs_for` is listed in `ALLOWED_REVEALS` as the library-storage reading site, with its reason.
 
-  — RF-05, ADR-6
-- [ ] `src/webvigil/core/orchestrator.py`: drop the Stage 1 wrapping; `session.secrets` are secrets. — RF-07
-- [ ] `src/webvigil/auth/login.py`: `CookieTransition.pre` and `post` map to `Secret`. — RF-05
-- [ ] `src/webvigil/checks/session/`:
+  — RF-05, ADR-6 — `pairs_for` calls no reveal, so it is in a `LIBRARY_READS` list of its own (design, deviation 13).
+- [x] `src/webvigil/core/orchestrator.py`: drop the Stage 1 wrapping; `session.secrets` are secrets. — RF-07
+- [x] `src/webvigil/auth/login.py`: `CookieTransition.pre` and `post` map to `Secret`. — RF-05
+- [x] `src/webvigil/checks/session/`:
   - `session_cookies()` returns `(name, Secret)`;
   - `is_jwt`, `judge_value` and `judge_samples` take `Secret`;
   - `ids.py` and `is_jwt` reveal, added to `ALLOWED_REVEALS`;
   - the fixation check compares secrets with `==`.
 
-  — RF-05, RF-03
-- [ ] `tests/unit/`: adapt `test_http_session.py`, `test_auth_login.py` and the session check tests. Remove
+  — RF-05, RF-03 — the weak-id facts moved to `ids.py` as `id_facts` (design, deviation 14).
+- [x] `tests/unit/`: adapt `test_http_session.py`, `test_auth_login.py` and the session check tests. Remove
   `CookieTransition.pre` and `post` from `PENDING_CONVERSION`. — RF-05
-- [ ] `tests/fixtures/app.py`: `app.state.auth_log` records the `Authorization` header and the canary cookie of
+- [x] `tests/fixtures/app.py`: `app.state.auth_log` records the `Authorization` header and the canary cookie of
   each request. — RF-11
-- [ ] `tests/integration/test_scan_fixture_app.py`: the `scan` fixture captures logging at `DEBUG` with the
+- [x] `tests/integration/test_scan_fixture_app.py`: the `scan` fixture captures logging at `DEBUG` with the
   cached result. `_full` gains one static cookie with a canary value; check that the expected findings of the
-  full scan do not change. — RF-11
-- [ ] `tests/integration/test_scan_fixture_app.py`: the canary test.
+  full scan do not change. — RF-11 — with the cookie, the full scans of both profiles give the same findings
+  (71 and 0), severities, confidences, fingerprints and warnings as before it.
+- [x] `tests/integration/test_scan_fixture_app.py`: the canary test.
   - **What it proves.** No spelling of the cookie, the bearer token, the password or the issued session id
     appears in the logs, the warnings, or the JSON, SARIF, HTML and Markdown renderings. The spellings are
     built in the test.
   - **Positive control.** The `auth_log` holds each value, and the session was confirmed.
 
   — RF-04, RF-05, RF-07, RF-11
-- [ ] `tests/unit/test_cli.py`: the CLI canary through `httpx_mock`, over stdout, stderr and the report
+- [x] `tests/unit/test_cli.py`: the CLI canary through `httpx_mock`, over stdout, stderr and the report
   files. — RF-08, RF-11
-- [ ] Apply the stage's sabotage (a jar value stored as a plain string in the scrub list, a reveal removed from
+- [x] Apply the stage's sabotage (a jar value stored as a plain string in the scrub list, a reveal removed from
   the inventory) and watch each test fail. — RF-11
-- [ ] Mutation in batch over the jar's `_remember`, `pending_items` and the session checks' reading sites.
+  — 15 breaks, each red: the orchestrator dropping the jar's values, the jar dropping the Latin-1 form, the jar's
+  values or its pending cookies of the wrong kind, a value in the `repr` of the jar or of the session, a reveal
+  out of the inventory, a stale library read, the session cookies of the wrong kind, the fixation compared by
+  identity, a wrong length in the id facts, the fixture recording no credential, no log capture, the configured
+  credentials left out of the scrub, and the canary cookie not sent. The engine canary alone does not see the
+  scrub removed, because the fixture app echoes neither the configured values nor the session id; the
+  orchestrator's unit tests and the CLI canary, whose site echoes both, do.
+- [x] Mutation in batch over the jar's `_remember`, `pending_items` and the session checks' reading sites.
   — RNF-06
-- [ ] Quality gate.
+  — 115 mutants (97 on the guards of the changed functions, 18 on their values), run against the stage's test
+  files and the canary: 93 killed. Two survivors were in this stage's code and asked for a test each: an empty
+  cookie value adds nothing to the scrub list, and a decreasing series is read in the order issued. Against the
+  whole unit suite, 96 are killed. The 19 left are guards of the session analysers and of the fixation step's
+  entry that this stage did not change (specs 020 and before). Every changed function has a killed mutant, and
+  every new test is failed by a mutant or by the sabotage above (the library-read test by the stale entry).
+- [x] Quality gate. — 3355 passed, 2 skipped (3348 and 2 before) in 99 s with coverage; ruff, black, mypy,
+  `lint-imports` and the package check green; no file of `src/webvigil` loses a line or a branch against the
+  Stage 0 baseline.
 
 ## Stage 3 — A credential in a URL is refused
 

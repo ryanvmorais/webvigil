@@ -5,6 +5,9 @@ The one definition of "a session-looking cookie": the CSRF check uses it to find
 ``SameSite`` of a session, and the session-security pass uses it to pick the ids it judges.
 A cookie is a session id by its **name**; a JWT-shaped value is skipped everywhere, because it
 is a signed document and not a random identifier.
+
+The values are :class:`~webvigil.core.secrets.Secret` objects from the moment they are read
+(spec 024, RF-05): a check names a cookie, it never shows its value.
 """
 
 from __future__ import annotations
@@ -15,6 +18,8 @@ import re
 from http.cookies import SimpleCookie
 
 import httpx2
+
+from webvigil.core.secrets import Secret, SecretKind
 
 SESSION_NAME_RE = re.compile(
     r"session|sess(?:id)?|sid|auth|jwt|(?:^|[_-])token|connect\.sid|phpsessid|jsessionid",
@@ -41,16 +46,16 @@ def is_session_cookie(name: str) -> bool:
     return bool(SESSION_NAME_RE.search(name))
 
 
-def is_jwt(value: str) -> bool:
+def is_jwt(value: Secret) -> bool:
     """
     Args:
-        value (str): A cookie value.
+        value (Secret): A cookie value.
 
     Returns:
         bool: ``True`` for three base64url segments whose first decodes to a JSON object (a
             JWT header). Not a validation of the token: only enough to skip it.
     """
-    parts = value.split(".")
+    parts = value.reveal().split(".")
     if len(parts) != 3 or not all(part and _B64URL.match(part) for part in parts):
         return False
     header = parts[0]
@@ -115,7 +120,7 @@ def cookie_attribute(raw: str, name: str) -> str | None:
     return found
 
 
-def session_cookies(headers: httpx2.Headers) -> list[tuple[str, str]]:
+def session_cookies(headers: httpx2.Headers) -> list[tuple[str, Secret]]:
     """
     The session-looking cookies a response sets.
 
@@ -123,11 +128,12 @@ def session_cookies(headers: httpx2.Headers) -> list[tuple[str, str]]:
         headers (httpx2.Headers): A response's headers; every ``Set-Cookie`` line is read.
 
     Returns:
-        list[tuple[str, str]]: ``(name, value)`` per session-looking cookie, in header order;
-            JWT-shaped values, malformed lines and cookies a browser ignores (see
-            :func:`cookie_pair`) are left out. Only the ``name=value`` pair is parsed.
+        list[tuple[str, Secret]]: ``(name, value)`` per session-looking cookie, in header
+            order, the value as a ``SESSION`` secret; JWT-shaped values, malformed lines and
+            cookies a browser ignores (see :func:`cookie_pair`) are left out. Only the
+            ``name=value`` pair is parsed.
     """
-    found: list[tuple[str, str]] = []
+    found: list[tuple[str, Secret]] = []
     for raw in headers.get_list("set-cookie"):
         pair = cookie_pair(raw)
         if pair is None:
@@ -138,8 +144,11 @@ def session_cookies(headers: httpx2.Headers) -> list[tuple[str, str]]:
         except Exception:  # a malformed Set-Cookie must not break a check
             continue
         for name, morsel in jar.items():
-            if is_session_cookie(name) and morsel.value and not is_jwt(morsel.value):
-                found.append((name, morsel.value))
+            if not (is_session_cookie(name) and morsel.value):
+                continue
+            value = Secret(morsel.value, kind=SecretKind.SESSION, name=name)
+            if not is_jwt(value):
+                found.append((name, value))
     return found
 
 

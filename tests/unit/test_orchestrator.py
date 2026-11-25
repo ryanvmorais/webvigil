@@ -638,7 +638,8 @@ async def test_the_session_id_the_login_was_issued_is_scrubbed_from_the_result(
         _login_config(), check_types=[_EchoesTheSession], credentials=Credentials("s", _PASSWORD)
     ).run(_TARGET)
 
-    assert _IssuingAuth.instances[0].session.jar.values == {_ISSUED_ID}  # the login set it
+    jar = _IssuingAuth.instances[0].session.jar
+    assert {value.reveal() for value in jar.values} == {_ISSUED_ID}  # the login set it
     assert _ISSUED_ID not in result.model_dump_json()
     assert result.findings[0].description == "the page echoed [redacted]"
 
@@ -653,7 +654,8 @@ async def test_a_session_value_that_is_a_common_word_is_left_in_the_result(
         _login_config(), check_types=[_EchoesTheSession], credentials=Credentials("s", _PASSWORD)
     ).run(_TARGET)
 
-    assert _IssuingAuth.instances[0].session.jar.values == {"echoed"}  # the login set it
+    jar = _IssuingAuth.instances[0].session.jar
+    assert {value.reveal() for value in jar.values} == {"echoed"}  # the login set it
     assert result.findings[0].description == "the page echoed echoed"
 
 

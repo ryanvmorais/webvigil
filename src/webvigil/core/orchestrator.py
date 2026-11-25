@@ -46,7 +46,7 @@ from webvigil.core.errors import (
 )
 from webvigil.core.findings import Category, Finding, ScanMode
 from webvigil.core.result import CheckError, ScanMetadata, ScanResult
-from webvigil.core.secrets import Secret, SecretKind, collect_secrets
+from webvigil.core.secrets import collect_secrets
 from webvigil.core.target import Target
 from webvigil.core.technology import Technology
 from webvigil.crawler.crawler import Crawler
@@ -286,8 +286,7 @@ class Orchestrator:
         credentials = authenticator.credentials if authenticator is not None else None
         secrets = collect_secrets(self._config, credentials)
         if session is not None:
-            # the jar holds its values as plain strings, so they are wrapped here
-            secrets |= {Secret(value, kind=SecretKind.SESSION) for value in session.jar.values}
+            secrets |= session.secrets
         return scrub_result(result, secrets)
 
     async def _log_in(

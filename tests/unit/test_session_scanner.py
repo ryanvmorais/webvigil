@@ -31,6 +31,7 @@ from webvigil.checks.session.scanner import (
 )
 from webvigil.core.config import ScanConfig
 from webvigil.core.findings import Confidence, Severity
+from webvigil.core.secrets import Secret, SecretKind
 from webvigil.core.target import Scope, Target
 from webvigil.crawler.forms import Form, FormField
 from webvigil.http import client as client_mod
@@ -142,9 +143,22 @@ def _auth(
         reference (str | None): The reference page URL. Defaults to ``/account``.
 
     Returns:
-        SimpleNamespace: The two attributes the scanner reads from an ``Authenticator``.
+        SimpleNamespace: The two attributes the scanner reads from an ``Authenticator``, the
+            cookie values held as ``SESSION`` secrets, as the login records them.
     """
-    return SimpleNamespace(transition=CookieTransition(pre=pre, post=post), reference_url=reference)
+
+    def secrets(cookies: dict[str, str]) -> dict[str, Secret]:
+        """
+        Args:
+            cookies (dict[str, str]): ``name -> value``.
+
+        Returns:
+            dict[str, Secret]: The same, each value a ``SESSION`` secret.
+        """
+        return {name: Secret(value, kind=SecretKind.SESSION) for name, value in cookies.items()}
+
+    transition = CookieTransition(pre=secrets(pre), post=secrets(post))
+    return SimpleNamespace(transition=transition, reference_url=reference)
 
 
 def _scanner(

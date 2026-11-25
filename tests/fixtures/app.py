@@ -36,7 +36,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 import jinja2
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
-from starlette.requests import Request
+from starlette.requests import Request, cookie_parser
 from starlette.responses import (
     HTMLResponse,
     JSONResponse,
@@ -878,6 +878,9 @@ SIGNIN_LOCKOUT = 3  # the hardened profile refuses logins after this many wrong 
 # arithmetic probes print products from 121 to 9801 (`cmdi`, `ssti`, `el`), and a probe's
 # evidence must never equal an id the secrets test looks for.
 SESSION_ID_BASE = 100_000
+# spec 024: a static cookie the full scan sends with a canary value; the app ignores it, and
+# ``app.state.auth_log`` records it, so a test can show the value was sent and never reported.
+CANARY_COOKIE = "wvcanary"
 
 
 def _signin_page(token: str, error: str = "") -> HTMLResponse:
@@ -1475,11 +1478,16 @@ _INJECTION_ROUTES = {
 }
 
 
-def _recorder(sink: list[str]) -> Callable[[ASGIApp], ASGIApp]:
+def _recorder(
+    sink: list[str], auth_sink: list[tuple[str | None, str | None]]
+) -> Callable[[ASGIApp], ASGIApp]:
     """
     Args:
         sink (list[str]): List each request line (``"<method> <path>?<query>"``)
             is appended to.
+        auth_sink (list[tuple[str | None, str | None]]): List each request's
+            ``Authorization`` header and :data:`CANARY_COOKIE` value is appended to
+            (spec 024), ``None`` for the one it lacks.
 
     Returns:
         Callable[[ASGIApp], ASGIApp]: Middleware that records every HTTP request
@@ -1494,6 +1502,9 @@ def _recorder(sink: list[str]) -> Callable[[ASGIApp], ASGIApp]:
             if scope["type"] == "http":
                 query = scope.get("query_string", b"").decode("latin-1")
                 sink.append(f"{scope['method']} {scope['path']}?{query}")
+                headers = {k.decode("latin-1"): v.decode("latin-1") for k, v in scope["headers"]}
+                cookies = cookie_parser(headers.get("cookie", ""))
+                auth_sink.append((headers.get("authorization"), cookies.get(CANARY_COOKIE)))
             await self._app(scope, receive, send)
 
     return _Recorder
@@ -1511,12 +1522,14 @@ def make_app(profile: str, *, session_ttl: int | None = None) -> Starlette:
             ``/signin`` survives (spec 019); ``None`` means it never expires.
 
     Returns:
-        Starlette: The app; ``app.state.requests`` records every request and
+        Starlette: The app; ``app.state.requests`` records every request,
+            ``app.state.auth_log`` its ``Authorization`` header and canary cookie, and
             ``app.state.guestbook`` is reset per app for determinism.
     """
     is_insecure = profile == "insecure"
     handler = _insecure if is_insecure else _hardened
     requests: list[str] = []
+    auth_log: list[tuple[str | None, str | None]] = []
 
     routes = [Route(path, handler) for path in ("/", "/about", "/contact")]
     routes.append(Route("/home", _home))
@@ -1532,8 +1545,9 @@ def make_app(profile: str, *, session_ttl: int | None = None) -> Starlette:
         # spec 014: a catch-all so a traversal-named upload is retrievable at the web root.
         routes.append(Route("/{fname}", _root_file_insecure, methods=["GET"]))
 
-    app = Starlette(routes=routes, middleware=[Middleware(_recorder(requests))])
+    app = Starlette(routes=routes, middleware=[Middleware(_recorder(requests, auth_log))])
     app.state.requests = requests
+    app.state.auth_log = auth_log  # spec 024
     app.state.guestbook = []  # spec 008: reset per app so the suite stays deterministic
     app.state.profile = ""
     app.state.uploads = {}  # spec 014: reset per app
