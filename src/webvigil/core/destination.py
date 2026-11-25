@@ -54,6 +54,8 @@ SPECIAL_USE_LABELS = frozenset(
 
 def may_request(target: Target, url: str) -> bool:
     """
+    Whether the scan may send a request to ``url`` at all.
+
     Args:
         target (Target): The scan target.
         url (str): An absolute URL, or a bare ``host[:port]``.

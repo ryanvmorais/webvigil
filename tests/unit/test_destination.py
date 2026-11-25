@@ -4,7 +4,8 @@ The destination policy (spec 026): the table of destination cases, ``keeps_data`
 
 The table states, for each ``(target, scope, url)``, whether the URL may be requested and whether it
 may carry the scan's credentials, and asserts the same answer from the policy and from the rules
-in ``Target``. Nothing is mocked: the policy and the vendored Public Suffix List are pure.
+in ``Target``. The policy and the vendored Public Suffix List are pure, so the tests call them as
+they are; only the special-use test swaps the list the module reads for a small one.
 """
 
 from __future__ import annotations

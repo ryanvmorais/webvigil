@@ -1,6 +1,6 @@
 ---
 feature: Destination policy — one place decides what each URL may receive, and a public name that resolves only to internal addresses is reported
-status: approved
+status: in progress
 date: 2026-11-25
 related:
   - 001-foundation/design.md
@@ -541,3 +541,41 @@ they are compared, leaving out timestamps, durations and per-run random values. 
 `AddressGuard.addresses`, `AddressGuard.notices` and `address_warnings` go through mutation testing in batch at
 the end of each stage that changes them. Every changed function has a killed mutant, every survivor is triaged,
 and the score goes in the pull request.
+
+## Deviations
+
+1. **`without_credentials` returns a copy for a URL that may carry the credentials (components, ADR-2).** The
+   design said `headers` come back unchanged. They come back as a new mapping with every entry, so the caller's
+   mapping is never the one the client sends on and the signature needs no cast. `None` still comes back as
+   `None`.
+
+## Implementation notes
+
+- **Stage 0.** The RF-08 baseline was taken on `main` at `25c33d2` (Python 3.15.2, Windows): 3613 tests
+  collected, 97 % line and branch coverage in total, the per-file table, and the suite in 85 s with coverage. The
+  four scans ran through the CLI in Active mode with every opt-in except the time-delay detectors, against the
+  fixture application served by `uvicorn` on `localhost`, which recorded every request it received. The server
+  was started with the project's interpreter (`python -m uvicorn`), because on Windows stopping `uv run` leaves
+  its child process holding the port.
+
+  | Scan | Requests | Findings | Duration |
+  |---|---|---|---|
+  | anonymous | 1323 | 60 | 103.4 s |
+  | `[auth]` cookie and headers | 1323 | 60 | 103.7 s |
+  | automated login and session tests | 1316 | 63 | 48.6 s |
+  | `--scope subdomains` | 1323 | 60 | 103.2 s |
+
+  A second run of the `--scope subdomains` scan gave the same findings and warnings and the same requests once
+  the per-run random values are masked (the markers, the probe operands and the random tokens: 676 of its
+  requests differ before the mask). The anonymous and the `--scope subdomains` scans received the same requests
+  under the same mask. The Stage 4 comparison applies it.
+- **Stage 0 tests and mutation.** `tests/unit/test_destination.py` holds 118 tests, 56 of them rows of the
+  table. Each sabotage of the test strategy failed its tests: `may_carry_credentials` returning `may_request`
+  (15 rows), `keeps_data` without its `credentialed` test, `is_public_name` without `SPECIAL_USE_LABELS`
+  (`x.onion`, `x.home.arpa`) and through `registrable_domain` (`app.local` and ten more). Mutation over
+  `core/destination.py`: 51 mutants (30 generated over the guards, 21 by hand over the constants, the rules
+  and the header filter), 49 killed and 2 equivalent (the `TYPE_CHECKING` import). The first run left 8 other
+  survivors: seven special-use labels and the IP literal check, which the vendored list already refuses on its
+  own. A test now feeds `is_public_name` a list that carries every special-use label and a numeric rule. One
+  more survivor showed that `is_target_host` lower-cased a host `urlsplit` already lower-cases, and the call was
+  removed.
