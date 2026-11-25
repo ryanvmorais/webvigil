@@ -390,7 +390,15 @@ def list_checks() -> None:
 
 @app.command()
 def report(
-    scan_json: Annotated[Path, typer.Argument(help="A scan JSON file produced by `scan`.")],
+    scan_json: Annotated[
+        Path,
+        typer.Argument(
+            help=(
+                "A scan JSON file produced by `scan`, of at most "
+                f"{MAX_REPORT_BYTES // (1024 * 1024)} MiB."
+            )
+        ),
+    ],
     output_format: Annotated[
         str, typer.Option("--format", help=f"Report format ({', '.join(_FORMATS)}).")
     ],

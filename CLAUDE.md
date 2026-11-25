@@ -102,7 +102,7 @@ Camadas, de cima para baixo:
    (`tests/unit/test_secret_inventory.py`).
    Todo campo de texto livre do resultado tem teto (`core/bounded.py`: `Name` 1 Ki caracteres,
    `Text` 16 Ki, `Url` 64 Ki, evidência 4 Ki), cortado com `...[truncated]` na criação e na
-   leitura, sem recusar; o `webvigil report` lê no máximo 256 MiB (`MAX_REPORT_BYTES`), exige
+   leitura, sem recusar; o `webvigil report` lê no máximo 64 MiB (`MAX_REPORT_BYTES`, em blocos de 1 MiB; o `scan` avisa ao gravar um JSON maior), exige
    `schema_version` inteiro e recalcula as contagens a partir dos achados.
 3. **Checks** (`webvigil.checks`) — plugins `PASSIVE`/`ACTIVE`, registrados por decorator +
    entry points. Contrato: `Check.run(ctx: ScanContext) -> list[Finding]`. O detalhe de cada

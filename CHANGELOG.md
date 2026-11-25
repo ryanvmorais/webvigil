@@ -18,7 +18,20 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
   was cut could leave the first characters of the secret before the `...[truncated]` marker, or
   after the ellipsis a check writes where it cuts a snippet. A fragment of 4 or more characters of
   any spelling of a secret next to such a cut is now shown as `[redacted]`, and the redaction
-  warning counts the field.
+  warning counts the field. Evidence is matched at its start and its end too, since a check can
+  cut a snippet out of a page without writing a marker.
+
+### Changed
+
+- `webvigil report` reads a JSON report of at most 64 MiB, down from 256 MiB, and reads it 1 MiB
+  at a time, so the memory it takes follows the file's size: a small report no longer reserves
+  the whole limit. A JSON report between 64 and 256 MiB that 1.7.0 could re-render is now refused
+  with exit code 4. `scan` warns when it writes a JSON report larger than the limit; the file is
+  still written whole and the exit code does not change.
+- `webvigil list-checks` shows a plugin's check id as written: text that looks like Rich markup is
+  no longer read as markup, and a control character in it is shown as an escape.
+- A terminal message is cut at 4 Ki characters of its own text before its control characters are
+  shown as escapes, so an escape is never split by the cut.
 
 ## [1.7.0] - 2026-11-24
 
