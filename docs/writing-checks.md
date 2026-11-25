@@ -79,6 +79,26 @@ a new call fails the suite until it gets that line. A new model or dataclass fie
 it holds a credential and that is typed `str` fails the same test. Put what the finding states
 about a value (its length, its alphabet) in the evidence, never the value.
 
+Text on its way out of a scan goes through one call, `safe_text(value, Sink.X)` in
+`webvigil.core.output` (spec 025): the sink names the kind of output (terminal, log, API message,
+stored value, rendered report, JSON), and the call redacts the scan's secrets, bounds the value and
+shows control, bidirectional and zero-width characters instead of acting on them. A check does not
+call it: the fields of a finding are bounded when it is built, the result is scrubbed once after the
+scan, and each output applies its own sink. Three things are still the check's part:
+
+- **Mark a cut.** When a check cuts a snippet out of a body (a line around a match, a reflection
+  window), it ends the cut with a marker from `CUT_MARKERS` (`...` or `…`). The redactor treats a
+  marker, and the edges of a piece of evidence, as a place where a secret of the scan may have been
+  split, and hides a fragment of 4 or more characters there. A cut with no marker in the middle of
+  the text leaves a fragment it cannot recognize.
+- **Log through `get_logger`.** A module that logs takes its logger from
+  `get_logger(__name__)`, never from `logging.getLogger`: that logger carries the filter that keeps
+  every record, and the exception text in it, bounded and on its line.
+- **Declare a new output.** A new output call (`print`, `console.print`, `write_text`, a logger, an
+  API response, `session.add`) whose arguments are not fixed values or a direct `safe_text(...)`
+  fails `tests/unit/test_output_inventory.py` until it has a line in `OUTPUT_SINKS` with the reason
+  its values are safe.
+
 `ctx.observations` is an advanced, opt-in side channel. The `deps.*` checks (spec 004) call
 `add_technology(...)` / `add_warning(...)` to contribute to the scan result beyond their
 findings; the probe-fed `disclosure.*` checks (spec 005) read `ctx.observations.probe_hits`
