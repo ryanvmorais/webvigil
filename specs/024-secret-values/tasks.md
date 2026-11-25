@@ -247,45 +247,59 @@ Each stage also runs mutation testing in batch over the guards it adds or change
 
 ## Stage 4 — Web API
 
-- [ ] `src/webvigil/api/config.py`: `WebConfig.session_secret` as `secret_field(SIGNING_KEY)`, with the length
-  check on the wrapped value, and the environment override through the same validation. — RF-06
-- [ ] `src/webvigil/api/security.py`:
+- [x] `src/webvigil/api/config.py`: `WebConfig.session_secret` as `secret_field(SIGNING_KEY)`, with the length
+  check on the wrapped value, and the environment override through the same validation. — RF-06 — the check
+  counts characters (design, deviation 18).
+- [x] `src/webvigil/api/security.py`:
   - `create_token`, `decode_token`, `hash_password` and `verify_password` take `Secret` and reveal it, all
     four added to `ALLOWED_REVEALS`;
   - `resolve_session_secret` returns `Secret`;
   - `dummy_password_hash` wraps its value.
 
   — RF-06, RF-03
-- [ ] `src/webvigil/api/schemas.py`: the four password fields as `secret_field(PASSWORD, …)` with today's
+- [x] `src/webvigil/api/schemas.py`: the four password fields as `secret_field(PASSWORD, …)` with today's
   limits. `src/webvigil/api/routes/` passes them through. `src/webvigil/api/cli.py`: `reset-password` wraps
   the prompt. Remove the five Web API fields (`session_secret` and the four passwords) from
   `PENDING_CONVERSION`; the set is now empty and is deleted.
   — RF-06, ADR-4
-- [ ] `src/webvigil/api/app.py`: the `RequestValidationError` handler that keeps `type`, `loc` and `msg`, and
+- [x] `src/webvigil/api/app.py`: the `RequestValidationError` handler that keeps `type`, `loc` and `msg`, and
   `app.state.session_secret: Secret`. — RF-08, ADR-8
 - [x] ~~`src/webvigil/api/migrations/versions/0003_strip_target_userinfo.py`~~: withdrawn, with ADR-9. Every
   version of the Web API stored the normalized target, without userinfo, so no row has one (design,
   deviation 17). — RF-09
-- [ ] `tests/unit/` (Web API):
+- [x] `tests/unit/` (Web API):
   - **Canary.** A pinned canary `session_secret`, then setup, login, a password change and a too-long
     password, with logging at `DEBUG`. No canary appears in the logs or in the responses, and `loc` and `msg`
     stay in the `422`.
   - **Refused target.** `POST /api/scans` with userinfo answers `422`, without the target, and stores no row.
   - **Stored form.** `normalize_url` drops the userinfo, so the stored target cannot carry it.
 
-  — RF-06, RF-08, RF-09, RF-11
-- [ ] `uv run python scripts/dump-openapi.py`, then `pnpm gen:api` in `web/`. The password fields gain `format`
+  — RF-06, RF-08, RF-09, RF-11 — the canary, the `422` and the refused-target tests are in
+  `tests/api/test_secrets.py`, beside the other Web API tests, with one more: the database file holds the
+  password's Argon2 hash and neither the pinned key nor the password. `test_target.py` holds the stored form,
+  and `test_web_security.py` an empty pinned secret, which generates one.
+- [x] `uv run python scripts/dump-openapi.py`, then `pnpm gen:api` in `web/`. The password fields gain `format`
   and `writeOnly`, and the TypeScript types stay `string`. — RF-06
-- [ ] Apply the stage's sabotage (`LoginIn.password` retyped to `str`, the `422` handler keeping `input`, the
-  `normalize_url` keeping the authority) and watch each test fail. — RF-11
-- [ ] Mutation in batch over the `422` handler and `resolve_session_secret`. — RNF-06
-- [ ] `docs/web-api.md`: the `422` body has `type`, `loc` and `msg` only. `CHANGELOG.md`, `[Unreleased]`:
+- [x] Apply the stage's sabotage (`LoginIn.password` retyped to `str`, the `422` handler keeping `input`, the
+  `normalize_url` keeping the authority) and watch each test fail. — RF-11 — 9 breaks, each red: those three,
+  the handler not installed, the stored key read back as a plain string, a reveal site missing from the
+  inventory, the key's length check removed, the pinned key written to the database, and a password stored
+  as given.
+- [x] Mutation in batch over the `422` handler and `resolve_session_secret`. — RNF-06 — 26 mutants (7 on the
+  handler, 6 on `resolve_session_secret`, the rest on the four reveals, the dummy hash, the key's length
+  check, the password limits, `reset-password` and `normalize_url`), run against the Web API tests: 26
+  killed. The first run left one survivor, an empty pinned secret used as the key, which asked for a test.
+  Each new test is failed by a mutant or, for the database file, by the two breaks above.
+- [x] `docs/web-api.md`: the `422` body has `type`, `loc` and `msg` only. `CHANGELOG.md`, `[Unreleased]`:
   - **Security**: the Web API holds its signing secret and every password as a secret, and a `422` repeats
     no value it was sent;
   - **Changed**: the `422` body.
 
   — RNF-02, ADR-8
-- [ ] Quality gate, the Python one and the dashboard's.
+- [x] Quality gate, the Python one and the dashboard's. — 3413 passed, 2 skipped (3404 and 2 before) with
+  coverage; ruff, black, mypy, `lint-imports` and the package check green; no file of `src/webvigil` loses a
+  line or a branch against the Stage 0 baseline. Dashboard: lint, format, typecheck, 485 tests and the build
+  green.
 
 ## Stage 5 — Cross-check and documentation
 

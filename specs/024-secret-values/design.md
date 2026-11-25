@@ -659,3 +659,9 @@ every surviving mutant is triaged, and the score goes in the pull request (RNF-0
   expect the refusal. `ScanCreate` validates through `Target.parse`, so `POST /api/scans` already answers `422`
   to such a target and stores nothing; until Stage 4 drops `input` (ADR-8), that `422` repeats the body to the
   client that sent it. Stage 4 adds the migration of stored targets.
+- **Stage 4.** Four `reveal()` sites entered the inventory, all in `api/security.py`: `create_token`,
+  `decode_token`, `hash_password` and `verify_password`. `PENDING_CONVERSION` is gone, so a credential field
+  typed `str` anywhere in the package fails the gate. The regenerated `openapi.json` gives the four password
+  fields `format: password` and `writeOnly`; the TypeScript types stay `string`. The OpenAPI schema of a
+  validation error still lists `input` and `ctx` as optional, as FastAPI declares them; the body never sends
+  them. The stored-target migration was withdrawn (deviation 17).
