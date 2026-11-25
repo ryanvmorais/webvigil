@@ -41,12 +41,16 @@ from webvigil.core.output import SafeLogFilter
 
 # A raw control, bidirectional or zero-width character; a line feed is allowed, since a traceback
 # keeps its own lines.
-_RAW = re.compile(r"[\x00-\x09\x0b-\x1f\x7f-\x9f؜​-‏‪-‮⁠-⁤⁦-⁩﻿]")
+_RAW = re.compile(
+    r"[\x00-\x09\x0b-\x1f\x7f-\x9f"
+    r"\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]"
+)
 # A line that a hostile message would add if its line breaks were kept.
 _FORGED = "ERROR webvigil.api scan 999 completed"
-_HOSTILE_MESSAGE = f"engine broke\x1b[2J\n{_FORGED}\r\n‮" + "x" * (100 * 1024)
+_HOSTILE_MESSAGE = f"engine broke\x1b[2J\n{_FORGED}\r\n\u202e" + "x" * (100 * 1024)
 # A value only the stored finding holds: it may reach the log only as a statement parameter.
 _CANARY = "canary-7f3e2a-finding-text"
+# A handler's usual layout: the record's lines are counted on what a log file would hold.
 _FORMAT = logging.Formatter("%(levelname)s %(name)s %(message)s")
 
 
@@ -230,6 +234,7 @@ def test_the_migration_engine_hides_parameters_too(
 # The library loggers
 # ---------------------------------------------------------------------------
 
+# The loggers the lifespan treats, as api/app.py names them: a logger dropped there fails here.
 _LIBRARY_LOGGERS = ("uvicorn.error", "httpx2")
 
 
@@ -246,7 +251,15 @@ def _safe_filters(name: str) -> int:
 
 @pytest.fixture
 def _untreated_library_loggers() -> Iterator[None]:
-    """Take the filter off the library loggers for one test, and put it back afterwards."""
+    """
+    Take the filter off the library loggers for one test, and put it back afterwards.
+
+    An earlier app in the same process has attached it already, and the test must see the
+    lifespan attach it.
+
+    Yields:
+        None: While the library loggers hold no filter.
+    """
     removed: list[tuple[logging.Logger, logging.Filter]] = []
     for name in _LIBRARY_LOGGERS:
         log = logging.getLogger(name)

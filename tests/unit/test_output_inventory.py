@@ -27,6 +27,8 @@ from typing import Final
 
 import webvigil
 
+# The package the walk parses, the one module that may call logging.getLogger, and the package
+# whose response classes are API responses.
 SRC: Final = Path(webvigil.__file__).parent
 OUTPUT_MODULE: Final = "webvigil.core.output"
 _API_PACKAGE: Final = "webvigil.api"
@@ -89,6 +91,7 @@ OUTPUT_SINKS: Final[Mapping[str, str]] = {
 # The walk
 # ---------------------------------------------------------------------------
 
+# The names that make a call an output, by kind (ADR-8).
 _CONSOLE_METHODS: Final = frozenset({"print", "print_json"})
 _TYPER_FUNCTIONS: Final = frozenset({"echo", "secho"})
 _FILE_WRITES: Final = frozenset({"write_text", "write_bytes"})
@@ -222,6 +225,13 @@ class _OutputVisitor(ast.NodeVisitor):
         return f"{self._module}:{'.'.join(self._scope) or '<module>'}"
 
     def _scoped(self, name: str, node: ast.AST) -> None:
+        """
+        Visit a node with its name on the scope, so the calls inside are its site.
+
+        Args:
+            name (str): The class, function or ``<lambda>`` the node defines.
+            node (ast.AST): The node.
+        """
         self._scope.append(name)
         self.generic_visit(node)
         self._scope.pop()
@@ -337,6 +347,8 @@ def test_every_logger_comes_from_get_logger() -> None:
     assert walk.refused == []
 
 
+# A source the walk reads and never imports: one output of each kind, fixed and not, and both
+# spellings of getLogger, so the controls below see every rule fire.
 _THROWAWAY = """
 import logging
 import sys

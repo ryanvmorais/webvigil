@@ -125,7 +125,7 @@ them as optional), so a too-long password or a refused target does not go back t
 a proxy or log in between. A message can still name part of a refused value (the address of a
 target with no valid host, an unknown report format), so every string of `loc` and every message is
 cut at 1 Ki characters, with control, bidirectional and zero-width characters shown as escapes
-(`\x1b`, `‮`). In the process, the signing secret and every password are held as
+(`\x1b`, `\u202e`). In the process, the signing secret and every password are held as
 secrets that a log line, a traceback or an error shows as `[redacted]`; only signing and checking a
 session token, and hashing and verifying a password, read them.
 
