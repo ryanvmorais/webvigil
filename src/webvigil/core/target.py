@@ -277,6 +277,9 @@ class Target:
         """
         Whether ``url`` may be requested under this target's scope rule.
 
+        The package asks it through :func:`webvigil.core.destination.may_request`, never
+        directly, so every caller gets the same answer (spec 026).
+
         Args:
             url (str): An absolute URL, or a bare ``host[:port]``.
 
@@ -309,6 +312,9 @@ class Target:
         Configured ``[auth]`` cookies and headers, the session of the automated login and its
         password go to the target origin only, or to its ``https`` upgrade. Never to another
         port of the same host, a subdomain, or plain ``http`` when the target is ``https``.
+
+        The package asks it through :func:`webvigil.core.destination.may_carry_credentials`,
+        never directly, so every caller gets the same answer (spec 026).
 
         Args:
             url (str): An absolute URL.
