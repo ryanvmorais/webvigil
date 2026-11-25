@@ -67,6 +67,26 @@ configured header's name and value are never written to a report, a log line, a 
 the scan metadata — `metadata.authenticated` is `true` when *either* cookies or headers are
 supplied, and the CLI summary prints counts only.
 
+**Command line or config file.** A value given with `--cookie` or `--header` is visible to the
+shell history and, while the scan runs, to the process list. The `[auth]` table of a config file
+kept out of version control holds the same values without either.
+
+### A credential in a URL is refused
+
+A target with a credential in it (`https://user:password@app.example.com/`, or a user name alone)
+is refused: the scan does not start, the exit code is `4`, and the message repeats no part of the
+URL. WebVigil never sent such a credential, so a scan of that URL would have run anonymously. The
+same refusal applies to every URL setting: `[auth.login]` `url`, `check_url` and `logout_url`,
+`[scan] openapi` (and `--openapi`, `--login-url`) and `[deps] osv_base_url`; the error names the
+setting, never its value. An `@` in the path, the query or the fragment is not a credential.
+
+For HTTP Basic authentication, send the header instead, which follows the origin rules above:
+
+```toml
+[auth]
+headers = ["Authorization: Basic <base64 of user:password>"]
+```
+
 ### Automated login — `--login-url` (opt-in)
 
 Spec [`019-automated-login`](../specs/019-automated-login/). A pasted cookie dies in minutes
@@ -150,7 +170,9 @@ check errors, and a warning counts the fields changed. A session value the targe
 scrubbed only when it looks like a session id (8 or more characters mixing two of lower case,
 upper case and digits), so a target cannot blank the report by setting a cookie to a common word.
 A configured value shorter than four characters is not scrubbed, since replacing it would shred
-the report, and the result says so in a warning.
+the report, and the result says so in a warning. The username and `extra_fields` are not
+secrets and are not scrubbed: the CLI summary shows the account on purpose (`as <username>`), and
+`extra_fields` are meant for fixed form values such as a tenant, so a secret belongs in neither.
 
 **What it will not do.** CAPTCHA, MFA / TOTP, SSO and delegated logins, forms built by
 JavaScript, multi-page logins (the username on one page and the password on the next), JSON /

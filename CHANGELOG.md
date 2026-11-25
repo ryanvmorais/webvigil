@@ -28,6 +28,12 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 ### Security
 
+- **A target or a URL setting with a credential in it is refused.** A credential written into a
+  URL (`https://user:password@host/`) used to be dropped without a word, so the scan ran
+  anonymously. `webvigil scan` now exits `4` with a message that repeats no part of the URL, and
+  `[auth.login]` `url`, `check_url` and `logout_url`, `[scan] openapi` and `[deps] osv_base_url`
+  are a configuration error that names the setting. HTTP Basic credentials go in
+  `--header "Authorization: Basic …"` or the `[auth]` table.
 - **The Web API's `/docs` page loads a pinned Swagger UI, checked by its hash.** It named a
   floating `swagger-ui-dist@5` on jsDelivr with no `integrity`, so the page ran whatever script the
   CDN served under that name, on the API's origin. It now names an exact release, with the SHA-384
