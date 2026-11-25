@@ -144,6 +144,23 @@ def test_normalize_url_lowercases_and_drops_default_port_and_fragment() -> None:
     assert normalize_url("https://example.com:8443/a") == "https://example.com:8443/a"
 
 
+@pytest.mark.parametrize(
+    ("given", "stored"),
+    [
+        ("https://user:pw@Example.com/a?b#c", "https://example.com/a?b"),
+        ("http://:pw@example.com:8080/", "http://example.com:8080/"),
+        ("https://user@[::1]:8443/x", "https://[::1]:8443/x"),
+        ("https://a@b@example.com/", "https://example.com/"),
+    ],
+)
+def test_normalize_url_drops_the_userinfo(given: str, stored: str) -> None:
+    """
+    The Web API stores ``entry_url``, which this builds: no stored target carries a credential,
+    even from before the refusal (spec 024, RF-09, deviation 17).
+    """
+    assert normalize_url(given) == stored
+
+
 def test_normalize_url_keeps_the_brackets_of_an_ipv6_host() -> None:
     """An IPv6 literal goes back into the URL bracketed, with a non-default port."""
     assert normalize_url("http://[::1]:8000/a#x") == "http://[::1]:8000/a"
