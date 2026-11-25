@@ -459,3 +459,13 @@ def test_a_file_path_or_a_relative_url_with_an_at_sign_is_accepted() -> None:
     assert config.scan.openapi == "specs/@team/openapi.json"
     assert config.auth.login is not None
     assert config.auth.login.check_url == "/account/@me"
+
+
+def test_a_url_setting_left_empty_is_accepted() -> None:
+    """``None`` is no URL: a Python caller may pass it for an optional setting."""
+    config = ScanConfig.model_validate_or_raise(
+        {"scan": {"openapi": None}, "auth": {"login": {**_LOGIN, "logout_url": None}}}
+    )
+    assert config.scan.openapi is None
+    assert config.auth.login is not None
+    assert config.auth.login.logout_url is None

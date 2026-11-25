@@ -233,6 +233,8 @@ _USERINFO_URLS = [
     "//user:pass@example.com/",
     # ``urlsplit`` refuses these hosts; the credential in front of them is still seen
     "https://user:pass@[::1/",
+    "https://@[::1/",
+    "//user:pass@[::1/",
     "https://user@exa\uff03mple.com/",
     " https://user:pass@[::1/",
     "https:/\t/user:pass@[::1/",
