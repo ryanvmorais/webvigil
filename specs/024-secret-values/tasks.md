@@ -1,6 +1,6 @@
 ---
 feature: Secret values — one type for every credential and session value, which cannot be printed, logged or serialized by accident
-status: in progress
+status: done
 date: 2026-11-24
 related:
   - 007-auth-flows/requirements.md
@@ -303,17 +303,20 @@ Each stage also runs mutation testing in batch over the guards it adds or change
 
 ## Stage 5 — Cross-check and documentation
 
-- [ ] RF-10: repeat the three scans of Stage 0 from the new `main`. Compare the JSON reports, leaving out
+- [x] RF-10: repeat the three scans of Stage 0 from the new `main`. Compare the JSON reports, leaving out
   timestamps and durations: findings, severities, check ids, fingerprints and `schema_version` are identical.
-  — RF-10
-- [ ] `.github/workflows/`: confirm the whole CI matrix on the last merge commit: `quality` on Linux and Windows
-  for every Python version, `package`, `docker`, `web` and `compose`. — RNF-05
-- [ ] `docs/writing-checks.md`: a check that handles a credential receives a `Secret`, and a new reveal needs
+  — RF-10 — identical on `a38a830` for the three scans (28, 29 and 45 findings); no secret value in the
+  reports or the terminal output.
+- [x] `.github/workflows/`: confirm the whole CI matrix on the last merge commit: `quality` on Linux and Windows
+  for every Python version, `package`, `docker`, `web` and `compose`. — RNF-05 — all 12 jobs green on
+  `a38a830`.
+- [x] `docs/writing-checks.md`: a check that handles a credential receives a `Secret`, and a new reveal needs
   an `ALLOWED_REVEALS` line with its reason. `docs/checks-internals.md`: the scrub list comes from
-  `collect_secrets`. — RF-03, RF-07
-- [ ] `CLAUDE.md`: one line in the architecture section saying that every new credential is a `Secret` and
+  `collect_secrets`. — RF-03, RF-07 — `docs/checks-internals.md` already said so since Stage 1.
+- [x] `CLAUDE.md`: one line in the architecture section saying that every new credential is a `Secret` and
   that a `reveal()` goes only at an inventoried site. — RF-03
-- [ ] `design.md`: fill in `## Implementation notes` with the measurements: tests before and after, coverage
+- [x] `design.md`: fill in `## Implementation notes` with the measurements: tests before and after, coverage
   per file, suite time, the mutation scores. Set `status: done` in the three files and on the roadmap of
   `specs/README.md`. — RF-11
-- [ ] Quality gate.
+- [x] Quality gate. — 3413 passed, 2 skipped in 108 s with coverage; ruff, black, mypy, `lint-imports` and the
+  package check green; no file of `src/webvigil` loses a line or a branch against the Stage 0 baseline.
