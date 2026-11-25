@@ -108,6 +108,8 @@ class Sink(StrEnum):
 @dataclass(frozen=True, slots=True)
 class _Profile:
     """
+    How one kind of output bounds and neutralizes a value.
+
     Attributes:
         limit (int | None): The most characters kept before the truncation marker, or ``None``
             when the text is not bounded here.
@@ -231,6 +233,8 @@ def safe_traceback(exc: BaseException) -> str:
 
 def _spellings(secret: str) -> set[str]:
     r"""
+    List the ways a secret can be written in a response.
+
     Args:
         secret (str): A secret value.
 
@@ -280,6 +284,8 @@ class Redactor:
 
     def __init__(self, texts: Iterable[str]) -> None:
         """
+        Index every spelling of the secrets and their prefixes and suffixes.
+
         Args:
             texts (Iterable[str]): The values to hide; the ones under
                 :data:`MIN_SECRET_LENGTH` characters are ignored.
@@ -309,6 +315,8 @@ class Redactor:
     @property
     def empty(self) -> bool:
         """
+        Tell whether the redactor has anything to hide.
+
         Returns:
             bool: ``True`` when there is nothing to redact.
         """
@@ -316,6 +324,8 @@ class Redactor:
 
     def __call__(self, text: str, *, cut_edges: bool = False) -> str:
         """
+        Redact every secret spelling and every fragment of one at a cut.
+
         Args:
             text (str): A free-text field.
             cut_edges (bool): Whether the start and the end of ``text`` are cuts too, as they
@@ -339,6 +349,8 @@ class Redactor:
 
     def optional(self, text: str | None) -> str | None:
         """
+        Redact a field that may be absent.
+
         Args:
             text (str | None): A free-text field that may be absent.
 
@@ -349,6 +361,8 @@ class Redactor:
 
     def _redact_fragments(self, text: str, *, cut_edges: bool) -> str:
         """
+        Redact the fragments of a secret found at the cuts of a field.
+
         Args:
             text (str): A field whose whole spellings are already replaced.
             cut_edges (bool): Whether the start and the end of ``text`` are cuts.
@@ -379,6 +393,8 @@ class Redactor:
 
     def _prefix_before(self, text: str, point: int) -> tuple[int, int] | None:
         """
+        Find the longest prefix of a secret that ends at a cut.
+
         Args:
             text (str): The field.
             point (int): A cut: the text before it may end with a prefix of a spelling.
@@ -396,6 +412,8 @@ class Redactor:
 
     def _suffix_after(self, text: str, point: int) -> tuple[int, int] | None:
         """
+        Find the longest suffix of a secret that starts at a cut.
+
         Args:
             text (str): The field.
             point (int): A cut: the text after it may start with a suffix of a spelling.
@@ -413,6 +431,8 @@ class Redactor:
 
 def _cut_points(text: str, *, cut_edges: bool) -> tuple[set[int], set[int]]:
     """
+    Find where the cuts of a field are.
+
     Args:
         text (str): A field.
         cut_edges (bool): Whether the start and the end of ``text`` count as cuts.
@@ -450,6 +470,8 @@ class SafeLogFilter(logging.Filter):
 
     def filter(self, record: logging.LogRecord) -> bool:
         """
+        Treat a record's message and traceback before any handler sees them.
+
         Args:
             record (logging.LogRecord): A record logged on the logger this filter is attached to.
 
@@ -473,6 +495,8 @@ class SafeLogFilter(logging.Filter):
 
 def get_logger(name: str) -> logging.Logger:
     """
+    Return a logger with the safe-output filter attached once.
+
     Args:
         name (str): The logger's name (a module's ``__name__``, or a library's logger that the
             Web API treats).
@@ -495,6 +519,8 @@ def get_logger(name: str) -> logging.Logger:
 
 def _chain_lines(exc: BaseException, seen: set[int], depth: int) -> list[str]:
     """
+    Write an exception's chain of causes and contexts as lines.
+
     Args:
         exc (BaseException): The last exception of a chain.
         seen (set[int]): The ids of the exceptions already written, so a cycle ends.
@@ -525,6 +551,8 @@ def _chain_lines(exc: BaseException, seen: set[int], depth: int) -> list[str]:
 
 def _exception_lines(exc: BaseException, seen: set[int], depth: int) -> list[str]:
     """
+    Write one exception of a chain as lines.
+
     Args:
         exc (BaseException): One exception of a chain.
         seen (set[int]): The ids of the exceptions already written.
@@ -557,6 +585,8 @@ def _exception_lines(exc: BaseException, seen: set[int], depth: int) -> list[str
 
 def _headline(exc: BaseException) -> str:
     """
+    Write an exception's type and message on one line.
+
     Args:
         exc (BaseException): An exception.
 
@@ -576,6 +606,8 @@ def _headline(exc: BaseException) -> str:
 
 def _as_text(value: object) -> str:
     """
+    Turn an exception or a note into text without raising.
+
     Args:
         value (object): An exception or a note.
 

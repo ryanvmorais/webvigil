@@ -73,6 +73,8 @@ _FILL = "~"
 
 def _fragment_left(text: str, spelling: str) -> bool:
     """
+    Tell whether any fragment of a spelling is left anywhere in a text.
+
     Args:
         text (str): Output of the redactor.
         spelling (str): One spelling of the secret.
@@ -87,6 +89,8 @@ def _fragment_left(text: str, spelling: str) -> bool:
 
 def _offsets(spelling: str) -> range:
     """
+    List the offsets a cut can split a spelling at.
+
     Args:
         spelling (str): One spelling of the secret.
 
@@ -396,6 +400,8 @@ def test_the_longest_prefix_wins_across_secrets(secrets: list[str]) -> None:
 
 def _snippet_helpers() -> Iterator[tuple[str, Callable[[str], str], str]]:
     """
+    Yield the snippet helpers of the checks.
+
     Yields:
         tuple[str, Callable[[str], str], str]: A name, a helper that cuts a snippet out of a
             body, and the anchor the helper centres on.
@@ -450,6 +456,8 @@ class _Unprintable(Exception):
 
 def _hostile_chain() -> BaseException:
     """
+    Build a chain of hostile exceptions with a group at its end.
+
     Returns:
         BaseException: A group raised from a cause raised while handling a context; the
             messages and the note hold line breaks, ESC and a bidirectional override.
@@ -471,6 +479,8 @@ def _hostile_chain() -> BaseException:
 
 def _frame_lines(exc: BaseException) -> int:
     """
+    Count the lines Python writes for an exception's stack.
+
     Args:
         exc (BaseException): A raised exception.
 
@@ -525,6 +535,8 @@ def test_the_traceback_is_bounded() -> None:
 
 def _filled_to(size: int) -> ValueError:
     """
+    Build an exception whose traceback has a given length.
+
     Args:
         size (int): The length its traceback must have.
 
@@ -600,6 +612,8 @@ def test_a_wide_and_a_deep_group_are_cut_as_python_cuts_them() -> None:
 
 def _nested(levels: int) -> BaseException:
     """
+    Wrap an exception in a number of exception groups.
+
     Args:
         levels (int): How many exception groups wrap the innermost exception.
 
@@ -640,6 +654,8 @@ def test_the_group_width_stops_where_python_stops(width: int, more: str | None) 
 @pytest.fixture
 def logger(request: pytest.FixtureRequest) -> Iterator[logging.Logger]:
     """
+    Give each test its own logger from get_logger.
+
     Yields:
         logging.Logger: A logger named for the test, from :func:`get_logger`, at ``DEBUG``;
             its filters are removed afterwards.

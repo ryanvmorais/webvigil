@@ -84,7 +84,7 @@ makes it.
   removed, a match anywhere, the bound after the neutralization, a range dropped from `INVISIBLE_CHARS`, the
   traceback joined with `show_controls` over the whole text. — RF-11
 - [x] Mutation testing in batch over `core/output.py`, `store_text` and `escape_json_controls`. — RNF-06
-- [ ] Quality gate. —
+- [x] Quality gate. —
 
 ## Stage 1 — Engine, CLI and reports
 

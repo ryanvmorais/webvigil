@@ -585,11 +585,11 @@ has a killed mutant, every survivor is triaged, and the score goes in the pull r
 
 - **Stage 0.** The RF-10 baseline was taken on `main` at `eb66900` (Python 3.15.2, Windows): 3415 tests collected
   (3413 passed, 2 skipped), 97 % line and branch coverage in total, the per-file table, and the three scans of the
-  fixture application with the requests it received. They are kept outside the repository. A second run of the
-  anonymous scan gave the same requests and the same findings. A second run of the login scan gave the same check
-  ids, severities and fingerprints, and 137 of its 941 requests differed, because the command, template and
-  expression probes draw random operands: the Stage 4 comparison of the login scan's requests leaves those out.
-  Durations: 5.3 s anonymous, 4.9 s with the `[auth]` cookie and header, 29.6 s with the login.
+  fixture application with the requests it received. A second run of the anonymous scan gave the same requests and
+  the same findings. A second run of the login scan gave the same check ids, severities and fingerprints, and 137 of
+  its 941 requests differed, because the command, template and expression probes draw random operands: the Stage 4
+  comparison of the login scan's requests leaves those out. Durations: 5.3 s anonymous, 4.9 s with the `[auth]`
+  cookie and header, 29.6 s with the login.
 - **Stage 0 mutation.** 155 mutants over `core/output.py`, `store_text`, `EVIDENCE_MARKER` and
   `escape_json_controls`: 144 killed, 5 ended in a timeout (an endless loop the tests detect), and 6 survived as
   equivalent (a short cut that gives the same result, and a guard no input reaches). The first run left 11 other

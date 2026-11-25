@@ -73,6 +73,8 @@ def show_controls(value: str, *, one_line: bool = False) -> str:
 
 def escape_json_controls(document: str) -> str:
     r"""
+    Escape what a JSON encoder writes raw from a JSON document.
+
     Args:
         document (str): An encoded JSON document, as ``json.dumps`` or pydantic writes it.
 
