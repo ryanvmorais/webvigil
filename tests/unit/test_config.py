@@ -421,6 +421,10 @@ def test_a_config_error_names_the_setting_but_never_its_value(
     assert caught.value.__cause__ is None
 
 
+# ---------------------------------------------------------------------------
+# A credential in a URL is refused (spec 024, RF-09)
+# ---------------------------------------------------------------------------
+
 _URL_USER = "markerUSER5d2e"
 _URL_PASSWORD = "markerPASSWORD8c41"
 _CREDENTIAL_URL = f"https://{_URL_USER}:{_URL_PASSWORD}@example.com/path"

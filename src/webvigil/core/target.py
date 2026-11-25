@@ -31,7 +31,7 @@ _HOSTNAME_RE = re.compile(
 _BARE_SCHEME_RE = re.compile(r"^[a-z][a-z0-9+.-]*:(?!//)", re.IGNORECASE)
 # The scan never sent a credential written into the target, so it is refused, not dropped (RF-09).
 _USERINFO_REFUSED = (
-    'the target URL carries a credential (user:password@), which is not used; send it as a '
+    "the target URL carries a credential (user:password@), which is not used; send it as a "
     'header, for example --header "Authorization: Basic ..."'
 )
 

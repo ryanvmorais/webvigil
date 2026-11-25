@@ -836,6 +836,10 @@ def test_an_unreadable_har_exits_with_the_operational_code(monkeypatch: pytest.M
     assert "Traceback" not in result.stderr
 
 
+# ---------------------------------------------------------------------------
+# A credential in a URL is refused (spec 024, RF-09)
+# ---------------------------------------------------------------------------
+
 _URL_USER = "markerUSER5d2e"
 _URL_PASSWORD = "markerPASSWORD8c41"
 _USERINFO = f"{_URL_USER}:{_URL_PASSWORD}@"
