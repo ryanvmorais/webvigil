@@ -22,6 +22,10 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
   no longer read as markup, and a control character in it is shown as an escape.
 - A terminal message is cut at 4 Ki characters of its own text before its control characters are
   shown as escapes, so an escape is never split by the cut.
+- A Web API `422` cuts each message and each part of `loc` at 1 Ki characters and shows its control,
+  bidirectional and zero-width characters as escapes: a message that names part of a refused value
+  (a target's address, an unknown report format) no longer repeats it whole. `webvigil-web` shows
+  the control characters of its messages as escapes, on one line.
 
 ### Security
 
@@ -32,6 +36,14 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
   any spelling of a secret next to such a cut is now shown as `[redacted]`, and the redaction
   warning counts the field. Evidence is matched at its start and its end too, since a check can
   cut a snippet out of a page without writing a marker.
+- **The Web API's log keeps each record on its own lines, bounded, and without statement
+  values.** A scan that crashed with text from the scanned site in its exception could write a
+  record of any size, with line breaks that looked like records of their own and escape sequences
+  that a terminal would run. The API's loggers, `uvicorn.error` and `httpx2` now cut each message
+  at 16 Ki characters and each traceback at 64 Ki, keep every message on one line and show control,
+  bidirectional and zero-width characters as escapes; level and handlers are unchanged. A database
+  error no longer lists the failed statement's parameters, which held finding text or a password
+  hash.
 
 ## [1.7.0] - 2026-11-24
 

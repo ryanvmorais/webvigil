@@ -12,10 +12,11 @@ import asyncio
 import logging
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import Annotated, Any
 
 import httpx2
 import pytest
+from fastapi import Body
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine
 from sqlmodel import Session
@@ -29,6 +30,7 @@ from webvigil.api.db import Finding as FindingRow
 from webvigil.api.db import Scan, ScanStatus
 from webvigil.api.runner import ScanRunner
 from webvigil.core import InvalidTargetError, Orchestrator, ScanConfig, ScanResult
+from webvigil.core.bounded import NAME_MAX_CHARS
 from webvigil.core.findings import Finding
 
 _LONE = "\ud800"
@@ -322,3 +324,64 @@ async def test_the_runner_log_does_show_an_error_that_escapes_a_scan(
 
     assert status is ScanStatus.FAILED
     assert _LOG_MARKER in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# The 422 body
+# ---------------------------------------------------------------------------
+
+
+def test_a_422_message_quoting_the_target_is_bounded_and_shows_its_controls(
+    auth_client: TestClient,
+) -> None:
+    """The target's own validator repeats the address: the message comes back cut and escaped."""
+    target = "https://ex\x1bample.com/" + "a" * 2000
+    response = auth_client.post("/api/scans", json={"target": target})
+
+    assert response.status_code == 422
+    (error,) = response.json()["detail"]
+    assert set(error) == {"type", "loc", "msg"}
+    assert error["loc"] == ["body"]
+    # Positive control: the message does quote the address, so the bound and the escape matter.
+    assert error["msg"].startswith("Value error, could not determine a valid host from https://ex")
+    assert r"\x1b" in error["msg"] and "\x1b" not in error["msg"]
+    assert error["msg"].endswith("...[truncated]")
+    assert len(error["msg"]) == NAME_MAX_CHARS + len(r"\x1b") - 1 + len("...[truncated]")
+
+
+def test_an_unknown_report_format_is_repeated_bounded_and_shown(auth_client: TestClient) -> None:
+    """The format the client asked for comes back cut and escaped in the 422 message."""
+    asked = "p\x1bdf" + "f" * 4000
+    response = auth_client.get("/api/scans/1/report", params={"format": asked})
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    # Positive control: the message names the format it refuses.
+    assert detail.startswith(r"unknown format: 'p\x1bdffff")
+    assert "\x1b" not in detail and detail.endswith("...[truncated]")
+    assert len(detail) == NAME_MAX_CHARS + len("...[truncated]")
+
+
+def test_a_422_key_chosen_by_the_client_is_bounded_and_shows_its_controls(
+    web_config: WebConfig,
+) -> None:
+    """A key of a mapping body lands in ``loc``: it comes back cut and escaped, the index kept."""
+    app = create_app(web_config, orchestrator_factory=FakeOrchestrator)
+
+    @app.post("/api/probe")
+    async def probe(body: Annotated[dict[str, list[int]], Body()]) -> None:  # pragma: no cover
+        """A mapping body, which no route of the API takes today."""
+
+    key = "k\u202e\x1b" + "k" * (10 * 1024)
+    with TestClient(app) as client:
+        response = client.post("/api/probe", json={key: [1, "not a number"]})
+
+    assert response.status_code == 422
+    (error,) = response.json()["detail"]
+    assert set(error) == {"type", "loc", "msg"}
+    body, sent, index = error["loc"]
+    assert (body, index) == ("body", 1)
+    assert sent.startswith(r"k\u202e\x1bkkk") and sent.endswith("...[truncated]")
+    # the bound counts the key's own characters; the two escapes are longer than what they show
+    assert len(sent) == NAME_MAX_CHARS + len(r"\u202e\x1b") - 2 + len("...[truncated]")
+    assert error["type"] == "int_parsing" and "not a number" not in response.text

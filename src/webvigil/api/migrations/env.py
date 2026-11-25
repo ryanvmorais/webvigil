@@ -54,7 +54,10 @@ def run_migrations_online() -> None:
     """Run the migrations against a live connection (the normal path, batch mode for SQLite)."""
     section = config.get_section(config.config_ini_section, {})
     section["sqlalchemy.url"] = _database_url()
-    connectable = engine_from_config(section, prefix="sqlalchemy.", poolclass=pool.NullPool)
+    # As in make_engine: an error names the statement, never its values (spec 025, ADR-5).
+    connectable = engine_from_config(
+        section, prefix="sqlalchemy.", poolclass=pool.NullPool, hide_parameters=True
+    )
     with connectable.connect() as connection:
         context.configure(
             connection=connection,

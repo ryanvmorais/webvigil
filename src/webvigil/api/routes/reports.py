@@ -9,6 +9,7 @@ from webvigil.api.db import Finding as FindingRow
 from webvigil.api.db import Scan, ScanStatus
 from webvigil.api.deps import HTTP_422_UNPROCESSABLE, CurrentUser, ScanId, SessionDep
 from webvigil.api.mapping import rows_to_result
+from webvigil.core.output import Sink, safe_text
 from webvigil.reporting import get_reporter
 
 router = APIRouter(prefix="/scans", tags=["reports"])
@@ -43,7 +44,9 @@ def download_report(
     rows. ``download=false`` serves it inline. 409 when the scan has no results.
     """
     if report_format not in _FORMATS:
-        raise HTTPException(HTTP_422_UNPROCESSABLE, f"unknown format: {report_format!r}")
+        # The value is the client's: bounded and shown, as a 422 message is (spec 025, RF-06).
+        detail = safe_text(f"unknown format: {report_format!r}", Sink.MESSAGE)
+        raise HTTPException(HTTP_422_UNPROCESSABLE, detail)
     scan = session.get(Scan, scan_id)
     if scan is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "scan not found")

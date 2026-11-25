@@ -18,6 +18,7 @@ from webvigil.api.db import User, make_engine, run_alembic_upgrade
 from webvigil.api.schemas import PASSWORD_MAX_CHARS, PASSWORD_MIN_CHARS
 from webvigil.api.security import hash_password, store_password_hash
 from webvigil.core.errors import ConfigError
+from webvigil.core.output import Sink, safe_text
 from webvigil.core.secrets import Secret, SecretKind
 
 app = typer.Typer(
@@ -51,7 +52,7 @@ def _load(config: Path | None) -> WebConfig:
     try:
         return WebConfig.load(config)
     except ConfigError as exc:
-        typer.echo(f"error: {exc}", err=True)
+        typer.echo(safe_text(f"error: {exc}", Sink.TERMINAL, one_line=True), err=True)
         raise typer.Exit(_EXIT_OPERATIONAL) from exc
 
 
@@ -71,7 +72,7 @@ def serve(
     bind = host or cfg.host
     warning = insecure_bind_warning(cfg, bind)
     if warning is not None:
-        typer.echo(f"warning: {warning}", err=True)
+        typer.echo(safe_text(f"warning: {warning}", Sink.TERMINAL, one_line=True), err=True)
     uvicorn.run(
         "webvigil.api.app:app",
         host=bind,
@@ -88,7 +89,7 @@ def migrate(config: _ConfigOpt = None) -> None:
     """Run ``alembic upgrade head`` against the configured database."""
     cfg = _load(config)
     run_alembic_upgrade(cfg)
-    typer.echo(f"database migrated: {cfg.database_path}")
+    typer.echo(safe_text(f"database migrated: {cfg.database_path}", Sink.TERMINAL, one_line=True))
 
 
 @app.command(name="reset-password")
@@ -134,7 +135,7 @@ def reset_password(
                     err=True,
                 )
                 raise typer.Exit(1)
-            typer.echo(f"password updated for {name}")
+            typer.echo(safe_text(f"password updated for {name}", Sink.TERMINAL, one_line=True))
     finally:
         engine.dispose()  # also on the refusals, which leave through typer.Exit
 

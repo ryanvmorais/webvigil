@@ -29,10 +29,11 @@ from webvigil.api.routes import auth, meta, reports, scans, setup
 from webvigil.api.runner import OrchestratorFactory, ScanRunner, recover_interrupted_scans
 from webvigil.api.security import dummy_password_hash, resolve_session_secret
 from webvigil.api.throttle import LoginThrottle
+from webvigil.core.output import Sink, get_logger, safe_text
 
-# What a ``422`` keeps of each validation error (spec 024, ADR-8): where and why, never ``input``,
-# ``ctx`` or ``url``, which echo the value sent (a password, a target with a credential in it).
-_VALIDATION_ERROR_KEYS = ("type", "loc", "msg")
+# The library loggers the Web API treats (spec 025, ADR-4): the Web API owns its process, so it
+# may; the engine used as a library never changes another package's logger.
+_TREATED_LIBRARY_LOGGERS = ("uvicorn.error", "httpx2")
 
 
 async def _validation_failed(_request: Request, exc: Exception) -> JSONResponse:
@@ -45,11 +46,48 @@ async def _validation_failed(_request: Request, exc: Exception) -> JSONResponse:
 
     Returns:
         JSONResponse: ``422`` with ``{"detail": [{"type", "loc", "msg"}, ...]}``, the shape of
-            FastAPI's own answer without the keys that repeat the input.
+            FastAPI's own answer without the keys that repeat the input. A key of ``loc`` and the
+            ``msg`` can quote what the client sent, so each string is bounded and its controls
+            shown (the ``MESSAGE`` profile); the integer indexes of ``loc`` stay as they are.
     """
     assert isinstance(exc, RequestValidationError)
-    detail = [{key: error[key] for key in _VALIDATION_ERROR_KEYS} for error in exc.errors()]
+    # Where and why, never ``input``, ``ctx`` or ``url``, which echo the value sent (a password, a
+    # target with a credential in it): spec 024, ADR-8.
+    detail = [
+        {
+            "type": error["type"],
+            "loc": [_message_part(part) for part in error["loc"]],
+            "msg": safe_text(str(error["msg"]), Sink.MESSAGE),
+        }
+        for error in exc.errors()
+    ]
     return JSONResponse({"detail": detail}, status_code=status.HTTP_422_UNPROCESSABLE_CONTENT)
+
+
+def _message_part(part: object) -> object:
+    """
+    Treat one part of a validation error's ``loc``.
+
+    Args:
+        part (object): A key (``str``) or a list index (``int``).
+
+    Returns:
+        object: A key through the ``MESSAGE`` profile, anything else unchanged.
+    """
+    return safe_text(part, Sink.MESSAGE) if isinstance(part, str) else part
+
+
+def _treat_library_logs() -> None:
+    """
+    Give the library loggers that can carry scan text the ``LOG`` profile, once per process.
+
+    Runs in the lifespan, after uvicorn has configured its loggers. ``uvicorn.error`` logs an
+    exception that escapes a request, and ``httpx2`` logs the URL of every request the engine
+    sends. :func:`~webvigil.core.output.get_logger` attaches the filter only once, so a second
+    app in the same process adds nothing. Level and handlers stay as configured.
+    """
+    for name in _TREATED_LIBRARY_LOGGERS:
+        get_logger(name)
 
 
 def create_app(
@@ -74,7 +112,8 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        """Startup: migrate, open the engine, resolve the secret, recover, start the runner."""
+        """Startup: treat the logs, migrate, open the engine, resolve the secret, recover, start."""
+        _treat_library_logs()
         if cfg.auto_migrate:
             run_alembic_upgrade(cfg)
         engine = make_engine(cfg)
