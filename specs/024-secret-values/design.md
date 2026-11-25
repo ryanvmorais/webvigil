@@ -609,6 +609,14 @@ every surviving mutant is triaged, and the score goes in the pull request (RNF-0
 12. **A non-string cookie or header entry gets the position-only message (RF-08).** For example,
     `invalid cookie #2: expected 'name=value'`. Pydantic's item type error is not used, because the `mode="before"`
     validator parses the list itself.
+13. **`pairs_for` has its own list, not an `ALLOWED_REVEALS` line (ADR-6, ADR-3).** It calls no `reveal()`: it reads
+    the plain values from `httpx2`'s jar. As an inventory line it would fail as stale. `LIBRARY_READS` in the
+    inventory test names it with its reason, and a test checks that each entry is a function of the package that
+    calls no reveal.
+14. **The weak-id facts are read in `ids.py` (RF-05).** The finding's length, alphabet and estimated bits were
+    computed in the scanner from the plain value. `id_facts(Secret)` now gives them, an inventoried reveal beside
+    `is_jwt`, `judge_value` and `judge_samples`, so the scanner reveals nothing. `alphabet_of` and `estimated_bits` keep taking a `str`;
+    they are the analysers behind the public functions.
 
 ## Implementation notes
 
@@ -621,3 +629,7 @@ every surviving mutant is triaged, and the score goes in the pull request (RNF-0
   the credentials kept off a redirect, pass as they were. Four `reveal()` sites entered the inventory: the login
   body, the scrub's `_texts`, the joined `Cookie` header and the request builder. The scan configuration, the
   orchestrator and the HTTP client, printed, show the names and no value.
+- **Stage 2.** Four `reveal()` sites entered the inventory, all in the session checks: `is_jwt`, `judge_value`,
+  `judge_samples` and `id_facts`. The engine canary reads 2341 log records of the full scan, the request lines
+  that `httpx2` logs, besides the four report formats and the warnings. Its static cookie changed no finding of
+  the full scan.
