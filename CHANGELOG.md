@@ -26,6 +26,12 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
   bidirectional and zero-width characters as escapes: a message that names part of a refused value
   (a target's address, an unknown report format) no longer repeats it whole. `webvigil-web` shows
   the control characters of its messages as escapes, on one line.
+- The dashboard shows control, bidirectional and zero-width characters as escapes in every value
+  that a site, a file, a plugin or a user chose, not only in finding fields: the target in the scan
+  list, the heading and the tab title, the tool version, `authorized_by`, the scan's options and
+  error, technology names, versions and advisories, check ids, names and categories, the filter
+  labels, and every error message and field error. A check's reference in the check catalogue is a
+  link only when it is an `http(s)` URL, as in the findings table.
 
 ### Security
 

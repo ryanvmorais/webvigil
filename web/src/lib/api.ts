@@ -5,6 +5,7 @@
  * The session cookie is `HttpOnly`; nothing here reads it (RNF-06).
  */
 import type { components } from "@/lib/api-types";
+import { display } from "@/lib/text";
 
 type Schemas = components["schemas"];
 
@@ -107,7 +108,7 @@ export function fieldErrors(err: unknown): Record<string, string> {
   for (const item of err.detail) {
     const field = item.loc.filter((seg) => seg !== "body").at(-1);
     if (field !== undefined && out[String(field)] === undefined) {
-      out[String(field)] = item.msg;
+      out[String(field)] = display(item.msg);
     }
   }
   return out;
@@ -116,9 +117,9 @@ export function fieldErrors(err: unknown): Record<string, string> {
 /** The single generic message for an error, for toasts and full-page states. */
 export function errorMessage(err: unknown, fallback = "Something went wrong."): string {
   if (err instanceof ApiError) {
-    return typeof err.detail === "string" ? err.detail : (err.detail[0]?.msg ?? fallback);
+    return display(typeof err.detail === "string" ? err.detail : (err.detail[0]?.msg ?? fallback));
   }
-  return err instanceof Error ? err.message : fallback;
+  return err instanceof Error ? display(err.message) : fallback;
 }
 
 function query(params: Record<string, string | number | boolean | null | undefined>): string {

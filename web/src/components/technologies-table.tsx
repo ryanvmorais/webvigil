@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/table";
 import { useQueryParams } from "@/hooks/use-query-param";
 import type { TechnologyOut } from "@/lib/api";
+import { display } from "@/lib/text";
 
 const VULNERABLE_CHECK_ID = "deps.js.vulnerable-library";
 
@@ -46,15 +47,17 @@ export function TechnologiesTable({ items }: { items: TechnologyOut[] }) {
         <TableBody>
           {items.map((tech) => (
             <TableRow key={`${tech.name}@${tech.version ?? "?"}`}>
-              <TableCell className="font-medium">{tech.name}</TableCell>
-              <TableCell>{tech.version ?? "unknown"}</TableCell>
-              <TableCell className="text-muted-foreground">{tech.detection}</TableCell>
+              <TableCell className="font-medium">{display(tech.name)}</TableCell>
+              <TableCell>{display(tech.version) || "unknown"}</TableCell>
+              <TableCell className="text-muted-foreground">{display(tech.detection)}</TableCell>
               <TableCell>
                 {tech.vulnerable ? (
                   <button
                     type="button"
                     onClick={() => setParams({ check_id: VULNERABLE_CHECK_ID })}
-                    title={tech.advisories.length > 0 ? tech.advisories.join(", ") : undefined}
+                    title={
+                      tech.advisories.length > 0 ? display(tech.advisories.join(", ")) : undefined
+                    }
                     className="rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
                   >
                     {/* The advisory ids (up to a dozen) go in the tooltip and in the finding

@@ -1,7 +1,7 @@
 /**
  * The findings table for a scan (RF-22..RF-24): one expandable row per finding, showing
  * severity, confidence, location, description, remediation, evidence, and CWE links. Every value
- * that came from the scanned site goes through `showControls`, so a bidirectional override or a
+ * that came from the scanned site goes through `display`, so a bidirectional override or a
  * zero-width character shows as an escape instead of changing what the text reads as.
  */
 "use client";
@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/table";
 import { cweUrl } from "@/lib/format";
 import { isHttpUrl } from "@/lib/links";
-import { showControls } from "@/lib/text";
+import { display } from "@/lib/text";
 import { cn } from "@/lib/utils";
 import type { FindingOut, LocationOut } from "@/lib/api";
 
@@ -34,7 +34,7 @@ function locationText(location: LocationOut): string {
         ? `cookie ${location.cookie}`
         : null;
   const text = qualifier ? `${location.url} · ${qualifier}` : location.url;
-  return showControls(text, { oneLine: true });
+  return display(text);
 }
 
 /**
@@ -72,7 +72,7 @@ export function FindingsTable({ findings }: { findings: FindingOut[] }) {
           const key = finding.fingerprint;
           const isOpen = expanded.has(key);
           const location = locationText(finding.location);
-          const title = showControls(finding.title, { oneLine: true });
+          const title = display(finding.title);
           const detailId = `finding-detail-${key}`;
           return (
             <Fragment key={key}>
@@ -99,7 +99,7 @@ export function FindingsTable({ findings }: { findings: FindingOut[] }) {
                   <SeverityBadge severity={finding.severity} />
                 </TableCell>
                 <TableCell className="font-medium">{title}</TableCell>
-                <TableCell className="font-mono text-xs">{finding.check_id}</TableCell>
+                <TableCell className="font-mono text-xs">{display(finding.check_id)}</TableCell>
                 <TableCell className="text-muted-foreground max-w-xs truncate" title={location}>
                   {location}
                 </TableCell>
@@ -111,22 +111,22 @@ export function FindingsTable({ findings }: { findings: FindingOut[] }) {
                 <TableRow id={detailId}>
                   <TableCell colSpan={6} className="bg-muted/40">
                     <div className="space-y-3 py-2 text-sm">
-                      <p>{showControls(finding.description)}</p>
+                      <p>{display(finding.description, { multiLine: true })}</p>
                       <div>
                         <span className="font-semibold">Location. </span>
                         <span className="break-all">{location}</span>
                       </div>
                       <div>
                         <span className="font-semibold">Remediation. </span>
-                        {showControls(finding.remediation)}
+                        {display(finding.remediation, { multiLine: true })}
                       </div>
                       {finding.evidence.map((item, index) => (
                         <div key={index}>
                           <div className="text-muted-foreground text-xs font-semibold">
-                            {showControls(item.label, { oneLine: true })}
+                            {display(item.label)}
                           </div>
                           <pre className="bg-background overflow-x-auto rounded p-2 text-xs">
-                            {showControls(item.content)}
+                            {display(item.content, { multiLine: true })}
                           </pre>
                         </div>
                       ))}
@@ -159,7 +159,7 @@ export function FindingsTable({ findings }: { findings: FindingOut[] }) {
                                   {href}
                                 </a>
                               ) : (
-                                showControls(href, { oneLine: true })
+                                display(href)
                               )}
                             </li>
                           ))}

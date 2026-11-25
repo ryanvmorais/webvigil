@@ -6,6 +6,7 @@ import { useState } from "react";
 import { SeverityBadge } from "@/components/severity-badge";
 import { Button } from "@/components/ui/button";
 import { useChecks } from "@/hooks/use-checks";
+import { display } from "@/lib/text";
 import { cn } from "@/lib/utils";
 
 /**
@@ -66,9 +67,9 @@ export function DisabledChecksField({
                 checked={selected.has(check.id)}
                 onChange={(event) => toggle(check.id, event.target.checked)}
               />
-              <span className="font-mono text-xs">{check.id}</span>
-              <span className="flex-1 truncate">{check.name}</span>
-              <span className="text-muted-foreground text-xs">{check.category}</span>
+              <span className="font-mono text-xs">{display(check.id)}</span>
+              <span className="flex-1 truncate">{display(check.name)}</span>
+              <span className="text-muted-foreground text-xs">{display(check.category)}</span>
               <SeverityBadge severity={check.default_severity} />
             </label>
           ))}
