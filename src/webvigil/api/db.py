@@ -233,9 +233,12 @@ def make_engine(config: WebConfig) -> Engine:
     """
     path = config.database_path
     secure_database_files(path)
+    # hide_parameters: an error names the statement, never its values (finding text, a password
+    # hash), wherever it is raised or logged (spec 025, ADR-5).
     engine = create_engine(
         f"sqlite:///{path}",
         connect_args={"check_same_thread": False},
+        hide_parameters=True,
     )
 
     @event.listens_for(engine, "connect")

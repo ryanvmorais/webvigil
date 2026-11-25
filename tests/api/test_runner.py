@@ -220,6 +220,7 @@ async def test_cancel_a_running_scan(web_engine: Engine, runner_factory: Callabl
     await _wait_for(web_engine, scan_id, ScanStatus.CANCELLED)
     with Session(web_engine) as session:
         assert session.exec(select(FindingRow).where(FindingRow.scan_id == scan_id)).all() == []
+    assert _error(web_engine, scan_id) is None  # a cancel is no failure: no message, not ""
 
 
 def _widen_claim_gap(monkeypatch: pytest.MonkeyPatch, delay: float = 0.3) -> None:

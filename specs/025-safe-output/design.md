@@ -595,6 +595,25 @@ has a killed mutant, every survivor is triaged, and the score goes in the pull r
    peak resident size from `/proc/self/status` (`VmHWM`), which starts over at `exec`, and is skipped where that
    file does not exist.
 
+10. **What the inventory counts as fixed, and which responses (ADR-8).** An argument is fixed when it is a literal, a
+    constant named in capitals (`status.HTTP_404_NOT_FOUND`, `Sink.TERMINAL`), a collection or an f-string of those,
+    or a direct call of `safe_text`. Besides `HTTPException` and `JSONResponse`, the walk counts every Starlette
+    response class built in `webvigil.api` (`Response`, `HTMLResponse` and the others), since the report and the
+    `/docs` page are API responses too; an `httpx2.Response` that the engine builds is not an output.
+11. **Three outputs the design did not list go through `safe_text` (RF-03, RF-06, RF-09).** The inventory found
+    them: the `422` of an unknown report format repeats the format the client asked for, so it takes the `MESSAGE`
+    profile, and the four messages of `webvigil-web` that hold a value (a configuration error, the bind warning, the
+    database path and the username of `reset-password`) take the `TERMINAL` profile on one line.
+12. **The `422` key test adds a probe route (test strategy).** No request model of the API puts a key the client
+    chose into `loc`, so the test adds a route with a `dict[str, list[int]]` body to an app from `create_app`; the
+    handler it reaches is the real one. The message test goes through `POST /api/scans`, whose target validator
+    repeats the address.
+13. **What each failure of the log canary carries (test strategy).** The canary is the finding text of the failed
+    store, the only value that could reach the log as a statement parameter. The crash carries the controls, the
+    forged line and the oversized text; it stores `internal error`, so the bound of a stored `Scan.error` stays the
+    test of `test_hostile_text.py`, which now also pins that the column keeps control characters as written. The
+    migration engine's `hide_parameters` has a test of its own.
+
 ## Implementation notes
 
 - **Stage 0.** The RF-10 baseline was taken on `main` at `eb66900` (Python 3.15.2, Windows): 3415 tests collected
@@ -620,3 +639,12 @@ has a killed mutant, every survivor is triaged, and the score goes in the pull r
   `reporting/__init__.py`, the write step of `cli/app.py` and the terminal cells: 21 killed on the first run. The
   survivor read a whole chunk past the limit before refusing, with the same result; a test now pins the last read to
   one byte past the limit, and the rerun killed it.
+- **Stage 2.** 3613 tests collected (4 skipped on Windows), 19 more than Stage 1, 98 % line and branch coverage in total. The inventory lists
+  21 output sites with their reasons and meets 65 output calls in all; no module but `core/output.py` calls
+  `logging.getLogger`.
+- **Stage 2 mutation.** 23 mutants over `SafeLogFilter`, the lifespan's attach step, `_terminate`,
+  `_validation_failed` and the two other treated messages: 20 killed on the first run. One kept the record's
+  arguments: the unit tests kill it, and under the Web API tests it ends in a timeout, because the runner's loop
+  keeps failing on the record. The two survivors had no observable difference under the tests: a cancelled scan
+  stored `""` instead of no error, and `Scan.error` stored its control characters escaped. A test now pins each, and
+  the rerun killed both.

@@ -9,7 +9,6 @@ API that reveal one.
 from __future__ import annotations
 
 import functools
-import logging
 import secrets
 from datetime import UTC, datetime, timedelta
 from typing import NamedTuple
@@ -23,9 +22,10 @@ from sqlmodel import Session, col
 
 from webvigil.api.config import WebConfig
 from webvigil.api.db import Setting, User, session_scope, utcnow
+from webvigil.core.output import get_logger
 from webvigil.core.secrets import Secret, SecretKind
 
-logger = logging.getLogger("webvigil.api")
+logger = get_logger("webvigil.api")
 
 _hasher = PasswordHasher()
 _ALGORITHM = "HS256"

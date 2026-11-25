@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 from collections.abc import Callable
 from typing import Literal, Protocol
 
@@ -13,10 +12,9 @@ from sqlmodel import Session, select
 from webvigil.api.db import TERMINAL_STATUSES, Scan, ScanStatus, utcnow
 from webvigil.api.mapping import build_scan_config, store_result
 from webvigil.core import Orchestrator, ScanConfig, ScanResult, WebVigilError
-from webvigil.core.bounded import TEXT_MAX_CHARS, truncate
-from webvigil.core.text import replace_surrogates
+from webvigil.core.output import Sink, get_logger, safe_text
 
-logger = logging.getLogger("webvigil.api")
+logger = get_logger("webvigil.api")
 
 # The two outcomes of a cancel request.
 type CancelOutcome = Literal["cancelled", "not_cancellable"]
@@ -342,9 +340,7 @@ class ScanRunner:
                 return False
             scan.status = status
             # The message can quote the site, and the column takes only what UTF-8 can encode.
-            scan.error = (
-                None if error is None else truncate(replace_surrogates(error), TEXT_MAX_CHARS)
-            )
+            scan.error = None if error is None else safe_text(error, Sink.STORE)
             scan.finished_at = utcnow()
             session.add(scan)
             session.commit()

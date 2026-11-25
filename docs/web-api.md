@@ -122,7 +122,10 @@ until the first of those waits ends. A reverse proxy that limits body size as we
 `{"detail": [{"type": ..., "loc": [...], "msg": ...}]}`: the error type, where it is and why, never
 the value. FastAPI's own `input`, `ctx` and `url` keys are not sent (the OpenAPI schema still lists
 them as optional), so a too-long password or a refused target does not go back to the client, or to
-a proxy or log in between. In the process, the signing secret and every password are held as
+a proxy or log in between. A message can still name part of a refused value (the address of a
+target with no valid host, an unknown report format), so every string of `loc` and every message is
+cut at 1 Ki characters, with control, bidirectional and zero-width characters shown as escapes
+(`\x1b`, `\u202e`). In the process, the signing secret and every password are held as
 secrets that a log line, a traceback or an error shows as `[redacted]`; only signing and checking a
 session token, and hashing and verifying a password, read them.
 
@@ -179,6 +182,15 @@ and stores no partial findings; once its result is in and being written, a cance
 the scan ends `completed`. If the process dies mid-scan, that scan is marked `interrupted` on the
 next start and the queue resumes. A scan that crashes is `failed` with the error `internal error`;
 the details are in the server log, not in the API.
+
+**What the server log shows.** A crash can carry what the scanned site sent, so the API's own
+loggers, uvicorn's `uvicorn.error` and the HTTP client's `httpx2` pass every record through one
+filter. The message is cut at 16 Ki characters and kept on one line, with control, bidirectional
+and zero-width characters shown as escapes. A traceback is rebuilt the same way: the frames as
+Python writes them, each exception's message on a line of its own, up to 64 Ki characters in all.
+The filter changes neither the level nor the handlers, so the logging uvicorn or the operator set
+up still applies. A database error names the failed statement but never its values, so finding
+text and password hashes stay out of the log.
 
 ## Active Mode
 

@@ -306,3 +306,22 @@ def test_a_short_session_secret_stops_serve_with_one_clear_line(
     assert result.exit_code == 4 and not calls
     assert "error:" in result.stderr and "at least 32 characters" in result.stderr
     assert "Traceback" not in result.output
+
+
+def test_reset_password_shows_the_controls_of_a_stored_username(_config_env: Path) -> None:
+    """The confirmation repeats the username on one line, with its controls shown (spec 025)."""
+    config = WebConfig.load()
+    run_alembic_upgrade(config)
+    engine = make_engine(config)
+    name = "ad\x1b[2Jmin\nfake: line"
+    with Session(engine) as session:
+        session.add(User(username=name, password_hash=hash_password(_pw("old-password"))))
+        session.commit()
+    engine.dispose()
+
+    result = runner.invoke(cli.app, ["reset-password"], input="new-password\nnew-password\n")
+
+    assert result.exit_code == 0
+    # Positive control: the confirmation names the user.
+    assert r"password updated for ad\x1b[2Jmin\x0afake: line" in result.output
+    assert "\x1b" not in result.output and "\nfake: line" not in result.output
