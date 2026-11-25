@@ -75,6 +75,8 @@ _SECRET_URL = (
     f"https://user:{_CREDENTIAL}@example.com/app{_PATH_PARAMETER}"
     f"?token={_CREDENTIAL}#{_CREDENTIAL}"
 )
+# A target may not carry userinfo (it is refused, spec 024 RF-09); the rest of a URL still can.
+_SECRET_TARGET = f"https://example.com/app{_PATH_PARAMETER}?token={_CREDENTIAL}#{_CREDENTIAL}"
 _LOGIN_URL = f"https://example.com/login{_PATH_PARAMETER}?next={_CREDENTIAL}"
 _OPENAPI_URL = f"https://example.com/openapi.json{_PATH_PARAMETER}?token={_CREDENTIAL}"
 _CLEAN_TARGET = "https://example.com/"
@@ -246,7 +248,7 @@ def test_a_failure_that_stops_the_scan_prints_only_its_type(
 
     result = runner.invoke(
         app_mod.app,
-        ["scan", _SECRET_URL, *stop.args, "--format", "json", "--output", str(report)],
+        ["scan", _SECRET_TARGET, *stop.args, "--format", "json", "--output", str(report)],
     )
 
     assert result.exit_code == ExitCode.OPERATIONAL
@@ -266,7 +268,7 @@ def test_a_failure_that_stops_the_scan_reaches_the_api_as_its_type(
     httpx_mock.add_exception(httpx2.RemoteProtocolError(_RAW_TEXT), is_reusable=True)
     config = ScanConfig.model_validate(stop.config)
 
-    body, _report = _scan_over_api(tmp_path, lambda _config: Orchestrator(config), _SECRET_URL)
+    body, _report = _scan_over_api(tmp_path, lambda _config: Orchestrator(config), _SECRET_TARGET)
 
     assert body["status"] == "failed"
     assert body["error"] == stop.message
@@ -606,6 +608,12 @@ def test_the_chain_walk_stops_at_its_limit_and_on_a_loop() -> None:
 # ---------------------------------------------------------------------------
 
 
+_USERINFO = (
+    "the target URL carries a credential (user:password@), which is not used; send it as a "
+    'header, for example --header "Authorization: Basic ..."'
+)
+
+
 @pytest.mark.parametrize(
     ("raw", "message"),
     [
@@ -615,21 +623,26 @@ def test_the_chain_walk_stops_at_its_limit_and_on_a_loop() -> None:
             "the target URL has an invalid port (want a number from 0 to 65535)",
         ),
         (
-            f"https://user:{_CREDENTIAL}@example.com:99999/",
+            f"https://example.com:99999/?token={_CREDENTIAL}",
             "the target URL has an invalid port (want a number from 0 to 65535)",
         ),
         (
-            f"https://user:{_CREDENTIAL}@[::1/",
+            f"https://[::1/?token={_CREDENTIAL}",
             "could not determine a valid host from the target URL",
         ),
         (
-            f"https://user:{_CREDENTIAL}@exa_mple.com/app?token={_CREDENTIAL}",
+            f"https://exa_mple.com/app{_PATH_PARAMETER}?token={_CREDENTIAL}",
             "could not determine a valid host from https://exa_mple.com/app",
         ),
         (
-            f"https://{_CREDENTIAL}@/",
+            f"https:///app?token={_CREDENTIAL}",
             "could not determine a valid host from <unreadable URL>",
         ),
+        # a credential is refused before the host is read, whatever is wrong after it
+        (f"https://user:{_CREDENTIAL}@example.com:99999/", _USERINFO),
+        (f"https://user:{_CREDENTIAL}@[::1/", _USERINFO),
+        (f"https://user:{_CREDENTIAL}@exa_mple.com/app?token={_CREDENTIAL}", _USERINFO),
+        (f"https://{_CREDENTIAL}@/", _USERINFO),
     ],
 )
 def test_an_invalid_target_exits_4_without_repeating_the_value(raw: str, message: str) -> None:
@@ -810,9 +823,9 @@ async def test_every_login_message_names_its_url_without_secrets(
     assert str(caught.value) == message
 
 
-def test_a_login_gate_message_drops_the_userinfo(httpx_mock: HttpxMock) -> None:
+def test_a_login_gate_message_drops_what_the_url_carries(httpx_mock: HttpxMock) -> None:
     """A login URL on another host is refused by name, without what the URL carried."""
-    other = f"https://user:{_CREDENTIAL}@other.example/login?next={_CREDENTIAL}"
+    other = f"https://other.example/login{_PATH_PARAMETER}?next={_CREDENTIAL}#{_CREDENTIAL}"
 
     result = runner.invoke(
         app_mod.app,

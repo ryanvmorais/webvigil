@@ -15,7 +15,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 from webvigil.core.errors import InvalidTargetError
 from webvigil.core.suffixes import load_rules
-from webvigil.core.urls import display_url
+from webvigil.core.urls import display_url, has_userinfo
 
 _ALLOWED_SCHEMES = frozenset({"http", "https"})
 _DEFAULT_PORTS = {"http": 80, "https": 443}
@@ -29,6 +29,11 @@ _HOSTNAME_RE = re.compile(
 )
 # A leading "<scheme>:" that is not http(s) and has no "//" (e.g. "mailto:a@b.c").
 _BARE_SCHEME_RE = re.compile(r"^[a-z][a-z0-9+.-]*:(?!//)", re.IGNORECASE)
+# The scan never sent a credential written into the target, so it is refused, not dropped (RF-09).
+_USERINFO_REFUSED = (
+    'the target URL carries a credential (user:password@), which is not used; send it as a '
+    'header, for example --header "Authorization: Basic ..."'
+)
 
 
 class Scope(StrEnum):
@@ -166,7 +171,8 @@ class Target:
             Target: The parsed, normalized target.
 
         Raises:
-            InvalidTargetError: If ``raw`` is empty, carries a non-HTTP scheme, has no usable
+            InvalidTargetError: If ``raw`` is empty, carries a non-HTTP scheme or a credential
+                in its authority (see :func:`~webvigil.core.urls.has_userinfo`), has no usable
                 host (see :func:`is_valid_host`) or a port that is not a number in ``0..65535``.
                 The message never repeats ``raw``: a mistyped target can hold a password.
         """
@@ -178,6 +184,9 @@ class Target:
                 # ``user:password@host`` reads as a scheme too, so nothing of it is repeated
                 raise InvalidTargetError("unsupported target (want an http/https URL)")
             candidate = f"https://{candidate}"
+        if has_userinfo(candidate):
+            # refused before the host is read, so no later message can hold part of it
+            raise InvalidTargetError(_USERINFO_REFUSED)
 
         try:
             parts = urlsplit(candidate)

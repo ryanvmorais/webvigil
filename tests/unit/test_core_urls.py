@@ -18,6 +18,7 @@ from webvigil.core.urls import (
     UNREADABLE_URL,
     display_path,
     display_url,
+    has_userinfo,
     is_http_url,
     resolve_url,
 )
@@ -220,3 +221,43 @@ def test_display_path_repeats_a_plain_file_path(path: str) -> None:
 def test_display_path_hides_what_may_be_a_url_without_its_scheme(path: str) -> None:
     """Each delimiter alone is enough to hide the whole value."""
     assert display_path(path) == HIDDEN_PATH
+
+
+# A credential in a URL is refused where the URL comes in (spec 024, RF-09).
+_USERINFO_URLS = [
+    "https://user@example.com/",
+    "https://user:pass@example.com/",
+    "https://:pass@example.com/",
+    "https://@example.com/",
+    "https://user:s\u00e9nha-\u5bc6\u7801@example.com/",
+    "//user:pass@example.com/",
+    # ``urlsplit`` refuses these hosts; the credential in front of them is still seen
+    "https://user:pass@[::1/",
+    "https://user@exa\uff03mple.com/",
+    " https://user:pass@[::1/",
+    "https:/\t/user:pass@[::1/",
+]
+_NO_USERINFO_URLS = [
+    "https://example.com/users/@me",
+    "https://example.com/?mail=a@b.example",
+    "https://example.com/#a@b",
+    "https://example.com/a%40b",
+    "https://[::1/users/@me",
+    "https://[::1?mail=a@b.example",
+    "https://[::1#a@b",
+    "https:@example.com/",
+    "./specs/@team/openapi.json",
+    r"C:\specs\team@b.json",
+    "/account/@me",
+]
+
+
+@pytest.mark.parametrize("url", _USERINFO_URLS)
+def test_has_userinfo_sees_any_at_sign_in_the_authority(url: str) -> None:
+    assert has_userinfo(url)
+
+
+@pytest.mark.parametrize("url", _NO_USERINFO_URLS)
+def test_has_userinfo_leaves_an_at_sign_outside_the_authority(url: str) -> None:
+    """Positive controls: an ``@`` after the authority, or encoded, is not a credential."""
+    assert not has_userinfo(url)

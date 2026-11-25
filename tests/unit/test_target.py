@@ -44,6 +44,47 @@ def test_invalid_targets_raise(raw: str) -> None:
         Target.parse(raw)
 
 
+_USERINFO_REFUSED = (
+    "the target URL carries a credential (user:password@), which is not used; send it as a "
+    'header, for example --header "Authorization: Basic ..."'
+)
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "https://user@example.com/",
+        "https://user:pass@example.com/",
+        "https://:pass@example.com/",
+        "https://@example.com/",
+        "https://user:s\u00e9nha-\u5bc6\u7801@example.com/",
+        "user@example.com/app",
+        "https://user:pass@example.com:99999/",
+        "https://user:pass@[::1/",
+    ],
+)
+def test_a_target_with_a_credential_is_refused(raw: str) -> None:
+    """RF-09: refused, not dropped, before the host or the port is read."""
+    with pytest.raises(InvalidTargetError) as caught:
+        Target.parse(raw)
+    assert str(caught.value) == _USERINFO_REFUSED
+
+
+@pytest.mark.parametrize(
+    ("raw", "entry_url"),
+    [
+        ("https://example.com/users/@me", "https://example.com/users/@me"),
+        ("https://example.com/?mail=a@b.example", "https://example.com/?mail=a@b.example"),
+        ("https://example.com/app#a@b", "https://example.com/app"),
+        ("https://example.com/a%40b", "https://example.com/a%40b"),
+    ],
+)
+def test_an_at_sign_outside_the_authority_is_not_a_credential(raw: str, entry_url: str) -> None:
+    """Positive controls for the refusal above."""
+    target = Target.parse(raw)
+    assert (target.host, target.entry_url) == ("example.com", entry_url)
+
+
 @pytest.mark.parametrize(
     ("raw", "host", "origin"),
     [
