@@ -476,6 +476,12 @@ def test_authenticated_summary_counts_cookies_and_headers_but_never_shows_them()
     assert "Authenticated scan: 1 header supplied" in header_only.stderr
 
 
+# ---------------------------------------------------------------------------
+# The CLI canary (spec 024, RF-08, RF-11)
+# ---------------------------------------------------------------------------
+
+# Known values for a configured cookie and bearer token: they must go out to the site and appear in
+# no output of the CLI, in any spelling.
 _CANARY_COOKIE = "wv-cli-canary-cookie-81f2"
 _CANARY_TOKEN = "wv-cli-canary-token-4a7b"
 

@@ -130,6 +130,8 @@ def _in_epoch(number: int) -> bool:
 
 def id_facts(value: Secret) -> tuple[tuple[str, str], ...]:
     """
+    The facts a weak-id finding states about one id, in numbers and words.
+
     Args:
         value (Secret): A session id.
 
