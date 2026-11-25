@@ -1,0 +1,482 @@
+[
+  {
+    "name": "C0 controls before tab: low edge U+0000, multi-line",
+    "input": "a\u0000b",
+    "one_line": false,
+    "expected": "a\\x00b"
+  },
+  {
+    "name": "C0 controls before tab: low edge U+0000, one line",
+    "input": "a\u0000b",
+    "one_line": true,
+    "expected": "a\\x00b"
+  },
+  {
+    "name": "C0 controls before tab: high edge U+0008, multi-line",
+    "input": "a\bb",
+    "one_line": false,
+    "expected": "a\\x08b"
+  },
+  {
+    "name": "C0 controls before tab: high edge U+0008, one line",
+    "input": "a\bb",
+    "one_line": true,
+    "expected": "a\\x08b"
+  },
+  {
+    "name": "C0 controls after line feed: low edge U+000B, multi-line",
+    "input": "a\u000bb",
+    "one_line": false,
+    "expected": "a\\x0bb"
+  },
+  {
+    "name": "C0 controls after line feed: low edge U+000B, one line",
+    "input": "a\u000bb",
+    "one_line": true,
+    "expected": "a\\x0bb"
+  },
+  {
+    "name": "C0 controls after line feed: high edge U+001F, multi-line",
+    "input": "a\u001fb",
+    "one_line": false,
+    "expected": "a\\x1fb"
+  },
+  {
+    "name": "C0 controls after line feed: high edge U+001F, one line",
+    "input": "a\u001fb",
+    "one_line": true,
+    "expected": "a\\x1fb"
+  },
+  {
+    "name": "C0 controls after line feed: just outside U+0020, multi-line",
+    "input": "a b",
+    "one_line": false,
+    "expected": "a b"
+  },
+  {
+    "name": "C0 controls after line feed: just outside U+0020, one line",
+    "input": "a b",
+    "one_line": true,
+    "expected": "a b"
+  },
+  {
+    "name": "DEL and C1 controls: low edge U+007F, multi-line",
+    "input": "a\u007fb",
+    "one_line": false,
+    "expected": "a\\x7fb"
+  },
+  {
+    "name": "DEL and C1 controls: low edge U+007F, one line",
+    "input": "a\u007fb",
+    "one_line": true,
+    "expected": "a\\x7fb"
+  },
+  {
+    "name": "DEL and C1 controls: high edge U+009F, multi-line",
+    "input": "a\u009fb",
+    "one_line": false,
+    "expected": "a\\x9fb"
+  },
+  {
+    "name": "DEL and C1 controls: high edge U+009F, one line",
+    "input": "a\u009fb",
+    "one_line": true,
+    "expected": "a\\x9fb"
+  },
+  {
+    "name": "DEL and C1 controls: just outside U+007E, multi-line",
+    "input": "a~b",
+    "one_line": false,
+    "expected": "a~b"
+  },
+  {
+    "name": "DEL and C1 controls: just outside U+007E, one line",
+    "input": "a~b",
+    "one_line": true,
+    "expected": "a~b"
+  },
+  {
+    "name": "DEL and C1 controls: just outside U+00A0, multi-line",
+    "input": "a\u00a0b",
+    "one_line": false,
+    "expected": "a\u00a0b"
+  },
+  {
+    "name": "DEL and C1 controls: just outside U+00A0, one line",
+    "input": "a\u00a0b",
+    "one_line": true,
+    "expected": "a\u00a0b"
+  },
+  {
+    "name": "Arabic letter mark: low edge U+061C, multi-line",
+    "input": "a\u061cb",
+    "one_line": false,
+    "expected": "a\\u061cb"
+  },
+  {
+    "name": "Arabic letter mark: low edge U+061C, one line",
+    "input": "a\u061cb",
+    "one_line": true,
+    "expected": "a\\u061cb"
+  },
+  {
+    "name": "Arabic letter mark: just outside U+061B, multi-line",
+    "input": "a\u061bb",
+    "one_line": false,
+    "expected": "a\u061bb"
+  },
+  {
+    "name": "Arabic letter mark: just outside U+061B, one line",
+    "input": "a\u061bb",
+    "one_line": true,
+    "expected": "a\u061bb"
+  },
+  {
+    "name": "Arabic letter mark: just outside U+061D, multi-line",
+    "input": "a\u061db",
+    "one_line": false,
+    "expected": "a\u061db"
+  },
+  {
+    "name": "Arabic letter mark: just outside U+061D, one line",
+    "input": "a\u061db",
+    "one_line": true,
+    "expected": "a\u061db"
+  },
+  {
+    "name": "zero-width and directional marks: low edge U+200B, multi-line",
+    "input": "a\u200bb",
+    "one_line": false,
+    "expected": "a\\u200bb"
+  },
+  {
+    "name": "zero-width and directional marks: low edge U+200B, one line",
+    "input": "a\u200bb",
+    "one_line": true,
+    "expected": "a\\u200bb"
+  },
+  {
+    "name": "zero-width and directional marks: high edge U+200F, multi-line",
+    "input": "a\u200fb",
+    "one_line": false,
+    "expected": "a\\u200fb"
+  },
+  {
+    "name": "zero-width and directional marks: high edge U+200F, one line",
+    "input": "a\u200fb",
+    "one_line": true,
+    "expected": "a\\u200fb"
+  },
+  {
+    "name": "zero-width and directional marks: just outside U+200A, multi-line",
+    "input": "a\u200ab",
+    "one_line": false,
+    "expected": "a\u200ab"
+  },
+  {
+    "name": "zero-width and directional marks: just outside U+200A, one line",
+    "input": "a\u200ab",
+    "one_line": true,
+    "expected": "a\u200ab"
+  },
+  {
+    "name": "zero-width and directional marks: just outside U+2010, multi-line",
+    "input": "a\u2010b",
+    "one_line": false,
+    "expected": "a\u2010b"
+  },
+  {
+    "name": "zero-width and directional marks: just outside U+2010, one line",
+    "input": "a\u2010b",
+    "one_line": true,
+    "expected": "a\u2010b"
+  },
+  {
+    "name": "bidirectional embeddings and overrides: low edge U+202A, multi-line",
+    "input": "a\u202ab",
+    "one_line": false,
+    "expected": "a\\u202ab"
+  },
+  {
+    "name": "bidirectional embeddings and overrides: low edge U+202A, one line",
+    "input": "a\u202ab",
+    "one_line": true,
+    "expected": "a\\u202ab"
+  },
+  {
+    "name": "bidirectional embeddings and overrides: high edge U+202E, multi-line",
+    "input": "a\u202eb",
+    "one_line": false,
+    "expected": "a\\u202eb"
+  },
+  {
+    "name": "bidirectional embeddings and overrides: high edge U+202E, one line",
+    "input": "a\u202eb",
+    "one_line": true,
+    "expected": "a\\u202eb"
+  },
+  {
+    "name": "bidirectional embeddings and overrides: just outside U+2029, multi-line",
+    "input": "a\u2029b",
+    "one_line": false,
+    "expected": "a\u2029b"
+  },
+  {
+    "name": "bidirectional embeddings and overrides: just outside U+2029, one line",
+    "input": "a\u2029b",
+    "one_line": true,
+    "expected": "a\u2029b"
+  },
+  {
+    "name": "bidirectional embeddings and overrides: just outside U+202F, multi-line",
+    "input": "a\u202fb",
+    "one_line": false,
+    "expected": "a\u202fb"
+  },
+  {
+    "name": "bidirectional embeddings and overrides: just outside U+202F, one line",
+    "input": "a\u202fb",
+    "one_line": true,
+    "expected": "a\u202fb"
+  },
+  {
+    "name": "word joiner and invisible operators: low edge U+2060, multi-line",
+    "input": "a\u2060b",
+    "one_line": false,
+    "expected": "a\\u2060b"
+  },
+  {
+    "name": "word joiner and invisible operators: low edge U+2060, one line",
+    "input": "a\u2060b",
+    "one_line": true,
+    "expected": "a\\u2060b"
+  },
+  {
+    "name": "word joiner and invisible operators: high edge U+2064, multi-line",
+    "input": "a\u2064b",
+    "one_line": false,
+    "expected": "a\\u2064b"
+  },
+  {
+    "name": "word joiner and invisible operators: high edge U+2064, one line",
+    "input": "a\u2064b",
+    "one_line": true,
+    "expected": "a\\u2064b"
+  },
+  {
+    "name": "word joiner and invisible operators: just outside U+205F, multi-line",
+    "input": "a\u205fb",
+    "one_line": false,
+    "expected": "a\u205fb"
+  },
+  {
+    "name": "word joiner and invisible operators: just outside U+205F, one line",
+    "input": "a\u205fb",
+    "one_line": true,
+    "expected": "a\u205fb"
+  },
+  {
+    "name": "word joiner and invisible operators: just outside U+2065, multi-line",
+    "input": "a\u2065b",
+    "one_line": false,
+    "expected": "a\u2065b"
+  },
+  {
+    "name": "word joiner and invisible operators: just outside U+2065, one line",
+    "input": "a\u2065b",
+    "one_line": true,
+    "expected": "a\u2065b"
+  },
+  {
+    "name": "bidirectional isolates: low edge U+2066, multi-line",
+    "input": "a\u2066b",
+    "one_line": false,
+    "expected": "a\\u2066b"
+  },
+  {
+    "name": "bidirectional isolates: low edge U+2066, one line",
+    "input": "a\u2066b",
+    "one_line": true,
+    "expected": "a\\u2066b"
+  },
+  {
+    "name": "bidirectional isolates: high edge U+2069, multi-line",
+    "input": "a\u2069b",
+    "one_line": false,
+    "expected": "a\\u2069b"
+  },
+  {
+    "name": "bidirectional isolates: high edge U+2069, one line",
+    "input": "a\u2069b",
+    "one_line": true,
+    "expected": "a\\u2069b"
+  },
+  {
+    "name": "bidirectional isolates: just outside U+2065, multi-line",
+    "input": "a\u2065b",
+    "one_line": false,
+    "expected": "a\u2065b"
+  },
+  {
+    "name": "bidirectional isolates: just outside U+2065, one line",
+    "input": "a\u2065b",
+    "one_line": true,
+    "expected": "a\u2065b"
+  },
+  {
+    "name": "bidirectional isolates: just outside U+206A, multi-line",
+    "input": "a\u206ab",
+    "one_line": false,
+    "expected": "a\u206ab"
+  },
+  {
+    "name": "bidirectional isolates: just outside U+206A, one line",
+    "input": "a\u206ab",
+    "one_line": true,
+    "expected": "a\u206ab"
+  },
+  {
+    "name": "byte order mark: low edge U+FEFF, multi-line",
+    "input": "a\ufeffb",
+    "one_line": false,
+    "expected": "a\\ufeffb"
+  },
+  {
+    "name": "byte order mark: low edge U+FEFF, one line",
+    "input": "a\ufeffb",
+    "one_line": true,
+    "expected": "a\\ufeffb"
+  },
+  {
+    "name": "byte order mark: just outside U+FEFE, multi-line",
+    "input": "a\ufefeb",
+    "one_line": false,
+    "expected": "a\ufefeb"
+  },
+  {
+    "name": "byte order mark: just outside U+FEFE, one line",
+    "input": "a\ufefeb",
+    "one_line": true,
+    "expected": "a\ufefeb"
+  },
+  {
+    "name": "byte order mark: just outside U+FF00, multi-line",
+    "input": "a\uff00b",
+    "one_line": false,
+    "expected": "a\uff00b"
+  },
+  {
+    "name": "byte order mark: just outside U+FF00, one line",
+    "input": "a\uff00b",
+    "one_line": true,
+    "expected": "a\uff00b"
+  },
+  {
+    "name": "tab, multi-line",
+    "input": "a\tb",
+    "one_line": false,
+    "expected": "a\tb"
+  },
+  {
+    "name": "tab, one line",
+    "input": "a\tb",
+    "one_line": true,
+    "expected": "a\\x09b"
+  },
+  {
+    "name": "line feed, multi-line",
+    "input": "a\nb",
+    "one_line": false,
+    "expected": "a\nb"
+  },
+  {
+    "name": "line feed, one line",
+    "input": "a\nb",
+    "one_line": true,
+    "expected": "a\\x0ab"
+  },
+  {
+    "name": "CRLF, multi-line",
+    "input": "a\r\nb",
+    "one_line": false,
+    "expected": "a\nb"
+  },
+  {
+    "name": "CRLF, one line",
+    "input": "a\r\nb",
+    "one_line": true,
+    "expected": "a\\x0d\\x0ab"
+  },
+  {
+    "name": "lone carriage return, multi-line",
+    "input": "a\rb",
+    "one_line": false,
+    "expected": "a\\x0db"
+  },
+  {
+    "name": "lone carriage return, one line",
+    "input": "a\rb",
+    "one_line": true,
+    "expected": "a\\x0db"
+  },
+  {
+    "name": "carriage return before CRLF, multi-line",
+    "input": "a\r\r\nb",
+    "one_line": false,
+    "expected": "a\\x0d\nb"
+  },
+  {
+    "name": "carriage return before CRLF, one line",
+    "input": "a\r\r\nb",
+    "one_line": true,
+    "expected": "a\\x0d\\x0d\\x0ab"
+  },
+  {
+    "name": "valid surrogate pair, multi-line",
+    "input": "a\ud83d\ude00b",
+    "one_line": false,
+    "expected": "a\ud83d\ude00b"
+  },
+  {
+    "name": "valid surrogate pair, one line",
+    "input": "a\ud83d\ude00b",
+    "one_line": true,
+    "expected": "a\ud83d\ude00b"
+  },
+  {
+    "name": "empty string, multi-line",
+    "input": "",
+    "one_line": false,
+    "expected": ""
+  },
+  {
+    "name": "empty string, one line",
+    "input": "",
+    "one_line": true,
+    "expected": ""
+  },
+  {
+    "name": "literal backslash escape already in the text, multi-line",
+    "input": "a\\x1bb",
+    "one_line": false,
+    "expected": "a\\x1bb"
+  },
+  {
+    "name": "literal backslash escape already in the text, one line",
+    "input": "a\\x1bb",
+    "one_line": true,
+    "expected": "a\\x1bb"
+  },
+  {
+    "name": "several kinds together, multi-line",
+    "input": "\u001b[2J\u202etxt.exe\u200b\u0085\r\nend",
+    "one_line": false,
+    "expected": "\\x1b[2J\\u202etxt.exe\\u200b\\x85\nend"
+  },
+  {
+    "name": "several kinds together, one line",
+    "input": "\u001b[2J\u202etxt.exe\u200b\u0085\r\nend",
+    "one_line": true,
+    "expected": "\\x1b[2J\\u202etxt.exe\\u200b\\x85\\x0d\\x0aend"
+  }
+]

@@ -21,30 +21,18 @@ over the whole document would.
 
 from __future__ import annotations
 
-import html
-import json
-import re
 from collections.abc import Iterable
-from contextlib import suppress
-from urllib.parse import quote, quote_plus
 
 from webvigil.core.findings import EvidenceItem, Finding, Location
+from webvigil.core.output import MIN_SECRET_LENGTH, Redactor
 from webvigil.core.result import CheckError, ScanResult
 from webvigil.core.secrets import REDACTED, Secret, SecretKind
-
-# A secret shorter than this is left alone: replacing a 1-3 character string would shred the
-# report (every "a" in a title). The result says so in a warning instead.
-MIN_SECRET_LENGTH = 4
 
 # A value the target issued joins the scrub list only if it is this long and mixes at least two
 # of lower case, upper case and digits. PHPSESSID, JSESSIONID, ASP.NET_SessionId, a signed
 # cookie and a JWT all do; a word or a fragment of a URL the target wants hidden does not.
 MIN_ISSUED_LENGTH = 8
 _MIN_ISSUED_CLASSES = 2
-
-# ``quote`` writes upper-case hex (``%2F``); some servers echo it lower case (``%2f``), so each
-# encoded spelling is also scrubbed with its escapes lowered.
-_PERCENT_RE = re.compile(r"%[0-9A-F]{2}")
 
 
 def _texts(secret: Secret) -> tuple[str, ...]:
@@ -72,39 +60,6 @@ def _texts(secret: Secret) -> tuple[str, ...]:
     return (value,)
 
 
-def _spellings(secret: str) -> set[str]:
-    r"""
-    Args:
-        secret (str): A secret value.
-
-    Returns:
-        set[str]: The ways a target is likely to echo it: raw, JSON-escaped (with and without
-            ``\u`` escapes for non-ASCII), HTML-escaped (with and without the quotes),
-            percent-encoded and form-encoded (UTF-8 and Latin-1, upper- and lower-case hex), and
-            as a Python library quotes it in an error: the ``repr`` of its bytes, without the
-            ``b''``, in the same encodings.
-    """
-    encoded = {quote(secret, safe=""), quote_plus(secret)}
-    as_bytes = {repr(secret.encode("utf-8", "surrogatepass"))[2:-1]}
-    # A page in Latin-1 escapes the same characters as other bytes (``é`` is ``%E9``).
-    with suppress(UnicodeEncodeError):  # a character outside Latin-1 has no such spelling
-        encoded |= {
-            quote(secret, safe="", encoding="latin-1"),
-            quote_plus(secret, encoding="latin-1"),
-        }
-        as_bytes.add(repr(secret.encode("latin-1"))[2:-1])
-    return {
-        secret,
-        json.dumps(secret)[1:-1],
-        json.dumps(secret, ensure_ascii=False)[1:-1],
-        html.escape(secret),
-        html.escape(secret, quote=False),
-        *encoded,
-        *as_bytes,
-        *(_PERCENT_RE.sub(lambda m: m.group().lower(), text) for text in encoded),
-    }
-
-
 def looks_like_session_value(value: str) -> bool:
     """
     Args:
@@ -120,68 +75,11 @@ def looks_like_session_value(value: str) -> bool:
     return sum(any(test(c) for c in value) for test in classes) >= _MIN_ISSUED_CLASSES
 
 
-class _Scrubber:
-    """
-    Replaces every spelling of every secret in a string.
-
-    Attributes:
-        hits (int): Fields changed so far, for the warning that makes a redaction visible.
-    """
-
-    def __init__(self, secrets: Iterable[str]) -> None:
-        """
-        Args:
-            secrets (Iterable[str]): The values to hide; the ones under
-                :data:`MIN_SECRET_LENGTH` characters are ignored.
-        """
-        spellings: set[str] = set()
-        for secret in secrets:
-            if len(secret) >= MIN_SECRET_LENGTH:
-                spellings |= _spellings(secret)
-        # longest first, so a secret that contains another is replaced whole
-        self._ordered = sorted((s for s in spellings if s), key=len, reverse=True)
-        self.hits = 0
-
-    @property
-    def empty(self) -> bool:
-        """
-        Returns:
-            bool: ``True`` when there is nothing to scrub.
-        """
-        return not self._ordered
-
-    def __call__(self, text: str) -> str:
-        """
-        Args:
-            text (str): A free-text field.
-
-        Returns:
-            str: ``text`` with every secret spelling replaced by :data:`REDACTED`.
-        """
-        original = text
-        for spelling in self._ordered:
-            if spelling in text:
-                text = text.replace(spelling, REDACTED)
-        if text != original:
-            self.hits += 1
-        return text
-
-    def optional(self, text: str | None) -> str | None:
-        """
-        Args:
-            text (str | None): A free-text field that may be absent.
-
-        Returns:
-            str | None: The scrubbed text, or ``None`` when it was absent.
-        """
-        return None if text is None else self(text)
-
-
-def _scrub_finding(finding: Finding, scrub: _Scrubber) -> Finding:
+def _scrub_finding(finding: Finding, scrub: Redactor) -> Finding:
     """
     Args:
         finding (Finding): One finding.
-        scrub (_Scrubber): The scrubber.
+        scrub (Redactor): The scan's redactor.
 
     Returns:
         Finding: A copy with the free-text fields scrubbed; the stored fingerprint, severity
@@ -231,7 +129,7 @@ def scrub_result(result: ScanResult, secrets: Iterable[Secret]) -> ScanResult:
     texts = {text for secret in secrets for text in _texts(secret) if text}
     # only what the user gave can be short: an issued value is a text only from 8 characters
     short = sum(1 for text in texts if len(text) < MIN_SECRET_LENGTH)
-    scrub = _Scrubber(texts)
+    scrub = Redactor(texts)
     if scrub.empty and not short:
         return result
     findings = tuple(_scrub_finding(f, scrub) for f in result.findings)
