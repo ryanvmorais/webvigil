@@ -6,9 +6,10 @@ a warning, the target, the authorization note) is never parsed as Rich markup: i
 plain part of a :class:`~rich.text.Text`, with its control characters made visible, so a bracket
 in a cookie name is printed as a bracket and an escape sequence in a field name is shown, not run.
 
-Every message and every line built from such text has a ceiling (:data:`_MESSAGE_MAX_CHARS`): it
-is applied here, once, so no caller can print something that grows with what a site or a file
-holds, and the layout work Rich does on a line stays small.
+Every message and every line built from such text has a ceiling
+(:data:`~webvigil.core.output.TERMINAL_MAX_CHARS`): it is applied here, once, through the
+terminal profile of :func:`~webvigil.core.output.safe_text`, so no caller can print something
+that grows with what a site or a file holds, and the layout work Rich does on a line stays small.
 """
 
 from __future__ import annotations
@@ -17,16 +18,12 @@ from rich.console import Console
 from rich.table import Table
 from rich.text import Text
 
-from webvigil.core.bounded import truncate
 from webvigil.core.findings import ScanMode, Severity
+from webvigil.core.output import Sink, safe_text
 from webvigil.core.result import ScanResult
-from webvigil.core.text import replace_surrogates, show_controls
 
 _console = Console(stderr=True)
 
-# The most characters of one message or one field printed to the terminal (before the marker).
-# The full text stays in the report.
-_MESSAGE_MAX_CHARS = 4096
 # The most warnings the summary lists: the rest are counted, and every one stays in the report.
 _MAX_WARNINGS_SHOWN = 100
 
@@ -57,12 +54,11 @@ def _printable(value: str, *, one_line: bool = False) -> str:
         one_line (bool): Whether line breaks are escaped too. Defaults to ``False``.
 
     Returns:
-        str: ``value`` with its control characters written as ``\xNN``, then cut at
-            :data:`_MESSAGE_MAX_CHARS`: the bound is on what is printed, and an escape is
-            longer than the character it stands for.
+        str: ``value`` cut at :data:`~webvigil.core.output.TERMINAL_MAX_CHARS` characters of
+            its own, then with its control characters written as ``\xNN``: the cut falls on
+            the source, so an escape is never split.
     """
-    shown = show_controls(replace_surrogates(value), one_line=one_line)
-    return truncate(shown, _MESSAGE_MAX_CHARS)
+    return safe_text(value, Sink.TERMINAL, one_line=one_line)
 
 
 def _plain(value: str) -> str:
@@ -75,6 +71,20 @@ def _plain(value: str) -> str:
             meant to be a plain part of a :class:`~rich.text.Text`, never a markup string.
     """
     return _printable(value, one_line=True)
+
+
+def cell(value: str) -> Text:
+    r"""
+    Build a table cell that is never read as markup.
+
+    Args:
+        value (str): Text a plugin or the scanned site wrote (a check id, a category).
+
+    Returns:
+        Text: ``value`` on one line, bounded, its control characters written as ``\xNN``, as
+            a plain :class:`~rich.text.Text`: a ``[bold]`` in it is printed as written.
+    """
+    return Text(_plain(value))
 
 
 def error(message: str) -> None:

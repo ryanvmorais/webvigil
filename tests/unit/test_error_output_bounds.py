@@ -468,11 +468,16 @@ def test_a_message_at_the_ceiling_is_printed_whole(
     assert terminal.getvalue() == prefix + "x" * (_CEILING + len(_MARKER)) + "\n"
 
 
-def test_escaping_a_message_cannot_carry_it_past_the_ceiling(terminal: io.StringIO) -> None:
-    """A control character prints as four: the bound holds for what is printed."""
-    _render.status("\x01" * _CEILING)
+def test_a_message_of_control_characters_is_cut_on_its_source(terminal: io.StringIO) -> None:
+    """
+    The bound counts what the message held, and the cut never splits an escape (spec 025, ADR-2).
 
-    assert terminal.getvalue() == ("\\x01" * _CEILING)[:_CEILING] + _MARKER + "\n"
+    A control character prints as four, so the line can be four times the ceiling, and still
+    stops after the ceiling's worth of characters of the message.
+    """
+    _render.status("\x01" * (_CEILING + len(_MARKER) + 1))
+
+    assert terminal.getvalue() == "\\x01" * _CEILING + _MARKER + "\n"
 
 
 def test_an_unencodable_character_in_a_message_is_replaced(terminal: io.StringIO) -> None:

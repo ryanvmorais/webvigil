@@ -28,6 +28,7 @@ from typer.testing import CliRunner
 
 from tests.support import make_finding, make_result
 from webvigil import __version__
+from webvigil.checks import registry
 from webvigil.checks.registry import all_checks, load_plugins
 from webvigil.cli import app as app_mod
 from webvigil.cli._exit import ExitCode
@@ -39,7 +40,7 @@ from webvigil.core.result import LoginSummary, ScanResult
 from webvigil.core.secrets import Secret, SecretKind
 from webvigil.core.target import Scope
 from webvigil.core.technology import DetectionMethod, Technology
-from webvigil.reporting import get_reporter
+from webvigil.reporting import MAX_REPORT_BYTES, get_reporter
 
 runner = CliRunner()
 _SCAN = ["scan", "https://example.com"]
@@ -217,6 +218,102 @@ def test_list_checks_prints_every_registered_check() -> None:
     for severity in {check.default_severity.name for check in checks}:
         assert severity in result.stdout, severity
     assert {"active", "passive"} <= {check.mode.value for check in checks}
+
+
+def test_list_checks_shows_a_plugin_id_as_written(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A plugin's id is never read as Rich markup, and its controls are shown (spec 025, RF-03)."""
+    load_plugins()
+    hostile = "plugin.[bold]x[/bold].\x1b[2J"
+
+    class _Hostile:
+        id = hostile
+        category = all_checks()[0].category
+        mode = ScanMode.PASSIVE
+        default_severity = Severity.LOW
+
+    monkeypatch.setitem(registry._REGISTRY, hostile, _Hostile)
+
+    result = runner.invoke(app_mod.app, ["list-checks"])
+
+    assert result.exit_code == 0
+    assert "plugin.[bold]x[/bold].\\x1b[2J" in result.stdout
+    assert "\x1b" not in result.stdout
+    # positive control: the other checks are listed too, through the same cells
+    assert all_checks()[0].id in result.stdout
+
+
+class _FixedReporter:
+    """A JSON reporter that renders a given text, so a test sets the report's size."""
+
+    fmt = "json"
+
+    def __init__(self, rendered: str) -> None:
+        """
+        Args:
+            rendered (str): What every render returns.
+        """
+        self._rendered = rendered
+
+    def render(self, _result: ScanResult) -> str:
+        """
+        Returns:
+            str: The fixed text.
+        """
+        return self._rendered
+
+
+@pytest.mark.parametrize(("extra", "warned"), [(1, True), (0, False)], ids=["over", "at"])
+def test_a_json_report_too_large_to_read_back_is_written_with_a_warning(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    extra: int,
+    warned: bool,
+) -> None:
+    """One byte over the limit warns, and the file is still written whole; at the limit, no word."""
+    rendered = "x" * (MAX_REPORT_BYTES + extra)
+    monkeypatch.setattr(app_mod, "get_reporter", lambda _fmt: _FixedReporter(rendered))
+    output = tmp_path / "scan.json"
+
+    app_mod._emit(make_result(), "json", output)
+
+    stderr = " ".join(capsys.readouterr().err.split())
+    assert ("cannot be re-rendered from this file" in stderr) is warned
+    assert output.stat().st_size == MAX_REPORT_BYTES + extra
+    output.unlink()
+
+
+def test_a_report_on_stdout_is_measured_with_its_line_ending(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Printed, the report ends with a line break: one byte under the limit is already over."""
+    rendered = "x" * MAX_REPORT_BYTES
+    monkeypatch.setattr(app_mod, "get_reporter", lambda _fmt: _FixedReporter(rendered))
+
+    app_mod._emit(make_result(), "json", None)
+
+    assert "cannot be re-rendered" in " ".join(capsys.readouterr().err.split())
+
+
+@pytest.mark.parametrize(("linesep", "size"), [("\n", 6), ("\r\n", 8)])
+def test_the_written_size_counts_the_platform_line_ending(linesep: str, size: int) -> None:
+    """Text mode on Windows writes two bytes for every line break."""
+    assert app_mod._written_bytes("é\nb\nc", linesep) == size
+
+
+def test_only_a_json_report_is_measured(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A Markdown report is never read back, so its size says nothing."""
+    monkeypatch.setattr(app_mod, "MAX_REPORT_BYTES", 4)
+    output = tmp_path / "scan.md"
+
+    app_mod._emit(make_result(), "md", output)
+
+    assert "cannot be re-rendered" not in capsys.readouterr().err
+    # positive control: the same result as JSON, over the lowered limit, warns
+    app_mod._emit(make_result(), "json", tmp_path / "scan.json")
+    assert "cannot be re-rendered" in " ".join(capsys.readouterr().err.split())
 
 
 # ---------------------------------------------------------------------------
