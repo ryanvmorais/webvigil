@@ -211,24 +211,39 @@ Each stage also runs mutation testing in batch over the guards it adds or change
 
 ## Stage 3 — A credential in a URL is refused
 
-- [ ] `src/webvigil/core/urls.py`: `has_userinfo(url)`. — RF-09, ADR-7
-- [ ] `src/webvigil/core/target.py`: `Target.parse` refuses userinfo before reading the host, with the
-  design's message. — RF-09, ADR-7
-- [ ] `src/webvigil/core/config.py`: the userinfo validator on `[auth.login]` `url`, `check_url` and
+- [x] `src/webvigil/core/urls.py`: `has_userinfo(url)`. — RF-09, ADR-7 — an authority without a scheme counts,
+  and a value `urlsplit` refuses is split as `urlsplit` splits it (design, deviation 15).
+- [x] `src/webvigil/core/target.py`: `Target.parse` refuses userinfo before reading the host, with the
+  design's message. — RF-09, ADR-7 — a schemeless `user:password@host` keeps its unsupported-target refusal
+  (design, deviation 16).
+- [x] `src/webvigil/core/config.py`: the userinfo validator on `[auth.login]` `url`, `check_url` and
   `logout_url`, `[scan] openapi` and `[deps] osv_base_url`. — RF-09
-- [ ] `tests/unit/test_core_urls.py` and the target tests: the design's table of refused and accepted forms.
+- [x] `tests/unit/test_core_urls.py` and the target tests: the design's table of refused and accepted forms.
   `tests/unit/test_config.py`: each URL setting refused by name, a file path and a relative URL accepted.
   `tests/unit/test_cli.py`: exit `4`, with neither part of the credential in stdout or stderr.
-  — RF-09, RF-08, RF-11
-- [ ] Apply the stage's sabotage (the check removed from `Target.parse`, and from one URL validator) and
+  — RF-09, RF-08, RF-11 — `test_transport_error_text.py` used a target with userinfo to show that each message
+  dropped it; those cases now carry the canary in the path, query and fragment, and the userinfo ones expect
+  the refusal.
+- [x] Apply the stage's sabotage (the check removed from `Target.parse`, and from one URL validator) and
   watch each test fail. — RF-11
-- [ ] Mutation in batch over `has_userinfo`, the `Target.parse` refusal and the URL validators. — RNF-06
-- [ ] `docs/authenticated-scanning.md`: the refusal and `--header "Authorization: Basic …"`, the username and
+  — 8 breaks, each red: the check removed from `Target.parse`, the `osv_base_url`, login URL and `openapi`
+  validators removed, the fallback giving `False`, any `@` read as userinfo, an encoded `%40` decoded, and a
+  host, port, bracket or login-gate message repeating the value it was given.
+- [x] Mutation in batch over `has_userinfo`, the `Target.parse` refusal and the URL validators. — RNF-06
+  — 31 mutants (14 on the guards, 17 on the values and the validator lines), run against the stage's test
+  files: 28 killed. Three survivors of the first run asked for a test each: a schemeless value `urlsplit`
+  refuses, a bare `@` before a malformed host, and an empty URL setting. The 3 left are equivalent: the
+  fallback runs only after `urlsplit` has split an authority, which needs `//` (2), and `urlsplit(None)`
+  gives an empty split, so `raw is not None` is there for the type checker (1). Every new test is failed by
+  a mutant.
+- [x] `docs/authenticated-scanning.md`: the refusal and `--header "Authorization: Basic …"`, the username and
   `extra_fields` not being scrubbed, and command-line values staying visible to the shell history (the
   `[auth]` table avoids that). — RF-09, resolved decisions 1, 3 and 5
-- [ ] `CHANGELOG.md`, `[Unreleased]`, **Security**: a target or a URL setting with a credential in it is
+- [x] `CHANGELOG.md`, `[Unreleased]`, **Security**: a target or a URL setting with a credential in it is
   refused, where the credential used to be dropped without a word. — RNF-02
-- [ ] Quality gate.
+- [x] Quality gate. — 3404 passed, 2 skipped (3355 and 2 before) in 101 s with coverage; ruff, black, mypy,
+  `lint-imports` and the package check green; no file of `src/webvigil` loses a line or a branch against the
+  Stage 0 baseline.
 
 ## Stage 4 — Web API
 

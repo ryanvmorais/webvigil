@@ -419,3 +419,57 @@ def test_a_config_error_names_the_setting_but_never_its_value(
     assert expected in str(caught.value)
     assert _LEAK not in str(caught.value)
     assert caught.value.__cause__ is None
+
+
+# ---------------------------------------------------------------------------
+# A credential in a URL is refused (spec 024, RF-09)
+# ---------------------------------------------------------------------------
+
+_URL_USER = "markerUSER5d2e"
+_URL_PASSWORD = "markerPASSWORD8c41"
+_CREDENTIAL_URL = f"https://{_URL_USER}:{_URL_PASSWORD}@example.com/path"
+_LOGIN = {"url": "https://example.com/in", "username": "u"}
+
+
+@pytest.mark.parametrize(
+    ("data", "location"),
+    [
+        ({"auth": {"login": {**_LOGIN, "url": _CREDENTIAL_URL}}}, "auth.login.url"),
+        ({"auth": {"login": {**_LOGIN, "check_url": _CREDENTIAL_URL}}}, "auth.login.check_url"),
+        ({"auth": {"login": {**_LOGIN, "logout_url": _CREDENTIAL_URL}}}, "auth.login.logout_url"),
+        ({"scan": {"openapi": _CREDENTIAL_URL}}, "scan.openapi"),
+        ({"deps": {"osv_base_url": _CREDENTIAL_URL}}, "deps.osv_base_url"),
+    ],
+)
+def test_a_url_setting_with_a_credential_is_refused_by_name(
+    data: dict[str, object], location: str
+) -> None:
+    """RF-09: a configuration error that names the setting and repeats no part of the URL."""
+    with pytest.raises(ConfigError) as caught:
+        ScanConfig.model_validate_or_raise(data)
+    message = str(caught.value)
+    assert f"{location}: Value error, a credential in a URL is not used" in message
+    assert _URL_USER not in message and _URL_PASSWORD not in message
+
+
+def test_a_file_path_or_a_relative_url_with_an_at_sign_is_accepted() -> None:
+    """Positive control: no authority, no credential."""
+    config = ScanConfig.model_validate_or_raise(
+        {
+            "scan": {"openapi": "specs/@team/openapi.json"},
+            "auth": {"login": {**_LOGIN, "check_url": "/account/@me"}},
+        }
+    )
+    assert config.scan.openapi == "specs/@team/openapi.json"
+    assert config.auth.login is not None
+    assert config.auth.login.check_url == "/account/@me"
+
+
+def test_a_url_setting_left_empty_is_accepted() -> None:
+    """``None`` is no URL: a Python caller may pass it for an optional setting."""
+    config = ScanConfig.model_validate_or_raise(
+        {"scan": {"openapi": None}, "auth": {"login": {**_LOGIN, "logout_url": None}}}
+    )
+    assert config.scan.openapi is None
+    assert config.auth.login is not None
+    assert config.auth.login.logout_url is None

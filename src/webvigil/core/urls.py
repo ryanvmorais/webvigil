@@ -89,6 +89,33 @@ def resolve_url(base: str, ref: str) -> str | None:
     return url
 
 
+def has_userinfo(url: str) -> bool:
+    """
+    Whether a URL carries a credential in its authority (``user@``, ``user:password@``,
+    ``:password@`` or a bare ``@``).
+
+    A host name cannot hold an ``@``, so any ``@`` in the authority is userinfo. An ``@`` in the
+    path, the query or the fragment, and a percent-encoded ``%40``, are not.
+
+    Args:
+        url (str): Any value given as a URL, well formed or not.
+
+    Returns:
+        bool: ``True`` when the authority holds an ``@``. A value ``urlsplit`` refuses (an
+            unclosed IPv6 bracket, a character that normalizes to a delimiter) is split the way
+            ``urlsplit`` splits it before it checks the host, so a malformed host does not hide
+            the credential in front of it.
+    """
+    try:
+        authority = urlsplit(url).netloc
+    except ValueError:
+        cleaned = url.translate(_TAB_NEWLINE).lstrip(_LEADING_JUNK)
+        scheme = _SCHEME_RE.match(cleaned)
+        rest = cleaned[scheme.end() :] if scheme else cleaned
+        authority = re.split(r"[/?#]", rest[2:], maxsplit=1)[0] if rest.startswith("//") else ""
+    return "@" in authority
+
+
 def display_url(url: str) -> str:
     """
     The form of a URL an error message or a warning may repeat.

@@ -834,3 +834,40 @@ def test_an_unreadable_har_exits_with_the_operational_code(monkeypatch: pytest.M
     assert result.exit_code == ExitCode.OPERATIONAL
     assert "nope.har" in result.stderr
     assert "Traceback" not in result.stderr
+
+
+# ---------------------------------------------------------------------------
+# A credential in a URL is refused (spec 024, RF-09)
+# ---------------------------------------------------------------------------
+
+_URL_USER = "markerUSER5d2e"
+_URL_PASSWORD = "markerPASSWORD8c41"
+_USERINFO = f"{_URL_USER}:{_URL_PASSWORD}@"
+
+
+@pytest.mark.parametrize(
+    ("args", "reason"),
+    [
+        (["scan", f"https://{_USERINFO}example.com/"], "the target URL carries a credential"),
+        (
+            [*_SCAN, "--openapi", f"https://{_USERINFO}example.com/openapi.json"],
+            "scan.openapi: Value error, a credential in a URL is not used",
+        ),
+        (
+            [*_ACTIVE, "--login-url", f"https://{_USERINFO}example.com/in", "--username", "u"],
+            "auth.login.url: Value error, a credential in a URL is not used",
+        ),
+    ],
+    ids=["target", "openapi", "login-url"],
+)
+def test_a_credential_in_a_url_exits_4_without_repeating_it(
+    args: list[str], reason: str, httpx_mock: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """RF-09 and RF-08: refused before any request, and no part of the credential is shown."""
+    monkeypatch.setattr(app_mod, "Orchestrator", Orchestrator)
+    result = runner.invoke(app_mod.app, args, env=_PASSWORD_ENV)
+    assert result.exit_code == ExitCode.OPERATIONAL
+    assert reason in " ".join(result.stderr.split())
+    for part in (_URL_USER, _URL_PASSWORD):
+        assert part not in result.stdout and part not in result.stderr
+    assert httpx_mock.get_requests() == []  # type: ignore[attr-defined]

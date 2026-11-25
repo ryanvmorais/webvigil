@@ -26,7 +26,7 @@ from webvigil.core.errors import ConfigError
 from webvigil.core.findings import ScanMode
 from webvigil.core.secrets import Secret, SecretKind
 from webvigil.core.target import Scope
-from webvigil.core.urls import display_path
+from webvigil.core.urls import display_path, has_userinfo
 
 # Type aliases (PEP 695) for the two closed sets that appear in the CLI help and
 # in the report section, kept in one place so the wording never drifts.
@@ -38,6 +38,29 @@ class _Section(BaseModel):
     """Base for every config section: unknown keys are a hard error (RF-26)."""
 
     model_config = ConfigDict(extra="forbid")
+
+
+def _refuse_userinfo(raw: str | None) -> str | None:
+    """
+    Refuse a URL setting that carries a credential (``user:password@``).
+
+    The scan never sends a credential written into a URL, so it is refused instead of dropped
+    without a word (spec 024, RF-09). The message names no value: pydantic gives the setting's
+    location, and :func:`describe_validation_error` drops the input.
+
+    Args:
+        raw (str | None): The configured URL, or a file path for ``[scan] openapi``.
+
+    Returns:
+        str | None: ``raw`` unchanged when its authority holds no ``@``. A file path or a
+            relative URL has no authority and passes.
+
+    Raises:
+        ValueError: If ``raw`` carries a credential.
+    """
+    if raw is not None and has_userinfo(raw):
+        raise ValueError("a credential in a URL is not used: take it out of the URL")
+    return raw
 
 
 class ScanSection(_Section):
@@ -89,6 +112,8 @@ class ScanSection(_Section):
     har: str | None = None
     har_max_operations: int = Field(default=150, gt=0)
     max_duration_s: float = Field(default=14_400.0, ge=0)
+
+    _openapi_userinfo = field_validator("openapi")(_refuse_userinfo)
 
 
 class HttpSection(_Section):
@@ -200,6 +225,8 @@ class LoginSection(_Section):
     check_url: str | None = None
     logout_url: str | None = None
     max_relogins: int = Field(default=3, ge=0, le=10)
+
+    _url_userinfo = field_validator("url", "check_url", "logout_url")(_refuse_userinfo)
 
     @model_validator(mode="before")
     @classmethod
@@ -509,6 +536,8 @@ class DepsSection(_Section):
     osv_online: bool = False
     osv_timeout_s: float = 10.0
     osv_base_url: str = "https://api.osv.dev"
+
+    _osv_userinfo = field_validator("osv_base_url")(_refuse_userinfo)
 
 
 class SessionSection(_Section):

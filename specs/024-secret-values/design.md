@@ -617,6 +617,15 @@ every surviving mutant is triaged, and the score goes in the pull request (RNF-0
     computed in the scanner from the plain value. `id_facts(Secret)` now gives them, an inventoried reveal beside
     `is_jwt`, `judge_value` and `judge_samples`, so the scanner reveals nothing. `alphabet_of` and `estimated_bits` keep taking a `str`;
     they are the analysers behind the public functions.
+15. **`has_userinfo` needs an authority, not a scheme (RF-09, ADR-7).** A scheme-relative `//user:pw@host/` has an
+    authority, and a setting such as `[auth.login] check_url` could carry one, so it is refused too. When
+    `urlsplit` refuses a value (an unclosed IPv6 bracket, a character that normalizes to a delimiter), the
+    authority is split the way `urlsplit` splits it before it checks the host, so a malformed host does not hide
+    the credential in front of it, and `Target.parse` gives the userinfo message, not a host error.
+16. **A schemeless `user:password@host` keeps its refusal (RF-09).** It reads as the scheme `user:`, so
+    `Target.parse` refuses it as an unsupported target before it adds `https://`, as it did before this spec; the
+    message repeats nothing of it. The userinfo message uses `...` for the ellipsis, as the other CLI messages
+    are ASCII.
 
 ## Implementation notes
 
@@ -633,3 +642,8 @@ every surviving mutant is triaged, and the score goes in the pull request (RNF-0
   `judge_samples` and `id_facts`. The engine canary reads 2341 log records of the full scan, the request lines
   that `httpx2` logs, besides the four report formats and the warnings. Its static cookie changed no finding of
   the full scan.
+- **Stage 3.** Only the tests of invalid-target messages used a target with userinfo, to show that the message
+  dropped it. They now use a target whose path, query and fragment carry the canary, and the userinfo cases
+  expect the refusal. `ScanCreate` validates through `Target.parse`, so `POST /api/scans` already answers `422`
+  to such a target and stores nothing; until Stage 4 drops `input` (ADR-8), that `422` repeats the body to the
+  client that sent it. Stage 4 adds the migration of stored targets.
