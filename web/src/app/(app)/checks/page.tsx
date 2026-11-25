@@ -7,6 +7,7 @@ import { ChecksTable } from "@/components/checks-table";
 import { Empty, FullPageSpinner, LoadFailed } from "@/components/error-states";
 import { FieldSelect } from "@/components/field-select";
 import { useChecks } from "@/hooks/use-checks";
+import { display } from "@/lib/text";
 
 export default function ChecksPage() {
   const query = useChecks();
@@ -46,7 +47,7 @@ export default function ChecksPage() {
           onValueChange={setCategory}
           options={[
             { value: "all", label: "All categories" },
-            ...categories.map((value) => ({ value, label: value })),
+            ...categories.map((value) => ({ value, label: display(value) })),
           ]}
         />
         <FieldSelect

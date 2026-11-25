@@ -19,6 +19,7 @@ import {
 import { TERMINAL_STATUSES } from "@/lib/api";
 import { absoluteTime, relativeTime } from "@/lib/format";
 import type { ScanSummary } from "@/lib/api";
+import { display } from "@/lib/text";
 
 const FROM_SM = "hidden sm:table-cell";
 
@@ -40,7 +41,7 @@ export function ScanListTable({ scans }: { scans: ScanSummary[] }) {
           <TableRow key={scan.id} className="[&_a]:no-underline">
             <TableCell className="font-medium">
               <Link href={`/scans/${scan.id}`} className="hover:underline">
-                {scan.target}
+                {display(scan.target)}
               </Link>
             </TableCell>
             <TableCell className={FROM_SM}>

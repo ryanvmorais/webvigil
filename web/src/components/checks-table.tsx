@@ -14,8 +14,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cweUrl } from "@/lib/format";
+import { isHttpUrl } from "@/lib/links";
 import { SEVERITY_NAMES } from "@/lib/severity";
 import type { CheckOut } from "@/lib/api";
+import { display } from "@/lib/text";
 
 const ARIA_SORT = { asc: "ascending", desc: "descending" } as const;
 
@@ -83,9 +85,9 @@ export function ChecksTable({
       <TableBody>
         {rows.map((check) => (
           <TableRow key={check.id}>
-            <TableCell className="font-mono text-xs">{check.id}</TableCell>
-            <TableCell className="font-medium">{check.name}</TableCell>
-            <TableCell className="text-muted-foreground">{check.category}</TableCell>
+            <TableCell className="font-mono text-xs">{display(check.id)}</TableCell>
+            <TableCell className="font-medium">{display(check.name)}</TableCell>
+            <TableCell className="text-muted-foreground">{display(check.category)}</TableCell>
             <TableCell className="text-muted-foreground capitalize">{check.mode}</TableCell>
             <TableCell>
               <SeverityBadge severity={check.default_severity} />
@@ -106,17 +108,23 @@ export function ChecksTable({
             </TableCell>
             <TableCell className="space-y-1">
               {check.references.length === 0 ? "—" : null}
-              {check.references.map((href) => (
-                <a
-                  key={href}
-                  href={href}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                  className="block max-w-xs truncate text-sm underline"
-                >
-                  {href}
-                </a>
-              ))}
+              {check.references.map((href) =>
+                isHttpUrl(href) ? (
+                  <a
+                    key={href}
+                    href={href}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="block max-w-xs truncate text-sm underline"
+                  >
+                    {href}
+                  </a>
+                ) : (
+                  <span key={href} className="block max-w-xs truncate text-sm">
+                    {display(href)}
+                  </span>
+                ),
+              )}
             </TableCell>
           </TableRow>
         ))}

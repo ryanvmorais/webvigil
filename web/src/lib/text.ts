@@ -63,3 +63,20 @@ export function showControls(value: string, options: { oneLine?: boolean } = {})
   }
   return shown;
 }
+
+/**
+ * The one way the dashboard shows a value the API returns that a site, a file, a plugin or a
+ * user chose: on one line by default, since most of them sit in a heading, a cell, a label, a
+ * tooltip or the document title.
+ *
+ * @param value - A string from the API, or nothing.
+ * @param options - `multiLine` keeps tabs and line feeds, for a description or an error body.
+ * @returns `""` for `null` and `undefined`, otherwise the value through `showControls`.
+ */
+export function display(
+  value: string | null | undefined,
+  options: { multiLine?: boolean } = {},
+): string {
+  if (value === null || value === undefined) return "";
+  return showControls(value, { oneLine: !(options.multiLine ?? false) });
+}

@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { useFindingChecks } from "@/hooks/use-findings";
 import { useQueryParams } from "@/hooks/use-query-param";
 import { SEVERITY_LABEL, SEVERITY_NAMES } from "@/lib/severity";
+import { display } from "@/lib/text";
 
 const ALL = "all";
 /** Typing pauses this long before the search reaches the URL, so each keystroke is not a request. */
@@ -45,10 +46,10 @@ export function FindingsFilters({ scanId }: { scanId: number }) {
   const counts = checks.data ?? [];
   const checkOptions = counts.map((item) => ({
     value: item.check_id,
-    label: `${item.check_id} (${item.count})`,
+    label: `${display(item.check_id)} (${item.count})`,
   }));
   if (checkId !== ALL && !counts.some((item) => item.check_id === checkId)) {
-    checkOptions.push({ value: checkId, label: `${checkId} (0)` });
+    checkOptions.push({ value: checkId, label: `${display(checkId)} (0)` });
   }
 
   return (

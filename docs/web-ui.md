@@ -54,6 +54,37 @@ Next evaluates `next.config.ts` `rewrites()` **at build time**, so:
 `API_PROXY_TARGET` is read only in `next.config.ts` (server side). It never reaches the
 browser bundle, and the bundle contains no credentials or session secret.
 
+## Text from the API
+
+Every value the API returns that a scanned site, a file, a plugin or a user chose goes through
+`display()` in [`web/src/lib/text.ts`](../web/src/lib/text.ts) before it reaches the page, an attribute
+(a tooltip, an `aria-label`) or the document title. That covers the target, the tool version,
+`authorized_by`, the scan's options and error, every finding field, technology names, versions and
+advisories, check ids, names and categories, the filter labels, and every toast and field error (through
+`errorMessage` and `fieldErrors` in [`web/src/lib/api.ts`](../web/src/lib/api.ts)). Values from a fixed
+list in the API's schema (status, mode, scope, severity, confidence) and timestamps are not text a site
+chose, and are shown as they come.
+
+`display()` returns `""` for a missing value and shows control, bidirectional and zero-width characters
+as visible `\xNN` / `\uNNNN` escapes, the rule of the engine's `show_controls`. A value is on one line by
+default: tab and line feed are escaped too. `display(value, { multiLine: true })` keeps them, for a
+description, a remediation, evidence and a scan's error. A reference becomes a link only when it is an
+`http(s)` URL with none of those characters (`isHttpUrl` in [`web/src/lib/links.ts`](../web/src/lib/links.ts));
+any other reference is shown as text.
+
+Two tests hold the rule:
+
+- `web/src/lib/text.test.ts` runs every case of
+  [`tests/data/text-controls-cases.json`](../tests/data/text-controls-cases.json), the file the Python
+  tests run against `show_controls`, so a range added on one side only fails a test. The file lives
+  outside `web/`: the dashboard's tests run from a full checkout of the repository, and a copy of `web/`
+  alone fails that test with a message naming the file.
+- `web/src/lib/hostile-render.test.tsx` renders the scan list, a scan with an open finding, its
+  technologies and filters, the check catalogue, the scan form with a `422` and the report preview's
+  error from payloads whose every string carries a control, a bidirectional and a zero-width character.
+  No such character may appear raw in the page's text, an attribute or the document title. A new page
+  needs a case there.
+
 ## Security headers
 
 The dashboard renders text that came from the sites a user scanned: finding titles, evidence, URLs,

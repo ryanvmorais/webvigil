@@ -29,7 +29,7 @@ import { ApiError, REPORTABLE_STATUSES, TERMINAL_STATUSES, errorMessage } from "
 import { absoluteTime, optionsText } from "@/lib/format";
 import { pageTitle } from "@/lib/page-title";
 import { keys } from "@/lib/query-keys";
-import { showControls } from "@/lib/text";
+import { display } from "@/lib/text";
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -65,7 +65,11 @@ function ScanDetail({ id }: { id: number }) {
   // The route layout titles the tab "Scan"; the target is only known once the scan loads.
   const isMissing = scan.error instanceof ApiError && scan.error.status === 404;
   useDocumentTitle(
-    scan.data ? pageTitle(scan.data.target) : isMissing ? pageTitle("Scan not found") : undefined,
+    scan.data
+      ? pageTitle(display(scan.data.target))
+      : isMissing
+        ? pageTitle("Scan not found")
+        : undefined,
   );
 
   const filters = {
@@ -115,7 +119,7 @@ function ScanDetail({ id }: { id: number }) {
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="space-y-1">
-          <h1 className="text-xl font-semibold">{s.target}</h1>
+          <h1 className="text-xl font-semibold">{display(s.target)}</h1>
           <div className="flex items-center gap-2" aria-live="polite">
             <StatusBadge status={s.status} />
             <ModeBadge mode={s.mode} />
@@ -152,17 +156,19 @@ function ScanDetail({ id }: { id: number }) {
 
       <dl className="grid gap-4 rounded-md border p-4 sm:grid-cols-3">
         <Row label="Scope" value={<span className="capitalize">{s.scope}</span>} />
-        <Row label="Tool version" value={s.tool_version ?? "—"} />
+        <Row label="Tool version" value={display(s.tool_version) || "—"} />
         <Row label="Pages scanned" value={s.pages_scanned} />
         <Row label="Created" value={absoluteTime(s.created_at)} />
         <Row label="Started" value={absoluteTime(s.started_at)} />
         <Row label="Finished" value={absoluteTime(s.finished_at)} />
-        {s.authorized_by ? <Row label="Authorized by" value={s.authorized_by} /> : null}
-        <Row label="Options" value={optionsText(s.options)} />
+        {s.authorized_by ? <Row label="Authorized by" value={display(s.authorized_by)} /> : null}
+        <Row label="Options" value={display(optionsText(s.options))} />
         {s.status === "failed" && s.error ? (
           <Row
             label="Error"
-            value={<span className="text-destructive">{showControls(s.error)}</span>}
+            value={
+              <span className="text-destructive">{display(s.error, { multiLine: true })}</span>
+            }
           />
         ) : null}
       </dl>
