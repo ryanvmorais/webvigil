@@ -23,8 +23,10 @@ from webvigil.core.text import replace_surrogates
 # Limits
 # ---------------------------------------------------------------------------
 
-# What a cut value ends with, so a reader knows the text goes on; the evidence marker matches it.
+# What a cut value ends with, so a reader knows the text goes on.
 TRUNCATION_MARKER = "...[truncated]"
+# Evidence is multi-line, so its marker starts a line of its own instead of ending the last one.
+EVIDENCE_MARKER = "\n" + TRUNCATION_MARKER
 # A one-line value: a check id, a title, a parameter, header or cookie name, a library name.
 NAME_MAX_CHARS = 1024
 # A paragraph: a description, a remediation, an error message, a warning.
@@ -57,6 +59,22 @@ def truncate(value: str, limit: int, marker: str = TRUNCATION_MARKER) -> str:
     return value
 
 
+def store_text(value: str, limit: int, marker: str = TRUNCATION_MARKER) -> str:
+    """
+    The ``STORE`` treatment of :mod:`webvigil.core.output`: what a bounded field keeps.
+
+    Args:
+        value (str): Text that may have come from the scanned site or from a file.
+        limit (int): The most characters kept before the marker.
+        marker (str): What is appended to a value that was cut. Defaults to
+            :data:`TRUNCATION_MARKER`.
+
+    Returns:
+        str: ``value`` with its unpaired surrogates replaced, then cut by :func:`truncate`.
+    """
+    return truncate(replace_surrogates(value), limit, marker)
+
+
 def bounded(limit: int, marker: str = TRUNCATION_MARKER) -> BeforeValidator:
     """
     Args:
@@ -65,14 +83,11 @@ def bounded(limit: int, marker: str = TRUNCATION_MARKER) -> BeforeValidator:
             :data:`TRUNCATION_MARKER`.
 
     Returns:
-        BeforeValidator: A validator that replaces the unpaired surrogates of a string and
-            applies :func:`truncate` to it, and passes anything else on, so the field's own type
-            check still runs.
+        BeforeValidator: A validator that applies :func:`store_text` to a string and passes
+            anything else on, so the field's own type check still runs.
     """
     return BeforeValidator(
-        lambda value: (
-            truncate(replace_surrogates(value), limit, marker) if isinstance(value, str) else value
-        )
+        lambda value: store_text(value, limit, marker) if isinstance(value, str) else value
     )
 
 

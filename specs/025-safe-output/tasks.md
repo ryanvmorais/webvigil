@@ -1,6 +1,6 @@
 ---
 feature: Safe output — redaction, size bounds and control-character neutralization applied in one place for every output
-status: approved
+status: in progress
 date: 2026-11-25
 related:
   - 024-secret-values/requirements.md
@@ -48,7 +48,7 @@ makes it.
 
 ## Stage 0 — The safe-output module and the shared cases
 
-- [ ] Record the baseline on `main`, on one Python version:
+- [x] Record the baseline on `main`, on one Python version:
   - the test count and the suite time;
   - `uv run pytest --cov` per file;
   - three JSON reports of the fixture application (anonymous, with `[auth]` cookies and headers, and with the
@@ -56,35 +56,35 @@ makes it.
     fixture received and the duration of each scan, kept outside the repository for Stage 4.
 
   — RF-10, RNF-04, RNF-06
-- [ ] `src/webvigil/core/bounded.py`: `store_text(value, limit)` (`replace_surrogates`, then `truncate`); the
+- [x] `src/webvigil/core/bounded.py`: `store_text(value, limit)` (`replace_surrogates`, then `truncate`); the
   `bounded()` validator calls it. — RF-01, ADR-1
-- [ ] `src/webvigil/core/text.py`: `escape_json_controls(document)`, the expression of `json_report.py` as a
+- [x] `src/webvigil/core/text.py`: `escape_json_controls(document)`, the expression of `json_report.py` as a
   function. — RF-05
-- [ ] `src/webvigil/core/output.py`: `Sink`, the profile table of the design's data model, and
+- [x] `src/webvigil/core/output.py`: `Sink`, the profile table of the design's data model, and
   `safe_text(value, sink, *, one_line, limit, redactor)` with the order redaction, bound, neutralization.
   — RF-01, ADR-1, ADR-2
-- [ ] `src/webvigil/core/output.py`: `Redactor`, built from `_Scrubber` and `_spellings` (moved from
+- [x] `src/webvigil/core/output.py`: `Redactor`, built from `_Scrubber` and `_spellings` (moved from
   `auth/scrub.py`, behaviour unchanged for whole spellings), with `CUT_MARKERS`, the prefix and suffix sets and
   the cut rule of the design, `cut_edges` included. `auth/scrub.py` imports it and keeps `_texts`,
   `looks_like_session_value` and the walk. — RF-02, ADR-3
-- [ ] `src/webvigil/core/output.py`: `safe_traceback(exc)` over the cause and context chain and exception
+- [x] `src/webvigil/core/output.py`: `safe_traceback(exc)` over the cause and context chain and exception
   groups, frames as Python formats them, each exception's type, message and notes on one line each, bounded to
   `URL_MAX_CHARS`. — RF-04, ADR-4
-- [ ] `src/webvigil/core/output.py`: `SafeLogFilter` (message through `Sink.LOG`, `args` emptied, `exc_text`
+- [x] `src/webvigil/core/output.py`: `SafeLogFilter` (message through `Sink.LOG`, `args` emptied, `exc_text`
   from `safe_traceback`, a record whose message cannot be rendered left alone) and `get_logger(name)`, which
   attaches it once. — RF-04, ADR-4
-- [ ] `tests/data/text-controls-cases.json`: the cases of the design's interfaces, written with JSON escapes
+- [x] `tests/data/text-controls-cases.json`: the cases of the design's interfaces, written with JSON escapes
   only. `tests/unit/test_text_cases.py`: `show_controls` over every case. — RF-07, ADR-7
-- [ ] `tests/unit/test_output.py`: the profile table, idempotence, the order, the traceback and the log filter
+- [x] `tests/unit/test_output.py`: the profile table, idempotence, the order, the traceback and the log filter
   of the design's test strategy, each with its positive control. — RF-01, RF-04, RF-11
-- [ ] `tests/unit/test_output.py`: the cut rule at every offset of a known secret, under every spelling, for
+- [x] `tests/unit/test_output.py`: the cut rule at every offset of a known secret, under every spelling, for
   the marker cuts and the evidence edges, with the three positive controls of the design (whole secret away
   from a cut, a title with no marker, a 3-character fragment). — RF-02, RF-11
-- [ ] Apply the sabotage of the design for each guard of this stage and watch each test fail: the cut rule
+- [x] Apply the sabotage of the design for each guard of this stage and watch each test fail: the cut rule
   removed, a match anywhere, the bound after the neutralization, a range dropped from `INVISIBLE_CHARS`, the
   traceback joined with `show_controls` over the whole text. — RF-11
-- [ ] Mutation testing in batch over `core/output.py`, `store_text` and `escape_json_controls`. — RNF-06
-- [ ] Quality gate. —
+- [x] Mutation testing in batch over `core/output.py`, `store_text` and `escape_json_controls`. — RNF-06
+- [x] Quality gate. —
 
 ## Stage 1 — Engine, CLI and reports
 

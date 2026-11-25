@@ -11,6 +11,15 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 ## [Unreleased]
 
+### Security
+
+- **No part of a scan's secret is left in a report where a value was cut to size.** A page that
+  echoed a password, a configured cookie or header, or a session value at the point where a field
+  was cut could leave the first characters of the secret before the `...[truncated]` marker, or
+  after the ellipsis a check writes where it cuts a snippet. A fragment of 4 or more characters of
+  any spelling of a secret next to such a cut is now shown as `[redacted]`, and the redaction
+  warning counts the field.
+
 ## [1.7.0] - 2026-11-24
 
 A minor release that holds every credential and session value as a secret, which no print, log

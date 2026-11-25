@@ -15,11 +15,9 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, FailFast, Field
 
-from webvigil.core.bounded import Name, Text, Url, bounded
+from webvigil.core.bounded import EVIDENCE_MARKER, Name, Text, Url, bounded
 
 _EVIDENCE_MAX_CHARS = 4096
-# Evidence is multi-line, so the marker starts a line of its own instead of ending the last one.
-_EVIDENCE_MARKER = "\n...[truncated]"
 _FINGERPRINT_CHARS = 16
 
 
@@ -182,7 +180,7 @@ class EvidenceItem(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     label: Name
-    content: Annotated[str, bounded(_EVIDENCE_MAX_CHARS, _EVIDENCE_MARKER)]
+    content: Annotated[str, bounded(_EVIDENCE_MAX_CHARS, EVIDENCE_MARKER)]
 
     @classmethod
     def of(cls, label: str, content: str) -> EvidenceItem:
@@ -199,7 +197,7 @@ class EvidenceItem(BaseModel):
             EvidenceItem: The frozen evidence item.
         """
         if len(content) > _EVIDENCE_MAX_CHARS:
-            content = content[:_EVIDENCE_MAX_CHARS] + _EVIDENCE_MARKER
+            content = content[:_EVIDENCE_MAX_CHARS] + EVIDENCE_MARKER
         return cls(label=label, content=content)
 
 

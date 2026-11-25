@@ -1,6 +1,6 @@
 ---
 feature: Safe output — redaction, size bounds and control-character neutralization applied in one place for every output
-status: approved
+status: in progress
 date: 2026-11-25
 related:
   - 024-secret-values/requirements.md
@@ -556,3 +556,44 @@ the comparison.
 **Mutation (RNF-06).** `core/output.py`, the changed parts of `scrub.py`, `reporting/__init__.py` and the log
 filter go through mutation testing in batch at the end of each stage that changes them. Every changed function
 has a killed mutant, every survivor is triaged, and the score goes in the pull request.
+
+## Deviations
+
+1. **The prefix and suffix sets are an index (data model, ADR-3).** `Redactor` does not hold every prefix and suffix
+   of every spelling: that grows with the square of a secret's length (an 8 KiB header value would take hundreds of
+   MiB). It indexes each prefix by its last 4 characters and each suffix by its first 4, and checks a candidate
+   against the spelling at the cut. The fragments it finds are the same, and memory grows with the secrets' length.
+2. **Idempotence holds for a value that fits its bound (components, ADR-2).** The `STORE`, `DOCUMENT` and `JSON`
+   profiles give the same text on a second pass, cut or not. The `TERMINAL`, `LOG` and `MESSAGE` profiles do too,
+   except for a value cut at the bound whose escapes make it longer than the bound: a second pass cuts it again. No
+   output applies a profile twice, and cutting on the source is what ADR-2 asks for.
+3. **`one_line` is a choice of the `TERMINAL` profile only (data model).** `LOG` and `MESSAGE` always escape line
+   breaks, and `STORE`, `DOCUMENT` and `JSON` never do, whatever the caller passes.
+4. **The evidence marker is `core/bounded.py::EVIDENCE_MARKER` (module layout).** `CUT_MARKERS` names it, and
+   `core/output.py` imports only `core/bounded.py`, `core/text.py` and `core/secrets.py`, not the finding model.
+   The terminal bound is `core/output.py::TERMINAL_MAX_CHARS`, since the engine cannot import the CLI; Stage 1
+   points `_render` at it.
+5. **The marker rule acts from Stage 0 (RF-02, tasks).** `scrub.py` uses `Redactor` from Stage 0, so a fragment next
+   to a cut marker is redacted in every field from this stage on, and its CHANGELOG line goes in this stage's pull
+   request. Stage 1 adds the evidence edges (`cut_edges`).
+6. **The traceback's own layout (RF-04, ADR-4).** Each stack is written as Python formats it. The members of an
+   exception group follow a `--- sub-exception i of n ---` line instead of Python's box drawing, with Python's
+   limits (15 members, 10 levels). Each exception's line is bounded to the `LOG` message bound, and the whole text
+   is cut at a line boundary, so the cut never splits an escape.
+
+## Implementation notes
+
+- **Stage 0.** The RF-10 baseline was taken on `main` at `eb66900` (Python 3.15.2, Windows): 3415 tests collected
+  (3413 passed, 2 skipped), 97 % line and branch coverage in total, the per-file table, and the three scans of the
+  fixture application with the requests it received. A second run of the anonymous scan gave the same requests and
+  the same findings. A second run of the login scan gave the same check ids, severities and fingerprints, and 137 of
+  its 941 requests differed, because the command, template and expression probes draw random operands: the Stage 4
+  comparison of the login scan's requests leaves those out. Durations: 5.3 s anonymous, 4.9 s with the `[auth]`
+  cookie and header, 29.6 s with the login.
+- **Stage 0 mutation.** 155 mutants over `core/output.py`, `store_text`, `EVIDENCE_MARKER` and
+  `escape_json_controls`: 144 killed, 5 ended in a timeout (an endless loop the tests detect), and 6 survived as
+  equivalent (a short cut that gives the same result, and a guard no input reaches). The first run left 11 other
+  survivors at boundaries the tests did not reach: the group width and depth, a fragment that starts the text,
+  fragments apart, a run of dots, the longest fragment across two secrets, an exception without a message, and the
+  traceback bound. Each now has a test. The last one was a defect: a traceback of exactly the bound was cut, because
+  the size counted a line break before the first line.

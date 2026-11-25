@@ -28,7 +28,7 @@ from typing import Any
 
 # The bidirectional marks, embeddings, overrides and isolates (U+061C, U+200E-U+200F,
 # U+202A-U+202E, U+2066-U+2069) and the invisible characters a name can hide (U+200B-U+200D,
-# U+2060-U+2064, U+FEFF), as the body of a regex character class (the JSON reporter shares it).
+# U+2060-U+2064, U+FEFF), as the body of a regex character class (the JSON escape shares it).
 # Kept in step with `web/src/lib/text.ts`.
 INVISIBLE_CHARS = r"\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff"
 # The C0 controls except tab and line feed, DEL and the C1 range. Tab and line feed are layout,
@@ -37,6 +37,11 @@ _CONTROL_RE = re.compile(rf"[\x00-\x08\x0b-\x1f\x7f-\x9f{INVISIBLE_CHARS}]")
 # On one line, the tab and the line feed are escaped too: a line break in a title would let the
 # site print a line of its own under the scanner's.
 _ONE_LINE_CONTROL_RE = re.compile(rf"[\x00-\x1f\x7f-\x9f{INVISIBLE_CHARS}]")
+# DEL, the C1 controls and the bidirectional and invisible characters, as a JSON encoder writes
+# them raw. JSON escapes only the C0 controls, and these can only appear inside a JSON string
+# (everything outside one is ASCII punctuation, digits and literals), where a ``\uNNNN`` escape
+# means the same character.
+_JSON_RAW_CONTROL_RE = re.compile(rf"[\x7f-\x9f{INVISIBLE_CHARS}]")
 # A surrogate code point on its own. A decoder or a JSON parser joins a valid pair into one
 # character, so whatever is left here has no partner.
 _SURROGATE_RE = re.compile(r"[\ud800-\udfff]")
@@ -64,6 +69,21 @@ def show_controls(value: str, *, one_line: bool = False) -> str:
     if one_line:
         return _ONE_LINE_CONTROL_RE.sub(_escape, value)
     return _CONTROL_RE.sub(_escape, value.replace("\r\n", "\n"))
+
+
+def escape_json_controls(document: str) -> str:
+    r"""
+    Escape what a JSON encoder writes raw from a JSON document.
+
+    Args:
+        document (str): An encoded JSON document, as ``json.dumps`` or pydantic writes it.
+
+    Returns:
+        str: ``document`` with DEL, the C1 controls and the bidirectional and invisible
+            characters written as ``\uNNNN`` escapes: the same document to a JSON parser, inert in
+            a terminal and read as it holds.
+    """
+    return _JSON_RAW_CONTROL_RE.sub(lambda m: f"\\u{ord(m.group()):04x}", document)
 
 
 def replace_surrogates(value: str) -> str:

@@ -1,6 +1,6 @@
 ---
 feature: Safe output — redaction, size bounds and control-character neutralization applied in one place for every output
-status: approved
+status: in progress
 date: 2026-11-25
 related:
   - 024-secret-values/requirements.md
