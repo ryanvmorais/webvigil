@@ -11,8 +11,8 @@ from __future__ import annotations
 from jinja2 import Environment, PackageLoader, select_autoescape
 
 from webvigil.core.findings import Severity
+from webvigil.core.output import Sink, safe_text
 from webvigil.core.result import ScanResult
-from webvigil.core.text import show_controls
 from webvigil.core.urls import is_http_url
 from webvigil.reporting._ordering import sort_findings
 
@@ -44,7 +44,7 @@ class HtmlReporter:
         template = _env.get_template("report.html.j2")
         # The template itself has no control character, so every one in the page came from a
         # value: escaping the rendered page covers every field at once.
-        return show_controls(
+        return safe_text(
             template.render(
                 meta=result.metadata,
                 findings=sort_findings(result.findings),
@@ -52,5 +52,6 @@ class HtmlReporter:
                 errors=result.errors,
                 warnings=result.warnings,
                 severities=list(reversed(list(Severity))),
-            )
+            ),
+            Sink.DOCUMENT,
         )
