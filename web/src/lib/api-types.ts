@@ -446,7 +446,10 @@ export interface components {
          * @description Login body.
          */
         LoginIn: {
-            /** Password */
+            /**
+             * Password
+             * Format: password
+             */
             password: string;
             /** Username */
             username: string;
@@ -463,9 +466,15 @@ export interface components {
          * @description Password-change body: the current password plus the new one.
          */
         PasswordChangeIn: {
-            /** Current Password */
+            /**
+             * Current Password
+             * Format: password
+             */
             current_password: string;
-            /** New Password */
+            /**
+             * New Password
+             * Format: password
+             */
             new_password: string;
         };
         /**
@@ -648,7 +657,10 @@ export interface components {
          * @description First-run setup body: the credentials for the single account.
          */
         SetupIn: {
-            /** Password */
+            /**
+             * Password
+             * Format: password
+             */
             password: string;
             /** Username */
             username: string;
