@@ -214,7 +214,7 @@ def safe_traceback(exc: BaseException) -> str:
     """
     lines = _chain_lines(exc, set(), 0)
     kept: list[str] = []
-    size = 0
+    size = -1  # the joined length: a line break goes between lines, not before the first
     for line in lines:
         size += len(line) + 1
         if size > URL_MAX_CHARS:

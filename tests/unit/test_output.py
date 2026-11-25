@@ -138,6 +138,25 @@ def test_the_terminal_profile_escapes_line_breaks_on_one_line() -> None:
     assert not _RAW_ANY.search(safe_text(_HOSTILE, Sink.TERMINAL, one_line=True))
 
 
+@pytest.mark.parametrize(
+    ("sink", "escapes_line_breaks"),
+    [
+        (Sink.LOG, True),
+        (Sink.MESSAGE, True),
+        (Sink.STORE, False),
+        (Sink.DOCUMENT, False),
+        (Sink.JSON, False),
+    ],
+)
+def test_one_line_is_a_choice_of_the_terminal_profile_only(
+    sink: Sink, escapes_line_breaks: bool
+) -> None:
+    # deviation 3: only TERMINAL reads one_line; the others ignore it either way
+    for one_line in (False, True):
+        out = safe_text("a\nb", sink, one_line=one_line)
+        assert ("\n" not in out) is escapes_line_breaks
+
+
 def test_a_limit_replaces_the_profile_bound() -> None:
     assert safe_text("x" * 100, Sink.STORE, limit=10) == "x" * 10 + TRUNCATION_MARKER
     assert safe_text("x" * 100, Sink.DOCUMENT, limit=10) == "x" * 10 + TRUNCATION_MARKER
@@ -310,6 +329,19 @@ def test_overlapping_fragments_become_one_redaction() -> None:
     assert redactor("\u2026abcdX\u2026") == f"\u2026{REDACTED}\u2026"
 
 
+def test_touching_fragments_become_one_redaction() -> None:
+    # the suffix "efgh" after the start ends where the prefix "abcd" before the marker begins
+    redactor = Redactor(["abcdefgh"])
+    assert redactor("efghabcd...", cut_edges=True) == f"{REDACTED}..."
+
+
+def test_a_fragment_inside_a_longer_one_does_not_shorten_it() -> None:
+    # a secret holding a marker: the suffix after the start covers the whole text, and the
+    # prefix "abcd" before the marker sits inside it
+    redactor = Redactor(["abcdXabcd...QQ"])
+    assert redactor("Xabcd...QQ", cut_edges=True) == REDACTED
+
+
 def test_the_longest_fragment_at_a_cut_is_redacted() -> None:
     # "abcdabcdz" has the prefixes "abcd" and "abcdabcd" ending at the same cut
     redactor = Redactor(["abcdabcdz"])
@@ -318,9 +350,48 @@ def test_the_longest_fragment_at_a_cut_is_redacted() -> None:
 
 
 def test_a_fragment_longer_than_the_text_before_the_cut_is_not_read_from_the_end() -> None:
-    redactor = Redactor(["zzzzWXYZ"])
-    # "WXYZ" ends a prefix 8 long, but only 4 characters stand before the cut
+    redactor = Redactor(["zzzzWXYZq"])
+    # "WXYZ" ends the prefix "zzzzWXYZ", 8 long, but only 4 characters stand before the cut
     assert redactor("WXYZ\u2026") == "WXYZ\u2026"
+    # positive control: with the whole prefix before the cut, it is found
+    assert redactor("zzzzWXYZ\u2026") == f"{REDACTED}\u2026"
+
+
+def test_a_fragment_that_starts_the_text_is_redacted() -> None:
+    # the cut is 4 characters in: the whole text before it is the fragment
+    redactor = Redactor(["abcdefgh"])
+    assert redactor("abcd\u2026") == f"{REDACTED}\u2026"
+
+
+def test_fragments_apart_stay_apart() -> None:
+    redactor = Redactor(["abcdefgh"])
+    assert redactor("abcd\u2026middle\u2026efgh") == f"{REDACTED}\u2026middle\u2026{REDACTED}"
+
+
+def test_a_run_of_dots_longer_than_a_marker_is_a_cut_at_each_offset() -> None:
+    # "......" holds "..." four times; the fragment follows the last one
+    redactor = Redactor(["abcdefgh"])
+    assert redactor("......efgh") == f"......{REDACTED}"
+
+
+@pytest.mark.parametrize(
+    "secrets",
+    [["XXXXXXXXabcdefgh", "Yabcd"], ["XXXXXXXXXXXXabcd", "Yabcdefgh"]],
+    ids=["longest-first", "longest-last"],
+)
+def test_the_longest_suffix_wins_across_secrets(secrets: list[str]) -> None:
+    # both secrets have a suffix starting "abcd" at the cut: "abcdefgh" must win over "abcd"
+    assert Redactor(secrets)("\u2026abcdefgh") == f"\u2026{REDACTED}"
+
+
+@pytest.mark.parametrize(
+    "secrets",
+    [["abcdefghXXXXXXXX", "efghY"], ["efghXXXXXXXXXXXX", "abcdefghY"]],
+    ids=["longest-first", "longest-last"],
+)
+def test_the_longest_prefix_wins_across_secrets(secrets: list[str]) -> None:
+    # both secrets have a prefix ending "efgh" at the cut: "abcdefgh" must win over "efgh"
+    assert Redactor(secrets)("~abcdefgh\u2026") == f"~{REDACTED}\u2026"
 
 
 def _snippet_helpers() -> Iterator[tuple[str, Callable[[str], str], str]]:
@@ -452,6 +523,42 @@ def test_the_traceback_is_bounded() -> None:
     )
 
 
+def _filled_to(size: int) -> ValueError:
+    """
+    Args:
+        size (int): The length its traceback must have.
+
+    Returns:
+        ValueError: An exception, never raised, whose notes make its traceback ``size``
+            characters long, line breaks included.
+    """
+    exc = ValueError("x")
+    exc.__notes__ = ["n" * 1000] * (size // 1001 - 1)
+    exc.__notes__.append("n" * (size - len(safe_traceback(exc)) - 1))
+    return exc
+
+
+def test_a_traceback_of_exactly_the_bound_is_kept_whole() -> None:
+    exact = _filled_to(URL_MAX_CHARS)
+    out = safe_traceback(exact)
+    assert len(out) == URL_MAX_CHARS
+    assert not out.endswith(TRUNCATION_MARKER)
+    # one character more cuts the last line, and what is kept fits the bound
+    over = _filled_to(URL_MAX_CHARS)
+    over.__notes__[-1] += "n"
+    cut = safe_traceback(over)
+    assert cut.endswith("\n" + TRUNCATION_MARKER)
+    assert len(cut) - len("\n" + TRUNCATION_MARKER) <= URL_MAX_CHARS
+    assert cut.count("\n") == out.count("\n")
+
+
+def test_an_exception_without_a_message_is_named_alone() -> None:
+    assert safe_traceback(ValueError()) == "ValueError"
+    assert safe_traceback(ValueError("")) == "ValueError"
+    # positive control: Python writes the bare name too
+    assert traceback.format_exception_only(ValueError()) == ["ValueError\n"]
+
+
 def test_the_traceback_ends_a_cycle_and_names_an_unprintable_exception() -> None:
     first, second = ValueError("one"), _Unprintable()
     first.__context__, second.__context__ = second, first
@@ -489,6 +596,40 @@ def test_a_wide_and_a_deep_group_are_cut_as_python_cuts_them() -> None:
     text = safe_traceback(deep)
     assert "... (exception groups nested deeper than 10)" in text
     assert "bottom" not in text
+
+
+def _nested(levels: int) -> BaseException:
+    """
+    Args:
+        levels (int): How many exception groups wrap the innermost exception.
+
+    Returns:
+        BaseException: ``ValueError("bottom")`` inside ``levels`` groups.
+    """
+    deep: BaseException = ValueError("bottom")
+    for level in range(levels):
+        deep = ExceptionGroup(f"level {level}", [deep])
+    return deep
+
+
+@pytest.mark.parametrize(("levels", "shown"), [(10, True), (11, False)])
+def test_the_group_depth_stops_where_python_stops(levels: int, shown: bool) -> None:
+    python = "".join(traceback.format_exception(_nested(levels)))
+    assert ("bottom" in python) is shown
+    assert ("bottom" in safe_traceback(_nested(levels))) is shown
+
+
+@pytest.mark.parametrize(("width", "more"), [(15, None), (16, "--- and 1 more sub-exceptions ---")])
+def test_the_group_width_stops_where_python_stops(width: int, more: str | None) -> None:
+    group = ExceptionGroup("wide", [ValueError(str(i)) for i in range(width)])
+    python = "".join(traceback.format_exception(group))
+    assert ("and 1 more exception" in python) is (more is not None)
+    out = safe_traceback(group).split("\n")
+    assert f"--- sub-exception 15 of {width} ---" in out
+    if more is None:
+        assert not any("more sub-exceptions" in line for line in out)
+    else:
+        assert out[-1] == more
 
 
 # ---------------------------------------------------------------------------
