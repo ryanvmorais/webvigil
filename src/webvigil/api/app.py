@@ -11,8 +11,10 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from webvigil import __version__
 from webvigil.api.body_limit import BodyLimitMiddleware
@@ -27,6 +29,27 @@ from webvigil.api.routes import auth, meta, reports, scans, setup
 from webvigil.api.runner import OrchestratorFactory, ScanRunner, recover_interrupted_scans
 from webvigil.api.security import dummy_password_hash, resolve_session_secret
 from webvigil.api.throttle import LoginThrottle
+
+# What a ``422`` keeps of each validation error (spec 024, ADR-8): where and why, never ``input``,
+# ``ctx`` or ``url``, which echo the value sent (a password, a target with a credential in it).
+_VALIDATION_ERROR_KEYS = ("type", "loc", "msg")
+
+
+async def _validation_failed(_request: Request, exc: Exception) -> JSONResponse:
+    """
+    Answer a request whose input failed validation, on every endpoint.
+
+    Args:
+        _request (Request): The request; unused.
+        exc (Exception): The :class:`~fastapi.exceptions.RequestValidationError`.
+
+    Returns:
+        JSONResponse: ``422`` with ``{"detail": [{"type", "loc", "msg"}, ...]}``, the shape of
+            FastAPI's own answer without the keys that repeat the input.
+    """
+    assert isinstance(exc, RequestValidationError)
+    detail = [{key: error[key] for key in _VALIDATION_ERROR_KEYS} for error in exc.errors()]
+    return JSONResponse({"detail": detail}, status_code=status.HTTP_422_UNPROCESSABLE_CONTENT)
 
 
 def create_app(
@@ -57,7 +80,7 @@ def create_app(
         engine = make_engine(cfg)
         app.state.config = cfg
         app.state.engine = engine
-        app.state.session_secret = resolve_session_secret(engine, cfg)
+        app.state.session_secret = resolve_session_secret(engine, cfg)  # a Secret (spec 024)
         dummy_password_hash()  # warm it, so the first unknown username is not slower than the rest
         recover_interrupted_scans(engine)
         runner = (
@@ -84,6 +107,7 @@ def create_app(
         redoc_url=None,
     )
     install_docs(app)
+    app.add_exception_handler(RequestValidationError, _validation_failed)
     app.state.login_throttle = LoginThrottle()
     app.state.trusted_proxies = TrustedProxies(cfg.trusted_proxies)
     # Innermost: it reads the redirect the router answers with.
