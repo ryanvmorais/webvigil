@@ -11,6 +11,16 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-11-24
+
+A minor release that holds every credential and session value as a secret, which no print, log
+line, traceback or JSON dump shows, with two security fixes: a pinned Swagger UI on the Web API's
+`/docs` and a Content-Security-Policy on every dashboard page. It is backward compatible with
+[docs/stability.md](docs/stability.md): no check id, JSON report field or configuration key
+changes. What changes is in the surfaces that page calls provisional (the Python API, the Web API
+and its documentation pages), and a target or URL setting with a credential in it is now refused
+instead of being scanned without it.
+
 ### Changed
 
 - **In the Python API, the scan's credentials are `Secret` values.** `ScanConfig.auth.cookies` and
@@ -938,7 +948,8 @@ confirmed against a per-request baseline)
 - A security policy with private vulnerability reporting, a code of conduct, and the
   [stability policy](docs/stability.md).
 
-[Unreleased]: https://github.com/ryanvmorais/webvigil/compare/v1.6.0...HEAD
+[Unreleased]: https://github.com/ryanvmorais/webvigil/compare/v1.7.0...HEAD
+[1.7.0]: https://github.com/ryanvmorais/webvigil/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/ryanvmorais/webvigil/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/ryanvmorais/webvigil/compare/v1.4.7...v1.5.0
 [1.4.7]: https://github.com/ryanvmorais/webvigil/compare/v1.4.6...v1.4.7
