@@ -85,7 +85,7 @@ maintained by one person, that is a permanent tax that dwarfs every check in the
 
 ### It does not fit the test suite
 
-WebVigil's suite of some 2,400 tests runs offline and deterministically. A real OAST flow
+WebVigil's test suite runs offline and deterministically. A real OAST flow
 is asynchronous and network-dependent: inject now, callback arrives some seconds later,
 maybe. Making that reliable in CI means either mocking the collaborator so thoroughly that
 the test proves nothing, or accepting a flaky suite. Neither is acceptable in a tool whose
