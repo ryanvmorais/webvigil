@@ -123,29 +123,29 @@ makes it.
 
 ## Stage 2 — Web API and the sink inventory
 
-- [ ] `src/webvigil/api/runner.py`, `security.py`: loggers from `get_logger`. — RF-04, ADR-4
-- [ ] `src/webvigil/api/app.py`: the lifespan attaches `SafeLogFilter` to `uvicorn.error` and `httpx2`, once.
+- [x] `src/webvigil/api/runner.py`, `security.py`: loggers from `get_logger`. — RF-04, ADR-4
+- [x] `src/webvigil/api/app.py`: the lifespan attaches `SafeLogFilter` to `uvicorn.error` and `httpx2`, once.
   — RF-04, ADR-4
-- [ ] `src/webvigil/api/db.py`, `api/migrations/env.py`: `hide_parameters=True`. — RF-04, ADR-5
-- [ ] `src/webvigil/api/runner.py`: `_terminate` writes `safe_text(error, Sink.STORE)`. — RF-06
-- [ ] `src/webvigil/api/app.py`: `_validation_failed` passes each string part of `loc` and each `msg` through
+- [x] `src/webvigil/api/db.py`, `api/migrations/env.py`: `hide_parameters=True`. — RF-04, ADR-5
+- [x] `src/webvigil/api/runner.py`: `_terminate` writes `safe_text(error, Sink.STORE)`. — RF-06
+- [x] `src/webvigil/api/app.py`: `_validation_failed` passes each string part of `loc` and each `msg` through
   `safe_text(..., Sink.MESSAGE)`, and still drops `input`, `ctx` and `url`. — RF-06
-- [ ] `tests/api/test_log_canary.py`: the two failures of the design (a scan that raises with the canary,
+- [x] `tests/api/test_log_canary.py`: the two failures of the design (a scan that raises with the canary,
   controls and an oversized message; a store into a dropped findings table), logging captured at `DEBUG`, with
   the positive controls (both failures logged; an engine without `hide_parameters` shows the canary).
   — RF-04, RF-06, RF-11
-- [ ] `tests/api/`: the `422` with an oversized key and a message holding a control character. — RF-06, RF-11
-- [ ] `tests/unit/test_output_inventory.py`: the syntax-tree walk of ADR-8 over `src/webvigil`, `OUTPUT_SINKS`
+- [x] `tests/api/`: the `422` with an oversized key and a message holding a control character. — RF-06, RF-11
+- [x] `tests/unit/test_output_inventory.py`: the syntax-tree walk of ADR-8 over `src/webvigil`, `OUTPUT_SINKS`
   with a reason per site, `logging.getLogger` allowed only in `core/output.py`, and the positive controls over a
   throwaway source. Every output of the CLI, the reporters and the Web API is listed. — RF-09, ADR-8
-- [ ] `docs/web-api.md`: the log treatment and the `422` message bound. `CHANGELOG.md` `[Unreleased]`: the log
+- [x] `docs/web-api.md`: the log treatment and the `422` message bound. `CHANGELOG.md` `[Unreleased]`: the log
   treatment under **Security**, the `422` message bound under **Changed**. — RF-04, RF-06
-- [ ] Apply the sabotage of the design for each guard of this stage and watch each test fail: the filter not
+- [x] Apply the sabotage of the design for each guard of this stage and watch each test fail: the filter not
   attached, `hide_parameters` removed, `Scan.error` written raw, `msg` not bounded, an unlisted
   `typer.echo(value)` in a scratch copy of a module. — RF-11
-- [ ] Mutation testing in batch over `SafeLogFilter`, the lifespan's attach step, `_terminate` and
-  `_validation_failed`. — RNF-06
-- [ ] Quality gate. —
+- [x] Mutation testing in batch over `SafeLogFilter`, the lifespan's attach step, `_terminate` and
+  `_validation_failed`. — RNF-06; 23 of 23 killed after two new tests
+- [x] Quality gate. — 3609 passed, 4 skipped, 98 %; ruff, black, mypy, lint-imports and the package check green
 
 ## Stage 3 — Dashboard
 
