@@ -183,8 +183,10 @@ class _FailingOrchestrator:
         ("x" * 20_000, "x" * 16 * 1024 + "...[truncated]"),
         (f"bad{_LONE}name", f"bad{_REPLACED}name"),
         ("short failure", "short failure"),
+        # kept as written: the STORE profile neutralizes nothing, each output does where it shows it
+        ("bad\x1b[2Jname\nnext", "bad\x1b[2Jname\nnext"),
     ],
-    ids=["long", "unencodable", "control"],
+    ids=["long", "unencodable", "control", "controls-kept"],
 )
 def test_the_error_of_a_failed_scan_is_stored_bounded_and_encodable(
     web_config: WebConfig, web_engine: Engine, message: str, stored: str
