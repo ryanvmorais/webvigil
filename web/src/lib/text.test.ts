@@ -1,6 +1,9 @@
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
-import { hasHiddenCharacters, showControls } from "@/lib/text";
+import { display, hasHiddenCharacters, showControls } from "@/lib/text";
 
 const RLO = String.fromCodePoint(0x202e);
 const ZWSP = String.fromCodePoint(0x200b);
@@ -8,6 +11,71 @@ const LRI = String.fromCodePoint(0x2066);
 const BOM = String.fromCodePoint(0xfeff);
 const ESC = String.fromCodePoint(0x1b);
 const CSI = String.fromCodePoint(0x9b);
+
+/** One case of the file `show_controls` (Python) and `showControls` both pass (spec 025, ADR-7). */
+type SharedCase = { name: string; input: string; one_line: boolean; expected: string };
+
+// `import.meta.url` is not a `file:` URL under jsdom; the directory is.
+const CASES_FILE = join(
+  import.meta.dirname,
+  "..",
+  "..",
+  "..",
+  "tests",
+  "data",
+  "text-controls-cases.json",
+);
+
+/**
+ * Reads the shared cases. The file lives outside `web/`, so a copy of the dashboard alone fails
+ * here, naming the file, instead of skipping the comparison with the Python side.
+ */
+function loadCases(path: string): SharedCase[] {
+  if (!existsSync(path)) {
+    throw new Error(
+      `The shared cases file ${path} is missing: run the dashboard's tests from a full checkout.`,
+    );
+  }
+  return JSON.parse(readFileSync(path, "utf8")) as SharedCase[];
+}
+
+describe("the shared cases of tests/data/text-controls-cases.json", () => {
+  const cases = loadCases(CASES_FILE);
+
+  it("holds cases", () => {
+    // a file emptied by mistake would pass every case below without running one
+    expect(cases.length).toBeGreaterThan(50);
+  });
+
+  it.each(cases.map((sharedCase) => [sharedCase.name, sharedCase] as const))(
+    "%s",
+    (_name, sharedCase) => {
+      expect(showControls(sharedCase.input, { oneLine: sharedCase.one_line })).toBe(
+        sharedCase.expected,
+      );
+    },
+  );
+
+  it("fails with the file's name when the file is missing", () => {
+    const missing = join(import.meta.dirname, "no-such-cases.json");
+    expect(() => loadCases(missing)).toThrow(missing);
+  });
+});
+
+describe("display", () => {
+  it("gives an empty string for null and undefined", () => {
+    expect(display(null)).toBe("");
+    expect(display(undefined)).toBe("");
+  });
+
+  it("escapes tab and line feed by default, as on one line", () => {
+    expect(display(`a\tb\nc${ESC}`)).toBe("a\\x09b\\x0ac\\x1b");
+  });
+
+  it("keeps tab and line feed and reads CRLF as LF with multiLine", () => {
+    expect(display(`a\tb\r\nc${RLO}`, { multiLine: true })).toBe("a\tb\nc\\u202e");
+  });
+});
 
 /** A code point as a test name shows it: 202E, not 8238. */
 const hex = (code: number) => code.toString(16).toUpperCase().padStart(4, "0");
