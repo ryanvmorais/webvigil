@@ -31,8 +31,9 @@ configuration and the login credentials, plus the session's. The kind replaces t
 `issued` lists.
 
 URLs with userinfo are refused by one predicate, `has_userinfo`, used by `Target.parse` and by the
-validators of the URL settings. The Web API answers every `422` without the `input`, so no value goes back. A
-migration strips the userinfo from targets already stored.
+validators of the URL settings. The Web API answers every `422` without the `input`, so no value goes back.
+The targets already stored carry no userinfo, because the Web API has always stored the normalized form
+(deviation 17).
 
 ### What was checked (2026-11-24, pydantic 2.14.3, Python 3.14, Windows)
 
@@ -65,7 +66,6 @@ src/webvigil/api/security.py         token, hashing and verification take Secret
 src/webvigil/api/schemas.py          password fields as secret fields
 src/webvigil/api/app.py              422 handler without input/ctx/url; app.state.session_secret: Secret
 src/webvigil/api/cli.py              reset-password wraps the prompt
-src/webvigil/api/migrations/versions/0003_strip_target_userinfo.py (new)
 tests/unit/test_core_secrets.py (new)       the type's contract table, collect_secrets
 tests/unit/test_secret_inventory.py (new)   reveal inventory + credential-field gate
 web/openapi.json, web/src/lib/api-types.ts  regenerated (password fields gain format/writeOnly)
@@ -216,10 +216,9 @@ anywhere under `ScanConfig` is collected with no other change (RF-07).
   dashboard reads only `loc` and `msg` (`web/src/lib/api.ts`).
 - **`ScanCreate`.** Its target refusal comes from `Target.parse` (RF-09), whose message never repeats the
   input, so the `422` carries neither the password nor the target.
-- **Migration `0003`.** It rewrites `scan.target` for every row whose authority has an `@`, keeping the text
-  after the last `@` of the authority and the rest of the URL as stored. Nothing else in a row holds the
-  target as typed: the stored result's `metadata.target` was already normalized without userinfo. `downgrade`
-  is a no-op, because the removed text is not kept (ADR-9).
+- **Stored targets.** `scan.target` is `Target.parse(...).entry_url`, which `normalize_url` builds from the
+  host and the port, without the userinfo, in every version of the Web API. No stored row carries a
+  credential, and no migration runs (deviation 17, which withdraws ADR-9).
 
 ### Userinfo (`core/urls.py`, `core/target.py`)
 
@@ -424,6 +423,8 @@ everywhere is simpler than telling secret fields apart. It also covers the targe
 
 ### ADR-9 — Stored targets are rewritten; the downgrade does not restore them
 
+> **Withdrawn** in Stage 4: no stored target carries userinfo, so there is nothing to rewrite (deviation 17).
+
 **Decision.** Migration `0003` strips the userinfo from `scan.target` in place, and its `downgrade` is a
 no-op.
 
@@ -548,8 +549,8 @@ stdout or stderr.
 - **What it proves.** No canary in the logs or in any response body. The `422` keeps `loc` and `msg`, which
   is its positive control.
 - **Refused target.** `POST /api/scans` with userinfo answers `422`, without the target, and stores no row.
-- **Migration.** A database at revision `0002` with one target that has userinfo and one that does not is
-  upgraded to `0003`. The first is stripped, and the second and every finding are unchanged.
+- **Stored form.** `normalize_url` drops the userinfo of a URL that has one, so the stored target would not
+  carry it even without the refusal (deviation 17).
 
 **Sabotage, each seen red once.**
 
@@ -560,10 +561,10 @@ stdout or stderr.
 - Drop the `HEADER` scheme rule in the scrub, and make `collect_secrets` skip dataclasses.
 - Remove the userinfo check from `Target.parse` and from one URL validator.
 - Let the `422` handler keep `input`.
-- Make the migration skip a row.
+- Make `normalize_url` keep the authority as given.
 
 **Mutation in batch** over `core/secrets.py`, `has_userinfo`, the URL validators, the `Target.parse` refusal,
-the scrub's kind split, the `422` handler and the migration. Every changed function has a killed mutant,
+the scrub's kind split, the `422` handler and `resolve_session_secret`. Every changed function has a killed mutant,
 every surviving mutant is triaged, and the score goes in the pull request (RNF-06).
 
 **No network.** Every test stays offline: the fixture app in process, `httpx_mock`, and the API's test client.
@@ -626,6 +627,17 @@ every surviving mutant is triaged, and the score goes in the pull request (RNF-0
     `Target.parse` refuses it as an unsupported target before it adds `https://`, as it did before this spec; the
     message repeats nothing of it. The userinfo message uses `...` for the ellipsis, as the other CLI messages
     are ASCII.
+17. **No migration of stored targets (RF-09, ADR-9 withdrawn).** `scan.target` has been
+    `Target.parse(...).entry_url` since the first version of the Web API, and `normalize_url` builds that URL
+    from the host and the port, so the userinfo was never stored. `Target.parse` from that version and from
+    the commit before Stage 3 both turn `https://user:pw@example.com/a` into `https://example.com/a`, and no
+    other column of a scan holds a URL as given (`options` keeps only numbers, flags and check ids). A
+    migration would rewrite rows no version wrote, so RF-09 now states that fact, and a test keeps
+    `normalize_url` dropping the userinfo.
+18. **The signing secret's least length counts characters (RF-06).** It counted UTF-8 bytes, which needs the
+    value. `len()` of the `Secret` gives characters without a reveal, so only signing and checking a token
+    read it. The message always said characters; a non-ASCII secret of fewer than 32 characters and 32 bytes
+    or more is now refused.
 
 ## Implementation notes
 

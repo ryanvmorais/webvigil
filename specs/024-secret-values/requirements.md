@@ -228,9 +228,10 @@ tests/                               the type's contract, the reveal inventory, 
   `[deps] osv_base_url`)
   **When** the configuration is validated
   **Then** it is a configuration error (exit `4`) that names the setting, never its value.
-- **Given** a Web API database holding scans whose target was stored with userinfo
-  **When** it is migrated to this version
-  **Then** each such target is stored without its userinfo, and the scan's findings and report are unchanged.
+- **Given** a Web API database written by an earlier version
+  **When** this version reads it
+  **Then** no stored target carries userinfo: every version stored the target normalized to its scheme,
+  host, port, path and query, which drops the userinfo, so no migration is needed (design, deviation 17).
 
 ### RF-10 — Same scan, same report
 
@@ -255,7 +256,7 @@ See the test strategy in the design. The suite must cover:
   spelling of any value appears in the logs, the terminal output, any report format or the warnings, with a
   positive control that the fixture received each value;
 - the same canary for the Web API: signing secret and passwords absent from logs, `422` bodies and responses;
-- the userinfo refusals (RF-09) and the migration of stored targets.
+- the userinfo refusals (RF-09), and the normalized form the Web API stores dropping any userinfo.
 
 ## Non-functional requirements
 

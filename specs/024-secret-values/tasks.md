@@ -263,28 +263,28 @@ Each stage also runs mutation testing in batch over the guards it adds or change
   — RF-06, ADR-4
 - [ ] `src/webvigil/api/app.py`: the `RequestValidationError` handler that keeps `type`, `loc` and `msg`, and
   `app.state.session_secret: Secret`. — RF-08, ADR-8
-- [ ] `src/webvigil/api/migrations/versions/0003_strip_target_userinfo.py`: rewrite `scan.target` without
-  userinfo; `downgrade` is a no-op, and the docstring says so. — RF-09, ADR-9
+- [x] ~~`src/webvigil/api/migrations/versions/0003_strip_target_userinfo.py`~~: withdrawn, with ADR-9. Every
+  version of the Web API stored the normalized target, without userinfo, so no row has one (design,
+  deviation 17). — RF-09
 - [ ] `tests/unit/` (Web API):
   - **Canary.** A pinned canary `session_secret`, then setup, login, a password change and a too-long
     password, with logging at `DEBUG`. No canary appears in the logs or in the responses, and `loc` and `msg`
     stay in the `422`.
   - **Refused target.** `POST /api/scans` with userinfo answers `422`, without the target, and stores no row.
-  - **Migration.** A `0002` database is upgraded to `0003`: the userinfo row is stripped, and the other row
-    and the findings are unchanged.
+  - **Stored form.** `normalize_url` drops the userinfo, so the stored target cannot carry it.
 
   — RF-06, RF-08, RF-09, RF-11
 - [ ] `uv run python scripts/dump-openapi.py`, then `pnpm gen:api` in `web/`. The password fields gain `format`
   and `writeOnly`, and the TypeScript types stay `string`. — RF-06
 - [ ] Apply the stage's sabotage (`LoginIn.password` retyped to `str`, the `422` handler keeping `input`, the
-  migration skipping a row) and watch each test fail. — RF-11
-- [ ] Mutation in batch over the `422` handler, the migration and `resolve_session_secret`. — RNF-06
-- [ ] `docs/web-api.md`: the `422` body has `type`, `loc` and `msg` only, and the migration strips stored
-  userinfo. `CHANGELOG.md`, `[Unreleased]`:
-  - **Security**: the Web API keeps no credential from a target URL, including in scans already stored;
+  `normalize_url` keeping the authority) and watch each test fail. — RF-11
+- [ ] Mutation in batch over the `422` handler and `resolve_session_secret`. — RNF-06
+- [ ] `docs/web-api.md`: the `422` body has `type`, `loc` and `msg` only. `CHANGELOG.md`, `[Unreleased]`:
+  - **Security**: the Web API holds its signing secret and every password as a secret, and a `422` repeats
+    no value it was sent;
   - **Changed**: the `422` body.
 
-  — RNF-02, ADR-8, ADR-9
+  — RNF-02, ADR-8
 - [ ] Quality gate, the Python one and the dashboard's.
 
 ## Stage 5 — Cross-check and documentation
