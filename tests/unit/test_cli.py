@@ -256,6 +256,9 @@ class _FixedReporter:
 
     def render(self, _result: ScanResult) -> str:
         """
+        Args:
+            _result (ScanResult): Ignored: the fixed text is returned.
+
         Returns:
             str: The fixed text.
         """

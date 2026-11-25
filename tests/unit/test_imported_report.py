@@ -141,9 +141,19 @@ def test_the_report_is_read_one_mebibyte_at_a_time(monkeypatch: pytest.MonkeyPat
     spy = _ReadSpy(document + b" " * (3 * _MIB + 5))
 
     class _Opener:
-        def __init__(self, _path: object) -> None: ...
+        """Stands in for ``Path`` in the reporting module: every path opens the spy."""
+
+        def __init__(self, _path: object) -> None:
+            """Ignore the path."""
 
         def open(self, _mode: str) -> _ReadSpy:
+            """
+            Args:
+                _mode (str): Ignored.
+
+            Returns:
+                _ReadSpy: The spy.
+            """
             return spy
 
     monkeypatch.setattr(reporting, "Path", _Opener)
@@ -163,6 +173,7 @@ def test_a_report_over_the_limit_is_read_one_byte_past_it_and_no_further(
     monkeypatch.setattr(reporting, "MAX_REPORT_BYTES", limit)
 
     with pytest.raises(ValueError, match="larger than"):
+        # the spy has only the read it records, not the whole BinaryIO interface
         reporting._read_bounded(spy)  # type: ignore[arg-type]
 
     assert spy.asked == [_MIB, _MIB, _MIB, 11]
