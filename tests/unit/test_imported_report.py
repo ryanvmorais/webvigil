@@ -154,6 +154,20 @@ def test_the_report_is_read_one_mebibyte_at_a_time(monkeypatch: pytest.MonkeyPat
     assert len(spy.asked) == 5
 
 
+def test_a_report_over_the_limit_is_read_one_byte_past_it_and_no_further(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The last read asks only for what is left up to one byte past the limit."""
+    limit = 3 * _MIB + 10
+    spy = _ReadSpy(b" " * (5 * _MIB))
+    monkeypatch.setattr(reporting, "MAX_REPORT_BYTES", limit)
+
+    with pytest.raises(ValueError, match="larger than"):
+        reporting._read_bounded(spy)  # type: ignore[arg-type]
+
+    assert spy.asked == [_MIB, _MIB, _MIB, 11]
+
+
 def _padded(tmp_path: Path, size: int) -> Path:
     """
     Args:
