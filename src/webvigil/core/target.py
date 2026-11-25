@@ -103,8 +103,9 @@ def normalize_url(url: str) -> str:
     """
     Return a canonical form of ``url`` for de-duplication and comparison.
 
-    Lowercases the scheme and host, drops a default port, drops the fragment,
-    and keeps the path (at least ``/``) and query.
+    Lowercases the scheme and host, drops the userinfo, a default port and the
+    fragment, and keeps the path (at least ``/``) and query. The Web API stores
+    this form, so a stored target never carries a credential.
 
     Args:
         url (str): An absolute URL. A value with no host is returned unchanged.

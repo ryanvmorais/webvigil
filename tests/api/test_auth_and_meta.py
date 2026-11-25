@@ -59,7 +59,7 @@ def test_setup_status_treats_a_bad_cookie_as_anonymous(
 ) -> None:
     """A garbage, expired, or unknown-user cookie is ``authenticated: false``, not an error."""
     client.post("/api/setup", json=ADMIN)
-    secret = web_config.session_secret  # type: ignore[attr-defined]
+    secret = web_config.session_secret.reveal()  # type: ignore[attr-defined]
     now = time.time()  # after the account was created, so no token below predates it
 
     def token(**claims: object) -> str:
@@ -157,7 +157,7 @@ def test_password_change(auth_client: TestClient) -> None:
 
 def test_expired_cookie_is_rejected(auth_client: TestClient, web_config: object) -> None:
     """A session cookie whose ``exp`` is in the past no longer authenticates."""
-    secret = web_config.session_secret  # type: ignore[attr-defined]
+    secret = web_config.session_secret.reveal()  # type: ignore[attr-defined]
     now = time.time()  # after the login, so the token does not predate the account
 
     def token(exp: int) -> str:

@@ -293,9 +293,11 @@
         "description": "Login body.",
         "properties": {
           "password": {
+            "format": "password",
             "maxLength": 256,
             "title": "Password",
-            "type": "string"
+            "type": "string",
+            "writeOnly": true
           },
           "username": {
             "maxLength": 64,
@@ -341,15 +343,19 @@
         "description": "Password-change body: the current password plus the new one.",
         "properties": {
           "current_password": {
+            "format": "password",
             "maxLength": 256,
             "title": "Current Password",
-            "type": "string"
+            "type": "string",
+            "writeOnly": true
           },
           "new_password": {
+            "format": "password",
             "maxLength": 256,
             "minLength": 8,
             "title": "New Password",
-            "type": "string"
+            "type": "string",
+            "writeOnly": true
           }
         },
         "required": [
@@ -728,10 +734,12 @@
         "description": "First-run setup body: the credentials for the single account.",
         "properties": {
           "password": {
+            "format": "password",
             "maxLength": 256,
             "minLength": 8,
             "title": "Password",
-            "type": "string"
+            "type": "string",
+            "writeOnly": true
           },
           "username": {
             "maxLength": 64,

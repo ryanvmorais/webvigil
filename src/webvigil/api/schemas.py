@@ -17,6 +17,7 @@ from webvigil.api.db import Scan
 from webvigil.core.bounded import Encodable, Text
 from webvigil.core.errors import InvalidTargetError
 from webvigil.core.findings import Confidence, ScanMode, Severity
+from webvigil.core.secrets import Secret, SecretKind, secret_field
 from webvigil.core.target import Scope, Target
 
 # Type alias (PEP 695) for the closed set of ``fail_on`` values.
@@ -28,6 +29,14 @@ PASSWORD_MIN_CHARS = 8
 PASSWORD_MAX_CHARS = 256
 # The longest username; the login body is capped the same way, because the throttle keeps it.
 USERNAME_MAX_CHARS = 64
+
+# A password the body sets, and one it only checks: each held as a ``Secret`` (spec 024), which a
+# ``422`` never echoes and a log line never prints.
+NewPassword = Annotated[
+    Secret,
+    secret_field(SecretKind.PASSWORD, min_length=PASSWORD_MIN_CHARS, max_length=PASSWORD_MAX_CHARS),
+]
+GivenPassword = Annotated[Secret, secret_field(SecretKind.PASSWORD, max_length=PASSWORD_MAX_CHARS)]
 
 # Ceilings on a new scan's options. Every option is stored on the row and drives the runner, so
 # none is left unbounded: far above any real scan, low enough that one request cannot ask for a
@@ -66,7 +75,7 @@ class SetupIn(BaseModel):
     """First-run setup body: the credentials for the single account."""
 
     username: str = Field(min_length=1, max_length=USERNAME_MAX_CHARS)
-    password: str = Field(min_length=PASSWORD_MIN_CHARS, max_length=PASSWORD_MAX_CHARS)
+    password: NewPassword
 
 
 class LoginIn(BaseModel):
@@ -74,14 +83,14 @@ class LoginIn(BaseModel):
 
     # Capped like the setup body: the login is unauthenticated, and the throttle keeps what failed.
     username: str = Field(max_length=USERNAME_MAX_CHARS)
-    password: str = Field(max_length=PASSWORD_MAX_CHARS)
+    password: GivenPassword
 
 
 class PasswordChangeIn(BaseModel):
     """Password-change body: the current password plus the new one."""
 
-    current_password: str = Field(max_length=PASSWORD_MAX_CHARS)
-    new_password: str = Field(min_length=PASSWORD_MIN_CHARS, max_length=PASSWORD_MAX_CHARS)
+    current_password: GivenPassword
+    new_password: NewPassword
 
 
 class HealthOut(BaseModel):

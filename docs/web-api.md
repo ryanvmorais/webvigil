@@ -118,6 +118,14 @@ most 10,000 keys. When it is full it drops the key that failed longest ago among
 a key that is waiting is kept, and if every key is waiting, a client not yet in the table waits too,
 until the first of those waits ends. A reverse proxy that limits body size as well is still better.
 
+**A `422` repeats nothing it was sent.** A request that fails validation, on any endpoint, gets
+`{"detail": [{"type": ..., "loc": [...], "msg": ...}]}`: the error type, where it is and why, never
+the value. FastAPI's own `input`, `ctx` and `url` keys are not sent (the OpenAPI schema still lists
+them as optional), so a too-long password or a refused target does not go back to the client, or to
+a proxy or log in between. In the process, the signing secret and every password are held as
+secrets that a log line, a traceback or an error shows as `[redacted]`; only signing and checking a
+session token, and hashing and verifying a password, read them.
+
 **Reports are served contained.** A report is built from what the scanned site sent, and
 `GET /api/scans/{id}/report?format=html&download=false` shows the HTML one inline, from the API's
 own origin. The template escapes everything, so nothing is known to be wrong; these headers are what
@@ -188,7 +196,10 @@ field a request holds that the API does not define is ignored. Scan with those o
 
 Every option has a ceiling, and a request over one gets `422`: `max_pages` up to 10 000, `delay_ms`
 up to 60 000, a `target` of up to 2 048 characters, an `authorized_by` of up to 256, and up to 200
-`disabled_checks` of up to 128 characters each.
+`disabled_checks` of up to 128 characters each. A `target` with a credential in it
+(`https://user:password@host/`) gets `422` as well, and nothing is stored: send HTTP Basic
+credentials as a header from the CLI ([`authenticated-scanning.md`](authenticated-scanning.md)). A
+stored target is the normalized URL, which never kept a credential.
 
 ## Backup
 

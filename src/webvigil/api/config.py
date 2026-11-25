@@ -6,12 +6,13 @@ import ipaddress
 import os
 import re
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 
 from webvigil.core.config import describe_validation_error, read_toml
 from webvigil.core.errors import ConfigError
+from webvigil.core.secrets import Secret, SecretKind, secret_field
 
 _ENV_PREFIX = "WEBVIGIL_"
 # HS256 wants a key as long as its 32-byte digest; PyJWT already warns below that. A pinned secret
@@ -32,9 +33,9 @@ class WebConfig(BaseModel):
         database_path (Path): SQLite file path. Defaults to ``webvigil.db``.
         host (str): Bind host. Defaults to ``127.0.0.1``.
         port (int): Bind port. Defaults to 8000.
-        session_secret (str | None): Pinned JWT signing secret, at least
-            ``MIN_SESSION_SECRET_LENGTH`` characters; when ``None`` (or empty) a
-            secret is generated and stored in the database on first use.
+        session_secret (Secret | None): Pinned JWT signing secret, at least
+            ``MIN_SESSION_SECRET_LENGTH`` characters, held as a ``SIGNING_KEY`` secret (spec 024);
+            when ``None`` (or empty) a secret is generated and stored in the database on first use.
         session_ttl_hours (int): Session lifetime, in hours. Defaults to 12.
         cookie_secure (bool): Set the ``Secure`` flag on the session cookie.
             Defaults to ``False`` (development over HTTP).
@@ -57,7 +58,7 @@ class WebConfig(BaseModel):
     database_path: Path = Path("webvigil.db")
     host: str = "127.0.0.1"
     port: int = 8000
-    session_secret: str | None = None
+    session_secret: Annotated[Secret, secret_field(SecretKind.SIGNING_KEY)] | None = None
     session_ttl_hours: int = 12
     cookie_secure: bool = False
     auto_migrate: bool = True
@@ -67,18 +68,19 @@ class WebConfig(BaseModel):
 
     @field_validator("session_secret")
     @classmethod
-    def _secret_is_long_enough(cls, value: str | None) -> str | None:
+    def _secret_is_long_enough(cls, value: Secret | None) -> Secret | None:
         """
         Args:
-            value (str | None): The pinned secret; empty or ``None`` means "generate one".
+            value (Secret | None): The pinned secret; empty or ``None`` means "generate one".
 
         Returns:
-            str | None: ``value`` unchanged.
+            Secret | None: ``value`` unchanged.
 
         Raises:
-            ValueError: If a non-empty secret is shorter than ``MIN_SESSION_SECRET_LENGTH`` bytes.
+            ValueError: If a non-empty secret is shorter than ``MIN_SESSION_SECRET_LENGTH``
+                characters. The length is the secret's own, so the check reads no value.
         """
-        if value and len(value.encode("utf-8")) < MIN_SESSION_SECRET_LENGTH:
+        if value and len(value) < MIN_SESSION_SECRET_LENGTH:
             raise ValueError(
                 f"session_secret must be at least {MIN_SESSION_SECRET_LENGTH} characters "
                 "(generate one with: "
