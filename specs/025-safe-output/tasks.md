@@ -1,6 +1,6 @@
 ---
 feature: Safe output — redaction, size bounds and control-character neutralization applied in one place for every output
-status: in progress
+status: done
 date: 2026-11-25
 related:
   - 024-secret-values/requirements.md
@@ -173,17 +173,20 @@ makes it.
 
 ## Stage 4 — Cross-check and documentation
 
-- [ ] RF-10: repeat the three scans of Stage 0 from the new `main`. Compare the requests the fixture received
+- [x] RF-10: repeat the three scans of Stage 0 from the new `main`. Compare the requests the fixture received
   and the JSON reports, leaving out timestamps and durations: the requests are byte for byte the same, and
   findings, severities, check ids, fingerprints and `schema_version` are identical, except a redacted fragment
-  next to a cut. Compare the scan durations with the baseline. — RF-10, RNF-04
-- [ ] `.github/workflows/`: confirm the whole CI matrix on the last merge commit: `quality` on Linux and Windows
-  for every Python version, `package`, `docker`, `web` and `compose`. — RNF-05
-- [ ] `docs/writing-checks.md`: cut a snippet with a marker from `CUT_MARKERS`, log through `get_logger`, and a
+  next to a cut. Compare the scan durations with the baseline. — RF-10, RNF-04; identical once the per-run
+  random values are masked, as between two runs of the baseline; 5.1 s, 4.5 s and 28.7 s against 5.3 s, 4.9 s
+  and 29.6 s
+- [x] `.github/workflows/`: confirm the whole CI matrix on the last merge commit: `quality` on Linux and Windows
+  for every Python version, `package`, `docker`, `web` and `compose`. — RNF-05; all green on `46e2bf7`
+- [x] `docs/writing-checks.md`: cut a snippet with a marker from `CUT_MARKERS`, log through `get_logger`, and a
   new output needs an `OUTPUT_SINKS` line with its reason. — RF-09, ADR-3, ADR-8
-- [ ] `CLAUDE.md`: one line in the architecture section saying that every output goes through
+- [x] `CLAUDE.md`: one line in the architecture section saying that every output goes through
   `core/output.py::safe_text` with its `Sink`, and that a logger comes from `get_logger`. — RF-01, RF-09
-- [ ] `design.md`: fill in `## Implementation notes` with the measurements: tests before and after, coverage
+- [x] `design.md`: fill in `## Implementation notes` with the measurements: tests before and after, coverage
   per file, suite time, scan durations, the memory ratios, the mutation scores. Set `status: done` in the three
   files and on the roadmap of `specs/README.md`. — RF-11
-- [ ] Quality gate. —
+- [x] Quality gate. — 3613 collected, 4 skipped on Windows, 98 %; ruff, black, mypy, lint-imports and the
+  package check green

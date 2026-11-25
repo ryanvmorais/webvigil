@@ -1,6 +1,6 @@
 ---
 feature: Safe output — redaction, size bounds and control-character neutralization applied in one place for every output
-status: in progress
+status: done
 date: 2026-11-25
 related:
   - 024-secret-values/requirements.md
@@ -672,3 +672,23 @@ has a killed mutant, every survivor is triaged, and the score goes in the pull r
   removed in turn, a range dropped from `HIDDEN_RANGES`, and `display` keeping line breaks by default. All 27
   failed a test. The first run left three green: two filter labels the closed select did not show (deviation 17)
   and the check catalogue's mode, an enum (deviation 15), whose `display` was removed.
+- **Stage 4 (RF-10).** The three scans of Stage 0 ran again from `main` at `46e2bf7`, on the same ports. The
+  anonymous scan and the scan with the `[auth]` cookie and header received the same 35 requests, byte for byte, and
+  wrote the same 28 findings. The login scan received the same 941 requests and wrote the same 45 findings once the
+  per-run random values are masked: the marker, the operands of the command, template and expression probes, and
+  the random tokens of the CRLF and SSI probes. The same mask is what it takes to match two runs of the baseline.
+  Check ids, severities, fingerprints and `schema_version` are identical in all three. No report and no terminal
+  output holds the configured cookie, header or password. Durations: 5.1 s anonymous (5.3 s before), 4.5 s with
+  `[auth]` (4.9 s) and 28.7 s with the login (29.6 s), within the run-to-run spread.
+- **Totals.** Python: 3415 tests collected before the spec, 3613 after (4 skipped on Windows: two POSIX mode tests
+  and the two memory tests, which read the peak resident size from Linux `/proc`). Coverage: 97 % line and branch
+  in total before, 98 % after. The changed modules: `core/output.py`, `core/bounded.py`, `auth/scrub.py`,
+  `cli/_render.py` and `api/security.py` 100 %; `core/text.py` and `api/app.py` 99 %; `cli/app.py` and
+  `reporting/__init__.py` 98 %; `api/runner.py` 92 %, whose uncovered lines predate the spec. The suite took 84 s
+  with coverage on Windows, against 121 s for the baseline on the same machine; the difference is the machine's
+  load, since no stage removed tests. Dashboard: 485 tests before, 576 after. The memory of `webvigil report`
+  (Stage 1) peaks at 15.4 times the file's size for the dense file and 3.6 times for large values. Mutation:
+  Stage 0 killed 144 of 155 mutants, 5 ended in a timeout and 6 are equivalent; Stage 1 killed 22 of 22 after one
+  rerun; Stage 2 killed 23 of 23 after one rerun; Stage 3 had 27 of 27 sabotages fail a test. The CI matrix of the
+  last merge commit passed: `quality` on Linux and Windows for Python 3.12 to 3.15, `package`, `docker`, `web` and
+  `compose`.
