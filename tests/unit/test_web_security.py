@@ -123,7 +123,7 @@ def test_resolve_session_secret_generates_then_reuses(tmp_path: Path) -> None:
         stored = session.get(Setting, "session_secret")
         # the row keeps the plain value; the process holds it as a signing key
         assert stored is not None and stored.value == first.reveal()
-    assert first.kind is SecretKind.SIGNING_KEY
+    assert first.kind is second.kind is SecretKind.SIGNING_KEY  # generated, then read back
     engine.dispose()
 
 
@@ -133,6 +133,20 @@ def test_resolve_session_secret_prefers_the_pinned_value(tmp_path: Path) -> None
     run_alembic_upgrade(config)
     engine = make_engine(config)
     assert resolve_session_secret(engine, config) == Secret(_PINNED, kind=SecretKind.SIGNING_KEY)
+    engine.dispose()
+
+
+def test_an_empty_pinned_secret_means_generate_one(tmp_path: Path) -> None:
+    """An empty ``session_secret`` (an empty env var) is never a signing key: one is generated."""
+    config = WebConfig(database_path=tmp_path / "webvigil.db", session_secret="")
+    assert config.session_secret is not None  # held, but empty
+    run_alembic_upgrade(config)
+    engine = make_engine(config)
+    resolved = resolve_session_secret(engine, config)
+    assert len(resolved) == 64  # token_urlsafe(48)
+    with session_scope(engine) as session:
+        stored = session.get(Setting, "session_secret")
+        assert stored is not None and stored.value == resolved.reveal()
     engine.dispose()
 
 
