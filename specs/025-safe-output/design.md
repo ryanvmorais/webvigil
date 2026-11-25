@@ -580,6 +580,15 @@ has a killed mutant, every survivor is triaged, and the score goes in the pull r
    exception group follow a `--- sub-exception i of n ---` line instead of Python's box drawing, with Python's
    limits (15 members, 10 levels). Each exception's line is bounded to the `LOG` message bound, and the whole text
    is cut at a line boundary, so the cut never splits an escape.
+7. **The scan warning measures the file as written (components, ADR-6).** The warning sits in the step that writes
+   the scan's report, for a file and for standard output alike, after the write. It counts the bytes the text
+   stream writes, not only the UTF-8 size of the text: on Windows text mode writes two bytes for each line break,
+   and standard output ends the report with one more. A report the reader would refuse is never written without
+   the warning.
+8. **The chunks are handed to the parser as `bytes` (components, ADR-6).** `load_result` gathers the chunks in a
+   `bytearray` and converts it before parsing, because pydantic copies a `bytearray` before it parses: measured on
+   an 8 MiB file of large values, the peak was 4.6 times the file's size with the `bytearray` and 3.6 times with
+   `bytes`, the same as one read of the whole file.
 
 ## Implementation notes
 
@@ -597,3 +606,12 @@ has a killed mutant, every survivor is triaged, and the score goes in the pull r
   fragments apart, a run of dots, the longest fragment across two secrets, an exception without a message, and the
   traceback bound. Each now has a test. The last one was a defect: a traceback of exactly the bound was cut, because
   the size counted a line break before the first line.
+- **Stage 1.** 3594 tests collected (4 skipped on Windows, two of them the memory test), 98 % line and branch coverage
+  in total; the uncovered lines of the changed modules predate the stage. The memory ratios were measured on Windows
+  with the same 8 MiB files as the POSIX test, as the peak working set above the baseline: 15.4 times the file's size
+  for the dense file and 3.6 times for large values. One terminal test changed with ADR-2: a message of control
+  characters is now cut after the bound's worth of its own characters, not after the bound's worth of escapes.
+- **Stage 1 mutation.** 22 mutants over the evidence edges of `scrub.py`, the chunked read and the limit of
+  `reporting/__init__.py`, the write step of `cli/app.py` and the terminal cells: 21 killed on the first run. The
+  survivor read a whole chunk past the limit before refusing, with the same result; a test now pins the last read to
+  one byte past the limit, and the rerun killed it.
