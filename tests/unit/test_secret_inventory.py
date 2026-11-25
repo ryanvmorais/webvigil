@@ -15,8 +15,7 @@ with every extra) and every pydantic model and dataclass defined there is listed
 when its name has a credential word and its annotation has ``str`` but no ``Secret``, unless its
 name ends in a word that describes a credential rather than holding one. :data:`DECLARED` adds the
 fields whose names do not say so, :data:`EXEMPT` lists the matches that hold no credential, with
-the reason, and :data:`PENDING_CONVERSION` the credentials the later stages of the spec convert;
-each stage removes its own, and an entry that already holds a ``Secret`` fails.
+the reason. Every credential field is a ``Secret`` now: a new one typed ``str`` fails.
 
 Each gate has positive controls over a throwaway source or model defined here, so a gate that
 stopped seeing anything cannot pass.
@@ -61,6 +60,10 @@ ALLOWED_REVEALS: Final[Mapping[str, str]] = {
     "webvigil.checks.session.ids:judge_samples": (
         "the series rules compare the characters of several anonymous ids"
     ),
+    "webvigil.api.security:create_token": "signs the session token with the signing secret",
+    "webvigil.api.security:decode_token": "checks a session token's signature with that secret",
+    "webvigil.api.security:hash_password": "hashes the password a setup, a change or a reset sets",
+    "webvigil.api.security:verify_password": "Argon2 checks a login's or a change's password",
     "webvigil.http.client:_static_cookie_header": "joins the [auth] cookies into one Cookie header",
     "webvigil.http.client:HttpClient._request_with_retry": (
         "a target-host request carries the Cookie header and the [auth] header values"
@@ -93,19 +96,6 @@ EXEMPT: Final[Mapping[str, str]] = {
         "the scanner's own random marker for stored XSS, not a credential"
     ),
 }
-
-# The credentials still typed ``str``, which spec 024 converts. A converted field leaves this set in
-# the same change, and the set goes when it is empty.
-PENDING_CONVERSION: Final[frozenset[str]] = frozenset(
-    {
-        # the Web API
-        "api.config:WebConfig.session_secret",
-        "api.schemas:SetupIn.password",
-        "api.schemas:LoginIn.password",
-        "api.schemas:PasswordChangeIn.current_password",
-        "api.schemas:PasswordChangeIn.new_password",
-    }
-)
 
 # A word that marks a field as holding a credential, and the endings that describe one instead
 # (the name of an environment variable, a form field, a hash, a cookie name, a URL, a lifetime).
@@ -513,7 +503,6 @@ def field_problems(
     plain: set[str],
     *,
     exempt: Mapping[str, str] = EXEMPT,
-    pending: frozenset[str] = PENDING_CONVERSION,
     declared: frozenset[str] = DECLARED,
 ) -> dict[str, set[str]]:
     """
@@ -521,18 +510,15 @@ def field_problems(
         seen (set[str]): Every field key the gate looked at.
         plain (set[str]): The keys holding a credential as a plain string.
         exempt (Mapping[str, str]): The exemptions. Defaults to :data:`EXEMPT`.
-        pending (frozenset[str]): The fields still to convert. Defaults to
-            :data:`PENDING_CONVERSION`.
         declared (frozenset[str]): The declared fields. Defaults to :data:`DECLARED`.
 
     Returns:
         dict[str, set[str]]: What fails, by reason: ``failing`` (a plain credential with no
-            entry), ``converted`` (a pending entry that holds a ``Secret`` already), ``stale``
-            (an exemption that no longer matches) and ``missing`` (a declared field not found).
+            entry), ``stale`` (an exemption that no longer matches) and ``missing`` (a declared
+            field not found).
     """
     return {
-        "failing": plain - exempt.keys() - pending,
-        "converted": set(pending - plain),
+        "failing": plain - exempt.keys(),
         "stale": exempt.keys() - plain,
         "missing": set(declared - seen),
     }
@@ -557,18 +543,10 @@ def package_fields() -> tuple[dict[str, set[str]], int]:
 def test_no_credential_field_is_a_plain_string(
     package_fields: tuple[dict[str, set[str]], int],
 ) -> None:
-    """Every field that holds a credential is a ``Secret``, but the exempt and the pending ones."""
+    """Every field that holds a credential is a ``Secret``, but the exempt ones."""
     problems, walked = package_fields
     assert walked > 50  # the gate saw the package's models
     assert not problems["failing"], f"credential fields typed str: {sorted(problems['failing'])}"
-
-
-def test_a_pending_entry_still_holds_a_string(
-    package_fields: tuple[dict[str, set[str]], int],
-) -> None:
-    """A field already converted to ``Secret`` leaves ``PENDING_CONVERSION`` in the same change."""
-    converted = package_fields[0]["converted"]
-    assert not converted, f"already converted, drop from PENDING_CONVERSION: {sorted(converted)}"
 
 
 def test_every_exemption_still_matches(package_fields: tuple[dict[str, set[str]], int]) -> None:
@@ -589,12 +567,10 @@ def test_field_problems_names_each_failure() -> None:
         {"m:A.token", "m:A.done", "m:A.cookie", "m:A.pairs"},
         {"m:A.token", "m:A.cookie"},
         exempt={"m:A.cookie": "a name", "m:A.gone": "a name"},
-        pending=frozenset({"m:A.done"}),
         declared=frozenset({"m:A.pairs", "m:A.renamed"}),
     )
     assert problems == {
         "failing": {"m:A.token"},
-        "converted": {"m:A.done"},
         "stale": {"m:A.gone"},
         "missing": {"m:A.renamed"},
     }

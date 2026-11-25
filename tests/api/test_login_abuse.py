@@ -185,7 +185,8 @@ def test_a_token_from_the_last_reading_before_the_change_is_ended(
     owner = _from(app, "192.0.2.10")
     assert owner.post("/api/auth/login", json=ADMIN).status_code == 204
     older = _from(app, "192.0.2.11")
-    token = create_token(1, str(web_config.session_secret), 12, issued_at=frozen)
+    assert web_config.session_secret is not None
+    token = create_token(1, web_config.session_secret, 12, issued_at=frozen)
     older.cookies.set(SESSION_COOKIE, token)
     assert older.get("/api/auth/me").status_code == 200  # valid until the change
     changed = owner.post(

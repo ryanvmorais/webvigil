@@ -52,7 +52,8 @@ def _token(config: WebConfig, *, issued_ago: float, user_id: int = 1, with_iat: 
     claims: dict[str, object] = {"sub": str(user_id), "exp": int(now) + 3600}
     if with_iat:
         claims["iat"] = now - issued_ago
-    return jwt.encode(claims, config.session_secret, algorithm="HS256")
+    assert config.session_secret is not None
+    return jwt.encode(claims, config.session_secret.reveal(), algorithm="HS256")
 
 
 # ---------------------------------------------------------------------------

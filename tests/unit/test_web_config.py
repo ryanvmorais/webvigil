@@ -16,6 +16,7 @@ from pydantic import ValidationError
 
 from webvigil.api.config import WebConfig, insecure_bind_warning
 from webvigil.core.errors import ConfigError
+from webvigil.core.secrets import Secret, SecretKind
 
 # A pinned secret must be at least 32 characters (HS256 key length).
 _SECRET = "s" * 32
@@ -70,7 +71,9 @@ def test_env_overrides_win(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setenv("WEBVIGIL_CORS_ORIGINS", "http://a.test, http://b.test")
     config = WebConfig.load(path)
     assert config.port == 7777
-    assert config.session_secret == _SECRET
+    assert config.session_secret is not None
+    assert config.session_secret.kind is SecretKind.SIGNING_KEY
+    assert config.session_secret.reveal() == _SECRET
     assert config.cors_origins == ["http://a.test", "http://b.test"]
 
 
@@ -96,8 +99,10 @@ def test_a_short_pinned_session_secret_is_refused(monkeypatch: pytest.MonkeyPatc
 
 def test_a_secret_of_32_characters_is_accepted_and_an_empty_one_means_unset() -> None:
     """The limit is inclusive; an empty string (what an empty env var gives) still means unset."""
-    assert WebConfig(session_secret="k" * 32).session_secret == "k" * 32
-    assert WebConfig(session_secret="").session_secret == ""
+    assert WebConfig(session_secret="k" * 32).session_secret == Secret(
+        "k" * 32, kind=SecretKind.SIGNING_KEY
+    )
+    assert WebConfig(session_secret="").session_secret == Secret("", kind=SecretKind.SIGNING_KEY)
     with pytest.raises(ValidationError):
         WebConfig(session_secret="k" * 31)
 

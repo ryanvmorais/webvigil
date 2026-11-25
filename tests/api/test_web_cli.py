@@ -21,8 +21,20 @@ from webvigil.api import cli
 from webvigil.api.config import WebConfig
 from webvigil.api.db import User, make_engine, run_alembic_upgrade
 from webvigil.api.security import hash_password, verify_password
+from webvigil.core.secrets import Secret, SecretKind
 
 runner = CliRunner()
+
+
+def _pw(text: str) -> Secret:
+    """
+    Args:
+        text (str): A password.
+
+    Returns:
+        Secret: ``text`` as the routes and ``reset-password`` hand it over.
+    """
+    return Secret(text, kind=SecretKind.PASSWORD)
 
 
 @pytest.fixture(autouse=True)
@@ -64,7 +76,12 @@ def test_reset_password_updates_the_hash(_config_env: Path) -> None:
     run_alembic_upgrade(config)
     engine = make_engine(config)
     with Session(engine) as session:
-        session.add(User(username="admin", password_hash=hash_password("old-password")))
+        session.add(
+            User(
+                username="admin",
+                password_hash=hash_password(_pw("old-password")),
+            )
+        )
         session.commit()
 
     result = runner.invoke(
@@ -74,8 +91,8 @@ def test_reset_password_updates_the_hash(_config_env: Path) -> None:
 
     with Session(engine) as session:
         user = session.exec(select(User).where(User.username == "admin")).one()
-        assert verify_password("new-password", user.password_hash)
-        assert not verify_password("old-password", user.password_hash)
+        assert verify_password(_pw("new-password"), user.password_hash)
+        assert not verify_password(_pw("old-password"), user.password_hash)
     engine.dispose()
 
 
@@ -87,7 +104,12 @@ def test_reset_password_writes_through_the_shared_stamp(
     run_alembic_upgrade(config)
     engine = make_engine(config)
     with Session(engine) as session:
-        session.add(User(username="admin", password_hash=hash_password("old-password")))
+        session.add(
+            User(
+                username="admin",
+                password_hash=hash_password(_pw("old-password")),
+            )
+        )
         session.commit()
     calls: list[str | None] = []
     real_store = cli.store_password_hash
@@ -114,7 +136,12 @@ def test_reset_password_says_so_when_another_change_replaced_it(
     run_alembic_upgrade(config)
     engine = make_engine(config)
     with Session(engine) as session:
-        session.add(User(username="admin", password_hash=hash_password("old-password")))
+        session.add(
+            User(
+                username="admin",
+                password_hash=hash_password(_pw("old-password")),
+            )
+        )
         session.commit()
     calls: list[int] = []
 
@@ -137,7 +164,12 @@ def test_reset_password_refuses_a_password_the_api_would_refuse(_config_env: Pat
     run_alembic_upgrade(config)
     engine = make_engine(config)
     with Session(engine) as session:
-        session.add(User(username="admin", password_hash=hash_password("old-password")))
+        session.add(
+            User(
+                username="admin",
+                password_hash=hash_password(_pw("old-password")),
+            )
+        )
         session.commit()
 
     result = runner.invoke(cli.app, ["reset-password"], input="short12\nshort12\n")
@@ -146,7 +178,7 @@ def test_reset_password_refuses_a_password_the_api_would_refuse(_config_env: Pat
 
     with Session(engine) as session:
         user = session.exec(select(User).where(User.username == "admin")).one()
-        assert verify_password("old-password", user.password_hash)
+        assert verify_password(_pw("old-password"), user.password_hash)
     engine.dispose()
 
 
@@ -174,7 +206,12 @@ def test_reset_password_closes_its_database_on_every_way_out(
     if with_user:
         seed = make_engine(config)
         with Session(seed) as session:
-            session.add(User(username="admin", password_hash=hash_password("old-password")))
+            session.add(
+                User(
+                    username="admin",
+                    password_hash=hash_password(_pw("old-password")),
+                )
+            )
             session.commit()
         seed.dispose()
 

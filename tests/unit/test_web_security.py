@@ -26,24 +26,37 @@ from webvigil.api.security import (
     resolve_session_secret,
     verify_password,
 )
+from webvigil.core.secrets import Secret, SecretKind
 
 # >= 32 bytes so PyJWT does not warn about HS256 key length.
-_SECRET = "unit-test-secret-that-is-long-enough-for-hs256"
-_OTHER_SECRET = "a-different-secret-also-long-enough-for-hs256"
+_SECRET_TEXT = "unit-test-secret-that-is-long-enough-for-hs256"
+_SECRET = Secret(_SECRET_TEXT, kind=SecretKind.SIGNING_KEY)
+_OTHER_SECRET = Secret("a-different-secret-also-long-enough-for-hs256", kind=SecretKind.SIGNING_KEY)
 _PINNED = "pinned-" + "p" * 32
+
+
+def _pw(text: str) -> Secret:
+    """
+    Args:
+        text (str): A password.
+
+    Returns:
+        Secret: ``text`` as the routes and ``reset-password`` hand it over.
+    """
+    return Secret(text, kind=SecretKind.PASSWORD)
 
 
 def test_password_hash_round_trip() -> None:
     """A hashed password is not the plaintext and verifies only against the right password."""
-    hashed = hash_password("correct horse battery staple")
+    hashed = hash_password(_pw("correct horse battery staple"))
     assert hashed != "correct horse battery staple"
-    assert verify_password("correct horse battery staple", hashed) is True
-    assert verify_password("wrong", hashed) is False
+    assert verify_password(_pw("correct horse battery staple"), hashed) is True
+    assert verify_password(_pw("wrong"), hashed) is False
 
 
 def test_verify_rejects_a_garbage_hash() -> None:
     """``verify_password`` against a non-hash string is ``False``, not an exception."""
-    assert verify_password("x", "not-a-hash") is False
+    assert verify_password(_pw("x"), "not-a-hash") is False
 
 
 def test_token_round_trip() -> None:
@@ -68,15 +81,17 @@ def test_the_issue_time_keeps_its_fraction_of_a_second() -> None:
 
 def test_token_without_an_issue_time_is_rejected() -> None:
     """A token with no ``iat`` cannot be compared with a password change, so it is refused."""
-    token = jwt.encode({"sub": "42", "exp": int(time.time()) + 3600}, _SECRET, algorithm="HS256")
+    token = jwt.encode(
+        {"sub": "42", "exp": int(time.time()) + 3600}, _SECRET_TEXT, algorithm="HS256"
+    )
     assert decode_token(token, _SECRET) is None
 
 
 def test_token_without_an_expiry_or_a_subject_is_rejected() -> None:
     """A token that never expires, or names nobody, is refused rather than defaulted."""
     now = int(time.time())
-    no_expiry = jwt.encode({"sub": "42", "iat": now}, _SECRET, algorithm="HS256")
-    no_subject = jwt.encode({"iat": now, "exp": now + 3600}, _SECRET, algorithm="HS256")
+    no_expiry = jwt.encode({"sub": "42", "iat": now}, _SECRET_TEXT, algorithm="HS256")
+    no_subject = jwt.encode({"iat": now, "exp": now + 3600}, _SECRET_TEXT, algorithm="HS256")
     assert decode_token(no_expiry, _SECRET) is None
     assert decode_token(no_subject, _SECRET) is None
 
@@ -106,7 +121,9 @@ def test_resolve_session_secret_generates_then_reuses(tmp_path: Path) -> None:
 
     with session_scope(engine) as session:
         stored = session.get(Setting, "session_secret")
-        assert stored is not None and stored.value == first
+        # the row keeps the plain value; the process holds it as a signing key
+        assert stored is not None and stored.value == first.reveal()
+    assert first.kind is SecretKind.SIGNING_KEY
     engine.dispose()
 
 
@@ -115,15 +132,18 @@ def test_resolve_session_secret_prefers_the_pinned_value(tmp_path: Path) -> None
     config = WebConfig(database_path=tmp_path / "webvigil.db", session_secret=_PINNED)
     run_alembic_upgrade(config)
     engine = make_engine(config)
-    assert resolve_session_secret(engine, config) == _PINNED
+    assert resolve_session_secret(engine, config) == Secret(_PINNED, kind=SecretKind.SIGNING_KEY)
     engine.dispose()
 
 
 def test_the_dummy_hash_is_a_real_argon2_hash_with_the_parameters_of_a_real_one() -> None:
     """Verifying against it costs what a real check costs, and nobody's password matches it."""
     dummy = dummy_password_hash()
-    real = hash_password("anything")
+    real = hash_password(_pw("anything"))
     # "$argon2id$v=19$m=...,t=...,p=...$salt$digest": everything before the salt is the cost.
     assert dummy.split("$")[:4] == real.split("$")[:4]
     assert dummy_password_hash() == dummy  # built once
-    assert verify_password("", dummy) is False and verify_password("anything", dummy) is False
+    assert (
+        verify_password(_pw(""), dummy) is False
+        and verify_password(_pw("anything"), dummy) is False
+    )

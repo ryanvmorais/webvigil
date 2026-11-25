@@ -1,4 +1,10 @@
-"""Password hashing, JWT session tokens, and the session cookie (RF-02..RF-07)."""
+"""
+Password hashing, JWT session tokens, and the session cookie (RF-02..RF-07).
+
+Every password and the signing secret arrive as :class:`~webvigil.core.secrets.Secret` values
+(spec 024): the four functions that hash, verify, sign and check are the only places in the Web
+API that reveal one.
+"""
 
 from __future__ import annotations
 
@@ -17,6 +23,7 @@ from sqlmodel import Session, col
 
 from webvigil.api.config import WebConfig
 from webvigil.api.db import Setting, User, session_scope, utcnow
+from webvigil.core.secrets import Secret, SecretKind
 
 logger = logging.getLogger("webvigil.api")
 
@@ -25,21 +32,21 @@ _ALGORITHM = "HS256"
 SESSION_COOKIE = "webvigil_session"
 
 
-def hash_password(password: str) -> str:
+def hash_password(password: Secret) -> str:
     """
     Args:
-        password (str): The plaintext password.
+        password (Secret): The password.
 
     Returns:
         str: An Argon2 hash string (algorithm, parameters, salt, and digest).
     """
-    return _hasher.hash(password)
+    return _hasher.hash(password.reveal())
 
 
-def verify_password(password: str, hashed: str) -> bool:
+def verify_password(password: Secret, hashed: str) -> bool:
     """
     Args:
-        password (str): The plaintext password to check.
+        password (Secret): The password to check.
         hashed (str): The stored Argon2 hash.
 
     Returns:
@@ -47,7 +54,7 @@ def verify_password(password: str, hashed: str) -> bool:
             malformed hash.
     """
     try:
-        _hasher.verify(hashed, password)
+        _hasher.verify(hashed, password.reveal())
     except (VerificationError, InvalidHashError):
         return False
     return True
@@ -65,11 +72,11 @@ def dummy_password_hash() -> str:
     Returns:
         str: An Argon2 hash string of a random, discarded password.
     """
-    return hash_password(secrets.token_urlsafe(32))
+    return hash_password(Secret(secrets.token_urlsafe(32), kind=SecretKind.PASSWORD))
 
 
 def create_token(
-    user_id: int, secret: str, ttl_hours: int, *, issued_at: datetime | None = None
+    user_id: int, secret: Secret, ttl_hours: int, *, issued_at: datetime | None = None
 ) -> str:
     """
     Mint a signed session token.
@@ -80,7 +87,7 @@ def create_token(
 
     Args:
         user_id (int): The user the token authenticates.
-        secret (str): The HS256 signing secret.
+        secret (Secret): The HS256 signing secret.
         ttl_hours (int): Token lifetime, in hours.
         issued_at (datetime | None): The issue time, timezone-aware. A password change passes the
             moment it stored as ``User.updated_at``, so the fresh cookie is never older than the
@@ -96,7 +103,7 @@ def create_token(
         "iat": now.timestamp(),
         "exp": now + timedelta(hours=ttl_hours),
     }
-    return jwt.encode(payload, secret, algorithm=_ALGORITHM)
+    return jwt.encode(payload, secret.reveal(), algorithm=_ALGORITHM)
 
 
 class TokenClaims(NamedTuple):
@@ -112,11 +119,11 @@ class TokenClaims(NamedTuple):
     issued_at: float
 
 
-def decode_token(token: str, secret: str) -> TokenClaims | None:
+def decode_token(token: str, secret: Secret) -> TokenClaims | None:
     """
     Args:
         token (str): A session JWT.
-        secret (str): The HS256 signing secret.
+        secret (Secret): The HS256 signing secret.
 
     Returns:
         TokenClaims | None: The claims of a valid, unexpired, well-formed token that carries a
@@ -126,7 +133,10 @@ def decode_token(token: str, secret: str) -> TokenClaims | None:
         # A token without an expiry would never expire, and one without an issue time could not
         # be compared with the last credential change: both are refused, not defaulted.
         payload = jwt.decode(
-            token, secret, algorithms=[_ALGORITHM], options={"require": ["exp", "iat", "sub"]}
+            token,
+            secret.reveal(),
+            algorithms=[_ALGORITHM],
+            options={"require": ["exp", "iat", "sub"]},
         )
         return TokenClaims(user_id=int(payload["sub"]), issued_at=float(payload["iat"]))
     except (jwt.PyJWTError, KeyError, ValueError, TypeError):
@@ -237,7 +247,7 @@ def clear_session_cookie(response: Response) -> None:
     response.delete_cookie(SESSION_COOKIE, path="/")
 
 
-def resolve_session_secret(engine: Engine, config: WebConfig) -> str:
+def resolve_session_secret(engine: Engine, config: WebConfig) -> Secret:
     """
     Determine the JWT signing secret for this process.
 
@@ -246,20 +256,21 @@ def resolve_session_secret(engine: Engine, config: WebConfig) -> str:
         config (WebConfig): Supplies the pinned secret, if any.
 
     Returns:
-        str: ``config.session_secret`` when set; otherwise the secret stored in
+        Secret: ``config.session_secret`` when set; otherwise the secret stored in
             the ``setting`` table; otherwise a fresh one, which is stored and
-            logged as a warning.
+            logged as a warning. The row keeps the plain value: the database is
+            where it is stored.
     """
     if config.session_secret:
         return config.session_secret
     with session_scope(engine) as session:
         row = session.get(Setting, "session_secret")
         if row is not None:
-            return row.value
-        secret = secrets.token_urlsafe(48)
-        session.add(Setting(key="session_secret", value=secret))
+            return Secret(row.value, kind=SecretKind.SIGNING_KEY)
+        value = secrets.token_urlsafe(48)
+        session.add(Setting(key="session_secret", value=value))
     logger.warning(
         "generated a session signing secret and stored it in the database; "
         "set web.session_secret to pin it"
     )
-    return secret
+    return Secret(value, kind=SecretKind.SIGNING_KEY)

@@ -18,6 +18,7 @@ from webvigil.api.db import User, make_engine, run_alembic_upgrade
 from webvigil.api.schemas import PASSWORD_MAX_CHARS, PASSWORD_MIN_CHARS
 from webvigil.api.security import hash_password, store_password_hash
 from webvigil.core.errors import ConfigError
+from webvigil.core.secrets import Secret, SecretKind
 
 app = typer.Typer(
     name="webvigil-web",
@@ -112,7 +113,10 @@ def reset_password(
                     "no user found — complete first-run setup in the browser first", err=True
                 )
                 raise typer.Exit(1)
-            new_password = typer.prompt("New password", hide_input=True, confirmation_prompt=True)
+            new_password = Secret(
+                typer.prompt("New password", hide_input=True, confirmation_prompt=True),
+                kind=SecretKind.PASSWORD,
+            )
             # The same policy as setup and the password change, so a reset cannot set a password the
             # dashboard would have refused.
             if not PASSWORD_MIN_CHARS <= len(new_password) <= PASSWORD_MAX_CHARS:
