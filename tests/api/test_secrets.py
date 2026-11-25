@@ -28,6 +28,8 @@ from tests.api.conftest import FakeOrchestrator
 from webvigil.api.app import create_app
 from webvigil.api.config import WebConfig
 
+# The canaries: values that no spelling of may reach a log record or a response. The key is long
+# enough to be pinned, the passwords long enough for setup, and the last one over the 256 limit.
 _SIGNING_KEY = "canary-signing-key-0123456789abcdef"
 _PASSWORD = "canary-pass-one"
 _NEW_PASSWORD = "canary-pass-two"

@@ -80,7 +80,7 @@ def create_app(
         engine = make_engine(cfg)
         app.state.config = cfg
         app.state.engine = engine
-        app.state.session_secret = resolve_session_secret(engine, cfg)  # a Secret (spec 024)
+        app.state.session_secret = resolve_session_secret(engine, cfg)
         dummy_password_hash()  # warm it, so the first unknown username is not slower than the rest
         recover_interrupted_scans(engine)
         runner = (
