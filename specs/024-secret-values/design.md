@@ -1,6 +1,6 @@
 ---
 feature: Secret values — one type for every credential and session value, which cannot be printed, logged or serialized by accident
-status: in progress
+status: done
 date: 2026-11-24
 related:
   - 007-auth-flows/requirements.md
@@ -665,3 +665,15 @@ every surviving mutant is triaged, and the score goes in the pull request (RNF-0
   fields `format: password` and `writeOnly`; the TypeScript types stay `string`. The OpenAPI schema of a
   validation error still lists `input` and `ctx` as optional, as FastAPI declares them; the body never sends
   them. The stored-target migration was withdrawn (deviation 17).
+- **Stage 5.** The three scans of the fixture app, repeated on `main` at `a38a830` (Python 3.15.2), gave the same
+  `schema_version` and the same check ids, severities and fingerprints as the Stage 0 baseline: 28 findings
+  anonymous, 29 with the `[auth]` cookie and header, 45 with the login. None of the three secret values appears in
+  the reports or in the terminal output, as in the baseline. The CI of that commit is green on every job:
+  `quality` on Linux and Windows for Python 3.12 to 3.15, `package`, `docker`, `web` and `compose`.
+- **Measurements, Stage 0 to Stage 5.** Tests: 3224 collected (3222 passed, 2 skipped) before, 3415 (3413 passed,
+  2 skipped) after. Coverage of `src/webvigil`: 10,193 of 10,386 lines and 2,847 of 2,994 branches before, 10,424
+  of 10,616 lines and 2,906 of 3,050 branches after, 97 % in both; no file has more missed lines or partial
+  branches than in the baseline, and `core/secrets.py` is fully covered. The suite with coverage takes 99 to
+  108 s on a Windows workstation. The reveal inventory holds 12 sites. Mutation, per stage: 117 of 118
+  killed (1 equivalent), 119 of 120 (1 equivalent), 96 of 115 against the whole unit suite (the 19 survivors sit in
+  session analysers that this spec did not change), 28 of 31 (3 equivalent) and 26 of 26.
