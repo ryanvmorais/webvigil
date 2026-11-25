@@ -160,14 +160,13 @@ def is_target_host(target: Target, url: str) -> bool:
         url (str): An absolute URL.
 
     Returns:
-        bool: ``True`` when the URL's lower-cased host equals ``target.host``; ``False`` for a URL
-            with no host or a malformed one.
+        bool: ``True`` when the URL's host (``urlsplit`` lower-cases it) equals ``target.host``;
+            ``False`` for a URL with no host or a malformed one.
     """
     try:
-        host = urlsplit(url).hostname
+        return urlsplit(url).hostname == target.host
     except ValueError:
         return False
-    return host is not None and host.lower() == target.host
 
 
 def is_public_name(host: str) -> bool:

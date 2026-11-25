@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from webvigil.core import Scope, Target
+from webvigil.core import Scope, Target, destination
 from webvigil.core.destination import (
     CREDENTIAL_HEADERS,
     SPECIAL_USE_LABELS,
@@ -22,7 +22,7 @@ from webvigil.core.destination import (
     may_request,
     without_credentials,
 )
-from webvigil.core.suffixes import load_rules
+from webvigil.core.suffixes import load_rules, parse_rules
 
 _HOST = Scope.HOST
 _SUB = Scope.SUBDOMAINS
@@ -286,6 +286,19 @@ def test_a_name_under_a_listed_top_level_label_is_public(host: str) -> None:
 def test_lab_cluster_special_use_and_address_names_are_not_public(host: str) -> None:
     """Special-use and unlisted labels, one label, IP literals and malformed names."""
     assert not is_public_name(host)
+
+
+@pytest.mark.parametrize("label", sorted(SPECIAL_USE_LABELS))
+def test_a_special_use_label_stays_private_on_a_list_that_carries_it(
+    monkeypatch: pytest.MonkeyPatch, label: str
+) -> None:
+    """A list update that adds a special-use label, or a numeric rule, changes no answer."""
+    rules = parse_rules("\n".join([*SPECIAL_USE_LABELS, "5", "com"]))
+    monkeypatch.setattr(destination, "load_rules", lambda: rules)
+    assert not is_public_name(f"app.{label}")
+    assert not is_public_name("10.0.0.5")
+    assert not is_public_name("::ffff:10.0.0.5")
+    assert is_public_name("app.example.com")  # the positive control: the stub list is the one read
 
 
 def test_some_special_use_labels_are_on_the_list() -> None:
