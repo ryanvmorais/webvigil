@@ -206,13 +206,19 @@ def test_a_report_of_64_mib_is_read_and_one_byte_more_is_refused(tmp_path: Path)
 
 
 # What reading back measures, in a child process: the peak resident size above the one before.
+# It is Linux's ``VmHWM``, which starts over at ``exec``; ``ru_maxrss`` would not do, because Linux
+# carries it across ``exec``, so the child would start at the peak of the test run that started it.
+_STATUS = Path("/proc/self/status")
 _PEAK_SCRIPT = """
-import resource, sys
+import sys
+def peak():
+    for line in open("/proc/self/status"):
+        if line.startswith("VmHWM:"):
+            return int(line.split()[1]) * 1024
 from webvigil.reporting import load_result
-before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+before = peak()
 load_result(sys.argv[1])
-after = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-print((after - before) * (1 if sys.platform == "darwin" else 1024))
+print(peak() - before)
 """
 
 
@@ -246,7 +252,7 @@ def _large_values_document(size: int) -> bytes:
     return json.dumps({**one, "findings": one["findings"] * count}).encode()
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="the peak resident size is a POSIX measure")
+@pytest.mark.skipif(not _STATUS.exists(), reason="the peak resident size comes from Linux /proc")
 @pytest.mark.parametrize(
     ("build", "ratio"), [(_dense_document, 20), (_large_values_document, 5)], ids=["dense", "large"]
 )

@@ -589,6 +589,11 @@ has a killed mutant, every survivor is triaged, and the score goes in the pull r
    `bytearray` and converts it before parsing, because pydantic copies a `bytearray` before it parses: measured on
    an 8 MiB file of large values, the peak was 4.6 times the file's size with the `bytearray` and 3.6 times with
    `bytes`, the same as one read of the whole file.
+9. **The memory test reads `VmHWM`, on Linux only (test strategy).** `resource.getrusage` is no measure in a child
+   process on Linux: `ru_maxrss` is carried across `exec`, so the child starts at the peak of the test run that
+   started it, and the first CI run measured no growth at all (the positive control failed). The test reads the
+   peak resident size from `/proc/self/status` (`VmHWM`), which starts over at `exec`, and is skipped where that
+   file does not exist.
 
 ## Implementation notes
 
@@ -608,7 +613,7 @@ has a killed mutant, every survivor is triaged, and the score goes in the pull r
   the size counted a line break before the first line.
 - **Stage 1.** 3594 tests collected (4 skipped on Windows, two of them the memory test), 98 % line and branch coverage
   in total; the uncovered lines of the changed modules predate the stage. The memory ratios were measured on Windows
-  with the same 8 MiB files as the POSIX test, as the peak working set above the baseline: 15.4 times the file's size
+  with the same 8 MiB files as the Linux test (deviation 9), as the peak working set above the baseline: 15.4 times the file's size
   for the dense file and 3.6 times for large values. One terminal test changed with ADR-2: a message of control
   characters is now cut after the bound's worth of its own characters, not after the bound's worth of escapes.
 - **Stage 1 mutation.** 22 mutants over the evidence edges of `scrub.py`, the chunked read and the limit of
