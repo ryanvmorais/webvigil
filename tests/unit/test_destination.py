@@ -242,6 +242,20 @@ def test_is_target_host_compares_the_host_alone(raw: str, url: str, expected: bo
 # is_public_name (ADR-5)
 # ---------------------------------------------------------------------------
 
+# Written out rather than read from SPECIAL_USE_LABELS: a label dropped from the constant must
+# fail a test, not quietly leave the parametrization.
+_SPECIAL_USE = [
+    "alt",
+    "arpa",
+    "example",
+    "internal",
+    "invalid",
+    "local",
+    "localhost",
+    "onion",
+    "test",
+]
+
 
 @pytest.mark.parametrize(
     "host",
@@ -288,17 +302,22 @@ def test_lab_cluster_special_use_and_address_names_are_not_public(host: str) -> 
     assert not is_public_name(host)
 
 
-@pytest.mark.parametrize("label", sorted(SPECIAL_USE_LABELS))
+@pytest.mark.parametrize("label", _SPECIAL_USE)
 def test_a_special_use_label_stays_private_on_a_list_that_carries_it(
     monkeypatch: pytest.MonkeyPatch, label: str
 ) -> None:
     """A list update that adds a special-use label, or a numeric rule, changes no answer."""
-    rules = parse_rules("\n".join([*SPECIAL_USE_LABELS, "5", "com"]))
+    rules = parse_rules("\n".join([*_SPECIAL_USE, "5", "com"]))
     monkeypatch.setattr(destination, "load_rules", lambda: rules)
     assert not is_public_name(f"app.{label}")
     assert not is_public_name("10.0.0.5")
     assert not is_public_name("::ffff:10.0.0.5")
     assert is_public_name("app.example.com")  # the positive control: the stub list is the one read
+
+
+def test_the_special_use_labels() -> None:
+    """The labels the policy keeps private, written out so that a dropped one fails above."""
+    assert frozenset(_SPECIAL_USE) == SPECIAL_USE_LABELS
 
 
 def test_some_special_use_labels_are_on_the_list() -> None:
