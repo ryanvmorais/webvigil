@@ -88,38 +88,38 @@ makes it.
 
 ## Stage 1 — Engine, CLI and reports
 
-- [ ] `src/webvigil/auth/scrub.py`: the walk calls the `Redactor` with `cut_edges=True` for evidence content and
+- [x] `src/webvigil/auth/scrub.py`: the walk calls the `Redactor` with `cut_edges=True` for evidence content and
   at markers only for every other field; the redaction warning counts fields changed by either rule.
   — RF-02, ADR-3
-- [ ] `tests/unit/test_scrub.py` (or the existing scrub tests): a result whose evidence comes from the snippet
+- [x] `tests/unit/test_scrub.py` (or the existing scrub tests): a result whose evidence comes from the snippet
   helpers of `checks/injection/detect/xss.py`, `cmdi.py`, `ssrf.py`, `checks/upload/scanner.py` and
   `checks/envelope/scanner.py`, and from `EvidenceItem.of`, each called with a body that holds the secret
   across the cut, with no fragment of 4 or more characters left. — RF-02, RF-11
-- [ ] `src/webvigil/cli/_render.py`: `_printable` becomes `safe_text(value, Sink.TERMINAL, one_line=...)`;
+- [x] `src/webvigil/cli/_render.py`: `_printable` becomes `safe_text(value, Sink.TERMINAL, one_line=...)`;
   a `cell(value)` helper returns a one-line `Text`. — RF-03, ADR-2
-- [ ] `src/webvigil/cli/app.py`: `list-checks` builds its rows from `_render.cell`, so no cell is read as
+- [x] `src/webvigil/cli/app.py`: `list-checks` builds its rows from `_render.cell`, so no cell is read as
   markup. — RF-03
-- [ ] `src/webvigil/reporting/html.py`, `markdown.py`: `safe_text(page, Sink.DOCUMENT)` in place of
+- [x] `src/webvigil/reporting/html.py`, `markdown.py`: `safe_text(page, Sink.DOCUMENT)` in place of
   `show_controls`. `json_report.py`, `sarif.py`: `safe_text(document, Sink.JSON)`. The existing reporter tests
   keep their expected output. — RF-05
-- [ ] `src/webvigil/reporting/__init__.py`: `MAX_REPORT_BYTES = 64 * 1024 * 1024`; `load_result` reads 1 MiB
+- [x] `src/webvigil/reporting/__init__.py`: `MAX_REPORT_BYTES = 64 * 1024 * 1024`; `load_result` reads 1 MiB
   chunks into a `bytearray` until the end of the file or one byte past the limit. — RF-08, ADR-6
-- [ ] `src/webvigil/cli/app.py`: after writing a JSON report, the `scan` command warns through
+- [x] `src/webvigil/cli/app.py`: after writing a JSON report, the `scan` command warns through
   `_render.status` when its UTF-8 size is over `MAX_REPORT_BYTES`; the file is written whole and the exit code
   is unchanged. — RF-08, ADR-6
-- [ ] `tests/unit/`: the read-size spy (no read above 1 MiB), the limit at 64 MiB and one byte more, the scan
+- [x] `tests/unit/`: the read-size spy (no read above 1 MiB), the limit at 64 MiB and one byte more, the scan
   warning with its one-byte-smaller control, and the memory ratios in a subprocess (POSIX only). — RF-08, RF-11
-- [ ] `tests/unit/`: a terminal test of `list-checks` with a plugin whose id looks like Rich markup and holds a
+- [x] `tests/unit/`: a terminal test of `list-checks` with a plugin whose id looks like Rich markup and holds a
   control character, shown as written. — RF-03, RF-11
-- [ ] `docs/architecture.md`, `CLAUDE.md`, the help text of `webvigil report`: the 64 MiB limit.
+- [x] `docs/architecture.md`, `CLAUDE.md`, the help text of `webvigil report`: the 64 MiB limit.
   `CHANGELOG.md` `[Unreleased]`: the partial-secret redaction under **Security**, the report limit and the
   scan warning under **Changed**. — RF-02, RF-08, ADR-9
-- [ ] Apply the sabotage of the design for each guard of this stage and watch each test fail: evidence scrubbed
+- [x] Apply the sabotage of the design for each guard of this stage and watch each test fail: evidence scrubbed
   without `cut_edges`, `read(MAX_REPORT_BYTES + 1)` restored, the warning removed, `list-checks` printing
   plain strings. — RF-11
-- [ ] Mutation testing in batch over the changed parts of `auth/scrub.py`, `reporting/__init__.py` and the
+- [x] Mutation testing in batch over the changed parts of `auth/scrub.py`, `reporting/__init__.py` and the
   write step of `cli/app.py`. — RNF-06
-- [ ] Quality gate. —
+- [x] Quality gate. —
 
 ## Stage 2 — Web API and the sink inventory
 

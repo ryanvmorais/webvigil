@@ -13,8 +13,8 @@ value read differently from what it holds, are written as ``\uNNNN`` escapes the
 
 from __future__ import annotations
 
+from webvigil.core.output import Sink, safe_text
 from webvigil.core.result import ScanResult
-from webvigil.core.text import escape_json_controls
 
 
 class JsonReporter:
@@ -31,4 +31,4 @@ class JsonReporter:
             str: The result as pretty-printed JSON, byte-for-byte reloadable, with no raw
                 control character.
         """
-        return escape_json_controls(result.model_dump_json(indent=2))
+        return safe_text(result.model_dump_json(indent=2), Sink.JSON)

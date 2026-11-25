@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import html
 import json
+from collections.abc import Callable
 from urllib.parse import quote, quote_plus
 
 import pytest
@@ -22,7 +23,11 @@ from webvigil.auth.scrub import (
     looks_like_session_value,
     scrub_result,
 )
+from webvigil.checks.envelope.scanner import _SENTINEL, EnvelopeScanner
+from webvigil.checks.injection.detect import cmdi, ssrf, xss
+from webvigil.checks.upload import scanner as upload
 from webvigil.core.findings import EvidenceItem, Severity
+from webvigil.core.output import _spellings
 from webvigil.core.result import CheckError, ScanResult
 from webvigil.core.secrets import Secret, SecretKind
 from webvigil.core.technology import DetectionMethod, Technology
@@ -347,3 +352,109 @@ def test_a_short_header_credential_is_counted_and_a_short_session_value_is_not()
     )
     # what the target issued is never the user's to fix, so it is never counted
     assert scrub_result(result, _issued("ab")) is result
+
+
+# ---------------------------------------------------------------------------
+# A secret split by a check's cut (spec 025, RF-02)
+# ---------------------------------------------------------------------------
+
+_ANCHOR = "ANCHOR!"
+_FILL = "~"
+
+
+def _fragment_left(text: str, spelling: str) -> bool:
+    """
+    Args:
+        text (str): A field of a scrubbed result.
+        spelling (str): One spelling of the secret.
+
+    Returns:
+        bool: Whether any :data:`MIN_SECRET_LENGTH` consecutive characters of ``spelling``
+            are in ``text``.
+    """
+    edge = MIN_SECRET_LENGTH
+    return any(spelling[i : i + edge] in text for i in range(len(spelling) - edge + 1))
+
+
+def _evidence_cuts() -> list[tuple[str, Callable[[str], str], str]]:
+    """
+    List the ways a check cuts evidence out of a body.
+
+    Returns:
+        list[tuple[str, Callable[[str], str], str]]: A name, a cut a check makes, and the
+            anchor it centres on: the snippet helpers of the checks, and ``EvidenceItem.of``.
+    """
+    envelope = object.__new__(EnvelopeScanner)
+    evidence_bound = 4096
+    return [
+        ("xss", lambda body: xss._snippet(body, _ANCHOR), _ANCHOR),
+        ("cmdi", lambda body: cmdi._snippet(body, body.find(_ANCHOR)), _ANCHOR),
+        ("ssrf", lambda body: ssrf._snippet(body, body.find(_ANCHOR)), _ANCHOR),
+        ("upload", lambda body: upload._snippet(body, _ANCHOR), _ANCHOR),
+        # no marker in the body: the helper keeps its first characters, with no ellipsis
+        ("upload-unmarked", lambda body: upload._snippet(body, "absent"), _ANCHOR),
+        ("envelope", lambda body: envelope._around_sentinel(body), _SENTINEL),
+        (
+            "EvidenceItem.of",
+            lambda body: EvidenceItem.of("body", _FILL * (evidence_bound - 150) + body).content,
+            _ANCHOR,
+        ),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("cut", "anchor"),
+    [(cut, anchor) for _, cut, anchor in _evidence_cuts()],
+    ids=[name for name, _, _ in _evidence_cuts()],
+)
+def test_no_fragment_of_a_secret_a_check_cut_survives_the_scrub(
+    cut: Callable[[str], str], anchor: str
+) -> None:
+    """
+    A body holds the secret at every distance from the anchor, in every spelling a target echoes.
+
+    Each snippet the check would quote goes into the evidence of one result, which is scrubbed
+    once: no 4 characters of any spelling are left.
+    """
+    snippets: list[str] = []
+    spellings = sorted(_spellings(_SECRET), key=len)
+    for spelling in spellings:
+        for pad in range(0, 260):
+            for body in (
+                anchor + _FILL * pad + spelling + _FILL * 300,  # cut after the anchor
+                _FILL * 300 + spelling + _FILL * pad + anchor + _FILL * 300,  # cut before it
+            ):
+                snippet = cut(body)
+                if spelling not in snippet and _fragment_left(snippet, spelling):
+                    snippets.append(snippet)
+    # positive control: the sweep did split a spelling, leaving 4 or more characters of it
+    assert snippets
+    evidence = tuple(EvidenceItem(label="body", content=s) for s in snippets)
+    result = make_result(make_finding().model_copy(update={"evidence": evidence}))
+
+    scrubbed = scrub_result(result, _given(_SECRET))
+
+    for item, snippet in zip(scrubbed.findings[0].evidence, snippets, strict=True):
+        # the redaction is longer than a fragment, so the field's bound can cut its end off
+        assert item.content != snippet
+        for spelling in spellings:
+            assert not _fragment_left(item.content, spelling), (spelling, item.content)
+    assert scrubbed.warnings[-1].startswith(
+        f"the report hides a credential or session value in {len(snippets)} fields"
+    )
+
+
+def test_a_title_cut_without_a_marker_keeps_a_word_that_starts_like_the_secret() -> None:
+    """Only evidence is matched at its edges: a title ending with ``hunt`` stays as written."""
+    finding = make_finding().model_copy(
+        update={
+            "title": "Welcome hunt",
+            "evidence": (EvidenceItem(label="body", content="Welcome hunt"),),
+        }
+    )
+
+    scrubbed = scrub_result(make_result(finding), _given(_SECRET))
+
+    assert scrubbed.findings[0].title == "Welcome hunt"
+    # positive control: the same text as evidence ends where a check may have cut it
+    assert scrubbed.findings[0].evidence[0].content == f"Welcome {REDACTED}"

@@ -18,6 +18,7 @@ from typing import Any
 from urllib.parse import quote
 
 from webvigil.core.findings import Finding, Severity
+from webvigil.core.output import Sink, safe_text
 from webvigil.core.result import ScanResult
 from webvigil.core.urls import is_http_url
 
@@ -61,7 +62,9 @@ class SarifReporter:
         Returns:
             str: The SARIF document as indented JSON.
         """
-        return json.dumps(self.to_dict(result), indent=2)
+        # ``json.dumps`` escapes every non-ASCII character, so the profile finds nothing to
+        # change: it is called so that the two JSON writers share one rule.
+        return safe_text(json.dumps(self.to_dict(result), indent=2), Sink.JSON)
 
     def to_dict(self, result: ScanResult) -> dict[str, Any]:
         """

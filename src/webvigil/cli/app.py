@@ -32,7 +32,7 @@ from webvigil.core.orchestrator import Orchestrator
 from webvigil.core.result import ScanResult
 from webvigil.core.secrets import Secret, SecretKind
 from webvigil.core.target import Scope
-from webvigil.reporting import get_reporter, load_result
+from webvigil.reporting import MAX_REPORT_BYTES, get_reporter, load_result
 
 app = typer.Typer(
     name="webvigil",
@@ -368,8 +368,14 @@ def list_checks() -> None:
     # table ends up wider than the terminal (issue #105).
     for column in ("id", "category", "mode", "default severity"):
         table.add_column(column, no_wrap=True, overflow="ignore")
+    # A plugin's id or category is text it wrote: each cell is a plain ``Text``, never markup.
     for check in all_checks():
-        table.add_row(check.id, check.category.value, check.mode.value, check.default_severity.name)
+        table.add_row(
+            _render.cell(check.id),
+            _render.cell(check.category.value),
+            _render.cell(check.mode.value),
+            _render.cell(check.default_severity.name),
+        )
     console = Console()
     # Rich crops a table at the terminal width however the columns are set (and `measure` is
     # clamped to it too): measure the table unbounded and, if it is wider than the terminal,
@@ -384,7 +390,15 @@ def list_checks() -> None:
 
 @app.command()
 def report(
-    scan_json: Annotated[Path, typer.Argument(help="A scan JSON file produced by `scan`.")],
+    scan_json: Annotated[
+        Path,
+        typer.Argument(
+            help=(
+                "A scan JSON file produced by `scan`, of at most "
+                f"{MAX_REPORT_BYTES // (1024 * 1024)} MiB."
+            )
+        ),
+    ],
     output_format: Annotated[
         str, typer.Option("--format", help=f"Report format ({', '.join(_FORMATS)}).")
     ],
@@ -708,8 +722,10 @@ def _emit(
     if output is not None:
         output.write_text(rendered, "utf-8")
         _render.status(f"wrote {output_format} report to {output}")
+        _warn_if_unreadable(rendered, output_format)
         return
     _write_stdout(rendered)
+    _warn_if_unreadable(rendered + "\n", output_format)
     _render.summary(
         result,
         cookie_count=cookie_count,
@@ -737,6 +753,42 @@ def _write_or_print(rendered: str, output: Path | None, output_format: str) -> N
         _render.status(f"wrote {output_format} report to {output}")
     else:
         _write_stdout(rendered)
+
+
+def _written_bytes(text: str, linesep: str = os.linesep) -> int:
+    r"""
+    Count the bytes a text stream writes for a text.
+
+    Args:
+        text (str): What was written, in text mode, as UTF-8.
+        linesep (str): The platform's line ending, which text mode writes for every ``\n``.
+            Defaults to :data:`os.linesep`.
+
+    Returns:
+        int: The size of the written file: on Windows each line break takes two bytes.
+    """
+    return len(text.encode("utf-8")) + text.count("\n") * (len(linesep) - 1)
+
+
+def _warn_if_unreadable(written: str, output_format: str) -> None:
+    """
+    Warn when a JSON report is too large for ``webvigil report`` to read back (spec 025, RF-08).
+
+    The report is written whole and the exit code does not change: only the reload is refused.
+
+    Args:
+        written (str): The report text as written.
+        output_format (str): The format name: only a JSON report is read back.
+    """
+    if output_format != "json":
+        return
+    size = _written_bytes(written)
+    if size > MAX_REPORT_BYTES:
+        _render.status(
+            f"warning: the JSON report is {size // (1024 * 1024)} MiB, over the "
+            f"{MAX_REPORT_BYTES // (1024 * 1024)} MiB that `webvigil report` reads: "
+            "it cannot be re-rendered from this file"
+        )
 
 
 def _write_stdout(rendered: str) -> None:

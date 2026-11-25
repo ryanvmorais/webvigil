@@ -20,8 +20,8 @@ import html
 import re
 
 from webvigil.core.findings import Severity
+from webvigil.core.output import Sink, safe_text
 from webvigil.core.result import ScanResult
-from webvigil.core.text import show_controls
 from webvigil.core.urls import is_http_url
 from webvigil.reporting._ordering import sort_findings
 
@@ -308,4 +308,4 @@ class MarkdownReporter:
                 f"- {_code(error.check_id)}: {_text(error.message)}" for error in result.errors
             ]
             lines.append("")
-        return show_controls("\n".join(lines)).rstrip() + "\n"
+        return safe_text("\n".join(lines), Sink.DOCUMENT).rstrip() + "\n"
