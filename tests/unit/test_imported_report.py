@@ -3,14 +3,19 @@ A report read back from a file: the size of the file, the size of each field, th
 and the severity counts.
 
 ``webvigil report`` reloads a JSON report that someone else may have written, so nothing in it
-is taken on trust. The tests write files to ``tmp_path`` and lower ``MAX_REPORT_BYTES`` with
-``monkeypatch`` instead of writing 256 MiB; the field tests build the models directly, since the
-same bound applies when a check builds a finding and when a file is read.
+is taken on trust. The tests write files to ``tmp_path``; most lower ``MAX_REPORT_BYTES`` with
+``monkeypatch``, and one writes the real 64 MiB as spaces after a small report, which parse at
+almost no cost. The field tests build the models directly, since the same bound applies when a
+check builds a finding and when a file is read.
 """
 
 from __future__ import annotations
 
+import io
 import json
+import subprocess
+import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -34,6 +39,7 @@ from webvigil.core.technology import DetectionMethod, Technology
 from webvigil.reporting import get_reporter, load_result
 
 runner = CliRunner()
+_MIB = 1024 * 1024
 
 
 def _write(tmp_path: Path, result: ScanResult) -> Path:
@@ -97,6 +103,148 @@ def test_report_on_a_file_over_the_limit_exits_4_without_a_traceback(
     # Rich wraps the line at the terminal width.
     assert "the most `webvigil report` reads" in " ".join(result.stderr.split())
     assert "Traceback" not in result.stderr
+
+
+class _ReadSpy:
+    """A report file that records the size of every read asked of it."""
+
+    def __init__(self, data: bytes) -> None:
+        """
+        Args:
+            data (bytes): What the file holds.
+        """
+        self._file = io.BytesIO(data)
+        self.asked: list[int] = []
+
+    def __enter__(self) -> _ReadSpy:
+        """Open the file."""
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        """Close the file."""
+
+    def read(self, size: int = -1) -> bytes:
+        """
+        Args:
+            size (int): The most bytes to read. Defaults to ``-1`` (all of them).
+
+        Returns:
+            bytes: The next bytes of the file.
+        """
+        self.asked.append(size)
+        return self._file.read(size)
+
+
+def test_the_report_is_read_one_mebibyte_at_a_time(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Memory follows what the file holds: no read asks for the whole limit (spec 025, RF-08)."""
+    document = get_reporter("json").render(make_result(make_finding())).encode()
+    spy = _ReadSpy(document + b" " * (3 * _MIB + 5))
+
+    class _Opener:
+        def __init__(self, _path: object) -> None: ...
+
+        def open(self, _mode: str) -> _ReadSpy:
+            return spy
+
+    monkeypatch.setattr(reporting, "Path", _Opener)
+
+    assert len(load_result("scan.json").findings) == 1
+    assert max(spy.asked) == _MIB
+    # positive control: the file took several reads, the last of them finding its end
+    assert len(spy.asked) == 5
+
+
+def _padded(tmp_path: Path, size: int) -> Path:
+    """
+    Args:
+        tmp_path (Path): The test's temporary directory.
+        size (int): The size of the file to write.
+
+    Returns:
+        Path: A valid report of one finding, padded with spaces to ``size`` bytes.
+    """
+    document = get_reporter("json").render(make_result(make_finding())).encode()
+    path = tmp_path / "padded.json"
+    path.write_bytes(document + b" " * (size - len(document)))
+    return path
+
+
+def test_a_report_of_64_mib_is_read_and_one_byte_more_is_refused(tmp_path: Path) -> None:
+    """The real limit, not a lowered one: JSON allows the spaces, so only the size decides."""
+    assert reporting.MAX_REPORT_BYTES == 64 * _MIB
+    path = _padded(tmp_path, 64 * _MIB)
+    assert len(load_result(path).findings) == 1
+    path = _padded(tmp_path, 64 * _MIB + 1)
+    with pytest.raises(ValueError, match=r"larger than 64 MiB"):
+        load_result(path)
+    path.unlink()
+
+
+# What reading back measures, in a child process: the peak resident size above the one before.
+_PEAK_SCRIPT = """
+import resource, sys
+from webvigil.reporting import load_result
+before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+load_result(sys.argv[1])
+after = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+print((after - before) * (1 if sys.platform == "darwin" else 1024))
+"""
+
+
+def _dense_document(size: int) -> bytes:
+    """
+    Args:
+        size (int): About how large the document is.
+
+    Returns:
+        bytes: A report of many findings with short values, the densest kind of file.
+    """
+    one = json.loads(get_reporter("json").render(make_result(make_finding())))
+    finding = one["findings"][0]
+    count = size // len(json.dumps(finding))
+    return json.dumps({**one, "findings": [finding] * count}).encode()
+
+
+def _large_values_document(size: int) -> bytes:
+    """
+    Args:
+        size (int): About how large the document is.
+
+    Returns:
+        bytes: A report of findings with 4 KiB of evidence each.
+    """
+    finding = make_finding().model_copy(
+        update={"evidence": (EvidenceItem(label="body", content="x" * 4096),)}
+    )
+    one = json.loads(get_reporter("json").render(make_result(finding)))
+    count = size // len(json.dumps(one["findings"][0]))
+    return json.dumps({**one, "findings": one["findings"] * count}).encode()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the peak resident size is a POSIX measure")
+@pytest.mark.parametrize(
+    ("build", "ratio"), [(_dense_document, 20), (_large_values_document, 5)], ids=["dense", "large"]
+)
+def test_reading_a_report_back_takes_memory_in_proportion_to_its_size(
+    tmp_path: Path, build: Callable[[int], bytes], ratio: int
+) -> None:
+    """Measured on 8 MiB, the worst cases of the design stay under their ratio (spec 025, RF-08)."""
+    path = tmp_path / "report.json"
+    path.write_bytes(build(8 * _MIB))
+    size = path.stat().st_size
+
+    child = subprocess.run(
+        [sys.executable, "-c", _PEAK_SCRIPT, str(path)],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=120,
+    )
+    peak = int(child.stdout)
+
+    # positive control: the measure saw the file come in
+    assert peak >= size
+    assert peak < ratio * size, f"{peak / size:.1f}x"
 
 
 # ---------------------------------------------------------------------------
