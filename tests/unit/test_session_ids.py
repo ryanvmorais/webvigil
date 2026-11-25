@@ -129,6 +129,8 @@ _SAMPLE_CASES = [
         ["1700000000", "1700000050", "1700001000", "1700002500"],
         {"timestamp-series", "low-variance"},
     ),
+    # decreasing and irregular: not timestamps growing, so the series is read in the order issued
+    (["1700002500", "1700001000", "1700000050", "1700000000"], {"low-variance"}),
     (["samevalue12345678"] * 4, {"duplicates"}),  # identical: duplicates only, not low variance
     (["fixedprefix_AAAA", "fixedprefix_BBBB", "fixedprefix_CCCC"], {"low-variance"}),
     ([_HEX32, _RANDOM[1]], set()),  # fewer than three samples: nothing to say

@@ -126,6 +126,16 @@ def test_every_value_that_enters_the_jar_is_remembered_for_scrubbing() -> None:
     }
 
 
+def test_an_empty_cookie_value_is_held_but_not_remembered() -> None:
+    """A cookie set to nothing is kept by the jar, and adds no value to the scrub list."""
+    jar = SessionJar("demo.test")
+    jar.begin()
+    jar.absorb(_response(_URL, "sid=; Path=/"), handshake=True)
+
+    assert [(name, value.reveal()) for name, value in jar.pending_items()] == [("sid", "")]
+    assert jar.values == frozenset()
+
+
 def test_the_pending_cookies_are_handed_out_as_session_secrets() -> None:
     """``pending_items`` names each cookie and holds its value as a ``SESSION`` secret."""
     jar = SessionJar("demo.test")
