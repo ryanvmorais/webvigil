@@ -60,6 +60,7 @@ class _StubCrawler:
     forms: tuple[object, ...] = ()
     skipped_destructive = 0
     skipped_by_robots = 0
+    robots_unreadable: str | None = None
     limit_warning: str | None = None
     post_summary = None  # spec 018: the real crawler exposes the POST phase tally
 
@@ -325,6 +326,19 @@ async def test_robots_skip_becomes_a_warning(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setattr(_StubCrawler, "skipped_by_robots", 0)
     quiet = await Orchestrator(ScanConfig(), check_types=[PassiveOne]).run(_TARGET)
     assert not any("robots.txt" in w for w in quiet.warnings)
+
+
+async def test_an_unreadable_robots_file_becomes_one_warning_in_place_of_the_count(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The cause is named, with the way out; the count would hide it (spec 027, ADR-6)."""
+    monkeypatch.setattr(_StubCrawler, "skipped_by_robots", 4)
+    monkeypatch.setattr(_StubCrawler, "robots_unreadable", "HTTP 503")
+    result = await Orchestrator(ScanConfig(), check_types=[PassiveOne]).run(_TARGET)
+    assert [w for w in result.warnings if "robots.txt" in w] == [
+        "robots.txt could not be read (HTTP 503): only the target URL was crawled; "
+        "set follow_robots = false under [scan] to crawl without it"
+    ]
 
 
 async def test_a_crawl_limit_becomes_a_warning(monkeypatch: pytest.MonkeyPatch) -> None:

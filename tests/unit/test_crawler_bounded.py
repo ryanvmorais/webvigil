@@ -312,20 +312,15 @@ async def test_the_robots_cut_drops_the_line_it_falls_in(httpx_mock: object) -> 
     assert rules.can_fetch("webvigil", f"{_SEED}other/page")
 
 
-@pytest.mark.parametrize("status", [404, 500])
-async def test_a_robots_txt_that_is_not_a_200_is_not_read(
-    httpx_mock: object, monkeypatch: pytest.MonkeyPatch, status: int
-) -> None:
-    """An error page is not the site's rules, whatever its body says."""
+async def test_a_robots_txt_that_is_not_a_200_is_not_read(httpx_mock: object) -> None:
+    """
+    A ``404`` page is not the site's rules, whatever its body says. A ``5xx`` refuses every URL
+    instead (spec 027, ``test_a_server_error_disallows_every_url``).
+    """
     from webvigil.crawler import robots
-    from webvigil.http import client as client_mod
-
-    # the client retries a 5xx GET; the retries still go out, only their backoff is zeroed
-    monkeypatch.setattr(client_mod, "BACKOFF_BASE_S", 0.0)
-    monkeypatch.setattr(client_mod, "BACKOFF_JITTER_S", 0.0)
 
     body = "User-agent: *\nDisallow: /\nSitemap: https://example.com/s.xml\n"
-    router = _Router({f"{_SEED}robots.txt": (status, body, "text/plain")})
+    router = _Router({f"{_SEED}robots.txt": (404, body, "text/plain")})
     httpx_mock.add_callback(router, is_reusable=True)  # type: ignore[attr-defined]
     async with HttpClient(_TARGET, ScanConfig()) as http:
         rules = await robots.load(http, _SEED.rstrip("/"), "webvigil")

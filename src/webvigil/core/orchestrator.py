@@ -193,7 +193,12 @@ class Orchestrator:
                     f"declined to follow {crawler.skipped_destructive} link(s) that look "
                     "state-changing"
                 )
-            if crawler.skipped_by_robots:
+            if crawler.robots_unreadable is not None:
+                warnings.append(
+                    f"robots.txt could not be read ({crawler.robots_unreadable}): only the target "
+                    "URL was crawled; set follow_robots = false under [scan] to crawl without it"
+                )
+            elif crawler.skipped_by_robots:
                 warnings.append(
                     f"robots.txt kept the crawler from {crawler.skipped_by_robots} URL(s) "
                     f"({len(pages)} page(s) crawled): set follow_robots = false under [scan] "

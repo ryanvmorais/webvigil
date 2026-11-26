@@ -23,7 +23,7 @@ from webvigil.checks.session.cookies import is_jwt, is_session_cookie, session_c
 from webvigil.checks.session.ids import Rule, id_facts, judge_samples, judge_value
 from webvigil.core.config import ScanConfig
 from webvigil.core.context import Page
-from webvigil.core.destination import may_carry_credentials, may_request
+from webvigil.core.destination import may_carry_credentials
 from webvigil.core.errors import OutOfScopeError, RequestFailed
 from webvigil.core.findings import Confidence, Severity
 from webvigil.core.secrets import Secret
@@ -362,7 +362,14 @@ class SessionScanner:
             return []
         if not self._may_get_cookies(reference, "session logout test"):
             return []
-        endpoint = self._find_logout(login.logout_url)
+        configured = login.logout_url
+        if configured is not None and not may_carry_credentials(self._target, configured):
+            self.warnings.append(
+                "session logout test skipped: [auth.login] logout_url may not receive the "
+                "scan's credentials"
+            )
+            return []
+        endpoint = self._find_logout(configured)
         if endpoint is None:
             self.warnings.append("session logout test skipped: no logout endpoint found")
             return []
@@ -413,16 +420,22 @@ class SessionScanner:
 
     def _find_logout(self, configured: str | None) -> tuple[str, str, Form | None] | None:
         """
+        A logout ends the session the scan's credentials opened, so only one those credentials
+        reach can be tested: a logout on a sibling host under ``--scope subdomains`` would get no
+        cookie, and the old session would look alive (spec 027, RF-13).
+
         Args:
-            configured (str | None): ``[auth.login] logout_url``.
+            configured (str | None): ``[auth.login] logout_url``, already allowed by
+                :func:`may_carry_credentials`.
 
         Returns:
             tuple[str, str, Form | None] | None: ``(method, url, form)`` of the logout to
                 request: the configured URL, else the first logout link of the crawl, else the
-                first ``POST`` logout form; ``None`` when there is none in scope.
+                first ``POST`` logout form, each one the credentials may reach; ``None`` when
+                there is none.
         """
         if configured is not None:
-            return ("GET", configured, None) if may_request(self._target, configured) else None
+            return "GET", configured, None
         for page in self._pages:
             if not (page.ok and page.is_html and page.text):
                 continue
@@ -432,13 +445,13 @@ class SessionScanner:
                 if resolved is None:
                     continue
                 url = resolved.split("#", 1)[0]
-                if may_request(self._target, url) and is_logout(url):
+                if may_carry_credentials(self._target, url) and is_logout(url):
                     return "GET", url, None
         for form in self._forms:
             if (
                 form.method == "POST"
                 and is_logout(form.action)
-                and may_request(self._target, form.action)
+                and may_carry_credentials(self._target, form.action)
             ):
                 return "POST", form.action, form
         return None

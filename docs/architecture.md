@@ -109,8 +109,11 @@ Persistence       webvigil.api.db  (SQLite via SQLModel + Alembic, web only)
 4. The crawler discovers in-scope pages — `<a href>` links plus optional `sitemap.xml` seeds —
    bounded by `max_pages` and gated by `robots.txt`. WebVigil reads `robots.txt` with its own
    RFC 9309 parser (`crawler/robots.py`), so a decision is the same on every Python: the first
-   500 KiB count, a file that is missing, empty, not `200` or unreachable allows every page, and
-   a URL beyond what the parser can evaluate is not fetched, with a warning. What the site
+   500 KiB count (read in the charset the response declares, as a smaller file is), a file that
+   is missing, empty or answers a status other than `200` or `5xx` allows every page, and a URL
+   beyond what the parser can evaluate is not fetched, with a warning. A `5xx` after the client's
+   retries, or a network error, leaves the crawl with the target URL alone, and a scan warning
+   names the cause and says how to turn `follow_robots` off. What the site
    declares is read up to fixed limits: 20 sitemaps and 10,000 sitemap URLs per scan, 20,000
    links per page, a set of seen URLs of at least 10,000 (20 per `max_pages`), 500 forms per
    page, 2,000 forms in all and 1,000 controls per form. The pages fetched are the same as long

@@ -11,12 +11,14 @@ from __future__ import annotations
 import asyncio
 import random
 from collections import deque
+from collections.abc import Callable
 
 import httpx2
 import pytest
 
 from tests.support import HandlerTransport
 from webvigil.core.config import ScanConfig
+from webvigil.core.errors import OutOfScopeError
 from webvigil.core.target import Target
 from webvigil.crawler import robots
 from webvigil.crawler.crawler import Crawler
@@ -812,3 +814,178 @@ async def test_past_deadline_reads_and_records_the_scan_limit() -> None:
         http._deadline = asyncio.get_running_loop().time() - 1
         assert http.past_deadline() is True
         assert http.stats.deadline_reached is True
+
+
+# ---------------------------------------------------------------------------
+# Reading the file (spec 027, RF-11 and RF-12)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def _no_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The client retries a 5xx GET and a refused connection; only the wait is zeroed."""
+    from webvigil.http import client as client_mod
+
+    monkeypatch.setattr(client_mod, "BACKOFF_BASE_S", 0.0)
+    monkeypatch.setattr(client_mod, "BACKOFF_JITTER_S", 0.0)
+
+
+async def _load(answer: Callable[[httpx2.Request], httpx2.Response]) -> robots.Robots:
+    """
+    Args:
+        answer (Callable[[httpx2.Request], httpx2.Response]): Plays the site's ``robots.txt``.
+
+    Returns:
+        robots.Robots: What :func:`robots.load` read.
+    """
+    target = Target.parse(f"{_ORIGIN}/")
+    config = ScanConfig().with_overrides(http={"delay_ms": 0})
+    async with HttpClient(target, config, transport=HandlerTransport(answer)) as http:
+        return await robots.load(http, _ORIGIN, _UA)
+
+
+def _status(
+    code: int, body: str = "User-agent: *\nDisallow: /\nSitemap: /s.xml\n"
+) -> Callable[[httpx2.Request], httpx2.Response]:
+    """
+    Args:
+        code (int): The status ``robots.txt`` answers.
+        body (str): Its body. Defaults to a file that disallows everything and names a sitemap.
+
+    Returns:
+        Callable[[httpx2.Request], httpx2.Response]: The handler.
+    """
+    return lambda _request: httpx2.Response(code, headers={"content-type": "text/plain"}, text=body)
+
+
+@pytest.mark.usefixtures("_no_backoff")
+@pytest.mark.parametrize("code", [500, 503, 599])
+async def test_a_server_error_disallows_every_url(code: int) -> None:
+    """RFC 9309, 2.3.1.4: a ``5xx`` is an unreachable file, whatever its body says."""
+    rules = await _load(_status(code, body=""))
+
+    assert rules.unreadable == f"HTTP {code}"
+    assert rules.verdict(_UA, f"{_ORIGIN}/page") is Verdict.DISALLOW
+    assert not rules.can_fetch(_UA, f"{_ORIGIN}/")
+    assert rules.sitemaps == ()
+
+
+@pytest.mark.usefixtures("_no_backoff")
+async def test_a_refused_connection_disallows_every_url() -> None:
+    """A network error, after the client's retries, is an unreachable file too."""
+    asked: list[str] = []
+
+    def refuse(request: httpx2.Request) -> httpx2.Response:
+        asked.append(request.url.path)
+        raise httpx2.ConnectError("connection refused", request=request)
+
+    rules = await _load(refuse)
+
+    assert asked and set(asked) == {"/robots.txt"}  # the path under test ran
+    assert rules.unreadable == "ConnectError"
+    assert not rules.can_fetch(_UA, f"{_ORIGIN}/page")
+
+
+@pytest.mark.parametrize("code", [404, 403, 499, 301, 600])
+async def test_a_status_that_is_not_a_server_error_allows_every_url(code: int) -> None:
+    """A ``4xx`` (the file is not there) and any other status are not the site's rules."""
+    rules = await _load(_status(code))
+
+    assert rules.unreadable is None
+    assert rules.can_fetch(_UA, f"{_ORIGIN}/page")
+    assert rules.sitemaps == ()
+
+
+@pytest.mark.parametrize("body", ["", "  \n\t\n"], ids=["empty", "blank"])
+async def test_an_empty_file_allows_every_url(body: str) -> None:
+    """A ``200`` with nothing in it forbids nothing."""
+    rules = await _load(_status(200, body=body))
+
+    assert rules.unreadable is None
+    assert rules.can_fetch(_UA, f"{_ORIGIN}/page")
+
+
+async def test_a_file_with_no_rule_allows_every_url() -> None:
+    """The positive control of the cases above: a readable file, nothing in it forbids the URL."""
+    rules = await _load(_status(200, body="User-agent: *\n# nothing kept out\n"))
+
+    assert rules.unreadable is None
+    assert rules.can_fetch(_UA, f"{_ORIGIN}/page")
+
+
+async def test_a_scope_refusal_of_the_file_stays_permissive() -> None:
+    """The file is at the target's origin, so the guard cannot refuse it; if it did, allow all."""
+
+    class _Refusing:
+        async def get(self, url: str) -> object:
+            raise OutOfScopeError(url)
+
+    rules = await robots.load(_Refusing(), _ORIGIN, _UA)  # type: ignore[arg-type]
+
+    assert rules.unreadable is None
+    assert rules.can_fetch(_UA, f"{_ORIGIN}/page")
+
+
+def test_an_unreadable_file_is_the_only_one_that_says_so() -> None:
+    """The stand-ins: no file allows, a file that could not be read refuses, with its reason."""
+    assert robots.Robots.allow_all().unreadable is None
+    refused = robots.Robots.disallow_all("HTTP 502")
+    assert refused.unreadable == "HTTP 502"
+    assert refused.verdict(_UA, f"{_ORIGIN}{'/x' * 10_000}") is Verdict.DISALLOW
+
+
+@pytest.mark.parametrize(
+    ("url", "allowed"),
+    [
+        (f"{_ORIGIN}/a?", False),
+        (f"{_ORIGIN}/a?x", False),
+        (f"{_ORIGIN}/a", True),
+        (f"{_ORIGIN}/a#?", True),  # the fragment is not sent: the path has no query
+        (f"{_ORIGIN}/a#frag?x", True),
+    ],
+)
+def test_a_rule_ending_in_a_question_mark_matches_an_empty_query(url: str, allowed: bool) -> None:
+    """RFC 9309, 2.2.2: ``/a?`` is the path ``/a`` with a query, even an empty one (RF-12)."""
+    rules = robots._parse("User-agent: *\nDisallow: /a?\n")
+
+    assert rules.can_fetch(_UA, url) is allowed
+
+
+@pytest.mark.parametrize(("url", "allowed"), [(f"{_ORIGIN}/a", False), (f"{_ORIGIN}/a?", True)])
+def test_an_anchored_rule_does_not_cover_an_empty_query(url: str, allowed: bool) -> None:
+    """``/a$`` ends at ``/a``: the ``?`` of an empty query is part of the URL compared with it."""
+    rules = robots._parse("User-agent: *\nDisallow: /a$\n")
+
+    assert rules.can_fetch(_UA, url) is allowed
+
+
+_CAFE = "/caf" + chr(0xE9) + "/"
+
+
+def _latin1_file(size: int) -> bytes:
+    """
+    Args:
+        size (int): The least length of the file, in octets.
+
+    Returns:
+        bytes: A ``latin-1`` file whose only rule disallows a path with a non-ASCII letter,
+            padded with comment lines after it.
+    """
+    head = f"User-agent: *\nDisallow: {_CAFE}\n".encode("latin-1")
+    line = b"# " + b"x" * 97 + b"\n"
+    return head + line * max(0, (size - len(head)) // len(line) + 1)
+
+
+@pytest.mark.parametrize("size", [1_024, 600 * 1_024], ids=["small", "600-kib"])
+async def test_a_file_over_the_limit_is_read_in_its_declared_charset(size: int) -> None:
+    """The part within 500 KiB decodes as the whole of a small file does (RF-12)."""
+    body = _latin1_file(size)
+    assert (len(body) > robots.MAX_ROBOTS_BYTES) is (size > robots.MAX_ROBOTS_BYTES)
+    rules = await _load(
+        lambda _request: httpx2.Response(
+            200, headers={"content-type": "text/plain; charset=iso-8859-1"}, content=body
+        )
+    )
+
+    assert not rules.can_fetch(_UA, f"{_ORIGIN}{_CAFE}menu")
+    assert rules.can_fetch(_UA, f"{_ORIGIN}/cafe/menu")  # the rule is not a blanket refusal

@@ -86,6 +86,7 @@ class _Crawler:
     forms: tuple[object, ...] = ()
     skipped_destructive = 0
     skipped_by_robots = 0
+    robots_unreadable: str | None = None
     limit_warning: str | None = None
     post_summary = None
     pages: ClassVar[list[Page]] = []
