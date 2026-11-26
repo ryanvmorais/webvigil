@@ -159,7 +159,9 @@ pick the form with a password field, build the body with `form_body` (hidden/CSR
 heuristic; login form back = failure, nothing conclusive = "not confirmed" with a warning). Failure =
 `LoginFailedError`, exit 4, before the crawl. The session is a `webvigil.http.session.Session`: a
 `SessionJar` over `httpx2.Cookies` (handshake mode accepts every `Set-Cookie` from every hop; live mode only the
-rotation of names it already has; target host only) that the `HttpClient` consults — `handshake()` / `quiet()`
+rotation of names it already has; only where the scan's credentials may go; past 1 024 distinct values, 64 Ki
+characters of them or one value over 4 096 characters it gives the session up and sends no cookie, a re-login's
+included) that the `HttpClient` consults — `handshake()` / `quiet()`
 are `ContextVar`s (one task's re-login does not leak into the others). Session drop = `401`, a redirect to the
 login from a page that is not a login page (learned once, ADR-6), or `logged_out_marker`; **never `403`
 or `5xx`** (a blocked payload does not spend a login); `check_url` confirms first. Re-login is serialized

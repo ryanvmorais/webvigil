@@ -19,7 +19,9 @@ from webvigil.core.secrets import Secret, SecretKind
 from webvigil.core.target import Scope, Target
 from webvigil.http.session import (
     _MAX_JAR_COOKIES,
+    _MAX_SCRUB_CHARS,
     _MAX_SCRUB_VALUES,
+    _MAX_SESSION_VALUE_CHARS,
     _MAX_VARIANTS_PER_NAME,
     Session,
     SessionJar,
@@ -353,6 +355,53 @@ def test_endless_rotation_gives_the_session_up() -> None:
     assert len(jar.values) == _MAX_SCRUB_VALUES + 1  # the value that went past the limit
     _committed(jar, _URL, "sid=again; Path=/")  # a re-login does not bring it back
     assert jar.pairs_for(_URL, handshake=False) == []
+
+
+def test_a_session_value_too_long_to_keep_gives_the_session_up() -> None:
+    """One value past the cookie size a browser keeps is never sent, nor kept to scrub."""
+    jar = SessionJar(_TARGET)
+    _committed(jar, _URL, "sid=first; Path=/")
+    longest = "a" * _MAX_SESSION_VALUE_CHARS
+    jar.absorb(_response(_URL, f"sid={longest}; Path=/"), handshake=False)
+    # positive control: a value of the limit itself is the session
+    assert not jar.overflowed
+    assert jar.pairs_for(_URL, handshake=False) == [("sid", longest)]
+    too_long = "b" * (_MAX_SESSION_VALUE_CHARS + 1)
+    jar.absorb(_response(_URL, f"sid={too_long}; Path=/"), handshake=False)
+    assert jar.overflowed
+    assert jar.pairs_for(_URL, handshake=False) == []
+    assert _texts(jar.values) == {"first", longest}
+
+
+def test_session_values_past_the_character_limit_give_the_session_up() -> None:
+    """The scrub list holds a bounded number of characters, however few the values."""
+    jar = SessionJar(_TARGET)
+    _committed(jar, _URL, "sid=first; Path=/")
+    per_value = 4096
+    fits = (_MAX_SCRUB_CHARS - len("first")) // per_value  # 15 values of 4096 fit
+    for i in range(fits):
+        jar.absorb(_response(_URL, f"sid={i:04d}{'a' * (per_value - 4)}; Path=/"), handshake=False)
+    assert not jar.overflowed  # positive control: right under the limit, the session holds
+    assert len(jar.pairs_for(_URL, handshake=False)) == 1
+    jar.absorb(_response(_URL, f"sid=last{'a' * (per_value - 4)}; Path=/"), handshake=False)
+    assert jar.overflowed
+    assert jar.pairs_for(_URL, handshake=False) == []
+
+
+def test_a_handshake_after_the_session_was_given_up_sends_nothing() -> None:
+    """A re-login after the give-up runs without cookies, so its values need no scrubbing."""
+    jar = SessionJar(_TARGET)
+    _committed(jar, _URL, "sid=first; Path=/")
+    jar.absorb(
+        _response(_URL, f"sid={'c' * (_MAX_SESSION_VALUE_CHARS + 1)}; Path=/"), handshake=False
+    )
+    assert jar.overflowed
+    jar.begin()
+    jar.absorb(_response(_URL, "pre=handshake-value; Path=/"), handshake=True)
+    # precondition: the handshake jar did take the cookie
+    assert {name for name, _value in jar.pending_items()} == {"pre"}
+    assert jar.pairs_for(_URL, handshake=True) == []
+    assert _texts(jar.values) == {"first"}
 
 
 def test_ordinary_rotation_keeps_the_session() -> None:

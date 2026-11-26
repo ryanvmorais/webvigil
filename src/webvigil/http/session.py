@@ -123,13 +123,18 @@ def _jar_view(raw: httpx2.Response) -> httpx2.Response:
 
 
 # What the target can make the jar hold. A login sets a handful of cookies, and a session
-# rotates its value now and then; a target that sets hundreds, or rotates without end, would
-# grow the jar, the per-request cookie walk and the list of values to scrub. Past
-# ``_MAX_SCRUB_VALUES`` distinct values the jar gives the session up (it is not sent any more),
-# so no value goes out that the report could not be scrubbed of.
+# rotates its value now and then; a target that sets hundreds, rotates without end or sets
+# values of any length would grow the jar, the per-request cookie walk and the redaction of the
+# report, whose cost follows the characters of the values to scrub. Past
+# ``_MAX_SCRUB_VALUES`` distinct values, ``_MAX_SCRUB_CHARS`` characters of them, or one value
+# longer than ``_MAX_SESSION_VALUE_CHARS`` (the size RFC 6265, 6.1, asks a browser to keep at
+# least, name included, so no browser session needs more) the jar gives the session up: it is
+# not sent any more, so no value goes out that the report could not be scrubbed of.
 _MAX_JAR_COOKIES = 64
 _MAX_VARIANTS_PER_NAME = 4
 _MAX_SCRUB_VALUES = 1024
+_MAX_SCRUB_CHARS = 64 * 1024
+_MAX_SESSION_VALUE_CHARS = 4096
 
 
 def _session_value(value: str, name: str) -> Secret:
@@ -182,8 +187,9 @@ class SessionJar:
     plain values, because the standard cookie rules run on it.
 
     Attributes:
-        overflowed (bool): ``True`` once the target set more distinct values than the scrub
-            list holds; the session is then given up for the rest of the scan.
+        overflowed (bool): ``True`` once the target set more distinct values, or more of their
+            characters, than the scrub list holds, or one value too long to keep; the session
+            is then given up for the rest of the scan.
     """
 
     def __init__(self, target: Target) -> None:
@@ -197,6 +203,7 @@ class SessionJar:
         self._pending: httpx2.Cookies | None = None
         self._names: frozenset[str] = frozenset()
         self._values: set[Secret] = set()
+        self._chars = 0  # the characters of the distinct values in ``_values``
         self.overflowed = False
 
     def __repr__(self) -> str:
@@ -210,8 +217,9 @@ class SessionJar:
     def values(self) -> frozenset[Secret]:
         """
         Returns:
-            frozenset[Secret]: Every non-empty cookie value that ever entered the jar, as
-                ``SESSION`` secrets named after their cookie.
+            frozenset[Secret]: Every non-empty cookie value that entered the jar until the
+                session was given up, as ``SESSION`` secrets named after their cookie; a value
+                too long to keep is not among them, as it is never sent.
         """
         return frozenset(self._values)
 
@@ -298,13 +306,14 @@ class SessionJar:
 
         Returns:
             list[tuple[str, str]]: ``(name, value)`` pairs in the jar's form (:func:`jar_text`),
-                empty for a URL the scan's credentials may not reach (another host, port or
-                scheme, but the ``https`` upgrade), for a URL ``httpx2`` cannot build and
-                for a cookie the browser rules would not send (``Secure`` on ``http``, another
-                path, expired). The values are plain: they are read from the library's storage
-                to build the request's ``Cookie`` header (spec 024, ADR-6).
+                empty once the session was given up (a re-login's handshake too), for a URL the
+                scan's credentials may not reach (another host, port or scheme, but the
+                ``https`` upgrade), for a URL ``httpx2`` cannot build and for a cookie the
+                browser rules would not send (``Secure`` on ``http``, another path, expired).
+                The values are plain: they are read from the library's storage to build the
+                request's ``Cookie`` header (spec 024, ADR-6).
         """
-        if not may_carry_credentials(self._target, url):
+        if self.overflowed or not may_carry_credentials(self._target, url):
             return []
         jar = self._pending if handshake and self._pending is not None else self._live
         try:
@@ -325,19 +334,32 @@ class SessionJar:
         """
         Args:
             jar (httpx2.Cookies): The jar that just absorbed a response; every value in it
-                joins the scrub list.
+                joins the scrub list, until the session is given up.
         """
+        if self.overflowed:
+            return  # nothing is sent any more (:meth:`pairs_for`), so nothing more is scrubbed
         for cookie in jar.jar:
             if cookie.value:
                 # the report quotes pages, so it holds the value as text, not in the jar's form;
                 # a page can show the same bytes as UTF-8 or as Latin-1
                 raw = cookie_bytes(cookie.value)
                 forms = {readable_cookie(cookie.value), raw.decode("latin-1")}
-                self._values |= {_session_value(form, cookie.name) for form in forms}
-        if len(self._values) > _MAX_SCRUB_VALUES:
-            self.overflowed = True
-            self._live = httpx2.Cookies()
-            self._names = frozenset()
+                if any(len(form) > _MAX_SESSION_VALUE_CHARS for form in forms):
+                    self._give_up()  # before the value could be sent
+                    return
+                for form in forms:
+                    secret = _session_value(form, cookie.name)
+                    if secret not in self._values:
+                        self._values.add(secret)
+                        self._chars += len(form)
+        if len(self._values) > _MAX_SCRUB_VALUES or self._chars > _MAX_SCRUB_CHARS:
+            self._give_up()
+
+    def _give_up(self) -> None:
+        """Give the session up for the rest of the scan: nothing of it is sent any more."""
+        self.overflowed = True
+        self._live = httpx2.Cookies()
+        self._names = frozenset()
 
 
 # ---------------------------------------------------------------------------
@@ -542,8 +564,8 @@ class Session:
             )
         if self.jar.overflowed:
             lines.append(
-                "the target changed the session cookies too many times - the rest of the scan "
-                "ran without the session"
+                "the target changed the session cookies too many times or set one too long to "
+                "keep - the rest of the scan ran without the session"
             )
         return lines
 

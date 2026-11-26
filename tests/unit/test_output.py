@@ -12,8 +12,11 @@ Nothing touches the network.
 from __future__ import annotations
 
 import logging
+import random
 import re
+import string
 import traceback
+import tracemalloc
 from collections.abc import Callable, Iterator
 
 import pytest
@@ -442,6 +445,57 @@ def test_no_fragment_survives_a_snippet_helper(helper: Callable[[str], str], anc
                 )
     # positive control: the sweep did cut a spelling, leaving a fragment of 4 or more
     assert split_at
+
+
+# ---------------------------------------------------------------------------
+# Redaction: the cost of the cut rule
+# ---------------------------------------------------------------------------
+
+
+def _random_values(count: int, length: int, seed: int) -> list[str]:
+    """
+    Args:
+        count (int): How many values.
+        length (int): The characters of each.
+        seed (int): The seed, so every run draws the same values.
+
+    Returns:
+        list[str]: Distinct letters-and-digits values, as a target issues session ids.
+    """
+    draw = random.Random(seed)
+    alphabet = string.ascii_letters + string.digits
+    return ["".join(draw.choices(alphabet, k=length)) for _ in range(count)]
+
+
+def test_the_redactor_takes_memory_that_does_not_follow_the_secrets_length() -> None:
+    # 64 KiB of session values: an index of every position took about 30 MiB for this
+    values = _random_values(16, 4096, seed=1)
+    tracemalloc.start()
+    try:
+        redactor = Redactor(values)
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+    assert peak < 4 * 1024 * 1024
+    # positive control: the redactor built that way still finds a fragment at a cut
+    assert redactor(f"~{values[3][:12]}…") == f"~{REDACTED}…"
+
+
+def test_a_field_past_the_work_budget_is_redacted_whole() -> None:
+    # one run repeated: every two characters of the secret start a candidate at every cut
+    redactor = Redactor(["aB" * 2048])
+    field = "aBaB..." * 2340
+    assert redactor(field) == REDACTED
+    assert redactor.hits == 1
+
+
+def test_a_field_with_many_cuts_and_many_secrets_loses_only_the_real_fragment() -> None:
+    # the heavy honest case: a session rotated a thousand times, and evidence full of spreads
+    values = _random_values(1024, 64, seed=2)
+    redactor = Redactor(values)
+    spreads = "f(...args); " * 400
+    field = f"{spreads}{values[500][:20]}..."
+    assert redactor(field) == f"{spreads}{REDACTED}..."
 
 
 # ---------------------------------------------------------------------------
