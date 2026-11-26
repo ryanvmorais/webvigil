@@ -593,8 +593,8 @@ class Redactor:
             work (_Work): The field's work so far; every scan of the joined spellings is spent.
 
         Yields:
-            tuple[str, int]: ``(spelling, where the run starts in it)`` for each occurrence,
-                none when the filter says no spelling holds the run.
+            tuple[str, int]: ``(spelling, where the run starts in it)`` for each occurrence;
+                nothing is yielded when the filter says no spelling holds the run.
 
         Raises:
             _OverBudget: When the search passes :data:`FRAGMENT_WORK_BUDGET`.
@@ -635,6 +635,8 @@ class _Work:
 
     def spend(self, amount: int) -> None:
         """
+        Spend ``amount`` of the field's work, or give the field up past the budget.
+
         Args:
             amount (int): Characters about to be scanned or compared.
 
