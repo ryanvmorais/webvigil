@@ -20,8 +20,8 @@ Web UI (podem ter i18n depois — o produto ainda não define público-alvo de i
 ## Stack
 
 - **Engine/CLI:** Python 3.12+ (piso 3.12; o CI testa 3.12, 3.13, 3.14 e 3.15, a mais nova estável, e a imagem Docker usa a 3.15), `uv`, `httpx2`, `certifi`, `pydantic` v2, `typer`+`rich`, `jinja2`,
-  `cryptography`, `selectolax`.
-- **Web API (extra `web`):** `fastapi`, `uvicorn`, `sqlmodel`+`alembic` (SQLite), `argon2-cffi`, `pyjwt`.
+  `cryptography`, `selectolax`, `packaging`.
+- **Web API (extra `web`):** `fastapi`, `uvicorn`, `sqlmodel`+`alembic` (SQLite), `argon2-cffi`, `pyjwt`, `python-multipart`.
 - **Web UI:** `web/` — Next.js 16 (App Router) + React 19 + TypeScript + Tailwind CSS v4 + shadcn/ui + TanStack Query, gerido por `pnpm` (Node 26; `engines` em `web/package.json`; a imagem do Node 26 não traz o `corepack`, então o `web/Dockerfile` instala o pnpm da versão do `packageManager` com `npm install -g`).
 - **Qualidade:** `ruff` → `black` → `mypy` (strict) → `import-linter` → `pytest` (`asyncio_mode=auto`).
 
@@ -37,7 +37,7 @@ uv run mypy src
 uv run lint-imports      # contrato: engine não importa Typer/Rich/FastAPI/SQLModel/Alembic/pyjwt/argon2/Uvicorn
 uv run pytest
 uv run pytest --cov       # per-file line + branch coverage of src/webvigil (the guard of issue #101)
-# A suíte inteira leva ~1,5 min com cobertura (cerca de 3400 testes; os scans de integração zeram o backoff
+# A suíte inteira leva ~1,5 min com cobertura (cerca de 3800 testes; os scans de integração zeram o backoff
 # de retry do cliente, que custava ~3 s por sonda 5xx: #307). Specs novas seguem as regras de teste
 # de specs/README.md ("Testing a spec"): lógica em unit, integração anexa a um scan compartilhado.
 uv run webvigil scan <url>

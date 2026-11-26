@@ -156,4 +156,8 @@ dependency fingerprint), `011-rce-injection` (command injection, SSTI),
 CSRF confirmation) and `018-post-form-crawl` (the crawler's opt-in `POST` phase) and `019-automated-login`
 (form login with re-login) and `020-session-security` (weak ids, fixation, logout) and
 `021-har-import` (HAR import for single-page apps) and `022-dashboard-csp` (the dashboard's
-nonce-based Content-Security-Policy).
+nonce-based Content-Security-Policy) and `023-httpx2-migration` (the engine's move from httpx
+to httpx2) and `024-secret-values` (one type for every credential and session value) and
+`025-safe-output` (redaction, size bounds and control-character neutralization for every
+output) and `026-destination-policy` (one place decides what each URL may receive);
+`027-security-regression-gates` is approved and not yet implemented.
