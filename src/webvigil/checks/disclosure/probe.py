@@ -29,6 +29,7 @@ from webvigil.checks.disclosure.catalogue import (
     build_backup_entry,
 )
 from webvigil.core.context import Page
+from webvigil.core.destination import may_request
 from webvigil.core.errors import OutOfScopeError, RequestFailed
 from webvigil.core.findings import Confidence, Severity
 from webvigil.core.target import Target
@@ -279,7 +280,7 @@ class DisclosureProbe:
                 url = resolve_url(page.url, src)
                 if url is None or not url.endswith(".js") or url in seen:
                     continue
-                if self._target.in_scope(url):
+                if may_request(self._target, url):
                     seen.add(url)
                     found.append(url)
         return found

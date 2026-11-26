@@ -58,6 +58,16 @@ class XContentTypeOptionsCheck(Check):
   rate limiting, and retries. Never build your own client.
 - `ctx.target`, `ctx.config` — scope rule and resolved configuration.
 
+Where a URL may go is decided in one module, `webvigil.core.destination` (spec 026). A check that
+chooses its own URLs (links it found, form actions, a configured page) asks
+`may_request(ctx.target, url)` before it queues one, and a check that sends the session itself asks
+`may_carry_credentials(ctx.target, url)`. It never calls `Target.in_scope` or
+`Target.carries_credentials` directly: `tests/unit/test_destination_inventory.py` fails on such a
+call outside the policy module. The same test fails on a new comparison of a URL's `host`,
+`hostname`, `scheme`, `port`, `origin` or `netloc`, and on a new network opening (an `httpx2`
+client, a socket, a resolver call), until it has a line in `COMPARISONS` or `CONNECTIONS` with the
+reason it decides no destination or is safe.
+
 Build findings with **`self.finding(...)`** — it fills in `check_id`, `cwe`, `references`,
 and the `fingerprint` for you. Pass a short `dedup_key` describing the specific problem
 (`"missing"`, `"unsafe-inline"`, `"TLSv1.0"`), so the same issue seen on several pages

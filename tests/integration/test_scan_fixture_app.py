@@ -15,7 +15,7 @@ inspects a result the same one (issue #101: the suite used to run ``("insecure",
 * ``scan("insecure", **_ACTIVE)`` — the default Active scan, with the time-delay detectors on;
 * ``scan(profile, **_full(profile))`` — **every** switch on at once (stored XSS, XXE, file upload,
   CSRF confirmation, POST crawl, an OpenAPI import, a HAR import, an automated login, session-id
-  sampling, the logout test, a bearer header and a static canary cookie),
+  sampling, the logout test, a bearer header, a static canary cookie and the OSV.dev lookup),
   with the time-delay detectors off (issue #58: they decide on wall-clock time). The hardened twin
   of that scan is the "reports nothing" check for every spec at once;
 * ``scan("hardened", ..., login=True, session_ttl=2)`` — the one extra scan of spec 019: the
@@ -23,8 +23,9 @@ inspects a result the same one (issue #101: the suite used to run ``("insecure",
 
 ``scan.fresh(...)`` bypasses the cache — a determinism test needs a second, independent run.
 ``scan.holder["app"]`` is the app of the scan the last call returned, so a test can read
-``app.state.requests`` / ``csrf_log`` / ``post_log`` / ``auth_log`` / ``osv_providers`` right after
-the call, and ``app.state.log_lines``, every log record the scan emitted at ``DEBUG`` and above.
+``app.state.requests`` / ``csrf_log`` / ``post_log`` / ``auth_log`` / ``osv_providers`` /
+``osv_requests`` right after the call, and ``app.state.log_lines``, every log record the scan
+emitted at ``DEBUG`` and above.
 ``_OSV_JQUERY_RECORD`` + ``_osv_up`` / ``_osv_down`` stub the OSV.dev API.
 """
 
@@ -35,7 +36,7 @@ import html
 import json
 import logging
 import re
-from urllib.parse import quote, quote_plus
+from urllib.parse import quote, quote_plus, urlsplit
 
 import httpx2
 import pytest
@@ -95,7 +96,7 @@ def _full(profile: str) -> dict[str, object]:
         dict[str, object]: The keyword arguments of the one scan that turns everything on: Active,
             every opt-in, an OpenAPI import, an automated login (spec 019; it sets the session
             cookie the profile expects), a bearer header and a static canary cookie (spec 024),
-            with the time-delay detectors off.
+            the OSV.dev lookup (spec 026), with the time-delay detectors off.
     """
     return {
         "active": True,
@@ -107,6 +108,7 @@ def _full(profile: str) -> dict[str, object]:
         "test_logout": True,
         "headers": [_BEARER],
         "cookies": [f"{CANARY_COOKIE}={_CANARY_VALUE}"],
+        "osv_online": True,
         **_OPT_INS,
     }
 
@@ -392,9 +394,25 @@ def scan(monkeypatch: pytest.MonkeyPatch):
             raw["deps"] = {"osv_online": True, "osv_base_url": "http://osv.test"}
         # Every scan gets the stub, opted in or not, and counts the providers the engine builds: a
         # lookup the opt-in should have prevented is counted instead of reaching the real OSV.dev,
-        # where it would pass or fail on the network.
-        osv_transport = httpx2.MockTransport(_osv_up if osv_up else _osv_down)
+        # where it would pass or fail on the network. Each request the stub gets is kept on
+        # ``app.state.osv_requests`` (spec 026, RF-05).
+        osv_stub = _osv_up if osv_up else _osv_down
+        osv_requests: list[httpx2.Request] = []
+
+        def _osv_handler(request: httpx2.Request) -> httpx2.Response:
+            """
+            Args:
+                request (httpx2.Request): A request of the engine's OSV client.
+
+            Returns:
+                httpx2.Response: The stub's answer, after the request is recorded.
+            """
+            osv_requests.append(request)
+            return osv_stub(request)
+
+        osv_transport = httpx2.MockTransport(_osv_handler)
         app.state.osv_providers = 0
+        app.state.osv_requests = osv_requests
 
         def _osv_provider(*args: object, **kwargs: object) -> OsvProvider:
             """
@@ -1193,6 +1211,34 @@ async def test_secrets_never_appear_in_any_output(scan) -> None:
     for where, text in outputs.items():
         for secret in secrets:
             assert not _leaks(secret, text), (where, secret)  # not even via the TRACE echo
+
+
+async def test_osv_requests_carry_no_credential_and_not_the_target(scan) -> None:
+    """
+    Spec 026, RF-05: OSV.dev gets the package names and versions only. No request of its client
+    carries a ``Cookie``, an ``Authorization`` or a configured ``[auth]`` header, the session's
+    value, the static cookie, the bearer token or the target's host.
+    """
+    await scan("insecure", **_full("insecure"))
+    app = scan.holder["app"]
+    issued = set(app.state.sessions) | app.state.expired
+    # the positive controls: the same scan sent every credential to the target, and asked OSV.dev
+    assert issued
+    assert (f"Bearer {_BEARER_TOKEN}", _CANARY_VALUE) in app.state.auth_log
+    assert app.state.osv_requests
+    assert any(request.url.path == "/v1/querybatch" for request in app.state.osv_requests)
+
+    configured = {_BEARER.split(":", 1)[0].lower()}  # the [auth] header names of the scan
+    forbidden_names = {"cookie", "authorization"} | configured
+    target_host = urlsplit(_TARGET).hostname
+    assert target_host is not None
+    values = {_BEARER_TOKEN, _CANARY_VALUE, *issued, target_host}
+    for request in app.state.osv_requests:
+        assert not {name.lower() for name in request.headers} & forbidden_names, request.headers
+        lines = [str(request.url), *(f"{k}: {v}" for k, v in request.headers.items())]
+        wire = " ".join([*lines, request.content.decode("utf-8", "replace")])
+        for value in values:
+            assert value not in wire, (request.url, value)
 
 
 async def test_csrf_confirmation_flags_the_unenforced_forms_only(scan) -> None:

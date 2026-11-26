@@ -22,6 +22,7 @@ from selectolax.lexbor import LexborHTMLParser as HTMLParser
 
 from webvigil.checks.deps.rules import _BODY_MAX, RetireJsRules
 from webvigil.core.context import Detection, Page
+from webvigil.core.destination import may_request
 from webvigil.core.errors import OutOfScopeError, RequestFailed
 from webvigil.core.target import Target, normalize_url
 from webvigil.core.technology import DetectionMethod
@@ -111,7 +112,7 @@ class Fingerprinter:
                     urls_capped = True
                     break
                 seen_resources.add(url)
-                if not self._target.in_scope(url):
+                if not may_request(self._target, url):
                     raw.extend(self._rules.identify(url=url))  # CDN: URL only, never fetched
                 elif normalize_url(url) not in crawled:
                     in_scope_queue.append(url)

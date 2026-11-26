@@ -33,6 +33,7 @@ from selectolax.lexbor import LexborHTMLParser as HTMLParser
 
 from webvigil.core.config import ScanConfig
 from webvigil.core.context import Page
+from webvigil.core.destination import may_request
 from webvigil.core.errors import OutOfScopeError, RequestFailed
 from webvigil.core.findings import ScanMode
 from webvigil.core.target import Target, normalize_url
@@ -633,7 +634,7 @@ class Crawler:
         if resolve_url(raw_url, "") is None or not urlsplit(raw_url).scheme.startswith("http"):
             return
         normalized = normalize_url(raw_url)
-        if normalized in seen or not self._target.in_scope(normalized):
+        if normalized in seen or not may_request(self._target, normalized):
             return
         if len(seen) >= self._seen_cap:
             self._limits_hit.add("links")

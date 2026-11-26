@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlencode, urlsplit
 
+from webvigil.core.destination import is_target_host, may_request
 from webvigil.core.errors import OpenApiError, OutOfScopeError, RequestFailed
 from webvigil.core.target import Target
 from webvigil.core.text import replace_surrogates_in
@@ -231,7 +232,7 @@ async def _fetch_document(source: str, *, http: HttpClient, target: Target) -> _
     # what the messages call it: a URL may carry a token in its query or userinfo
     shown = display_url(source) if "://" in source else display_path(source)
     if "://" in source:
-        if not target.in_scope(source):
+        if not may_request(target, source):
             raise OpenApiError(f"--openapi URL is out of scope: {shown}")
         try:
             response = await http.get(source)
@@ -326,7 +327,7 @@ def _base_url(doc: _Doc, target: Target, warnings: list[str]) -> str:
             f"OpenAPI server URL is malformed; paths are resolved against {target.origin}"
         )
         return target.origin
-    if parts.scheme and parts.hostname and parts.hostname.lower() != target.host:
+    if parts.scheme and parts.hostname and not is_target_host(target, raw):
         warnings.append(
             f"OpenAPI server host {parts.hostname!r} differs from the scan target; "
             f"paths are resolved against {target.origin}"
