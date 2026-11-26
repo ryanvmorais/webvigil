@@ -337,6 +337,11 @@ def scan(
     except WebVigilError as exc:
         _render.error(str(exc))
         raise typer.Exit(ExitCode.OPERATIONAL) from exc
+    except Exception as exc:
+        # Not a failure the engine names: a traceback would print the exception's text, which
+        # can come from the target or a library, so the line names its type only.
+        _render.error(f"the scan stopped on an unexpected error ({type(exc).__name__})")
+        raise typer.Exit(ExitCode.INTERNAL) from None
 
     _emit(
         result,
