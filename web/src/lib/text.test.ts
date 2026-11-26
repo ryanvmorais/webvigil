@@ -123,6 +123,21 @@ describe("showControls", () => {
       [0x2066, "\\u2066"],
       [0x2069, "\\u2069"],
       [0xfeff, "\\ufeff"],
+      [0x00ad, "\\xad"],
+      [0x034f, "\\u034f"],
+      [0x115f, "\\u115f"],
+      [0x1160, "\\u1160"],
+      [0x17b4, "\\u17b4"],
+      [0x17b5, "\\u17b5"],
+      [0x180e, "\\u180e"],
+      [0x2028, "\\u2028"],
+      [0x2029, "\\u2029"],
+      [0x3164, "\\u3164"],
+      [0xffa0, "\\uffa0"],
+      [0xfff9, "\\ufff9"],
+      [0xfffb, "\\ufffb"],
+      [0xe0000, "\\U000e0000"],
+      [0xe007f, "\\U000e007f"],
     ].map(([code, escape]) => [hex(code as number), code, escape] as const),
   )("escapes U+%s, an end of a hidden range", (_hex, code, escape) => {
     expect(showControls(`a${String.fromCodePoint(code as number)}b`)).toBe(`a${escape}b`);
@@ -130,9 +145,11 @@ describe("showControls", () => {
 
   // ...and the character just outside each end stays as it is.
   it.each(
-    [0x20, 0x7e, 0xa0, 0x061b, 0x061d, 0x200a, 0x2010, 0x2029, 0x202f, 0x205f, 0x2065, 0x206a].map(
-      (code) => [hex(code), code] as const,
-    ),
+    [
+      0x20, 0x7e, 0xa0, 0xac, 0xae, 0x034e, 0x0350, 0x061b, 0x061d, 0x115e, 0x1161, 0x17b3, 0x17b6,
+      0x180d, 0x180f, 0x200a, 0x2010, 0x2027, 0x202f, 0x205f, 0x2065, 0x206a, 0x3163, 0x3165,
+      0xff9f, 0xffa1, 0xfff8, 0xfffc, 0xdffff, 0xe0080,
+    ].map((code) => [hex(code), code] as const),
   )("leaves U+%s, just outside a hidden range, alone", (_hex, code) => {
     const char = String.fromCodePoint(code);
     expect(showControls(`a${char}b`)).toBe(`a${char}b`);
