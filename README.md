@@ -173,7 +173,7 @@ uv sync --all-extras
 # An intentionally vulnerable app on 127.0.0.1:9100
 uv run python scripts/serve-fixture-app.py &
 
-# Scan it in Active Mode (about 2 minutes: it has slow, time-based cases)
+# Scan it in Active Mode (about a minute and a half: it has slow, time-based cases)
 uv run webvigil scan http://127.0.0.1:9100 --mode active --authorized-by "trying WebVigil"
 ```
 
@@ -303,7 +303,7 @@ A Next.js dashboard for the Web API: first-run setup, login, scan history, a new
 scan detail with filterable findings, report preview and download, the check catalogue, and
 a settings screen. It is a thin client of the API — it never talks to the engine.
 
-![WebVigil dashboard (optional web UI): a scan's detail page with its findings narrowed by a search and by Minimum severity Medium, the first finding opened on its evidence, and the count of findings shown](assets/webvigil-dashboard-scan-detail-findings-by-severity-1-4.png)
+![WebVigil dashboard (optional web UI): a scan's detail page with its findings narrowed by a search and by Minimum severity Medium, the first finding opened on its evidence, and the count of findings shown](assets/webvigil-dashboard-scan-detail-findings-by-severity-1-8.png)
 
 On a scan's page the findings are listed most severe first, 50 at a time. **Load more** adds the
 next 50, and the line under the table says how many of the total are on screen. The arrow at the

@@ -173,7 +173,7 @@ uv sync --all-extras
 # Um app intencionalmente vulnerável em 127.0.0.1:9100
 uv run python scripts/serve-fixture-app.py &
 
-# Faça scan nele no Modo Ativo (cerca de 2 minutos: ele tem casos lentos, por tempo)
+# Faça scan nele no Modo Ativo (cerca de um minuto e meio: ele tem casos lentos, por tempo)
 uv run webvigil scan http://127.0.0.1:9100 --mode active --authorized-by "trying WebVigil"
 ```
 
@@ -305,7 +305,7 @@ scans, formulário de novo scan, detalhe do scan com achados filtráveis, prévi
 relatório, o catálogo de checks e uma tela de configurações. É um cliente fino da API: nunca
 fala com o engine.
 
-![Dashboard do WebVigil (interface web opcional): a página de um scan com os achados restritos por uma busca e pela severidade mínima Medium, o primeiro achado aberto na evidência e a contagem de achados na tela](assets/webvigil-dashboard-scan-detail-findings-by-severity-1-4.png)
+![Dashboard do WebVigil (interface web opcional): a página de um scan com os achados restritos por uma busca e pela severidade mínima Medium, o primeiro achado aberto na evidência e a contagem de achados na tela](assets/webvigil-dashboard-scan-detail-findings-by-severity-1-8.png)
 
 Na página de um scan, os achados aparecem do mais grave para o menos grave, 50 de cada vez. O
 botão **Load more** traz os próximos 50, e a linha embaixo da tabela diz quantos do total estão
