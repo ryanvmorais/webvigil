@@ -161,7 +161,7 @@ makes it.
 
 ## Stage 3 — The address notices
 
-- [ ] `src/webvigil/http/addresses.py`:
+- [x] `src/webvigil/http/addresses.py`:
   - `AddressNotices` and `MAX_LEFT_OUT_LINES`;
   - `AddressGuard.addresses` records `internal_target` and `left_out` under its lock, the first time it sees
     each host;
@@ -169,9 +169,9 @@ makes it.
   - `address_warnings(notices)` builds the lines of the design.
 
   — RF-06, RF-07, ADR-5, ADR-6
-- [ ] `src/webvigil/core/orchestrator.py`: after `blocked_address_warning`, extend `warnings` with
+- [x] `src/webvigil/core/orchestrator.py`: after `blocked_address_warning`, extend `warnings` with
   `address_warnings(http.addresses.notices())`. — RF-06, RF-07
-- [ ] `tests/unit/test_http_addresses.py`, with the resolver stubbed:
+- [x] `tests/unit/test_http_addresses.py`, with the resolver stubbed:
   - an internal target under a public name records its notice and warning, and `addresses()` returns the
     internal addresses (positive control);
   - each non-public name of the `is_public_name` table records nothing;
@@ -180,16 +180,17 @@ makes it.
   - a host with only internal addresses still raises `BlockedAddressError` and records nothing new.
 
   — RF-06, RF-07, RF-10
-- [ ] An orchestrator unit test over a stub client whose guard returns both notices finds both warnings in
+- [x] An orchestrator unit test over a stub client whose guard returns both notices finds both warnings in
   `result.warnings`. — RF-06, RF-07, RF-10
-- [ ] Apply the design's sabotage and watch each test fail: each record removed in turn, and the `extend` in
+- [x] Apply the design's sabotage and watch each test fail: each record removed in turn, and the `extend` in
   the orchestrator removed. — RF-10
-- [ ] `docs/architecture.md`: the destination policy in place of the scope guard paragraph, and the two
+- [x] `docs/architecture.md`: the destination policy in place of the scope guard paragraph, and the two
   warnings and the proxy note in the address guard paragraph. `CHANGELOG.md` `[Unreleased]`, **Changed**: the
   two warnings. — RF-06, RF-07, RNF-02
-- [ ] Mutation testing in batch over `AddressGuard.addresses`, `AddressGuard.notices` and `address_warnings`.
-  — RNF-06
-- [ ] Quality gate. —
+- [x] Mutation testing in batch over `AddressGuard.addresses`, `AddressGuard.notices` and `address_warnings`.
+  — RNF-06; 39 mutants, 38 killed, 1 equivalent.
+- [x] Quality gate. — 3765 passed, 4 skipped (Windows); 98 % line and branch coverage, as on `main`; ruff, black,
+  mypy, import-linter and the package check green.
 
 ## Stage 4 — Cross-check and documentation
 
