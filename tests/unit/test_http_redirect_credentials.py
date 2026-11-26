@@ -155,7 +155,9 @@ async def test_a_redirect_that_starts_on_a_sibling_subdomain_never_carries_them(
     httpx_mock.add_response(  # type: ignore[attr-defined]
         url=_SIBLING, status_code=302, headers={"location": "/b"}
     )
-    httpx_mock.add_response(url="https://cdn.example.com/b", text="ok")  # type: ignore[attr-defined]
+    httpx_mock.add_response(  # type: ignore[attr-defined]
+        url="https://cdn.example.com/b", text="ok"
+    )
     async with _client(Scope.SUBDOMAINS) as http:
         await http.get(_SIBLING, headers=dict(_CREDENTIALS))
     sent = httpx_mock.get_requests()  # type: ignore[attr-defined]

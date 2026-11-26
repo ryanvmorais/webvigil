@@ -165,6 +165,7 @@ def test_the_jar_and_the_session_show_names_and_no_value() -> None:
     for shown in (repr(jar), repr(session), str(session), f"{jar}"):
         assert "v-canary-1234" not in shown
         assert "sid" in shown  # the positive control: the name is there
+    assert "origin='http://demo.test'" in repr(jar)  # where the cookies may go
     assert jar.pairs_for(_URL, handshake=False) == [("sid", "v-canary-1234")]
 
 
