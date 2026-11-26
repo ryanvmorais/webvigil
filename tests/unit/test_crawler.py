@@ -645,6 +645,11 @@ def test_from_response_passes_the_method_through() -> None:
     assert Page.from_response(response, method="POST").method == "POST"
 
 
+# ---------------------------------------------------------------------------
+# An unreadable robots.txt (spec 027, RF-11)
+# ---------------------------------------------------------------------------
+
+
 class _RefusingRouter(_Router):
     """A router whose ``robots.txt`` cannot be reached: the connection is refused."""
 

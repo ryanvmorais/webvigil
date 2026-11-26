@@ -741,6 +741,40 @@ async def test_a_configured_sibling_logout_url_is_skipped_with_its_own_warning()
     ]
 
 
+async def test_a_configured_logout_url_is_used_even_where_the_crawl_links_another() -> None:
+    """``logout_url`` decides: the crawl's own logout link is not the one requested."""
+    site = _Site()
+    hits, _scn, _session = await _logout(
+        site,
+        pages=(_page(f"{_BASE}/", text='<a href="/logout">out</a>'),),
+        logout_url=f"{_BASE}/signout",
+    )
+    paths = [p for _m, p, _c in site.log]
+    assert "/signout" in paths and "/logout" not in paths
+    assert hits  # /signout is not the site's logout, so the old session still works
+
+
+@pytest.mark.parametrize(
+    ("method", "action"),
+    [("GET", f"{_BASE}/logout"), ("POST", f"{_BASE}/profile")],
+    ids=["get-logout", "post-other"],
+)
+async def test_only_a_post_logout_form_is_chosen(method: str, action: str) -> None:
+    """A ``GET`` form, or a ``POST`` form that is not a logout, is not submitted as one."""
+    site = _Site()
+    form = Form(
+        method=method,
+        action=action,
+        enctype="application/x-www-form-urlencoded",
+        fields=(),
+        source_url=f"{_BASE}/",
+    )
+    hits, scanner, _session = await _logout(site, forms=(form,))
+
+    assert hits == [] and site.log == []
+    assert scanner.warnings == ["session logout test skipped: no logout endpoint found"]
+
+
 async def test_a_public_reference_page_makes_the_test_meaningless_so_it_is_skipped() -> None:
     """If an anonymous visitor reaches the page, "still valid" proves nothing: no logout is sent."""
     site = _Site()

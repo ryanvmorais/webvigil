@@ -917,7 +917,13 @@ async def test_a_scope_refusal_of_the_file_stays_permissive() -> None:
     """The file is at the target's origin, so the guard cannot refuse it; if it did, allow all."""
 
     class _Refusing:
+        """Stands in for the client, with ``robots.txt`` outside the target's scope."""
+
         async def get(self, url: str) -> object:
+            """
+            Raises:
+                OutOfScopeError: Always, as the scope guard would.
+            """
             raise OutOfScopeError(url)
 
     rules = await robots.load(_Refusing(), _ORIGIN, _UA)  # type: ignore[arg-type]
