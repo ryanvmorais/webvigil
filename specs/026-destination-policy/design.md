@@ -1,6 +1,6 @@
 ---
 feature: Destination policy — one place decides what each URL may receive, and a public name that resolves only to internal addresses is reported
-status: in progress
+status: done
 date: 2026-11-25
 related:
   - 001-foundation/design.md
@@ -611,3 +611,25 @@ and the score goes in the pull request.
   guards, 11 by hand over the records, the counts, the cap and the orchestrator's call), 38 killed. The survivor
   makes the guard work out `_public_only` on every call; it is equivalent, as the target's resolution is pinned
   and gives the same answer each time.
+- **Stage 4.** The four scans of the baseline, repeated from `main` at `9dd1e48` on the same machine and
+  Python, received the same requests as the baseline once the per-run random values are masked, the same 676
+  raw differences a second baseline run already gave (640 in the login scan). The four reports have the same
+  `schema_version`, metadata, warnings, errors and `(check_id, severity, fingerprint)` multiset. The
+  durations stay within 1 s of the baseline:
+
+  | Scan | Requests | Findings | Baseline | Stage 4 |
+  |---|---|---|---|---|
+  | anonymous | 1323 | 60 | 103.4 s | 104.2 s |
+  | `[auth]` cookie and headers | 1323 | 60 | 103.7 s | 102.8 s |
+  | automated login and session tests | 1316 | 63 | 48.6 s | 48.1 s |
+  | `--scope subdomains` | 1323 | 60 | 103.2 s | 103.5 s |
+
+  The CI matrix was green on that merge commit: `quality` on Linux and Windows for Python 3.12 to 3.15,
+  `package`, `docker`, `web` and `compose`.
+- **Totals.** The suite went from 3613 tests collected to 3769 (3765 passed and 4 skipped on Windows), and from
+  97 % to 98 % line and branch coverage, in 87 s with coverage against 85 s. Per file: `core/destination.py`
+  100 %, `http/addresses.py` 97 % to 98 %, and `http/client.py` (99 %), `http/session.py` (98 %),
+  `auth/login.py` (98 %), `crawler/crawler.py` (99 %), `crawler/openapi.py` (93 %) and
+  `checks/session/scanner.py` (93 %) as before. Mutation over the four stages: 209 mutants, 197 killed, 7
+  equivalent and 5 on lines the stages did not change. RNF-01 and RNF-03 hold through the gates: `pyproject.toml`
+  and `uv.lock` are unchanged since `25c33d2`, and the `import-linter` contracts are kept.
