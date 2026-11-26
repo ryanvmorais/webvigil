@@ -506,9 +506,12 @@ def test_a_field_past_the_work_budget_is_redacted_whole() -> None:
 
 
 def test_a_field_with_many_cuts_and_many_secrets_loses_only_the_real_fragment() -> None:
-    # the heavy honest case: a session rotated a thousand times, and evidence full of spreads
+    # the heavy honest case: a session rotated a thousand times, and evidence full of spreads;
+    # one secret holds the runs next to every cut ("; f(" before, "args" after), so each cut
+    # finds candidates that do not match, whatever the filter
     values = _random_values(1024, 64, seed=2)
-    redactor = Redactor(values)
+    holds_the_runs = "Q" * 30 + "; f(" + "R" * 30 + "args" + "S" * 30
+    redactor = Redactor([*values, holds_the_runs])
     spreads = "f(...args); " * 400
     field = f"{spreads}{values[500][:20]}..."
     assert redactor(field) == f"{spreads}{REDACTED}..."
