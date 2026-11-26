@@ -1,12 +1,13 @@
 """
-A credential the caller passes itself does not follow a redirect to where credentials may not go.
+A credential the caller passes itself goes only where credentials may go, on every request.
 
 The session tests send the automated login's cookies as an explicit ``Cookie`` header, and the
 client follows in-scope redirects with the caller's headers. The scope can reach another subdomain
 (``--scope subdomains``) or the plain ``http`` form of an ``https`` target, where
-:meth:`~webvigil.core.target.Target.carries_credentials` says no credential goes. Nothing is mocked
-but the network: each test lets the target answer with a redirect and reads what the client sent
-on the next hop. A ``307`` or ``308`` replays the body and the query parameters too, so the same
+:func:`~webvigil.core.destination.may_carry_credentials` says no credential goes: there the
+client drops them, on the first request as on a hop (spec 026, RF-03). Nothing is mocked
+but the network: each test lets the target answer, most of them with a redirect, and reads what
+the client sent. A ``307`` or ``308`` replays the body and the query parameters too, so the same
 rule holds for that data, which may carry a credential.
 """
 
@@ -118,6 +119,50 @@ async def test_a_redirect_inside_the_target_origin_keeps_the_callers_credentials
     hop = _hop(httpx_mock)
     assert hop.headers["cookie"] == "sid=abc123"
     assert hop.headers["authorization"] == "Bearer tkn"
+
+
+# ---------------------------------------------------------------------------
+# The first request (spec 026, RF-03)
+# ---------------------------------------------------------------------------
+
+_SIBLING = "https://cdn.example.com/a"
+
+
+async def test_the_first_request_to_a_sibling_subdomain_drops_the_callers_credentials(
+    httpx_mock: object,
+) -> None:
+    """The rule of a hop holds before any redirect: the sibling gets the request, not the keys."""
+    httpx_mock.add_response(url=_SIBLING, text="ok")  # type: ignore[attr-defined]
+    httpx_mock.add_response(url=_START, text="ok")  # type: ignore[attr-defined]
+    caller = {"Cookie": "sid=abc123", "Authorization": "Bearer tkn", "X-Api-Key": "k2"}
+    async with _client(Scope.SUBDOMAINS, auth_headers=["X-Api-Key: k"]) as http:
+        await http.get(_SIBLING, headers={**caller, "Accept": "text/html"})
+        await http.get(_START, headers=dict(caller))
+    sibling, origin = httpx_mock.get_requests()  # type: ignore[attr-defined]
+    for name in ("cookie", "authorization", "x-api-key"):
+        assert name not in sibling.headers
+    assert sibling.headers["accept"] == "text/html"
+    # the positive control: the same headers reach the target origin
+    assert origin.headers["cookie"] == "sid=abc123"
+    assert origin.headers["authorization"] == "Bearer tkn"
+    assert origin.headers["x-api-key"] == "k2"
+
+
+async def test_a_redirect_that_starts_on_a_sibling_subdomain_never_carries_them(
+    httpx_mock: object,
+) -> None:
+    """A chain that starts off the origin sends the credentials on none of its requests."""
+    httpx_mock.add_response(  # type: ignore[attr-defined]
+        url=_SIBLING, status_code=302, headers={"location": "/b"}
+    )
+    httpx_mock.add_response(url="https://cdn.example.com/b", text="ok")  # type: ignore[attr-defined]
+    async with _client(Scope.SUBDOMAINS) as http:
+        await http.get(_SIBLING, headers=dict(_CREDENTIALS))
+    sent = httpx_mock.get_requests()  # type: ignore[attr-defined]
+    assert [str(request.url) for request in sent] == [_SIBLING, "https://cdn.example.com/b"]
+    for request in sent:
+        assert "cookie" not in request.headers
+        assert "authorization" not in request.headers
 
 
 # ---------------------------------------------------------------------------

@@ -57,7 +57,6 @@ class _FakeHttp:
         params: object = None,
         data: object = None,
         headers: object = None,
-        allow_out_of_scope: bool = False,
         crafted: bool = False,
     ) -> Response:
         merged: dict[str, str] = {}

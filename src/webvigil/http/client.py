@@ -1,15 +1,16 @@
 """
-The async HTTP client wrapper: retries, manual redirects, and the scope guard.
+The async HTTP client wrapper: retries, manual redirects, and the destination rules.
 
 No component talks to ``httpx2`` directly — they all go through
 :class:`HttpClient`, so politeness, retries, timeouts, and scope enforcement
 apply uniformly (RF-05, RF-03, RF-04). :meth:`HttpClient.request` carries any
 HTTP method through the same machinery; :meth:`HttpClient.get` is a thin wrapper
-over it (spec 006 ADR-9). Configured ``[auth]`` cookies (spec 007) and headers
-(spec 013 — a bearer token, an API key) are attached to requests to the target
-origin (or its ``https`` upgrade) and to no other, and never reach a report, a log
-line, or the scan metadata. Every connection goes through the address guard
-(:mod:`webvigil.http.addresses`).
+over it (spec 006 ADR-9). What may be sent where is asked of the destination policy
+(:mod:`webvigil.core.destination`, spec 026): configured ``[auth]`` cookies (spec 007)
+and headers (spec 013 — a bearer token, an API key), and a credential header a caller
+passes itself, go to the target origin (or its ``https`` upgrade) and to no other, and
+never reach a report, a log line, or the scan metadata. Every connection goes through
+the address guard (:mod:`webvigil.http.addresses`).
 """
 
 from __future__ import annotations
@@ -27,7 +28,13 @@ from urllib.parse import urlsplit
 import httpx2
 
 from webvigil.core.config import ScanConfig
-from webvigil.core.errors import RequestFailed, ScanDeadlineExceeded
+from webvigil.core.destination import (
+    keeps_data,
+    may_carry_credentials,
+    may_request,
+    without_credentials,
+)
+from webvigil.core.errors import OutOfScopeError, RequestFailed, ScanDeadlineExceeded
 from webvigil.core.secrets import Secret, SecretKind
 from webvigil.core.target import Target
 from webvigil.core.text import replace_surrogates
@@ -36,7 +43,6 @@ from webvigil.http.addresses import AddressGuard, BlockedAddressError, Resolver,
 from webvigil.http.decoding import ACCEPT_ENCODING, BodyDecoder
 from webvigil.http.failures import failure_kind
 from webvigil.http.policy import RateLimiter
-from webvigil.http.scope_guard import ScopeGuard
 from webvigil.http.session import Session, cookie_bytes, jar_text
 from webvigil.http.tls import client_ssl_context, pin_proxy_trust
 
@@ -47,9 +53,6 @@ _REDIRECT_STATUS = frozenset({301, 302, 303, 307, 308})
 _IDEMPOTENT = frozenset({"GET", "HEAD", "OPTIONS", "TRACE"})
 # A 307/308 replays the method and body; a 301/302/303 becomes a bodyless GET.
 _REDIRECT_KEEPS_METHOD = frozenset({307, 308})
-# Headers that carry a credential when a caller passes them itself; dropped on a redirect hop to a
-# URL the scan's credentials may not reach (see ``HttpClient._hop_headers``).
-_CREDENTIAL_HEADERS = frozenset({"cookie", "authorization"})
 # RFC 1035, 2.3.4: a DNS label holds at most 63 octets.
 _MAX_DNS_LABEL = 63
 
@@ -96,7 +99,7 @@ class HttpStats:
         requests (int): Total requests actually sent (including retries).
         retries (int): Requests that were re-sent after a transport error or a
             retryable status.
-        blocked_out_of_scope (int): Requests refused by the scope guard.
+        blocked_out_of_scope (int): Requests refused by the scope rule.
         crafted_requests (int): Requests that carried an injection payload or
             used a non-idempotent method.
         failed (int): Requests that failed for good: every attempt ended in a
@@ -384,7 +387,6 @@ class HttpClient:
         # secrets until a request is built (spec 024)
         self._cookie_header = _static_cookie_header(config.auth.cookies)
         self._auth_headers = config.auth.header_pairs
-        self._guard = ScopeGuard(target)
         self.addresses = AddressGuard(target.host, resolver=resolver)
         self.limiter = RateLimiter(config.http.concurrency, config.http.delay_ms)
         self.stats = HttpStats()
@@ -562,28 +564,23 @@ class HttpClient:
         url: str,
         *,
         headers: dict[str, str] | None = None,
-        allow_out_of_scope: bool = False,
     ) -> Response:
         """
         Fetch ``url`` with a GET, following redirects only while they stay in scope.
 
         Args:
             url (str): The absolute URL to fetch.
-            headers (dict[str, str] | None): Extra request headers.
-            allow_out_of_scope (bool): Skip the scope guard for this request.
-                Defaults to ``False``.
+            headers (dict[str, str] | None): Extra request headers; a credential header goes only
+                where the scan's credentials may go.
 
         Returns:
             Response: The final response after in-scope redirects.
 
         Raises:
-            OutOfScopeError: When ``url`` is out of scope and
-                ``allow_out_of_scope`` is ``False``.
+            OutOfScopeError: When ``url`` is out of scope.
             RequestFailed: When the request fails after exhausting retries.
         """
-        return await self.request(
-            "GET", url, headers=headers, allow_out_of_scope=allow_out_of_scope
-        )
+        return await self.request("GET", url, headers=headers)
 
     async def request(
         self,
@@ -595,11 +592,10 @@ class HttpClient:
         content: str | bytes | None = None,
         files: _Files | None = None,
         headers: dict[str, str] | None = None,
-        allow_out_of_scope: bool = False,
         crafted: bool = False,
     ) -> Response:
         """
-        Issue ``method url`` through the scope guard, rate limiter, retries, and the
+        Issue ``method url`` through the scope rule, rate limiter, retries, and the
         in-scope-only manual redirect loop.
 
         Args:
@@ -616,9 +612,10 @@ class HttpClient:
             files (dict[str, tuple[str, bytes, str]] | None): Multipart file
                 parts, ``field -> (filename, content, content type)`` (spec 014
                 file upload) — mutually exclusive with ``content``.
-            headers (dict[str, str] | None): Extra request headers.
-            allow_out_of_scope (bool): Skip the scope guard for this request.
-                Defaults to ``False``.
+            headers (dict[str, str] | None): Extra request headers. A ``Cookie``, an
+                ``Authorization`` or a configured ``[auth]`` header among them goes only where
+                the scan's credentials may go, on the first request and on every hop; elsewhere
+                it is dropped (spec 026, RF-03).
             crafted (bool): Mark this as an injection request for the
                 ``crafted_requests`` counter. Defaults to ``False``.
 
@@ -629,8 +626,7 @@ class HttpClient:
                 new URL may not receive one: that redirect is not followed.
 
         Raises:
-            OutOfScopeError: When ``url`` is out of scope and
-                ``allow_out_of_scope`` is ``False``.
+            OutOfScopeError: When ``url`` is out of scope.
             RequestFailed: When the request fails after exhausting retries.
         """
         session = self._session
@@ -643,7 +639,6 @@ class HttpClient:
             content=content,
             files=files,
             headers=headers,
-            allow_out_of_scope=allow_out_of_scope,
             crafted=crafted,
         )
         # spec 019: a response that says the session dropped earns one serialised re-login and
@@ -651,7 +646,7 @@ class HttpClient:
         if (
             session is not None
             and not _QUIET.get()
-            and self._target.carries_credentials(url)
+            and may_carry_credentials(self._target, url)
             and session.looks_dropped(response)
             and await session.recover(seen, url)
         ):
@@ -663,62 +658,38 @@ class HttpClient:
                 content=content,
                 files=files,
                 headers=headers,
-                allow_out_of_scope=allow_out_of_scope,
                 crafted=crafted,
             )
             if session.looks_dropped(response):
                 session.learn(url)
         return response
 
-    def _hop_headers(self, headers: dict[str, str] | None, url: str) -> dict[str, str] | None:
+    def _credentialed(self) -> bool:
         """
-        The caller's headers for a redirect hop, without the credentials ``url`` may not get.
-
-        A caller can pass a credential itself (the session tests send the login's cookies as a
-        ``Cookie`` header). The client keeps the caller's headers on every hop it follows, and the
-        scope lets a hop reach another subdomain or plain ``http``, where
-        :meth:`~webvigil.core.target.Target.carries_credentials` says no credential goes: there a
-        ``Cookie``, an ``Authorization`` or a configured ``[auth]`` header is dropped, as the client
-        never adds its own.
-
-        Args:
-            headers (dict[str, str] | None): The headers the caller passed.
-            url (str): The URL of the hop.
+        Whether a request now goes out with the scan's credentials, for :func:`keeps_data`.
 
         Returns:
-            dict[str, str] | None: ``headers`` unchanged when ``url`` may carry credentials, else a
-                copy without the credential headers.
-        """
-        if not headers or self._target.carries_credentials(url):
-            return headers
-        secret = _CREDENTIAL_HEADERS | {name.lower() for name, _value in self._auth_headers}
-        return {name: value for name, value in headers.items() if name.lower() not in secret}
-
-    def _withholds_data(self, current_url: str, next_url: str) -> bool:
-        """
-        Whether a redirect from ``current_url`` may not replay its data to ``next_url``.
-
-        Headers can be filtered hop by hop, a request's data cannot: the login form holds the
-        password, and a body or query parameters sent with the scan's credentials can hold what
-        they unlocked (an anti-CSRF token, an account field). Such data stays off a URL
-        :meth:`~webvigil.core.target.Target.carries_credentials` refuses. A request that carried
-        no credential (an anonymous one, one off the target origin, any in a scan without
-        credentials) has none to protect, so its redirects are followed.
-
-        Args:
-            current_url (str): The URL that answered with the redirect.
-            next_url (str): The URL the redirect points to.
-
-        Returns:
-            bool: ``True`` when the redirect must not be followed with the data.
+            bool: ``True`` when the scan holds a session, a static cookie or an ``[auth]`` header,
+                and the request is not an anonymous one. A request off the target origin carries
+                none either way, which :func:`keeps_data` asks itself.
         """
         has_credentials = (
             self._session is not None or self._cookie_header is not None or bool(self._auth_headers)
         )
-        if _ANON.get() or not has_credentials:
-            return False
-        carries = self._target.carries_credentials
-        return carries(current_url) and not carries(next_url)
+        return has_credentials and not _ANON.get()
+
+    def _caller_headers(self, headers: dict[str, str] | None, url: str) -> dict[str, str] | None:
+        """
+        Args:
+            headers (dict[str, str] | None): The headers the caller passed.
+            url (str): The URL of the request or of the hop.
+
+        Returns:
+            dict[str, str] | None: The caller's headers without the credentials ``url`` may not
+                get (:func:`without_credentials`, with this scan's ``[auth]`` header names).
+        """
+        auth_names = [name for name, _value in self._auth_headers]
+        return without_credentials(self._target, headers, url, auth_names=auth_names)
 
     async def _send_with_redirects(
         self,
@@ -730,7 +701,6 @@ class HttpClient:
         content: str | bytes | None = None,
         files: _Files | None = None,
         headers: dict[str, str] | None = None,
-        allow_out_of_scope: bool = False,
         crafted: bool = False,
     ) -> Response:
         """
@@ -743,16 +713,15 @@ class HttpClient:
             data (dict[str, str] | list[tuple[str, str]] | None): Form body.
             content (str | bytes | None): Raw request body.
             files (dict[str, tuple[str, bytes, str]] | None): Multipart parts.
-            headers (dict[str, str] | None): Extra request headers.
-            allow_out_of_scope (bool): Skip the scope guard for this request.
+            headers (dict[str, str] | None): Extra request headers; their credentials go only
+                where :func:`may_carry_credentials` allows, on every request of the chain.
             crafted (bool): Mark this as an injection request.
 
         Returns:
             Response: The final response after in-scope redirects.
 
         Raises:
-            OutOfScopeError: When ``url`` is out of scope and ``allow_out_of_scope`` is
-                ``False``.
+            OutOfScopeError: When ``url`` is out of scope.
             RequestFailed: When the request fails after exhausting retries, when ``url`` or a
                 redirect's ``Location`` is malformed, or when the body cannot be decoded.
         """
@@ -763,9 +732,9 @@ class HttpClient:
             # built from the site's own text (a link, a form action): not sent, and not counted
             # as a failure, which would read as a target that stopped answering
             raise RequestFailed(url, "malformed URL")
-        if not allow_out_of_scope and not self._guard.allows(url):
+        if not may_request(self._target, url):
             self.stats.blocked_out_of_scope += 1
-            self._guard.check(url)  # raises OutOfScopeError
+            raise OutOfScopeError(url)
 
         requested_url = url
         current_url = url
@@ -780,7 +749,7 @@ class HttpClient:
         raw = await self._request_with_retry(
             current_method,
             current_url,
-            headers,
+            self._caller_headers(headers, current_url),
             current_params,
             current_data,
             content,
@@ -797,8 +766,11 @@ class HttpClient:
             replays_data = raw.status_code in _REDIRECT_KEEPS_METHOD and bool(
                 content or current_data or current_files or current_params
             )
-            if not self._guard.allows(target_url) or (
-                replays_data and self._withholds_data(current_url, target_url)
+            if not may_request(self._target, target_url) or (
+                replays_data
+                and not keeps_data(
+                    self._target, current_url, target_url, credentialed=self._credentialed()
+                )
             ):
                 redirected_out = True
                 final_location = target_url
@@ -816,7 +788,7 @@ class HttpClient:
             raw = await self._request_with_retry(
                 current_method,
                 current_url,
-                self._hop_headers(headers, current_url),
+                self._caller_headers(headers, current_url),
                 current_params,
                 current_data,
                 content,
@@ -917,7 +889,7 @@ class HttpClient:
             raise RequestFailed(url, "malformed URL")
         idempotent = method in _IDEMPOTENT
         req_headers = dict(headers or {})
-        on_target = self._target.carries_credentials(url)
+        on_target = may_carry_credentials(self._target, url)
         anonymous = _ANON.get()
         session = None if anonymous else self._session
         handshake = _HANDSHAKE.get()

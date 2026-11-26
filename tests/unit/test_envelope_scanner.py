@@ -38,7 +38,6 @@ class _FakeHttp:
         data: object = None,
         content: object = None,
         headers: dict[str, str] | None = None,
-        allow_out_of_scope: bool = False,
         crafted: bool = False,
     ) -> Response:
         self.calls.append((method.upper(), url, dict(headers or {})))

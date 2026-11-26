@@ -1,5 +1,5 @@
 """
-HttpClient: retries, scope guard, and manual redirect handling — RF-05, RF-04, RF-03.
+HttpClient: retries, the scope rule, and manual redirect handling — RF-05, RF-04, RF-03.
 
 All requests go through ``httpx_mock``; the autouse ``_no_backoff`` fixture
 zeroes the retry sleep so the retry tests are instant. ``http.stats`` is the
@@ -280,13 +280,25 @@ async def test_configured_cookie_is_sent_on_a_target_host_request(httpx_mock: ob
     assert sent[0].headers["cookie"] == "session=abc123; csrf=xyz"
 
 
-async def test_cookie_is_absent_on_an_out_of_scope_request(httpx_mock: object) -> None:
-    """The session cookie is never attached to an out-of-scope request."""
-    httpx_mock.add_response(status_code=200)  # type: ignore[attr-defined]
+async def test_cookie_never_leaves_for_an_out_of_scope_url(httpx_mock: object) -> None:
+    """An out-of-scope URL is refused before any request, so the cookie cannot go there."""
     async with _http(cookies=["session=abc123"]) as http:
-        await http.get("https://cdn.other.test/lib.js", allow_out_of_scope=True)
-    sent = httpx_mock.get_requests()  # type: ignore[attr-defined]
-    assert "cookie" not in sent[0].headers
+        with pytest.raises(OutOfScopeError):
+            await http.get("https://cdn.other.test/lib.js")
+    assert not httpx_mock.get_requests()  # type: ignore[attr-defined]
+    assert http.stats.blocked_out_of_scope == 1
+
+
+async def test_cookie_is_absent_on_an_in_scope_sibling_subdomain(httpx_mock: object) -> None:
+    """Under ``--scope subdomains`` a sibling is requested, but without the session cookie."""
+    httpx_mock.add_response(url="https://cdn.example.com/lib.js")  # type: ignore[attr-defined]
+    httpx_mock.add_response(url="https://example.com/")  # type: ignore[attr-defined]
+    async with _http(Scope.SUBDOMAINS, cookies=["session=abc123"]) as http:
+        await http.get("https://cdn.example.com/lib.js")
+        await http.get("https://example.com/")
+    sibling, origin = httpx_mock.get_requests()  # type: ignore[attr-defined]
+    assert "cookie" not in sibling.headers
+    assert origin.headers["cookie"] == "session=abc123"  # the positive control
 
 
 async def test_no_cookie_configured_means_no_cookie_header(httpx_mock: object) -> None:
@@ -324,13 +336,29 @@ async def test_configured_header_is_sent_on_a_target_host_request(httpx_mock: ob
     assert sent[0].headers["x-tenant"] == "acme"
 
 
-async def test_configured_header_is_absent_on_an_out_of_scope_request(httpx_mock: object) -> None:
-    """An ``[auth]`` header is never attached to an out-of-scope request."""
-    httpx_mock.add_response(status_code=200)  # type: ignore[attr-defined]
+async def test_configured_header_never_leaves_for_an_out_of_scope_url(
+    httpx_mock: object,
+) -> None:
+    """An out-of-scope URL is refused before any request, so the ``[auth]`` header cannot go."""
     async with _http(headers=["Authorization: Bearer tkn"]) as http:
-        await http.get("https://cdn.other.test/lib.js", allow_out_of_scope=True)
-    sent = httpx_mock.get_requests()  # type: ignore[attr-defined]
-    assert "authorization" not in sent[0].headers
+        with pytest.raises(OutOfScopeError):
+            await http.get("https://cdn.other.test/lib.js")
+    assert not httpx_mock.get_requests()  # type: ignore[attr-defined]
+    assert http.stats.blocked_out_of_scope == 1
+
+
+async def test_configured_header_is_absent_on_an_in_scope_sibling_subdomain(
+    httpx_mock: object,
+) -> None:
+    """Under ``--scope subdomains`` a sibling is requested, but without the ``[auth]`` header."""
+    httpx_mock.add_response(url="https://cdn.example.com/lib.js")  # type: ignore[attr-defined]
+    httpx_mock.add_response(url="https://example.com/")  # type: ignore[attr-defined]
+    async with _http(Scope.SUBDOMAINS, headers=["Authorization: Bearer tkn"]) as http:
+        await http.get("https://cdn.example.com/lib.js")
+        await http.get("https://example.com/")
+    sibling, origin = httpx_mock.get_requests()  # type: ignore[attr-defined]
+    assert "authorization" not in sibling.headers
+    assert origin.headers["authorization"] == "Bearer tkn"  # the positive control
 
 
 async def test_credentials_never_go_down_to_http_from_an_https_target(httpx_mock: object) -> None:
