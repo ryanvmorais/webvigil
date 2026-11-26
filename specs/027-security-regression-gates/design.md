@@ -605,6 +605,45 @@ request.
     render failure, the second added after a mutant that bypassed the render handling survived. A
     seam helper takes the test's `monkeypatch` first, and `failing_render` takes the format.
 12. **`spellings` gives eight forms (RF-03).** The design's seven count the two base64 alphabets as one.
+13. **The stages that can end the scan fail alone (RF-02, ADR-1; decided on 2026-11-26).** The login,
+    the OpenAPI import, the target URL and the crawl end the scan on some kinds by design (a login
+    that fails, a document that does not load, a target that does not answer, an unexpected error),
+    and the OSV lookup has nothing to ask when the fingerprint pass failed. Run as designed, four of
+    the six full scans ended at the login, the OpenAPI import or the crawl, so most later stages got
+    two of their six kinds. The table marks these five stages `alone`: each gets six runs of its own,
+    one per kind, in a light configuration, with every other stage left alone. The six full runs
+    rotate the kinds over the nine passes the scan goes on after (`TOGETHER`), and two neighbours
+    still never share a kind. Every pair of stage and kind still runs once.
+14. **An unexpected error exits with `1` (RF-02).** The design's assertion lists `0`, `3` and `4`. A
+    `RuntimeError` from the login, the OpenAPI import, the target URL or the crawl, and a Public
+    Suffix List that cannot be read, are not failures the engine names. The CLI ends them with one
+    line, `the scan stopped on an unexpected error (<type>)`, and `1`, the code
+    [`docs/stability.md`](../../docs/stability.md) gives an unexpected error. A run asserts that `1`
+    comes with that line and only with it.
+15. **The count warning is not asserted (RF-02).** The design asserts that the requests that failed
+    for good are counted in the scan's request warnings. That warning is for a target that stopped
+    answering: it needs 20 failures and a fifth of the requests. The plan fails one URL in eight, so
+    the warning never appears, and it keeps its floors.
+16. **The `checks` stage has a check of its own (RF-02, RF-05).** With the TLS check off on the
+    plain-HTTP fixture, no check sends a request, so the stage had nothing to fail. The harness
+    registers a throwaway check, `failure-suite.echo`, that sends one request through the scan's
+    client and quotes the body as evidence. Its server-error run is the positive control that a
+    failure's text reaches a report where it may, cut and with its controls shown.
+17. **The vendored files have runs of their own (RF-02, ADR-4).** The plan fails requests; the
+    Retire.js rules, their provenance, the catalogue of exposed paths and the Public Suffix List are
+    files. Each file `DEPENDENCIES` gives a scan stage gets one run that fails its read, after its
+    cache is cleared, and a test keeps the list in step with the table. The catalogue is read twice
+    in a scan, by `load_catalogue` before the probe and by `backup_spec` inside it; the second run
+    reads the first before it fails the file. The Public Suffix List is read under
+    `--scope subdomains` at the first scope decision, and its failure ends the scan as an unexpected
+    error: the scope cannot be decided without it.
+18. **The fixture takes the login's password (RF-03).** `make_app` takes `password`, so the password
+    is a credential marker like the cookie and the bearer token. The session ids the fixture issued
+    are searched as whole tokens, as the integration canary searches them: the insecure profile's
+    count up and can appear inside a random hex value.
+19. **`failing_osv` is the fault transport with its stage fixed to `osv`**, not a `MockTransport`
+    handler, and the fault transport takes the set of stages that fail in the run. `attributed`
+    takes the classes it wraps, so a test can wrap throwaway ones.
 
 ## Implementation notes
 
@@ -676,3 +715,22 @@ request.
   mutant failed: the read messages of the configuration, OpenAPI and HAR files and the failure kind),
   39 killed, and every new run killed at least one. The one survivor of the first round, a
   `webvigil report` whose render bypassed the handling, led to the render run of deviation 11.
+- **Stage 4.** The scan harness is 41 runs: 6 full runs of the integration scan's configuration with the
+  nine passes the scan goes on after failing at once, 30 runs alone (the login, the OpenAPI import, the
+  target URL, the crawl and the OSV lookup, one per kind) in a light configuration, and 5 runs of a
+  vendored file; with the table check and the two tests of `attributed`, the failure suite is 73 tests,
+  about 39 s with coverage on a developer machine. Run as designed first, four of the six full scans ended
+  at the login, the OpenAPI import or the crawl (deviation 13). On `main`, eight runs failed, each for the
+  defect its fix removes: a `RuntimeError` from the login, the OpenAPI import, the target URL or the crawl
+  ended with a traceback and exit code `1`, and an unreadable Retire.js database, its provenance, the
+  catalogue of exposed paths or the Public Suffix List did too. Typer 0.29 prints no local variables, and a
+  check with the credentials kept out of the source showed none of them in the traceback; it showed the
+  exception's text, which is why the line names the type only. Every other run passed on `main`. Each test
+  failed once with the line it guards broken (seven sabotages): the fault transport applying no fault and a
+  pass that does not name its stage (the controls go red), a seam renamed in the table, `attributed`
+  restoring nothing, the echo check quoting nothing (the control of RF-04 goes red), and the CLI's handler
+  narrowed or printing the exception's text. Mutation over `_fingerprint`, `_probe_disclosure` and the
+  CLI's handler: 21 mutants (11 generated over the guards, 10 by hand over the moves into the `try`, the
+  handlers, the type names and the exit code), 19 killed, and every new run killed at least one. The two
+  left survive the whole suite and are guards this stage does not change: `_fingerprint` and
+  `_probe_disclosure` run with no check selected that reads their result.
