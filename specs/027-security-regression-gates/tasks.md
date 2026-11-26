@@ -125,19 +125,21 @@ A failure the suite finds that exposes a credential in a released version stops 
 
 ## Stage 2 — The sensitive-point inventory
 
-- [ ] `tests/sensitive_points.py`: the walker of the design's Components, ported in English: the Python families by
+- [x] `tests/sensitive_points.py`: the walker of the design's Components, ported in English: the Python families by
   syntax tree (`error` with text followed through variables, wrapping exceptions and fields across files; `message`;
   the twelve operations), the dashboard families by pattern, the files `git ls-files` lists under `src/webvigil` and
   `web/src` without tests, vendored data and generated files, and the keys `<module>:<function> <family>
   <callee>[#n]` and `<path> <family> <match>[#n]`. — RF-07, ADR-5
-- [ ] `tests/unit/test_sensitive_point_inventory.py`: `SENSITIVE_POINTS` with one reason per point, each written
+- [x] `tests/unit/test_sensitive_point_inventory.py`: `SENSITIVE_POINTS` with one reason per point, each written
   after reading the point's code; the four tests of the design (unlisted and stale points, empty reasons, the
   throwaway source with one point per family, the count of calls read). — RF-07
-- [ ] A point whose reading shows no guard is fixed in this stage, with its test seen failing first, or stops the
-  stage if it exposes a credential in a released version. — RF-07, ADR-4
-- [ ] Apply the design's sabotage and watch each test fail: a family removed from the walker, and a second `open()`
+- [x] A point whose reading shows no guard is fixed in this stage, with its test seen failing first, or stops the
+  stage if it exposes a credential in a released version. — RF-07, ADR-4. None did: every one of the 201 points
+  names its guard, and `src/` is unchanged.
+- [x] Apply the design's sabotage and watch each test fail: a family removed from the walker, and a second `open()`
   added to a listed function. — RF-15
-- [ ] Quality gate.
+- [x] Quality gate. — 3814 passed, 4 skipped (Windows), 104 s with coverage, 98 %; ruff, black, mypy, import-linter
+  and the package check clean.
 
 ## Stage 3 — The failure table and the CLI harness
 

@@ -558,6 +558,22 @@ request.
 3. **The configured `logout_url` is checked before `_find_logout` (RF-13).** A refused `logout_url` needs its own
    warning, so the session pass asks `may_carry_credentials` before it looks for an endpoint, and `_find_logout`
    returns a configured URL as given. Links and forms are checked inside `_find_logout`, as designed.
+4. **The walker reads every node, and the count of calls read equals the source's (RF-07, ADR-5).** The walk
+   behind the design's count read the module level and function bodies only: a class body, a lambda, a decorator, a
+   default value and an annotation were never read. Each node now belongs to one scope (the module, a class body
+   or a function), so the fourth test asserts that the calls read equal every call of the source, which is
+   stronger than "larger than the table".
+5. **Some names of the families changed (RF-07).** SQLModel's `session.exec` matched the `exec` builtin, and
+   `selectolax`'s `node.text()` matched SQLAlchemy's `text`; the builtins and `text` now match only when called
+   bare, so the first is `sql` and the second is not a point. `network` also lists the `httpx2` clients and
+   transports, `crypto` the `ssl` contexts and `jwt`, `code` the `entry_points` of the plugins and `file` any
+   `.open`. On the dashboard, `redirect` also lists `router.push`, `router.replace`, `redirect(` and
+   `location.assign` / `replace`, and leaves out a variable declared as `location`. This is why the walk finds
+   201 points where the design's reading found 213.
+6. **The dashboard has an `error` family too (RF-07).** The text of a caught error used in a `catch` block or an
+   `onError` / `.catch` callback is a point, as on the Python side. The key of a Python `error` point names the
+   output the text reaches, with its destination when there is one: `raise:RequestFailed`, `log:logger.warning`,
+   `return`, `field`.
 
 ## Implementation notes
 
@@ -600,3 +616,16 @@ request.
   is not a logout. The other 8 are guards this stage does not change: seven in the logout pass (the reference
   page, the cookie snapshot, the `5xx` logout, two on the replay's status, a page that is not HTML and an `href`
   that does not resolve) and the 500 KiB boundary of `robots.txt`.
+- **Stage 2.** The walk reads the 149 Python and 78 dashboard files `git ls-files` lists in scope, in about one
+  second, and finds 201 points: 58 `error`, 63 `message`, 21 `regex`, 20 `crypto`, 13 `sql`, 12 `file`, 7
+  `network`, 3 `redirect`, 2 `html`, 1 `code` and 1 `xml` (192 in Python, 9 on the dashboard; no `command`,
+  `deserialization` or `client-secret` point). Each reason was written after reading the point's code and the
+  guard it names (`safe_text` at the sinks, `display_url`, `failure_kind`, `describe_validation_error`, the log
+  filter's `safe_traceback`, bound SQL parameters, a vendored file, the user's own path); no point lacked one, so
+  `src/` is unchanged and the stage has no mutation run. Each test failed once with the line it guards broken
+  (nine sabotages): the `xml` names and the `client-secret` pattern removed from the walker, the fields no
+  longer followed across files, the text no longer followed through variables (each named by the throwaway
+  test), class bodies left unread (the calls read fell from 5733 to 3470), an unparsed file not reported, an
+  empty reason, a stale line, and a second `Path(path).open("rb")` in `load_result` (the gate names
+  `webvigil.reporting:load_result file .open#2`). The walker is about 1,000 lines, against the 600 of ADR-5: the
+  lists of names take one line per name as `black` lays them out.
