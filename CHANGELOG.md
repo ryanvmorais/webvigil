@@ -32,6 +32,11 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
   error, technology names, versions and advisories, check ids, names and categories, the filter
   labels, and every error message and field error. A check's reference in the check catalogue is a
   link only when it is an `http(s)` URL, as in the findings table.
+- The provisional Python API: `webvigil.http.ScopeGuard` and the `allow_out_of_scope` keyword of
+  `HttpClient.get` and `HttpClient.request` are removed. The client asks the destination policy
+  (`webvigil.core.destination`) on every request, with no way around it. `SessionJar` takes the
+  scan's `Target` instead of its host, and hands out cookies only where the scan's credentials may
+  go.
 
 ### Security
 
@@ -50,6 +55,13 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
   bidirectional and zero-width characters as escapes; level and handlers are unchanged. A database
   error no longer lists the failed statement's parameters, which held finding text or a password
   hash.
+- **A credential header that a check sends itself follows the client's rule on the first request
+  too.** A `Cookie`, an `Authorization` or a configured `[auth]` header that a check passed to the
+  HTTP client was dropped on a redirect to a URL the scan's credentials may not reach, but the first
+  request went as the check built it. Under `--scope subdomains`, or to the plain `http` form of an
+  `https` target, it reached a URL in scope that the credentials may not reach. The built-in session
+  tests checked the URL first; a check that did not would have sent them. The client now drops
+  them there on every request, as it does with its own.
 
 ## [1.7.0] - 2026-11-24
 

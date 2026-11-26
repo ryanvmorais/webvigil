@@ -17,14 +17,15 @@ import asyncio
 import re
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
-from urllib.parse import urlsplit
 
 import httpx2
 
+from webvigil.core.destination import may_carry_credentials
 from webvigil.core.result import LoginSummary
 from webvigil.core.secrets import Secret, SecretKind
 
 if TYPE_CHECKING:
+    from webvigil.core.target import Target
     from webvigil.http.client import Response
 
 # A login marker (``logged_in_marker``, ``logged_out_marker``) is searched in at most this much
@@ -185,12 +186,13 @@ class SessionJar:
             list holds; the session is then given up for the rest of the scan.
     """
 
-    def __init__(self, host: str) -> None:
+    def __init__(self, target: Target) -> None:
         """
         Args:
-            host (str): The target host (lower-cased); cookies are sent to no other host.
+            target (Target): The scan target; cookies go only where its credentials may go
+                (:func:`~webvigil.core.destination.may_carry_credentials`, spec 026).
         """
-        self._host = host.lower()
+        self._target = target
         self._live = httpx2.Cookies()
         self._pending: httpx2.Cookies | None = None
         self._names: frozenset[str] = frozenset()
@@ -200,9 +202,9 @@ class SessionJar:
     def __repr__(self) -> str:
         """
         Returns:
-            str: The host and the names of the committed session; never a value.
+            str: The target origin and the names of the committed session; never a value.
         """
-        return f"SessionJar(host={self._host!r}, names={sorted(self._names)!r})"
+        return f"SessionJar(origin={self._target.origin!r}, names={sorted(self._names)!r})"
 
     @property
     def values(self) -> frozenset[Secret]:
@@ -296,12 +298,13 @@ class SessionJar:
 
         Returns:
             list[tuple[str, str]]: ``(name, value)`` pairs in the jar's form (:func:`jar_text`),
-                empty for any host but the target host, for a URL ``httpx2`` cannot build and
+                empty for a URL the scan's credentials may not reach (another host, port or
+                scheme, but the ``https`` upgrade), for a URL ``httpx2`` cannot build and
                 for a cookie the browser rules would not send (``Secure`` on ``http``, another
                 path, expired). The values are plain: they are read from the library's storage
                 to build the request's ``Cookie`` header (spec 024, ADR-6).
         """
-        if (urlsplit(url).hostname or "").lower() != self._host:
+        if not may_carry_credentials(self._target, url):
             return []
         jar = self._pending if handshake and self._pending is not None else self._live
         try:

@@ -32,6 +32,7 @@ from webvigil.core.errors import ActiveModeNotAuthorized, LoginFailedError, Scan
 from webvigil.core.findings import Category, Confidence, Finding, Location, ScanMode, Severity
 from webvigil.core.orchestrator import Orchestrator
 from webvigil.core.result import LoginSummary
+from webvigil.core.target import Target
 from webvigil.http.session import Session, SessionJar
 
 _TARGET = "https://example.com/"
@@ -468,7 +469,7 @@ class _StubAuth:
         self.credentials = credentials
         self.login_cfg = login
         self.session = Session(
-            jar=SessionJar("example.com"),
+            jar=SessionJar(Target.parse(_TARGET)),
             is_login_url=lambda _url: False,
         )
         type(self).instances.append(self)

@@ -133,7 +133,7 @@ def _session(http: HttpClient, **kwargs: object) -> Session:
         return True
 
     options: dict[str, object] = {
-        "jar": SessionJar("demo.test"),
+        "jar": SessionJar(Target.parse(_BASE)),
         "is_login_url": lambda url: urlsplit(url).path == "/signin",
         "relogin": relogin,
     }
@@ -507,7 +507,7 @@ def _page(text: str) -> Response:
 async def test_a_logged_out_marker_in_the_body_is_a_drop() -> None:
     """The marker catches a drop that answers 200 with the login form in the same URL."""
     session = Session(
-        jar=SessionJar("demo.test"),
+        jar=SessionJar(Target.parse(_BASE)),
         is_login_url=lambda url: False,
         logged_out_marker=r"Please sign in",
     )

@@ -121,7 +121,7 @@ def _committed_session(*cookies: str) -> Session:
     Returns:
         Session: A session whose jar holds those cookies, as after a committed login.
     """
-    jar = SessionJar("demo.test")
+    jar = SessionJar(Target.parse(_BASE))
     jar.begin()
     answer = httpx2.Response(
         200,

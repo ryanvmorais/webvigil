@@ -2,7 +2,7 @@
 The automated login: find the form, submit credentials once, capture and verify the session.
 
 Spec 019. The :class:`Authenticator` performs the handshake **through the**
-:class:`~webvigil.http.client.HttpClient`, so the scope guard, the rate limiter and the
+:class:`~webvigil.http.client.HttpClient`, so the scope rule, the rate limiter and the
 in-scope redirect loop apply, and the cookies of every hop of the chain land in the session's
 pending jar. It never retries a failed attempt and never varies the credentials (RF-04): one
 login is one ``POST``, and an account lockout is a real harm.
@@ -165,7 +165,7 @@ class Authenticator:
         self.transition: CookieTransition | None = None
         self._candidate_transition: CookieTransition | None = None
         self.session = Session(
-            jar=SessionJar(target.host),
+            jar=SessionJar(target),
             is_login_url=self.is_login_url,
             logged_out_marker=login.logged_out_marker,
             max_relogins=login.max_relogins,
