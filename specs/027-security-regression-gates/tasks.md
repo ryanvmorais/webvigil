@@ -86,9 +86,9 @@ A failure the suite finds that exposes a credential in a released version stops 
 
 ## Stage 1 — `robots.txt` and the logout test
 
-- [ ] `src/webvigil/http/client.py`: `decode_text(content, content_type)`, the decoding `Response.text` uses; the
+- [x] `src/webvigil/http/client.py`: `decode_text(content, content_type)`, the decoding `Response.text` uses; the
   response's `text` calls it. — RF-12
-- [ ] `src/webvigil/crawler/robots.py`:
+- [x] `src/webvigil/crawler/robots.py`:
   - `Robots.disallow_all(reason)` and `Robots.unreadable`; `can_fetch` refuses every URL when it is set;
   - `load` returns it on a `5xx` and on `RequestFailed`; `OutOfScopeError`, a `4xx`, a missing and an empty file stay
     allow-all;
@@ -96,14 +96,14 @@ A failure the suite finds that exposes a credential in a released version stops 
   - `_request_target` keeps a `?` that ends the path with an empty query.
 
   — RF-11, RF-12, ADR-6
-- [ ] `src/webvigil/crawler/crawler.py`: `robots_unreadable`, from the loaded `Robots`. — RF-11
-- [ ] `src/webvigil/core/orchestrator.py`: the warning `robots.txt could not be read (<reason>): only the target URL
+- [x] `src/webvigil/crawler/crawler.py`: `robots_unreadable`, from the loaded `Robots`. — RF-11
+- [x] `src/webvigil/core/orchestrator.py`: the warning `robots.txt could not be read (<reason>): only the target URL
   was crawled; set follow_robots = false under [scan] to crawl without it`, in place of the count warning when
   `robots_unreadable` is set. — RF-11, ADR-6
-- [ ] `src/webvigil/checks/session/scanner.py`: `_find_logout` keeps a link or form only when
+- [x] `src/webvigil/checks/session/scanner.py`: `_find_logout` keeps a link or form only when
   `may_carry_credentials` allows it and keeps looking; a configured `logout_url` it refuses gives the warning
   `session logout test skipped: [auth.login] logout_url may not receive the scan's credentials`. — RF-13
-- [ ] Tests, from the design's test strategy:
+- [x] Tests, from the design's test strategy:
   - the robots tests: `503`, a refused connection, `404`, an empty `200`, a missing file, a `200` file with no rule
     (positive control), `Disallow: /a?` against `/a?`, `/a?x` and `/a`, and the 600 KiB `latin-1` file;
   - `test_crawler.py`: only the target URL fetched after a `503`, and the warning;
@@ -111,15 +111,17 @@ A failure the suite finds that exposes a credential in a released version stops 
     sibling `logout_url`, each first run on `main` (the false positive).
 
   — RF-11, RF-12, RF-13, RF-15
-- [ ] Apply the design's sabotage and watch each test fail: each `robots.py` change reverted in turn, and
+- [x] Apply the design's sabotage and watch each test fail: each `robots.py` change reverted in turn, and
   `_find_logout` back to `may_request`. — RF-15
-- [ ] Mutation testing in batch over `load`, `_request_target`, `can_fetch` and `_find_logout`. — RNF-06
-- [ ] `CHANGELOG.md` `[Unreleased]`: **Changed**, the `robots.txt` rules and warning; **Fixed**, the logout choice
+- [x] Mutation testing in batch over `load`, `_request_target`, `can_fetch` and `_find_logout`. — RNF-06.
+  114 mutants, 103 killed; the 11 survivors are triaged in the design's implementation notes.
+- [x] `CHANGELOG.md` `[Unreleased]`: **Changed**, the `robots.txt` rules and warning; **Fixed**, the logout choice
   under `--scope subdomains`. — RNF-02
-- [ ] [`docs/architecture.md`](../../docs/architecture.md), the crawler's paragraph on `robots.txt`: a server or
+- [x] [`docs/architecture.md`](../../docs/architecture.md), the crawler's paragraph on `robots.txt`: a server or
   network error keeps only the target URL, with the warning. The README's line ("honoured unless you turn it off")
   still holds and does not change. — RF-11
-- [ ] Quality gate.
+- [x] Quality gate. — 3808 passed, 4 skipped (Windows), 121 s with coverage, 98 %;
+  ruff/black/mypy/import-linter green; package check ok. No change in `web/`.
 
 ## Stage 2 — The sensitive-point inventory
 

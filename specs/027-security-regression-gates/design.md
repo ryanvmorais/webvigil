@@ -551,6 +551,13 @@ request.
    tasks put them under `tests/unit/`. The existing tests of `TrustedProxies` (a name resolved again after its
    time to live, a name that does not resolve, a request with no header) already live in that file, with the
    test clock and the resolver helper the new tests build on, so the new ones sit next to them.
+2. **The `robots.txt` warning is tested in `tests/unit/test_orchestrator.py` (RF-11, test strategy).** The tasks
+   put "only the target URL fetched after a `503`, and the warning" in `test_crawler.py`. The crawler only exposes
+   `robots_unreadable`; the warning is the orchestrator's, so `test_crawler.py` checks what is fetched and the
+   reason, and the orchestrator's test, with its crawler stub, checks the one warning in place of the count.
+3. **The configured `logout_url` is checked before `_find_logout` (RF-13).** A refused `logout_url` needs its own
+   warning, so the session pass asks `may_carry_credentials` before it looks for an endpoint, and `_find_logout`
+   returns a configured URL as given. Links and forms are checked inside `_find_logout`, as designed.
 
 ## Implementation notes
 
@@ -577,3 +584,19 @@ request.
   stores the answer: the test waited out a fixed number of short polls, each a scheduler tick on Windows, and
   left the resolver held when its assertion failed. The wait is now bounded in seconds and the resolver is
   released in a `finally`, and the mutant is killed.
+- **Stage 1.** `load` refuses every URL on a `5xx` after the retries (`HTTP <status>`) and on a network error (the
+  failure kind, `ConnectError` for a refused connection); a scope refusal, a `4xx`, a missing and an empty file
+  allow every URL. Keeping the `?` of an empty query also means that a rule `/a$` no longer covers `/a?`, which
+  the `CHANGELOG.md` entry says. `decode_text` builds the decoding on `httpx2`'s own, so `Response.text` reads as
+  before. Each new test failed once on `main` (the sibling logout link chosen and the hit reported, `/a` fetched
+  after the `503`, the rule `/caf%EF%BF%BD/` read from the cut file) and once with each change reverted in turn
+  (eleven sabotages). Mutation over `load`, `_request_target`, `verdict`, `_find_logout`, the logout pass,
+  `decode_text`, the crawler's assignment and the orchestrator's warning: 114 mutants (99 generated over the
+  guards, 15 by hand over the reasons, the charset, the `?`, the assignment and `decode_text`), 103 killed. Four
+  survivors of the first run led to tests: a charset that decodes to a lone surrogate (`decode_text` replaces
+  it), a configured `logout_url` used where the crawl links another logout, and a `GET` logout form and a `POST`
+  form that is not a logout, neither submitted. Of the 11 left, 3 are equivalent: an empty `200` parses to no rule;
+  a missing `Content-Type` decodes as UTF-8 either way; resolving an empty `href` gives the page's own URL, which
+  is not a logout. The other 8 are guards this stage does not change: seven in the logout pass (the reference
+  page, the cookie snapshot, the `5xx` logout, two on the replay's status, a page that is not HTML and an `href`
+  that does not resolve) and the 500 KiB boundary of `robots.txt`.
