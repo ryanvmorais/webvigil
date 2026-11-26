@@ -118,21 +118,21 @@ makes it.
 
 ## Stage 2 — The passes and the inventory gate
 
-- [ ] `src/webvigil/auth/login.py`:
+- [x] `src/webvigil/auth/login.py`:
   - `_check_gate` asks `may_request` and `may_carry_credentials`;
   - the landing page check asks `may_request`;
   - `_check_delegated` picks its message with `is_target_host(...) or may_request(...)`.
 
   — RF-01
-- [ ] `src/webvigil/checks/session/scanner.py`: `_may_get_cookies` asks `may_carry_credentials` and keeps its
+- [x] `src/webvigil/checks/session/scanner.py`: `_may_get_cookies` asks `may_carry_credentials` and keeps its
   warning. The logout finder asks `may_request`. — RF-01, ADR-2
-- [ ] `src/webvigil/crawler/crawler.py`, `forms.py` and `har.py`: links, form actions and HAR entries ask
+- [x] `src/webvigil/crawler/crawler.py`, `forms.py` and `har.py`: links, form actions and HAR entries ask
   `may_request`. — RF-01
-- [ ] `src/webvigil/crawler/openapi.py`: the document URL asks `may_request`, and the `servers` warning asks
+- [x] `src/webvigil/crawler/openapi.py`: the document URL asks `may_request`, and the `servers` warning asks
   `is_target_host`. — RF-01
-- [ ] `src/webvigil/checks/deps/fingerprint.py`, `checks/disclosure/probe.py` and `checks/upload/scanner.py`:
+- [x] `src/webvigil/checks/deps/fingerprint.py`, `checks/disclosure/probe.py` and `checks/upload/scanner.py`:
   `may_request`. — RF-01
-- [ ] `tests/unit/test_destination_inventory.py`: the walk over `src/webvigil` with the three kinds of site
+- [x] `tests/unit/test_destination_inventory.py`: the walk over `src/webvigil` with the three kinds of site
   (rule calls, destination comparisons, network openings). Rule calls are allowed only in
   `webvigil.core.destination`. `COMPARISONS` and `CONNECTIONS` hold each remaining site with its reason. The
   positive controls run over a throwaway source string:
@@ -142,20 +142,22 @@ makes it.
   - a stale entry fails.
 
   — RF-05, RF-09, ADR-7
-- [ ] `tests/integration/test_scan_fixture_app.py`: the `_osv_up` stub records the requests it gets. A test over
+- [x] `tests/integration/test_scan_fixture_app.py`: the `_osv_up` stub records the requests it gets. A test over
   the cached full scan asserts that no OSV request carries a `Cookie`, an `Authorization`, a configured
   `[auth]` header name, the session cookie's value or the target's host. The positive controls are that the
   fixture received the `[auth]` header in the same scan and that the stub was called. — RF-05, RF-10
-- [ ] Apply the design's sabotage and watch each test fail:
+- [x] Apply the design's sabotage and watch each test fail:
   - a `target.in_scope(url)` added to a scratch copy of a pass (the inventory);
   - the scan's headers forwarded to the OSV client in a scratch change.
 
   — RF-10
-- [ ] `docs/writing-checks.md`: a pass asks `webvigil.core.destination`, not `Target`, and a new destination
+- [x] `docs/writing-checks.md`: a pass asks `webvigil.core.destination`, not `Target`, and a new destination
   comparison or network opening needs its inventory line with the reason. `docs/checks-internals.md`: the
   `Target.in_scope` mention becomes `may_request`. — RF-09
-- [ ] Mutation testing in batch over `_check_gate`, `_check_delegated` and `_may_get_cookies`. — RNF-06
-- [ ] Quality gate. —
+- [x] Mutation testing in batch over `_check_gate`, `_check_delegated` and `_may_get_cookies`. — RNF-06; 18
+  mutants, 16 killed, 1 equivalent, 1 outside the change.
+- [x] Quality gate. — 3746 passed, 4 skipped (Windows); 98 % line and branch coverage, as on `main`; ruff, black,
+  mypy, import-linter and the package check green.
 
 ## Stage 3 — The address notices
 

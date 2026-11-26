@@ -591,3 +591,14 @@ and the score goes in the pull request.
   fallback and the parse of the `Cookie` header in `pairs_for`). The first run left two more on changed lines,
   and each got a test: a 401 from a sibling subdomain no longer counts as a dropped session only through the
   credential rule, and the jar's `repr` names the target origin.
+- **Stage 2.** Every pass asks the module, with no change in what it sends. The session tests' docstring now says
+  that the client would drop their explicit cookie header off the origin, which is why they ask first. The
+  inventory holds six comparison sites and five network openings, the five the Components list. Its tests
+  failed once each with a `target.in_scope` call, a `hostname` comparison and an `httpx2.AsyncClient` added in
+  turn to `crawler/forms.py`. The full scan now turns the OSV lookup on, so the RF-05 test runs on the scan with
+  the automated login and the `[auth]` cookie and header. It failed once with the scan's `[auth]` headers
+  forwarded to the OSV client. Mutation over `_check_gate`, the landing page check, `_check_delegated` and
+  `_may_get_cookies`: 18 mutants (17 generated over the guards, 1 by hand), 16 killed. The hand mutant drops
+  `may_request` from the landing page check and is equivalent: `response.url` is the last URL the client
+  requested, and the client requests only what `may_request` allows. The other survivor makes the landing
+  page's ternary always true, on a line the stage did not change.
