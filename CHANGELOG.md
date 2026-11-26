@@ -11,6 +11,19 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-11-26
+
+A minor release that gives every output one treatment and every request one destination rule:
+the terminal, the server log, the reports, the database, the Web API and the dashboard redact the
+scan's secrets, bound each value and show control and invisible characters as escapes in one
+place, and one policy decides what each URL may receive. It brings security fixes to the
+redaction of a value cut to size, the Web API's log, a credential header a check sends itself
+and the invisible characters a page can hide text with. It is backward compatible with
+[docs/stability.md](docs/stability.md): no check id, JSON report field or configuration key
+changes. What changes is in the surfaces that page calls provisional (the Python API and the
+Web API), in tuned limits (`webvigil report` reads at most 64 MiB) and in detection (`robots.txt`
+read as RFC 9309 says).
+
 ### Changed
 
 - `webvigil report` reads a JSON report of at most 64 MiB, down from 256 MiB, and reads it 1 MiB
@@ -1071,7 +1084,8 @@ confirmed against a per-request baseline)
 - A security policy with private vulnerability reporting, a code of conduct, and the
   [stability policy](docs/stability.md).
 
-[Unreleased]: https://github.com/ryanvmorais/webvigil/compare/v1.7.0...HEAD
+[Unreleased]: https://github.com/ryanvmorais/webvigil/compare/v1.8.0...HEAD
+[1.8.0]: https://github.com/ryanvmorais/webvigil/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/ryanvmorais/webvigil/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/ryanvmorais/webvigil/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/ryanvmorais/webvigil/compare/v1.4.7...v1.5.0
