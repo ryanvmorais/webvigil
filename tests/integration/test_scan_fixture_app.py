@@ -32,11 +32,10 @@ emitted at ``DEBUG`` and above.
 from __future__ import annotations
 
 import functools
-import html
 import json
 import logging
 import re
-from urllib.parse import quote, quote_plus, urlsplit
+from urllib.parse import urlsplit
 
 import httpx2
 import pytest
@@ -49,7 +48,7 @@ from tests.fixtures.app import (
     SIGNIN_USER,
     make_app,
 )
-from tests.support import make_finding, make_result
+from tests.support import make_finding, make_result, spellings
 from webvigil.auth.login import Credentials
 from webvigil.checks.deps.osv import OsvProvider
 from webvigil.core import orchestrator as orch_mod
@@ -518,25 +517,6 @@ def _log(scan) -> list[str]:
     return scan.holder["app"].state.requests  # type: ignore[no-any-return]
 
 
-def _spellings(secret: str) -> set[str]:
-    """
-    Args:
-        secret (str): A password, a token or a session value.
-
-    Returns:
-        set[str]: The ways an output could spell it, built here rather than by the engine's
-            scrub (spec 024, RF-11): as typed, percent-encoded, form-encoded, JSON-escaped and
-            HTML-escaped.
-    """
-    return {
-        secret,
-        quote(secret, safe=""),
-        quote_plus(secret),
-        json.dumps(secret)[1:-1],
-        html.escape(secret),
-    }
-
-
 def _leaks(secret: str, text: str) -> bool:
     """
     Args:
@@ -545,14 +525,14 @@ def _leaks(secret: str, text: str) -> bool:
 
     Returns:
         bool: ``True`` when ``secret`` appears in ``text`` as a whole token, in any of its
-            :func:`_spellings` (a form body or a URL carries ``correct+horse``). The insecure
-            profile issues sequential session ids (``100001``), which can turn up by chance inside
-            the random hex marker of another check (``wvb1100001ce3a``); a real leak shows the
-            value on its own (``session=100001``).
+            :func:`~tests.support.spellings` (a form body or a URL carries ``correct+horse``).
+            The insecure profile issues sequential session ids (``100001``), which can turn up by
+            chance inside the random hex marker of another check (``wvb1100001ce3a``); a real
+            leak shows the value on its own (``session=100001``).
     """
     return any(
         re.search(rf"(?<![0-9A-Za-z]){re.escape(form)}(?![0-9A-Za-z])", text) is not None
-        for form in _spellings(secret)
+        for form in spellings(secret)
     )
 
 
