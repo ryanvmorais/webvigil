@@ -410,10 +410,15 @@ def report(
         raise typer.Exit(ExitCode.USAGE)
     try:
         result = load_result(scan_json)
-    except (OSError, ValueError) as exc:
+    except OSError as exc:
+        # the text of an ``OSError`` is the system's, and a test or a plugin can put anything there
+        _render.error(f"could not read {scan_json} ({type(exc).__name__})")
+        raise typer.Exit(ExitCode.OPERATIONAL) from None
+    except ValueError as exc:
+        # ``load_result`` writes this message itself, from the report's own field names only
         _render.error(f"could not read {scan_json}: {exc}")
         raise typer.Exit(ExitCode.OPERATIONAL) from exc
-    _write_or_print(get_reporter(output_format).render(result), output, output_format)
+    _write_or_print(_rendered(result, output_format), output, output_format)
 
 
 def _build_config(  # noqa: D417 - the CLI overrides are documented as one group, on purpose
@@ -718,9 +723,9 @@ def _emit(
             post_crawl=post_crawl,
         )
         return
-    rendered = get_reporter(output_format).render(result)
+    rendered = _rendered(result, output_format)
     if output is not None:
-        output.write_text(rendered, "utf-8")
+        _write_report(rendered, output)
         _render.status(f"wrote {output_format} report to {output}")
         _warn_if_unreadable(rendered, output_format)
         return
@@ -749,10 +754,51 @@ def _write_or_print(rendered: str, output: Path | None, output_format: str) -> N
         output_format (str): The format name, for the status line.
     """
     if output is not None:
-        output.write_text(rendered, "utf-8")
+        _write_report(rendered, output)
         _render.status(f"wrote {output_format} report to {output}")
     else:
         _write_stdout(rendered)
+
+
+def _rendered(result: ScanResult, output_format: str) -> str:
+    """
+    Render a result, or end the command with one error line if the reporter fails.
+
+    Args:
+        result (ScanResult): The result to render.
+        output_format (str): The report format.
+
+    Returns:
+        str: The rendered report.
+
+    Raises:
+        typer.Exit: With :attr:`ExitCode.OPERATIONAL` when the reporter raises. The line names
+            the format and the exception's type: its text could quote the result.
+    """
+    try:
+        return get_reporter(output_format).render(result)
+    except Exception as exc:
+        _render.error(f"could not render the {output_format} report ({type(exc).__name__})")
+        raise typer.Exit(ExitCode.OPERATIONAL) from None
+
+
+def _write_report(rendered: str, output: Path) -> None:
+    """
+    Write a rendered report, or end the command with one error line if the file cannot be written.
+
+    Args:
+        rendered (str): The rendered report.
+        output (Path): The ``--output`` file.
+
+    Raises:
+        typer.Exit: With :attr:`ExitCode.OPERATIONAL` on an ``OSError``. The line names the path
+            and the exception's type, not its text, which is the system's.
+    """
+    try:
+        output.write_text(rendered, "utf-8")
+    except OSError as exc:
+        _render.error(f"could not write the report to {output} ({type(exc).__name__})")
+        raise typer.Exit(ExitCode.OPERATIONAL) from None
 
 
 def _written_bytes(text: str, linesep: str = os.linesep) -> int:

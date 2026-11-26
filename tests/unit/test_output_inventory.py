@@ -52,8 +52,7 @@ OUTPUT_SINKS: Final[Mapping[str, str]] = {
     "webvigil.cli._render:summary": _THROUGH_RENDER,
     "webvigil.cli.app:list_checks": "a table whose cells are _render.cell, a one-line Text",
     "webvigil.cli.app:version": "the package's own version string",
-    "webvigil.cli.app:_emit": _REPORT,
-    "webvigil.cli.app:_write_or_print": _REPORT,
+    "webvigil.cli.app:_write_report": _REPORT,
     "webvigil.cli.app:_write_stdout": _REPORT,
     # The Web API's responses
     "webvigil.api.app:_validation_failed": (

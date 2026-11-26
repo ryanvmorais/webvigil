@@ -260,8 +260,11 @@ async def _fetch_document(source: str, *, http: HttpClient, target: Target) -> _
         doc = replace_surrogates_in(json.loads(text))
     except RecursionError as exc:
         raise OpenApiError(f"{shown} is nested too deeply") from exc
-    except ValueError as exc:
-        raise OpenApiError(f"{shown} is not valid JSON: {exc}") from exc
+    except json.JSONDecodeError as exc:
+        # the parser's position only: its message is the library's own words
+        raise OpenApiError(
+            f"{shown} is not valid JSON (line {exc.lineno}, column {exc.colno})"
+        ) from None
     if _nests_deeper_than(doc, _MAX_NESTING):
         raise OpenApiError(f"{shown} is nested too deeply")
     if not isinstance(doc, dict) or not ("openapi" in doc or "swagger" in doc):

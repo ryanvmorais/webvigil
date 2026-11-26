@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import base64
+import html
+import json
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
+from urllib.parse import quote, quote_plus
 
 import httpx2
 
@@ -247,3 +251,31 @@ class HandlerTransport(httpx2.AsyncBaseTransport):
         return httpx2.Response(
             answer.status_code, headers=answer.headers, stream=httpx2.ByteStream(answer.content)
         )
+
+
+def spellings(value: str) -> frozenset[str]:
+    """
+    The forms in which an output could carry a credential, built here rather than by the
+    engine's scrub (spec 024, RF-11; spec 027, RF-03).
+
+    Args:
+        value (str): A password, a token, a cookie or a session value.
+
+    Returns:
+        frozenset[str]: ``value`` as typed, percent-encoded (``quote`` and ``quote_plus``),
+            escaped for JSON and for HTML, as Python's ``repr`` without its quotes, and in
+            standard and URL-safe base64.
+    """
+    raw = value.encode("utf-8")
+    return frozenset(
+        {
+            value,
+            quote(value, safe=""),
+            quote_plus(value),
+            json.dumps(value)[1:-1],
+            html.escape(value),
+            repr(value)[1:-1],
+            base64.b64encode(raw).decode("ascii"),
+            base64.urlsafe_b64encode(raw).decode("ascii"),
+        }
+    )

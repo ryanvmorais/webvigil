@@ -15,18 +15,16 @@ summary notes one table; every assertion they made is still made.
 
 from __future__ import annotations
 
-import html
 import io
 import json
 import sys
 from pathlib import Path
-from urllib.parse import quote, quote_plus
 
 import httpx2
 import pytest
 from typer.testing import CliRunner
 
-from tests.support import make_finding, make_result
+from tests.support import make_finding, make_result, spellings
 from webvigil import __version__
 from webvigil.checks import registry
 from webvigil.checks.registry import all_checks, load_plugins
@@ -617,17 +615,7 @@ def test_the_cli_output_never_shows_a_configured_credential(
     monkeypatch.setattr(app_mod, "Orchestrator", Orchestrator)
     httpx_mock.add_callback(_echoes_the_credentials, is_reusable=True)  # type: ignore[attr-defined]
     canaries = (_CANARY_COOKIE, _CANARY_TOKEN)
-    spellings = {
-        form
-        for canary in canaries
-        for form in (
-            canary,
-            quote(canary, safe=""),
-            quote_plus(canary),
-            json.dumps(canary)[1:-1],
-            html.escape(canary),
-        )
-    }
+    forms = {form for canary in canaries for form in spellings(canary)}
     flags = [
         "--cookie",
         f"sid={_CANARY_COOKIE}",
@@ -658,7 +646,7 @@ def test_the_cli_output_never_shows_a_configured_credential(
     )
     assert "[redacted]" in outputs["json file"]
     for where, text in outputs.items():
-        for form in spellings:
+        for form in forms:
             assert form not in text, (where, form)
 
 

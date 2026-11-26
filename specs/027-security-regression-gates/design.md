@@ -574,6 +574,37 @@ request.
    `onError` / `.catch` callback is a point, as on the Python side. The key of a Python `error` point names the
    output the text reaches, with its destination when there is one: `raise:RequestFailed`, `log:logger.warning`,
    `return`, `field`.
+7. **`webvigil report` keeps the message of a report that does not load (RF-04).** The design says
+   `could not read <path> (<type>)` for every read error. An `OSError` is named by its type; a
+   `ValueError` keeps its message, which `load_result` writes itself from the report's own field
+   names (spec `025`), so `not a valid WebVigil report: 1 error, at findings[0].title` still says
+   what is wrong.
+8. **The log the harnesses search is the project's (RF-03, "The outputs").** The design collects every
+   record of the root logger at `DEBUG`. The collector keeps the records of the loggers whose output
+   the project owns: `webvigil` and its children, and `httpx2` and `uvicorn.error`, which the Web
+   API treats. Another package's logger, such as the `DEBUG` trace of `httpcore2`, which repeats an
+   exception's text, is left as that package configures it: the engine used as a library never
+   changes another package's logger (spec `025`, ADR-4), and neither the CLI nor the Web API turns
+   it on. A test keeps the rule, with a record of each kind.
+9. **The table (RF-02, RF-06).** The check reads every call on `self` in `Orchestrator.run`, not only
+   the awaited ones, so the HAR import, a plain call, is a seam too; the two calls that are not passes
+   (the Active-Mode gate and the check selection) are named with a reason. The report stages' seams
+   are the two helpers the fix added, `_rendered` and `_write_report`. The trusted-proxy lookup
+   (`api/client_address.py`), an entry of `CONNECTIONS`, gets a row of its own, `api-proxies`, for
+   the API harness. The TLS probe belongs to the `checks` stage; the harnesses turn the TLS check off
+   on the plain-HTTP fixture, as the integration scan does, so its socket stays covered by the
+   socket-based unit tests.
+10. **The plan's test checks neighbours too (RF-02, ADR-1).** Rotating by the run number alone still
+    gives every stage every kind, so the design's sabotage would pass "every stage every kind"; the
+    same test asserts that two neighbouring scan stages never share a kind in one run, which is what
+    the rotation by row is for, and that goes red.
+11. **The CLI harness has four more runs (RF-02, RF-05).** A clean run against the fixture wrapped as a
+    site that echoes `Cookie` and `Authorization` into its `Server` header: the positive control of
+    the collector (the streams, the report and its three re-renders) and of the credential search,
+    with the scrub's `[redacted]` in the report. `webvigil report --output` gets a write failure and a
+    render failure, the second added after a mutant that bypassed the render handling survived. A
+    seam helper takes the test's `monkeypatch` first, and `failing_render` takes the format.
+12. **`spellings` gives eight forms (RF-03).** The design's seven count the two base64 alphabets as one.
 
 ## Implementation notes
 
@@ -629,3 +660,19 @@ request.
   empty reason, a stale line, and a second `Path(path).open("rb")` in `load_result` (the gate names
   `webvigil.reporting:load_result file .open#2`). The walker is about 1,000 lines, against the 600 of ADR-5: the
   lists of names take one line per name as `black` lays them out.
+- **Stage 3.** The failure suite is 29 tests in about 2.5 s: 11 for the table, 6 for the searches and 12
+  CLI runs. On `main`, four runs failed, each for the defect its fix removes: `report-write` and
+  `report-render` ended with exit code `1` and an unhandled `OSError` or `RuntimeError`,
+  `report-read` printed the `OSError`'s text (the marker on standard error), and `openapi-parse` printed
+  the JSON parser's message. The other runs passed on `main`: the resolver, the configuration, the
+  OpenAPI document and the HAR file were already named by type. Each test failed once with the line
+  it guards broken (thirteen sabotages): the scrub skipped (the clean run finds both credentials), the
+  three new error lines and the OpenAPI line printing the exception's text, the read, resolver and
+  render seams that never raise (their controls go red), a seam renamed in the table, the plan
+  rotating by run alone, a dependency left out of the table, the log filter keeping every logger, and
+  `spellings` without base64. Mutation over `report`, `_emit`, `_write_or_print`, `_rendered`,
+  `_write_report` and the JSON branch of `_fetch_document`: 39 mutants (14 generated over the guards,
+  20 by hand over the handlers, their messages, exit codes and bypasses, 5 aimed at the runs no other
+  mutant failed: the read messages of the configuration, OpenAPI and HAR files and the failure kind),
+  39 killed, and every new run killed at least one. The one survivor of the first round, a
+  `webvigil report` whose render bypassed the handling, led to the render run of deviation 11.
