@@ -33,6 +33,7 @@ from webvigil.core.findings import Category, Confidence, Finding, Location, Scan
 from webvigil.core.orchestrator import Orchestrator
 from webvigil.core.result import LoginSummary
 from webvigil.core.target import Target
+from webvigil.http.addresses import AddressGuard, AddressNotices
 from webvigil.http.session import Session, SessionJar
 
 _TARGET = "https://example.com/"
@@ -392,6 +393,20 @@ async def test_a_blocked_address_becomes_a_warning(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(orch_mod, "blocked_address_warning", lambda stats: None)
     quiet = await Orchestrator(ScanConfig(), check_types=[PassiveOne]).run(_TARGET)
     assert not any("refused" in w for w in quiet.warnings)
+
+
+async def test_the_address_notices_become_warnings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """What the scan's address guard recorded reaches the result's warnings — RF-06, RF-07."""
+    notices = AddressNotices(internal_target="app.example.com", left_out=(("api.example.com", 2),))
+    monkeypatch.setattr(AddressGuard, "notices", lambda self: notices)
+    result = await Orchestrator(ScanConfig(), check_types=[PassiveOne]).run(_TARGET)
+    assert any(
+        w.startswith("the target host app.example.com is a public name") for w in result.warnings
+    )
+    assert any(w.startswith("api.example.com resolves to 2 internal") for w in result.warnings)
+    monkeypatch.setattr(AddressGuard, "notices", lambda self: AddressNotices())
+    quiet = await Orchestrator(ScanConfig(), check_types=[PassiveOne]).run(_TARGET)
+    assert not any("internal address" in w for w in quiet.warnings)
 
 
 async def test_unreachable_target_becomes_a_warning(monkeypatch: pytest.MonkeyPatch) -> None:

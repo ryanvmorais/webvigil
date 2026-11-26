@@ -54,6 +54,7 @@ from webvigil.crawler.forms import Form
 from webvigil.crawler.har import load_har, merge_operations
 from webvigil.crawler.jsapp import script_app_warning
 from webvigil.crawler.openapi import ApiOperation, load_openapi
+from webvigil.http.addresses import address_warnings
 from webvigil.http.client import (
     HttpClient,
     blocked_address_warning,
@@ -250,6 +251,7 @@ class Orchestrator:
                 )
             if line := blocked_address_warning(http.stats):
                 warnings.append(line)
+            warnings.extend(address_warnings(http.addresses.notices()))
             technologies = context.observations.technologies
             if session is not None:
                 warnings.extend(session.warnings())

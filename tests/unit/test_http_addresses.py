@@ -20,10 +20,13 @@ from webvigil.core.errors import RequestFailed
 from webvigil.core.target import Scope, Target
 from webvigil.http import client as client_mod
 from webvigil.http.addresses import (
+    MAX_LEFT_OUT_LINES,
     AddressGuard,
+    AddressNotices,
     BlockedAddressError,
     GuardedBackend,
     _embedded_ipv4,
+    address_warnings,
     install,
     is_public,
 )
@@ -271,6 +274,135 @@ async def test_a_failed_resolution_is_not_pinned() -> None:
         await guard.addresses("late.example.com", 443)
     resolver.table["late.example.com"] = [_PUBLIC_2]
     assert await guard.addresses("late.example.com", 443) == [_PUBLIC_2]
+
+
+# ---------------------------------------------------------------------------
+# The notices: what the guard saw that the user should know (spec 026, RF-06, RF-07)
+# ---------------------------------------------------------------------------
+
+
+async def test_a_public_name_resolving_only_inside_is_reported_and_still_scanned() -> None:
+    """The scan reaches the internal addresses, and the result names the target host."""
+    resolver = _Resolver({"app.example.com": ["10.0.0.5", "127.0.0.1"]})
+    guard = AddressGuard("app.example.com", resolver=resolver)
+    assert await guard.addresses("app.example.com", 443) == ["10.0.0.5", "127.0.0.1"]
+    assert guard.notices() == AddressNotices(internal_target="app.example.com")
+    assert address_warnings(guard.notices()) == [
+        "the target host app.example.com is a public name but resolves only to internal "
+        "addresses (loopback, private, link-local); the scan ran against them: check that "
+        "this is the machine you meant to scan"
+    ]
+
+
+@pytest.mark.parametrize(
+    ("host", "address"),
+    [
+        ("app.local", "10.0.0.5"),
+        ("app.internal", "10.0.0.5"),
+        ("svc.cluster.local", "10.0.0.5"),
+        ("x.home.arpa", "192.168.1.10"),
+        ("x.onion", "127.0.0.1"),
+        ("x.test", "127.0.0.1"),
+        ("app.notalistedlabel", "10.0.0.5"),
+        ("app", "172.18.0.3"),
+        ("localhost", "127.0.0.1"),
+        ("10.0.0.5", "10.0.0.5"),
+        ("::1", "::1"),
+    ],
+)
+async def test_a_lab_cluster_or_address_target_resolving_inside_records_nothing(
+    host: str, address: str
+) -> None:
+    """The common lab names, one label and IP literals are internal by choice: no warning."""
+    guard = AddressGuard(host, resolver=_Resolver({host: [address]}))
+    assert await guard.addresses(host, 8000) == [address]
+    assert guard.notices() == AddressNotices()
+    assert address_warnings(guard.notices()) == []
+
+
+async def test_a_host_with_public_and_internal_addresses_is_reported_once() -> None:
+    """
+    The public ones are used and the host is named with the count it lost, the first time only.
+
+    The host that resolves only to public addresses, asked in the same scan, is the control: it
+    records nothing, so the record comes from the mixed answer and not from being asked.
+    """
+    resolver = _Resolver(
+        {
+            "www.example.com": [_PUBLIC],
+            "api.example.com": [_PUBLIC, "10.0.0.1", _PUBLIC_2],
+            "cdn.example.com": [_PUBLIC_2],
+        }
+    )
+    guard = AddressGuard("www.example.com", resolver=resolver)
+    assert await guard.addresses("www.example.com", 443) == [_PUBLIC]
+    assert await guard.addresses("api.example.com", 443) == [_PUBLIC, _PUBLIC_2]
+    assert await guard.addresses("API.example.com", 80) == [_PUBLIC, _PUBLIC_2]
+    assert await guard.addresses("cdn.example.com", 443) == [_PUBLIC_2]
+    assert guard.notices() == AddressNotices(left_out=(("api.example.com", 1),))
+    assert address_warnings(guard.notices()) == [
+        "api.example.com resolves to 1 internal address(es) besides its public ones; "
+        "the scan used only the public addresses"
+    ]
+
+
+async def test_the_target_itself_with_internal_addresses_left_out_is_reported() -> None:
+    """The target is a host the scan connects to, so its own mixed answer is named too."""
+    resolver = _Resolver({"www.example.com": ["127.0.0.1", _PUBLIC, "fd00::1"]})
+    guard = AddressGuard("www.example.com", resolver=resolver)
+    assert await guard.addresses("www.example.com", 443) == [_PUBLIC]
+    assert guard.notices() == AddressNotices(left_out=(("www.example.com", 2),))
+
+
+async def test_a_host_resolving_only_inside_is_refused_and_records_nothing_new() -> None:
+    """The refusal is the blocked-address warning's; the notices stay what they were."""
+    resolver = _Resolver(
+        {
+            "www.example.com": [_PUBLIC],
+            "api.example.com": [_PUBLIC, "10.0.0.1"],
+            "intra.example.com": ["10.0.0.5", "127.0.0.1"],
+        }
+    )
+    guard = AddressGuard("www.example.com", resolver=resolver)
+    await guard.addresses("api.example.com", 443)
+    before = guard.notices()
+    assert before.left_out == (("api.example.com", 1),)
+    with pytest.raises(BlockedAddressError):
+        await guard.addresses("intra.example.com", 443)
+    assert guard.notices() == before
+
+
+async def test_the_hosts_past_the_cap_are_one_summary_line() -> None:
+    """Twelve hosts with addresses left out give ten named lines and one line for the other two."""
+    hosts = [f"h{n:02}.example.com" for n in range(12)]
+    table = {host: [_PUBLIC, "10.0.0.1"] for host in hosts}
+    table["www.example.com"] = [_PUBLIC]
+    guard = AddressGuard("www.example.com", resolver=_Resolver(table))
+    for host in hosts:
+        await guard.addresses(host, 443)
+    lines = address_warnings(guard.notices())
+    assert MAX_LEFT_OUT_LINES == 10
+    assert len(lines) == 11
+    assert [line.split(" ", 1)[0] for line in lines[:10]] == hosts[:10]
+    assert lines[10] == "2 more host(s) resolve to internal addresses besides their public ones"
+
+
+def test_exactly_the_cap_names_every_host_and_adds_no_summary() -> None:
+    """At the cap every host has its own line; the summary line starts one host past it."""
+    left_out = tuple((f"h{n}.example.com", 1) for n in range(MAX_LEFT_OUT_LINES))
+    lines = address_warnings(AddressNotices(left_out=left_out))
+    assert len(lines) == MAX_LEFT_OUT_LINES
+    assert not any("more host(s)" in line for line in lines)
+
+
+def test_both_notices_give_the_target_line_first() -> None:
+    """The internal target leads, then the hosts in the order they were first asked for."""
+    lines = address_warnings(
+        AddressNotices(internal_target="app.example.com", left_out=(("a.example.com", 3),))
+    )
+    assert len(lines) == 2
+    assert lines[0].startswith("the target host app.example.com ")
+    assert lines[1].startswith("a.example.com resolves to 3 internal address(es) ")
 
 
 # ---------------------------------------------------------------------------
