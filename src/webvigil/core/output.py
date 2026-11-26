@@ -35,8 +35,9 @@ import re
 import sys
 import sysconfig
 import traceback
+import zlib
 from bisect import bisect_right
-from collections.abc import Callable, Iterable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from contextlib import suppress
 from dataclasses import dataclass
 from enum import StrEnum
@@ -440,7 +441,7 @@ class Redactor:
         edge = MIN_SECRET_LENGTH
         for spelling in self._ordered:
             for start in range(len(spelling) - edge + 1):
-                bit = hash(spelling[start : start + edge]) & (_FILTER_BITS - 1)
+                bit = _run_bit(spelling[start : start + edge])
                 self._filter[bit >> 3] |= 1 << (bit & 7)
         self.hits = 0
 
@@ -583,38 +584,47 @@ class Redactor:
                     best = length
         return (point, point + best) if best else None
 
-    def _runs(self, run: str, work: _Work) -> Iterator[tuple[str, int]]:
+    def _runs(self, run: str, work: _Work) -> tuple[tuple[str, int], ...]:
         """
-        Find a run of characters in the spellings.
+        Find a run of characters in the spellings, once per field.
+
+        A field repeats its runs (every cut of a list of spreads stands next to the same four
+        characters), so each run is scanned for once and its answer kept for the field's other
+        cuts: the work then follows the distinct runs, not the cuts.
 
         Args:
             run (str): :data:`MIN_SECRET_LENGTH` characters next to a cut (fewer at the end of
                 the text, which no spelling run matches).
             work (_Work): The field's work so far; every scan of the joined spellings is spent.
 
-        Yields:
-            tuple[str, int]: ``(spelling, where the run starts in it)`` for each occurrence;
-                nothing is yielded when the filter says no spelling holds the run.
+        Returns:
+            tuple[tuple[str, int], ...]: ``(spelling, where the run starts in it)`` for each
+                occurrence; empty when the filter says no spelling holds the run.
 
         Raises:
             _OverBudget: When the search passes :data:`FRAGMENT_WORK_BUDGET`.
         """
         if len(run) < MIN_SECRET_LENGTH:
-            return
-        bit = hash(run) & (_FILTER_BITS - 1)
-        if not self._filter[bit >> 3] & (1 << (bit & 7)):
-            return
-        joined = self._joined
-        start = 0
-        while (found := joined.find(run, start)) != -1:
-            work.spend(found + len(run) - start)
-            index = bisect_right(self._starts, found) - 1
-            offset = found - self._starts[index]
-            spelling = self._ordered[index]
-            if offset + len(run) <= len(spelling):  # not across a separator
-                yield spelling, offset
-            start = found + 1
-        work.spend(len(joined) - start)
+            return ()
+        known = work.runs.get(run)
+        if known is not None:
+            return known
+        found_runs: list[tuple[str, int]] = []
+        bit = _run_bit(run)
+        if self._filter[bit >> 3] & (1 << (bit & 7)):
+            joined = self._joined
+            start = 0
+            while (found := joined.find(run, start)) != -1:
+                work.spend(found + len(run) - start)
+                index = bisect_right(self._starts, found) - 1
+                offset = found - self._starts[index]
+                spelling = self._ordered[index]
+                if offset + len(run) <= len(spelling):  # not across a separator
+                    found_runs.append((spelling, offset))
+                start = found + 1
+            work.spend(len(joined) - start)
+        work.runs[run] = answer = tuple(found_runs)
+        return answer
 
 
 class _OverBudget(Exception):
@@ -627,11 +637,14 @@ class _Work:
 
     Attributes:
         spent (int): Characters scanned or compared so far.
+        runs (dict[str, tuple[tuple[str, int], ...]]): The occurrences of each run already
+            scanned for in this field.
     """
 
     def __init__(self) -> None:
-        """Start a field with nothing spent."""
+        """Start a field with nothing spent and no run scanned for."""
         self.spent = 0
+        self.runs: dict[str, tuple[tuple[str, int], ...]] = {}
 
     def spend(self, amount: int) -> None:
         """
@@ -646,6 +659,19 @@ class _Work:
         self.spent += amount
         if self.spent > FRAGMENT_WORK_BUDGET:
             raise _OverBudget
+
+
+def _run_bit(run: str) -> int:
+    """
+    Args:
+        run (str): A run of :data:`MIN_SECRET_LENGTH` characters.
+
+    Returns:
+        int: Its bit in the filter of :class:`Redactor`. A CRC-32 and not ``hash()``, which
+            changes with every process, so the same secrets and text give the same work on
+            every run.
+    """
+    return zlib.crc32(run.encode("utf-8", "surrogatepass")) & (_FILTER_BITS - 1)
 
 
 def _cut_points(text: str, *, cut_edges: bool) -> tuple[set[int], set[int]]:
