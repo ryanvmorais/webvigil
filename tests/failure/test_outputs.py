@@ -125,9 +125,9 @@ def test_a_numbered_output_keeps_its_family() -> None:
 
 def test_a_stored_value_is_checked_for_its_bound_only() -> None:
     """
-    The database and the API's JSON hold a value as it was stored, bounded, and the dashboard
-    neutralizes it where it shows it: raw controls pass there and a run past the bound does not.
-    The same stored text in a report is a problem.
+    The database holds a value as it was stored, bounded, and it is neutralized where it is shown:
+    raw controls pass there and a run past the bound does not. The same stored text in a report
+    or in the API's JSON is a problem.
     """
     marker = failure_marker("checks", Kind.SERVER_ERROR)
     markers = {marker: Kind.SERVER_ERROR}
@@ -143,10 +143,12 @@ def test_a_stored_value_is_checked_for_its_bound_only() -> None:
     (hit,) = bad_failure_hits(unbounded, markers)
     assert len(hit.problems) == 1 and "past" in hit.problems[0]
 
-    report = Outputs()
-    report.add("report:html", stored)
-    (hit,) = bad_failure_hits(report, markers)
-    assert any(problem.startswith("raw ") for problem in hit.problems)
+    shown = Outputs()
+    shown.add("report:html", stored)
+    shown.add("api-body:findings", stored)
+    hits = bad_failure_hits(shown, markers)
+    assert {hit.output for hit in hits} == {"report:html", "api-body:findings"}
+    assert all(any(problem.startswith("raw ") for problem in hit.problems) for hit in hits)
 
 
 def test_outputs_of_the_same_name_are_numbered() -> None:

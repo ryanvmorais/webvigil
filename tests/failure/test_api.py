@@ -40,7 +40,6 @@ from tests.failure.faults import (
     raising_orchestrator,
 )
 from tests.failure.outputs import (
-    STORED,
     LogLines,
     Outputs,
     api_outputs,
@@ -338,12 +337,13 @@ def test_an_engine_error_nothing_expects_is_logged_by_its_type_and_frames(
     assert "Traceback (most recent call last):" in line and "faults.py" in line
 
 
-def test_an_engine_error_the_engine_names_is_stored_cut_where_the_dashboard_shows_it(
+def test_an_engine_error_the_engine_names_is_the_scans_error_cut_and_escaped(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """
     A ``WebVigilError``'s message is the project's own, so the scan's ``error`` keeps it, cut at
-    the bound of ``Text``; it reaches no other output.
+    the bound of ``Text``, and the API's JSON shows its controls as escapes; it reaches no output
+    but the scan's row and the scan and list routes.
     """
     marker = failure_marker("api-engine", Kind.RAISES)
     factory, fault = raising_orchestrator(WebVigilError, marker)
@@ -356,7 +356,7 @@ def test_an_engine_error_the_engine_names_is_stored_cut_where_the_dashboard_show
     _check_fault(fault)
     assert credential_hits(outputs, credentials) == []
     hits = failure_hits(outputs, {marker: Kind.RAISES})
-    assert {family(hit.output) for hit in hits} == STORED, hits
+    assert {family(hit.output) for hit in hits} == {"db", "api-body"}, hits
     assert all(not hit.problems for hit in hits), hits
     assert f'"error":"{marker}' in api_body(outputs, "scan")
 

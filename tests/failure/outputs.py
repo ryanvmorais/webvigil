@@ -42,11 +42,10 @@ ALLOWED: Final[Mapping[Kind, frozenset[str]]] = {
     Kind.DB: frozenset({"server-log"}),
 }
 
-# The outputs that hold a value as it was stored: the database, and the JSON a client of the Web
-# API reads. Each value there is bounded, and neutralized where it is shown (spec 025: the
-# dashboard's ``showControls``), so only the bound is checked in them; JSON already escapes the C0
-# controls.
-STORED: Final = frozenset({"db", "api-body"})
+# The outputs that hold a value as it was stored: the database. A stored value is bounded, and
+# neutralized where it is shown (spec 025, the ``STORE`` profile), so only the bound is checked
+# there.
+STORED: Final = frozenset({"db"})
 
 # A raw control, bidirectional or zero-width character: tab and line feed are layout.
 _RAW_CONTROL_RE: Final = re.compile(rf"[\x00-\x08\x0b-\x1f\x7f-\x9f{INVISIBLE_CHARS}]")

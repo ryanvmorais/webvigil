@@ -17,6 +17,7 @@ from typing import Annotated, Any
 import httpx2
 import pytest
 from fastapi import Body
+from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine
 from sqlmodel import Session
@@ -85,6 +86,29 @@ def test_a_scan_that_met_the_character_is_stored_and_served(
     report = auth_client.get(f"/api/scans/{scan_id}/report?format={fmt}")
     assert report.status_code == 200
     assert "title" + _REPLACED in report.text or "title\\ufffd" in report.text
+
+
+def test_the_api_json_shows_bidirectional_invisible_and_c1_characters_as_escapes(
+    auth_client: TestClient,
+) -> None:
+    """
+    Evidence with a right-to-left override, a zero-width space and a C1 control comes back with
+    each as a JSON escape; parsed, the value is the same.
+    """
+    hidden = ("a", chr(0x202E), "b", chr(0x200B), "c", chr(0x85))
+    finding = make_finding().model_dump()
+    finding["evidence"] = [{"label": "label", "content": "".join(hidden)}]
+    FakeOrchestrator.result = make_result(Finding.model_validate(finding))
+    scan_id = auth_client.post("/api/scans", json={"target": "https://example.com"}).json()["id"]
+    _wait_until(auth_client, scan_id, "completed")
+
+    response = auth_client.get(f"/api/scans/{scan_id}/findings")
+    for char in hidden[1::2]:
+        assert char not in response.text
+        assert f"{chr(92)}u{ord(char):04x}" in response.text
+    assert response.json()["items"][0]["evidence"][0]["content"] == "".join(hidden)
+    # positive control: the encoder alone writes them raw
+    assert all(char in JSONResponse(list(hidden)).body.decode() for char in hidden)
 
 
 @pytest.mark.parametrize("fmt", _FORMATS)

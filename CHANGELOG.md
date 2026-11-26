@@ -66,6 +66,9 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
   `scan <id> crashed` with the full traceback: the message may quote what the scanned site sent.
   The frames name files inside the install, as a check's error does in a report. A failure to
   store the result still logs the database's message.
+- The Web API's JSON responses write DEL, the C1 controls and the bidirectional and zero-width
+  characters as `\uNNNN` escapes, as the JSON report does: a JSON parser reads the same values, and
+  a body printed in a terminal (`curl`) no longer carries them raw.
 
 ### Fixed
 
