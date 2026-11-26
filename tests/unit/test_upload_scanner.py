@@ -161,7 +161,6 @@ class _FakeHttp:
         content: bytes | None = None,
         files: dict[str, tuple[str, bytes, str]] | None = None,
         headers: dict[str, str] | None = None,
-        allow_out_of_scope: bool = False,
         crafted: bool = False,
     ) -> Response:
         method = method.upper()

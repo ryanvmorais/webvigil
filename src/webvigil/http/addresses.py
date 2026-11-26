@@ -1,7 +1,7 @@
 """
 The address guard: which network addresses a scan may connect to.
 
-The scope guard decides by name; this module decides by address. Every host name is resolved
+The scope rule decides by name; this module decides by address. Every host name is resolved
 once per scan and the connection goes to the address that was checked, so a name cannot point
 somewhere else halfway through a scan. When the target resolves to a public address, no host of
 the scan may resolve to a loopback, private, link-local or other non-public address: a site on

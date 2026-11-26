@@ -99,17 +99,20 @@ class _App:
         return httpx2.Response(401, text="no")
 
 
-def _client(app: _App, *, cookies: list[str] | None = None) -> HttpClient:
+def _client(
+    app: _App, *, cookies: list[str] | None = None, scope: Scope = Scope.HOST
+) -> HttpClient:
     """
     Args:
         app (_App): The target the transport plays.
         cookies (list[str] | None): Static ``[auth]`` cookies. Defaults to none.
+        scope (Scope): The target scope. Defaults to ``Scope.HOST``.
 
     Returns:
         HttpClient: A client for ``http://demo.test/`` wired to ``app``.
     """
     config = ScanConfig.model_validate({"auth": {"cookies": cookies}} if cookies else {})
-    target = Target.parse(_BASE, scope=Scope.HOST)
+    target = Target.parse(_BASE, scope=scope)
     return HttpClient(target, config, transport=HandlerTransport(app.handle))
 
 
@@ -133,7 +136,7 @@ def _session(http: HttpClient, **kwargs: object) -> Session:
         return True
 
     options: dict[str, object] = {
-        "jar": SessionJar("demo.test"),
+        "jar": SessionJar(Target.parse(_BASE)),
         "is_login_url": lambda url: urlsplit(url).path == "/signin",
         "relogin": relogin,
     }
@@ -348,6 +351,25 @@ async def test_a_dropped_session_is_re_logged_in_once_and_the_request_retried() 
     assert app.cookie_seen == ["sid=tok1", "sid=tok2"]
 
 
+async def test_a_401_off_the_target_origin_is_not_a_dropped_session() -> None:
+    """A sibling subdomain gets no session, so its 401 says nothing about it (spec 026)."""
+    app = _App()
+    async with _client(app, scope=Scope.SUBDOMAINS) as http:
+        session = _session(http)
+        await _login(http, session)
+
+        sibling = await http.get("http://cdn.demo.test/page")
+        assert sibling.status_code == 401
+        assert (app.issued, session.relogins) == (1, 0)
+
+        app.expire()  # the positive control: the same 401 on the origin earns the re-login
+        origin = await http.get(f"{_BASE}/page")
+
+    assert origin.status_code == 200
+    assert (app.issued, session.relogins) == (2, 1)
+    assert app.cookie_seen == ["", "sid=tok1", "sid=tok2"]
+
+
 async def test_the_retry_is_returned_as_it_is_and_never_retried_again() -> None:
     """A retry that drops again comes back as a 401: one re-login, no second retry."""
     app = _App()
@@ -507,7 +529,7 @@ def _page(text: str) -> Response:
 async def test_a_logged_out_marker_in_the_body_is_a_drop() -> None:
     """The marker catches a drop that answers 200 with the login form in the same URL."""
     session = Session(
-        jar=SessionJar("demo.test"),
+        jar=SessionJar(Target.parse(_BASE)),
         is_login_url=lambda url: False,
         logged_out_marker=r"Please sign in",
     )

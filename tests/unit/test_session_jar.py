@@ -4,8 +4,8 @@ SessionJar — the cookie jar behind an automated login — spec 019 RF-07.
 Responses are built by hand (``httpx2.Response`` with a ``Set-Cookie`` header and its request)
 and fed to ``absorb``; ``pairs_for`` is the observable: the cookies a request to a URL would
 carry. No network, no transport: the jar is the standard ``http.cookiejar`` rules behind a
-small wrapper, and these tests pin the wrapper (the two modes, the host rule, the value list)
-and the rules the login depends on (``Secure``, ``Path``, expiry, odd hosts).
+small wrapper, and these tests pin the wrapper (the two modes, the credential rule of spec 026,
+the value list) and the rules the login depends on (``Secure``, ``Path``, expiry, odd hosts).
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ import httpx2
 import pytest
 
 from webvigil.core.secrets import Secret, SecretKind
+from webvigil.core.target import Scope, Target
 from webvigil.http.session import (
     _MAX_JAR_COOKIES,
     _MAX_SCRUB_VALUES,
@@ -28,6 +29,7 @@ from webvigil.http.session import (
 )
 
 _URL = "http://demo.test/signin"
+_TARGET = Target.parse("http://demo.test")
 
 
 def _texts(values: Iterable[Secret]) -> set[str]:
@@ -73,7 +75,7 @@ def _committed(jar: SessionJar, url: str, *set_cookie: str) -> None:
 
 def test_a_handshake_collects_every_hop_and_commit_makes_it_live() -> None:
     """Cookies from each hop go to the pending jar, are sent on the next hop, and commit."""
-    jar = SessionJar("demo.test")
+    jar = SessionJar(_TARGET)
     jar.begin()
     jar.absorb(_response(_URL, "pre=1; Path=/"), handshake=True)
     jar.absorb(_response("http://demo.test/signin/done", "sid=abc; Path=/"), handshake=True)
@@ -87,7 +89,7 @@ def test_a_handshake_collects_every_hop_and_commit_makes_it_live() -> None:
 
 def test_live_mode_takes_a_rotation_and_drops_every_other_cookie() -> None:
     """After the login only a cookie whose name the session holds is accepted."""
-    jar = SessionJar("demo.test")
+    jar = SessionJar(_TARGET)
     _committed(jar, _URL, "sid=one; Path=/")
 
     jar.absorb(
@@ -99,7 +101,7 @@ def test_live_mode_takes_a_rotation_and_drops_every_other_cookie() -> None:
 
 def test_a_failed_handshake_leaves_the_live_session_untouched() -> None:
     """``rollback`` discards the pending jar; the committed session keeps working."""
-    jar = SessionJar("demo.test")
+    jar = SessionJar(_TARGET)
     _committed(jar, _URL, "sid=keep; Path=/")
 
     jar.begin()
@@ -113,7 +115,7 @@ def test_a_failed_handshake_leaves_the_live_session_untouched() -> None:
 
 def test_every_value_that_enters_the_jar_is_remembered_for_scrubbing() -> None:
     """``values`` keeps the pre-login cookie, the session and each rotation."""
-    jar = SessionJar("demo.test")
+    jar = SessionJar(_TARGET)
     jar.begin()
     jar.absorb(_response(_URL, "pre=v-pre; Path=/", "sid=v-one; Path=/"), handshake=True)
     jar.commit()
@@ -128,7 +130,7 @@ def test_every_value_that_enters_the_jar_is_remembered_for_scrubbing() -> None:
 
 def test_an_empty_cookie_value_is_held_but_not_remembered() -> None:
     """A cookie set to nothing is kept by the jar, and adds no value to the scrub list."""
-    jar = SessionJar("demo.test")
+    jar = SessionJar(_TARGET)
     jar.begin()
     jar.absorb(_response(_URL, "sid=; Path=/"), handshake=True)
 
@@ -138,7 +140,7 @@ def test_an_empty_cookie_value_is_held_but_not_remembered() -> None:
 
 def test_the_pending_cookies_are_handed_out_as_session_secrets() -> None:
     """``pending_items`` names each cookie and holds its value as a ``SESSION`` secret."""
-    jar = SessionJar("demo.test")
+    jar = SessionJar(_TARGET)
     assert jar.pending_items() == frozenset()
     jar.begin()
     jar.absorb(_response(_URL, "sid=v-one; Path=/"), handshake=True)
@@ -154,7 +156,7 @@ def test_the_pending_cookies_are_handed_out_as_session_secrets() -> None:
 
 def test_the_jar_and_the_session_show_names_and_no_value() -> None:
     """The ``repr`` of the jar and of its session carry the cookie names only."""
-    jar = SessionJar("demo.test")
+    jar = SessionJar(_TARGET)
     jar.begin()
     jar.absorb(_response(_URL, "sid=v-canary-1234; Path=/"), handshake=True)
     jar.commit()
@@ -163,6 +165,7 @@ def test_the_jar_and_the_session_show_names_and_no_value() -> None:
     for shown in (repr(jar), repr(session), str(session), f"{jar}"):
         assert "v-canary-1234" not in shown
         assert "sid" in shown  # the positive control: the name is there
+    assert "origin='http://demo.test'" in repr(jar)  # where the cookies may go
     assert jar.pairs_for(_URL, handshake=False) == [("sid", "v-canary-1234")]
 
 
@@ -195,7 +198,7 @@ def test_the_browser_rules_decide_which_cookies_a_request_carries(
 ) -> None:
     """Secure, Path, expiry and the host rule, each through one handshake."""
     host = httpx2.URL(requested).host
-    jar = SessionJar(host)
+    jar = SessionJar(Target.parse(f"http://{host}"))
     jar.begin()
     if "Max-Age=0" in set_cookie:  # set it first, then clear it, as a login does with `pre`
         jar.absorb(_response(set_from, "sid=a; Path=/"), handshake=True)
@@ -205,11 +208,84 @@ def test_the_browser_rules_decide_which_cookies_a_request_carries(
 
 def test_cookies_are_sent_to_the_target_host_only() -> None:
     """Whatever the jar holds, a request to another host carries nothing."""
-    jar = SessionJar("demo.test")
+    jar = SessionJar(_TARGET)
     _committed(jar, _URL, "sid=a; Path=/")
 
     assert jar.pairs_for("http://evil.test/", handshake=False) == []
     assert jar.pairs_for("http://sub.demo.test/", handshake=False) == []
+
+
+# ---------------------------------------------------------------------------
+# The credential rule decides, not the host (spec 026, RF-04)
+# ---------------------------------------------------------------------------
+
+# (target, scope, URL the cookie was set from, Set-Cookie value, URL requested, cookies expected).
+# The stdlib rules alone would send each of the first three: a cookie names no port, a cookie
+# without ``Secure`` goes over plain http, and a ``Domain`` cookie goes to every subdomain.
+_DESTINATIONS = [
+    pytest.param(
+        "https://demo.test",
+        Scope.HOST,
+        "https://demo.test/x",
+        "sid=a; Path=/",
+        "https://demo.test:8443/y",
+        [],
+        id="another-port",
+    ),
+    pytest.param(
+        "https://demo.test",
+        Scope.HOST,
+        "https://demo.test/x",
+        "sid=a; Path=/",
+        "http://demo.test/y",
+        [],
+        id="http-from-an-https-target",
+    ),
+    pytest.param(
+        "https://app.demo.test",
+        Scope.SUBDOMAINS,
+        "https://app.demo.test/x",
+        "sid=a; Path=/; Domain=demo.test",
+        "https://cdn.demo.test/y",
+        [],
+        id="sibling-subdomain",
+    ),
+    pytest.param(
+        "https://demo.test",
+        Scope.HOST,
+        "https://demo.test/x",
+        "sid=a; Path=/",
+        "https://demo.test/y",
+        [("sid", "a")],
+        id="the-origin",
+    ),
+    pytest.param(
+        "http://demo.test",
+        Scope.HOST,
+        "http://demo.test/x",
+        "sid=a; Path=/",
+        "https://demo.test/y",
+        [("sid", "a")],
+        id="the-https-upgrade",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("target", "scope", "set_from", "set_cookie", "requested", "expected"), _DESTINATIONS
+)
+def test_the_jar_hands_out_cookies_only_where_credentials_may_go(
+    target: str,
+    scope: Scope,
+    set_from: str,
+    set_cookie: str,
+    requested: str,
+    expected: list[tuple[str, str]],
+) -> None:
+    """``pairs_for`` asks ``may_carry_credentials``: a direct caller cannot send them elsewhere."""
+    jar = SessionJar(Target.parse(target, scope=scope))
+    _committed(jar, set_from, set_cookie)
+    assert jar.pairs_for(requested, handshake=False) == expected
 
 
 # ---------------------------------------------------------------------------
@@ -219,7 +295,7 @@ def test_cookies_are_sent_to_the_target_host_only() -> None:
 
 def test_a_secure_cookie_set_over_http_is_refused_like_a_browser_does() -> None:
     """It neither enters the handshake jar nor replaces the live session cookie."""
-    jar = SessionJar("demo.test")
+    jar = SessionJar(_TARGET)
     jar.begin()
     jar.absorb(_response(_URL, "sid=one; Path=/", "tracker=t; Path=/; Secure"), handshake=True)
     jar.commit()
@@ -236,7 +312,7 @@ def test_a_secure_cookie_set_over_http_is_refused_like_a_browser_does() -> None:
 
 def test_the_same_secure_cookie_over_https_is_accepted() -> None:
     """Over ``https`` the rule does not apply."""
-    jar = SessionJar("demo.test")
+    jar = SessionJar(_TARGET)
     jar.begin()
     jar.absorb(_response("https://demo.test/signin", "sid=one; Path=/; Secure"), handshake=True)
     jar.commit()
@@ -250,7 +326,7 @@ def test_the_same_secure_cookie_over_https_is_accepted() -> None:
 
 def test_a_held_name_keeps_a_bounded_number_of_path_variants() -> None:
     """Rotations under many paths do not grow the live jar past the per-name limit."""
-    jar = SessionJar("demo.test")
+    jar = SessionJar(_TARGET)
     _committed(jar, _URL, "sid=one; Path=/")
     for i in range(200):
         jar.absorb(_response(_URL, f"sid=v{i}; Path=/p{i}"), handshake=False)
@@ -259,7 +335,7 @@ def test_a_held_name_keeps_a_bounded_number_of_path_variants() -> None:
 
 def test_a_handshake_keeps_a_bounded_number_of_cookies() -> None:
     """A login response that sets hundreds of cookies leaves at most the jar limit pending."""
-    jar = SessionJar("demo.test")
+    jar = SessionJar(_TARGET)
     jar.begin()
     jar.absorb(_response(_URL, *(f"c{i}=x{i}; Path=/" for i in range(300))), handshake=True)
     jar.commit()
@@ -268,7 +344,7 @@ def test_a_handshake_keeps_a_bounded_number_of_cookies() -> None:
 
 def test_endless_rotation_gives_the_session_up() -> None:
     """Past the scrub limit the jar stops sending the session, so no unscrubbed value leaves."""
-    jar = SessionJar("demo.test")
+    jar = SessionJar(_TARGET)
     _committed(jar, _URL, "sid=first; Path=/")
     for i in range(1_100):
         jar.absorb(_response(_URL, f"sid=value{i}; Path=/"), handshake=False)
@@ -281,7 +357,7 @@ def test_endless_rotation_gives_the_session_up() -> None:
 
 def test_ordinary_rotation_keeps_the_session() -> None:
     """A few rotations are the normal case: the newest value is sent, nothing is given up."""
-    jar = SessionJar("demo.test")
+    jar = SessionJar(_TARGET)
     _committed(jar, _URL, "sid=one; Path=/")
     for i in range(10):
         jar.absorb(_response(_URL, f"sid=r{i}; Path=/"), handshake=False)
@@ -316,7 +392,7 @@ def _committed_raw(url: str, *set_cookie: bytes) -> SessionJar:
     Returns:
         SessionJar: A jar with those cookies committed.
     """
-    jar = SessionJar("demo.test")
+    jar = SessionJar(_TARGET)
     jar.begin()
     jar.absorb(_raw_response(url, *set_cookie), handshake=True)
     jar.commit()
@@ -421,7 +497,7 @@ def test_the_scrub_list_holds_the_value_as_a_page_would_show_it(
 @pytest.mark.parametrize("char", ["\x00", "\x1b", "\x7f"], ids=["nul", "escape", "delete"])
 def test_a_url_that_cannot_be_built_holds_no_cookie(char: str) -> None:
     """The jar answers for such a URL instead of raising: the request path reports it."""
-    jar = SessionJar("demo.test")
+    jar = SessionJar(_TARGET)
     _committed(jar, _URL, "sid=abc; Path=/")
 
     assert jar.pairs_for(_URL, handshake=False) == [("sid", "abc")]  # the jar does hold it

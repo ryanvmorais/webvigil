@@ -136,7 +136,7 @@ TRAVERSAL_SIGNATURES: tuple[re.Pattern[str], ...] = (
 # --- open redirect (RF-11) --------------------------------------------------------
 
 # `.invalid` is a guaranteed-unresolvable TLD; the host is never requested (it is out of
-# scope, so the scope guard blocks it) — the detector only reads the Location it was sent to.
+# scope, so the scope rule blocks it) — the detector only reads the Location it was sent to.
 REDIRECT_SENTINEL = "webvigil.invalid"
 REDIRECT_PAYLOADS: tuple[str, ...] = (
     "https://webvigil.invalid/",
@@ -460,7 +460,7 @@ CRLF_BODY_MARKER = "<html>wv{token}</html>"
 # --- XXE / XML external entity (spec 012, RF-04, opt-in) ---------------------------
 #
 # ``injection.xxe`` re-sends a POST point's body as XML. ``{file}`` is a ``file://`` URL,
-# ``{dtd}`` an in-scope URL for the parameter-entity probe (so the scope guard permits the
+# ``{dtd}`` an in-scope URL for the parameter-entity probe (so the scope rule permits the
 # fetch attempt; the *error* is the signal, not a successful fetch), ``{token}`` a marker.
 # File content is matched by ``TRAVERSAL_SIGNATURES``; a parser error by the regexes below.
 
