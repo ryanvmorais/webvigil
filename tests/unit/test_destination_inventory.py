@@ -182,6 +182,10 @@ class _DestinationVisitor(ast.NodeVisitor):
         self._scope: list[str] = []
 
     def _site(self) -> str:
+        """
+        Returns:
+            str: The current site, ``module:qualname`` (``<module>`` at the top level).
+        """
         return f"{self._module}:{'.'.join(self._scope) or '<module>'}"
 
     def _scoped(self, name: str, node: ast.AST) -> None:
@@ -209,6 +213,7 @@ class _DestinationVisitor(ast.NodeVisitor):
         self._scoped("<lambda>", node)
 
     def visit_Call(self, node: ast.Call) -> None:
+        """Record a rule call (an attribute named after a rule) and a network opening."""
         name = _called_name(node.func)
         if name in _RULES and isinstance(node.func, ast.Attribute):
             self._walk.rules.add(self._site())
@@ -217,6 +222,7 @@ class _DestinationVisitor(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_Compare(self, node: ast.Compare) -> None:
+        """Record a destination comparison outside the two rule modules."""
         if self._module not in RULE_MODULES and _compares_a_destination(node):
             self._walk.comparisons.add(self._site())
         self.generic_visit(node)

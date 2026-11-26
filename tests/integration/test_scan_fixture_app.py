@@ -24,8 +24,8 @@ inspects a result the same one (issue #101: the suite used to run ``("insecure",
 ``scan.fresh(...)`` bypasses the cache — a determinism test needs a second, independent run.
 ``scan.holder["app"]`` is the app of the scan the last call returned, so a test can read
 ``app.state.requests`` / ``csrf_log`` / ``post_log`` / ``auth_log`` / ``osv_providers`` /
-``osv_requests`` right after
-the call, and ``app.state.log_lines``, every log record the scan emitted at ``DEBUG`` and above.
+``osv_requests`` right after the call, and ``app.state.log_lines``, every log record the scan
+emitted at ``DEBUG`` and above.
 ``_OSV_JQUERY_RECORD`` + ``_osv_up`` / ``_osv_down`` stub the OSV.dev API.
 """
 
