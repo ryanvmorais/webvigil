@@ -216,18 +216,6 @@
     "expected": "a\\u202eb"
   },
   {
-    "name": "bidirectional embeddings and overrides: just outside U+2029, multi-line",
-    "input": "a\u2029b",
-    "one_line": false,
-    "expected": "a\u2029b"
-  },
-  {
-    "name": "bidirectional embeddings and overrides: just outside U+2029, one line",
-    "input": "a\u2029b",
-    "one_line": true,
-    "expected": "a\u2029b"
-  },
-  {
     "name": "bidirectional embeddings and overrides: just outside U+202F, multi-line",
     "input": "a\u202fb",
     "one_line": false,
@@ -370,6 +358,414 @@
     "input": "a\uff00b",
     "one_line": true,
     "expected": "a\uff00b"
+  },
+  {
+    "name": "soft hyphen: low edge U+00AD, multi-line",
+    "input": "a\u00adb",
+    "one_line": false,
+    "expected": "a\\xadb"
+  },
+  {
+    "name": "soft hyphen: low edge U+00AD, one line",
+    "input": "a\u00adb",
+    "one_line": true,
+    "expected": "a\\xadb"
+  },
+  {
+    "name": "soft hyphen: just outside U+00AC, multi-line",
+    "input": "a\u00acb",
+    "one_line": false,
+    "expected": "a\u00acb"
+  },
+  {
+    "name": "soft hyphen: just outside U+00AC, one line",
+    "input": "a\u00acb",
+    "one_line": true,
+    "expected": "a\u00acb"
+  },
+  {
+    "name": "soft hyphen: just outside U+00AE, multi-line",
+    "input": "a\u00aeb",
+    "one_line": false,
+    "expected": "a\u00aeb"
+  },
+  {
+    "name": "soft hyphen: just outside U+00AE, one line",
+    "input": "a\u00aeb",
+    "one_line": true,
+    "expected": "a\u00aeb"
+  },
+  {
+    "name": "combining grapheme joiner: low edge U+034F, multi-line",
+    "input": "a\u034fb",
+    "one_line": false,
+    "expected": "a\\u034fb"
+  },
+  {
+    "name": "combining grapheme joiner: low edge U+034F, one line",
+    "input": "a\u034fb",
+    "one_line": true,
+    "expected": "a\\u034fb"
+  },
+  {
+    "name": "combining grapheme joiner: just outside U+034E, multi-line",
+    "input": "a\u034eb",
+    "one_line": false,
+    "expected": "a\u034eb"
+  },
+  {
+    "name": "combining grapheme joiner: just outside U+034E, one line",
+    "input": "a\u034eb",
+    "one_line": true,
+    "expected": "a\u034eb"
+  },
+  {
+    "name": "combining grapheme joiner: just outside U+0350, multi-line",
+    "input": "a\u0350b",
+    "one_line": false,
+    "expected": "a\u0350b"
+  },
+  {
+    "name": "combining grapheme joiner: just outside U+0350, one line",
+    "input": "a\u0350b",
+    "one_line": true,
+    "expected": "a\u0350b"
+  },
+  {
+    "name": "Hangul choseong and jungseong fillers: low edge U+115F, multi-line",
+    "input": "a\u115fb",
+    "one_line": false,
+    "expected": "a\\u115fb"
+  },
+  {
+    "name": "Hangul choseong and jungseong fillers: low edge U+115F, one line",
+    "input": "a\u115fb",
+    "one_line": true,
+    "expected": "a\\u115fb"
+  },
+  {
+    "name": "Hangul choseong and jungseong fillers: high edge U+1160, multi-line",
+    "input": "a\u1160b",
+    "one_line": false,
+    "expected": "a\\u1160b"
+  },
+  {
+    "name": "Hangul choseong and jungseong fillers: high edge U+1160, one line",
+    "input": "a\u1160b",
+    "one_line": true,
+    "expected": "a\\u1160b"
+  },
+  {
+    "name": "Hangul choseong and jungseong fillers: just outside U+115E, multi-line",
+    "input": "a\u115eb",
+    "one_line": false,
+    "expected": "a\u115eb"
+  },
+  {
+    "name": "Hangul choseong and jungseong fillers: just outside U+115E, one line",
+    "input": "a\u115eb",
+    "one_line": true,
+    "expected": "a\u115eb"
+  },
+  {
+    "name": "Hangul choseong and jungseong fillers: just outside U+1161, multi-line",
+    "input": "a\u1161b",
+    "one_line": false,
+    "expected": "a\u1161b"
+  },
+  {
+    "name": "Hangul choseong and jungseong fillers: just outside U+1161, one line",
+    "input": "a\u1161b",
+    "one_line": true,
+    "expected": "a\u1161b"
+  },
+  {
+    "name": "Khmer inherent vowels: low edge U+17B4, multi-line",
+    "input": "a\u17b4b",
+    "one_line": false,
+    "expected": "a\\u17b4b"
+  },
+  {
+    "name": "Khmer inherent vowels: low edge U+17B4, one line",
+    "input": "a\u17b4b",
+    "one_line": true,
+    "expected": "a\\u17b4b"
+  },
+  {
+    "name": "Khmer inherent vowels: high edge U+17B5, multi-line",
+    "input": "a\u17b5b",
+    "one_line": false,
+    "expected": "a\\u17b5b"
+  },
+  {
+    "name": "Khmer inherent vowels: high edge U+17B5, one line",
+    "input": "a\u17b5b",
+    "one_line": true,
+    "expected": "a\\u17b5b"
+  },
+  {
+    "name": "Khmer inherent vowels: just outside U+17B3, multi-line",
+    "input": "a\u17b3b",
+    "one_line": false,
+    "expected": "a\u17b3b"
+  },
+  {
+    "name": "Khmer inherent vowels: just outside U+17B3, one line",
+    "input": "a\u17b3b",
+    "one_line": true,
+    "expected": "a\u17b3b"
+  },
+  {
+    "name": "Khmer inherent vowels: just outside U+17B6, multi-line",
+    "input": "a\u17b6b",
+    "one_line": false,
+    "expected": "a\u17b6b"
+  },
+  {
+    "name": "Khmer inherent vowels: just outside U+17B6, one line",
+    "input": "a\u17b6b",
+    "one_line": true,
+    "expected": "a\u17b6b"
+  },
+  {
+    "name": "Mongolian vowel separator: low edge U+180E, multi-line",
+    "input": "a\u180eb",
+    "one_line": false,
+    "expected": "a\\u180eb"
+  },
+  {
+    "name": "Mongolian vowel separator: low edge U+180E, one line",
+    "input": "a\u180eb",
+    "one_line": true,
+    "expected": "a\\u180eb"
+  },
+  {
+    "name": "Mongolian vowel separator: just outside U+180D, multi-line",
+    "input": "a\u180db",
+    "one_line": false,
+    "expected": "a\u180db"
+  },
+  {
+    "name": "Mongolian vowel separator: just outside U+180D, one line",
+    "input": "a\u180db",
+    "one_line": true,
+    "expected": "a\u180db"
+  },
+  {
+    "name": "Mongolian vowel separator: just outside U+180F, multi-line",
+    "input": "a\u180fb",
+    "one_line": false,
+    "expected": "a\u180fb"
+  },
+  {
+    "name": "Mongolian vowel separator: just outside U+180F, one line",
+    "input": "a\u180fb",
+    "one_line": true,
+    "expected": "a\u180fb"
+  },
+  {
+    "name": "line and paragraph separators: low edge U+2028, multi-line",
+    "input": "a\u2028b",
+    "one_line": false,
+    "expected": "a\\u2028b"
+  },
+  {
+    "name": "line and paragraph separators: low edge U+2028, one line",
+    "input": "a\u2028b",
+    "one_line": true,
+    "expected": "a\\u2028b"
+  },
+  {
+    "name": "line and paragraph separators: high edge U+2029, multi-line",
+    "input": "a\u2029b",
+    "one_line": false,
+    "expected": "a\\u2029b"
+  },
+  {
+    "name": "line and paragraph separators: high edge U+2029, one line",
+    "input": "a\u2029b",
+    "one_line": true,
+    "expected": "a\\u2029b"
+  },
+  {
+    "name": "line and paragraph separators: just outside U+2027, multi-line",
+    "input": "a\u2027b",
+    "one_line": false,
+    "expected": "a\u2027b"
+  },
+  {
+    "name": "line and paragraph separators: just outside U+2027, one line",
+    "input": "a\u2027b",
+    "one_line": true,
+    "expected": "a\u2027b"
+  },
+  {
+    "name": "Hangul filler: low edge U+3164, multi-line",
+    "input": "a\u3164b",
+    "one_line": false,
+    "expected": "a\\u3164b"
+  },
+  {
+    "name": "Hangul filler: low edge U+3164, one line",
+    "input": "a\u3164b",
+    "one_line": true,
+    "expected": "a\\u3164b"
+  },
+  {
+    "name": "Hangul filler: just outside U+3163, multi-line",
+    "input": "a\u3163b",
+    "one_line": false,
+    "expected": "a\u3163b"
+  },
+  {
+    "name": "Hangul filler: just outside U+3163, one line",
+    "input": "a\u3163b",
+    "one_line": true,
+    "expected": "a\u3163b"
+  },
+  {
+    "name": "Hangul filler: just outside U+3165, multi-line",
+    "input": "a\u3165b",
+    "one_line": false,
+    "expected": "a\u3165b"
+  },
+  {
+    "name": "Hangul filler: just outside U+3165, one line",
+    "input": "a\u3165b",
+    "one_line": true,
+    "expected": "a\u3165b"
+  },
+  {
+    "name": "halfwidth Hangul filler: low edge U+FFA0, multi-line",
+    "input": "a\uffa0b",
+    "one_line": false,
+    "expected": "a\\uffa0b"
+  },
+  {
+    "name": "halfwidth Hangul filler: low edge U+FFA0, one line",
+    "input": "a\uffa0b",
+    "one_line": true,
+    "expected": "a\\uffa0b"
+  },
+  {
+    "name": "halfwidth Hangul filler: just outside U+FF9F, multi-line",
+    "input": "a\uff9fb",
+    "one_line": false,
+    "expected": "a\uff9fb"
+  },
+  {
+    "name": "halfwidth Hangul filler: just outside U+FF9F, one line",
+    "input": "a\uff9fb",
+    "one_line": true,
+    "expected": "a\uff9fb"
+  },
+  {
+    "name": "halfwidth Hangul filler: just outside U+FFA1, multi-line",
+    "input": "a\uffa1b",
+    "one_line": false,
+    "expected": "a\uffa1b"
+  },
+  {
+    "name": "halfwidth Hangul filler: just outside U+FFA1, one line",
+    "input": "a\uffa1b",
+    "one_line": true,
+    "expected": "a\uffa1b"
+  },
+  {
+    "name": "interlinear annotation: low edge U+FFF9, multi-line",
+    "input": "a\ufff9b",
+    "one_line": false,
+    "expected": "a\\ufff9b"
+  },
+  {
+    "name": "interlinear annotation: low edge U+FFF9, one line",
+    "input": "a\ufff9b",
+    "one_line": true,
+    "expected": "a\\ufff9b"
+  },
+  {
+    "name": "interlinear annotation: high edge U+FFFB, multi-line",
+    "input": "a\ufffbb",
+    "one_line": false,
+    "expected": "a\\ufffbb"
+  },
+  {
+    "name": "interlinear annotation: high edge U+FFFB, one line",
+    "input": "a\ufffbb",
+    "one_line": true,
+    "expected": "a\\ufffbb"
+  },
+  {
+    "name": "interlinear annotation: just outside U+FFF8, multi-line",
+    "input": "a\ufff8b",
+    "one_line": false,
+    "expected": "a\ufff8b"
+  },
+  {
+    "name": "interlinear annotation: just outside U+FFF8, one line",
+    "input": "a\ufff8b",
+    "one_line": true,
+    "expected": "a\ufff8b"
+  },
+  {
+    "name": "interlinear annotation: just outside U+FFFC, multi-line",
+    "input": "a\ufffcb",
+    "one_line": false,
+    "expected": "a\ufffcb"
+  },
+  {
+    "name": "interlinear annotation: just outside U+FFFC, one line",
+    "input": "a\ufffcb",
+    "one_line": true,
+    "expected": "a\ufffcb"
+  },
+  {
+    "name": "tag characters: low edge U+E0000, multi-line",
+    "input": "a\udb40\udc00b",
+    "one_line": false,
+    "expected": "a\\U000e0000b"
+  },
+  {
+    "name": "tag characters: low edge U+E0000, one line",
+    "input": "a\udb40\udc00b",
+    "one_line": true,
+    "expected": "a\\U000e0000b"
+  },
+  {
+    "name": "tag characters: high edge U+E007F, multi-line",
+    "input": "a\udb40\udc7fb",
+    "one_line": false,
+    "expected": "a\\U000e007fb"
+  },
+  {
+    "name": "tag characters: high edge U+E007F, one line",
+    "input": "a\udb40\udc7fb",
+    "one_line": true,
+    "expected": "a\\U000e007fb"
+  },
+  {
+    "name": "tag characters: just outside U+DFFFF, multi-line",
+    "input": "a\udb3f\udfffb",
+    "one_line": false,
+    "expected": "a\udb3f\udfffb"
+  },
+  {
+    "name": "tag characters: just outside U+DFFFF, one line",
+    "input": "a\udb3f\udfffb",
+    "one_line": true,
+    "expected": "a\udb3f\udfffb"
+  },
+  {
+    "name": "tag characters: just outside U+E0080, multi-line",
+    "input": "a\udb40\udc80b",
+    "one_line": false,
+    "expected": "a\udb40\udc80b"
+  },
+  {
+    "name": "tag characters: just outside U+E0080, one line",
+    "input": "a\udb40\udc80b",
+    "one_line": true,
+    "expected": "a\udb40\udc80b"
   },
   {
     "name": "tab, multi-line",

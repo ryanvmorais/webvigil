@@ -43,7 +43,8 @@ from webvigil.core.output import SafeLogFilter
 # keeps its own lines.
 _RAW = re.compile(
     r"[\x00-\x09\x0b-\x1f\x7f-\x9f"
-    r"\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]"
+    r"\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180e\u200b-\u200f\u2028-\u202e\u2060-\u2064"
+    r"\u2066-\u2069\u3164\ufeff\uffa0\ufff9-\ufffb\U000e0000-\U000e007f]"
 )
 # A line that a hostile message would add if its line breaks were kept.
 _FORGED = "ERROR webvigil.api scan 999 completed"

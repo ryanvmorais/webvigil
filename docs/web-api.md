@@ -131,9 +131,10 @@ session token, and hashing and verifying a password, read them.
 
 **The JSON shows hidden characters as escapes.** A finding's evidence, a scan's error and every
 other value in a JSON response can hold what the scanned site sent. Besides the C0 controls, which
-any JSON encoder escapes, DEL, the C1 controls and the bidirectional and zero-width characters are
-written as `\uNNNN` escapes, as in the JSON report: a JSON parser reads the same value, and a
-terminal that prints the body does not act on them.
+any JSON encoder escapes, DEL, the C1 controls and the bidirectional and invisible characters
+(`INVISIBLE_CHARS` in `webvigil.core.text`) are written as `\uNNNN` escapes, a character past
+U+FFFF as the two escapes of its surrogate pair, as in the JSON report: a JSON parser reads the
+same value, and a terminal that prints the body does not act on them.
 
 **Reports are served contained.** A report is built from what the scanned site sent, and
 `GET /api/scans/{id}/report?format=html&download=false` shows the HTML one inline, from the API's

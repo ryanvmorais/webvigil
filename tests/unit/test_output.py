@@ -11,6 +11,7 @@ Nothing touches the network.
 
 from __future__ import annotations
 
+import json
 import logging
 import random
 import re
@@ -56,15 +57,21 @@ from webvigil.core.text import escape_json_controls, show_controls
 
 # Every character the neutralization escapes, line breaks and tabs included.
 _RAW_ANY = re.compile(
-    r"[\x00-\x09\x0b-\x1f\x7f-\x9f\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]"
+    r"[\x00-\x09\x0b-\x1f\x7f-\x9f"
+    r"\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180e\u200b-\u200f\u2028-\u202e\u2060-\u2064"
+    r"\u2066-\u2069\u3164\ufeff\uffa0\ufff9-\ufffb\U000e0000-\U000e007f]"
 )
 # The same, with tab and line feed allowed: what a multi-line profile may leave.
 _RAW_MULTI_LINE = re.compile(
-    r"[\x00-\x08\x0b-\x1f\x7f-\x9f\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]"
+    r"[\x00-\x08\x0b-\x1f\x7f-\x9f"
+    r"\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180e\u200b-\u200f\u2028-\u202e\u2060-\u2064"
+    r"\u2066-\u2069\u3164\ufeff\uffa0\ufff9-\ufffb\U000e0000-\U000e007f]"
 )
 # What the JSON profile escapes; the C0 controls are the JSON encoder's.
 _RAW_JSON = re.compile(
-    r"[\x7f-\x9f\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]"
+    r"[\x7f-\x9f"
+    r"\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180e\u200b-\u200f\u2028-\u202e\u2060-\u2064"
+    r"\u2066-\u2069\u3164\ufeff\uffa0\ufff9-\ufffb\U000e0000-\U000e007f]"
 )
 # ESC, a C1 control, a tab, a line feed, a CRLF, a bidirectional override, a zero-width space and
 # an unpaired surrogate.
@@ -194,6 +201,15 @@ def test_the_store_profile_is_the_field_types() -> None:
     adapter = TypeAdapter(Text)
     assert safe_text(_OVERSIZED, Sink.STORE) == adapter.validate_python(_OVERSIZED)
     assert safe_text(_OVERSIZED, Sink.STORE) == store_text(_OVERSIZED, TEXT_MAX_CHARS)
+
+
+def test_the_json_escape_writes_a_character_past_u_ffff_as_its_surrogate_pair() -> None:
+    # a tag character: JSON has no single escape for it, only the pair of its UTF-16 halves
+    backslash = "\\"
+    document = json.dumps({"k": "x" + chr(0xE0041) + "y"}, ensure_ascii=False)
+    escaped = escape_json_controls(document)
+    assert escaped == '{"k": "x' + backslash + "udb40" + backslash + 'udc41y"}'
+    assert json.loads(escaped) == json.loads(document)
 
 
 def test_the_json_profile_is_the_json_escape() -> None:

@@ -124,6 +124,15 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
   `https` target, it reached a URL in scope that the credentials may not reach. The built-in session
   tests checked the URL first; a check that did not would have sent them. The client now drops
   them there on every request, as it does with its own.
+- **More invisible characters from the scanned site are shown as escapes.** The soft hyphen, the
+  combining grapheme joiner, the Hangul fillers, the Khmer inherent vowels, the Mongolian vowel
+  separator, the line and paragraph separators, the interlinear annotation characters and the tag
+  characters (U+E0000 to U+E007F) went through as they were, so a title, a URL or a piece of
+  evidence could hide text or break a line where a viewer shows none. They are now escaped
+  wherever the bidirectional and zero-width characters are: the terminal, the Markdown, HTML and
+  JSON reports, the Web API's JSON and the dashboard, and a reference with one is never a link. A
+  character past U+FFFF is shown as `\UNNNNNNNN`, and the JSON writes it as the escapes of its
+  surrogate pair.
 
 ## [1.7.0] - 2026-11-24
 

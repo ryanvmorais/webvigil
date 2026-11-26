@@ -4,18 +4,30 @@
  */
 
 // Code point ranges, inclusive: the C0 controls (tab and line feed are handled apart), DEL and
-// the C1 range, the bidirectional marks, embeddings, overrides and isolates, and the zero-width
-// characters. Kept in step with `INVISIBLE_CHARS` in `src/webvigil/core/text.py`.
+// the C1 range, the bidirectional marks, embeddings, overrides and isolates, the zero-width
+// characters, the characters that show as nothing in most fonts (soft hyphen, combining
+// grapheme joiner, Hangul fillers, Khmer inherent vowels, Mongolian vowel separator,
+// interlinear annotation, tags) and the line and paragraph separators. Kept in step with
+// `INVISIBLE_CHARS` in `src/webvigil/core/text.py`.
 const HIDDEN_RANGES: readonly (readonly [number, number])[] = [
   [0x00, 0x08],
   [0x0b, 0x1f],
   [0x7f, 0x9f],
+  [0x00ad, 0x00ad],
+  [0x034f, 0x034f],
   [0x061c, 0x061c],
+  [0x115f, 0x1160],
+  [0x17b4, 0x17b5],
+  [0x180e, 0x180e],
   [0x200b, 0x200f],
-  [0x202a, 0x202e],
+  [0x2028, 0x202e],
   [0x2060, 0x2064],
   [0x2066, 0x2069],
+  [0x3164, 0x3164],
   [0xfeff, 0xfeff],
+  [0xffa0, 0xffa0],
+  [0xfff9, 0xfffb],
+  [0xe0000, 0xe007f],
 ];
 const TAB = 0x09;
 const LINE_FEED = 0x0a;
@@ -25,10 +37,12 @@ function isHidden(code: number, oneLine: boolean): boolean {
   return HIDDEN_RANGES.some(([low, high]) => code >= low && code <= high);
 }
 
+// As Python writes them: four digits after `\u` always end the escape, so a code point past
+// U+FFFF takes `\U` and eight.
 function escapeCode(code: number): string {
-  return code <= 0xff
-    ? `\\x${code.toString(16).padStart(2, "0")}`
-    : `\\u${code.toString(16).padStart(4, "0")}`;
+  if (code <= 0xff) return `\\x${code.toString(16).padStart(2, "0")}`;
+  if (code <= 0xffff) return `\\u${code.toString(16).padStart(4, "0")}`;
+  return `\\U${code.toString(16).padStart(8, "0")}`;
 }
 
 /**
@@ -50,8 +64,9 @@ export function hasHiddenCharacters(value: string): boolean {
  *
  * @param value - Text that may have come from the scanned site.
  * @param options - `oneLine` escapes tabs and line feeds too, for a title or a location.
- * @returns The value with each such character as `\xNN` (up to U+00FF) or `\uNNNN`; CRLF
- *   becomes LF first, so a body with Windows line endings reads as it did.
+ * @returns The value with each such character as `\xNN` (up to U+00FF), `\uNNNN` or, past
+ *   U+FFFF, `\UNNNNNNNN`; CRLF becomes LF first, so a body with Windows line endings reads as it
+ *   did.
  */
 export function showControls(value: string, options: { oneLine?: boolean } = {}): string {
   const oneLine = options.oneLine ?? false;
