@@ -17,6 +17,9 @@ the treatment that kind needs, the same from every caller.
   the text leaves nothing behind.
 - :func:`safe_traceback`, :class:`SafeLogFilter` and :func:`get_logger` give the log the same
   rule: each exception's text stays on its line, and the record is bounded.
+  :func:`portable_traceback` leaves the text out: the frames and types alone, for an output that
+  is shared (a check's error in the result) or that must not hold the message (the Web API's log
+  of an engine error).
 
 The bound runs before the neutralization in every profile, so a cut never splits an escape and
 the bound counts what the source held.
@@ -27,12 +30,16 @@ from __future__ import annotations
 import html
 import json
 import logging
+import os
 import re
+import sys
+import sysconfig
 import traceback
 from collections.abc import Callable, Iterable, Mapping
 from contextlib import suppress
 from dataclasses import dataclass
 from enum import StrEnum
+from pathlib import Path
 from typing import Final
 from urllib.parse import quote, quote_plus
 
@@ -214,7 +221,18 @@ def safe_traceback(exc: BaseException) -> str:
         str: The formatted chain, cut to :data:`~webvigil.core.bounded.URL_MAX_CHARS` at a line
             boundary and marked when it was cut.
     """
-    lines = _chain_lines(exc, set(), 0)
+    return _cut_lines(_chain_lines(exc, set(), 0))
+
+
+def _cut_lines(lines: Iterable[str]) -> str:
+    """
+    Args:
+        lines (Iterable[str]): A traceback's lines, without their line breaks.
+
+    Returns:
+        str: The lines joined, cut to :data:`~webvigil.core.bounded.URL_MAX_CHARS` at a line
+            boundary and marked when they were cut.
+    """
     kept: list[str] = []
     size = -1  # the joined length: a line break goes between lines, not before the first
     for line in lines:
@@ -224,6 +242,103 @@ def safe_traceback(exc: BaseException) -> str:
             break
         kept.append(line)
     return "\n".join(kept)
+
+
+def _local_prefixes() -> list[tuple[str, str]]:
+    """
+    Returns:
+        list[tuple[str, str]]: ``(directory + separator, replacement)`` for each place this
+            install lives (the directory that holds the ``webvigil`` package, the interpreter's
+            library paths and prefixes, then the user's home as ``~``), longest first so a
+            nested directory is cut before its parent.
+    """
+    paths = sysconfig.get_paths()
+    places = {str(Path(__file__).resolve().parents[2]), sys.prefix, sys.base_prefix}
+    places |= {paths[key] for key in ("purelib", "platlib", "stdlib", "platstdlib") if key in paths}
+    pairs = {(str(Path(place)) + os.sep, "") for place in places if place}
+    pairs.add((str(Path.home()) + os.sep, "~" + os.sep))
+    return sorted(pairs, key=lambda pair: len(pair[0]), reverse=True)
+
+
+def _typed_frames(exc: BaseException, seen: set[int], depth: int = 0) -> list[str]:
+    """
+    Format one exception and what it chained as frames and type names, without any message.
+
+    Args:
+        exc (BaseException): The exception to format.
+        seen (set[int]): The ids already formatted, since a chain can loop.
+        depth (int): How many links led here. Defaults to ``0``.
+
+    Returns:
+        list[str]: The lines, oldest exception first, stopping after
+            :data:`_MAX_CHAINED_EXCEPTIONS` links.
+    """
+    if depth >= _MAX_CHAINED_EXCEPTIONS or id(exc) in seen:
+        return []
+    seen.add(id(exc))
+    lines: list[str] = []
+    linked = exc.__cause__ or (None if exc.__suppress_context__ else exc.__context__)
+    if linked is not None and (earlier := _typed_frames(linked, seen, depth + 1)):
+        lines += [*earlier, "\nThe above exception led to the one below:\n\n"]
+    lines.append("Traceback (most recent call last):\n")
+    lines += traceback.format_tb(exc.__traceback__)
+    kind = type(exc)
+    prefix = "" if kind.__module__ == "builtins" else f"{kind.__module__}."
+    lines.append(f"{prefix}{kind.__qualname__}\n")
+    if isinstance(exc, BaseExceptionGroup):
+        for inner in exc.exceptions:
+            lines += _typed_frames(inner, seen, depth + 1)
+    return lines
+
+
+def portable_traceback(exc: BaseException) -> str:
+    r"""
+    Format an exception without the machine's paths or any message.
+
+    A check's traceback is stored in ``ScanResult.errors`` and travels with the JSON report,
+    which gets shared; the Web API logs an engine error with it (:data:`PORTABLE_TRACEBACK`), so
+    the server log says where the error happened and not what it said. The install path names
+    the OS user (``/home/<name>/...``), so each frame keeps only its path inside the install
+    (``webvigil/checks/...``, ``httpx2/...``). A frame still absolute after that (a plugin in a
+    directory outside the install and the home, such as ``D:\work\plugin`` on Windows) keeps
+    only its file name. Exception messages are left out, chained ones included: a library's can
+    quote a credential.
+
+    Args:
+        exc (BaseException): The exception, with its traceback.
+
+    Returns:
+        str: The frames and exception types, chained exceptions included, with local
+            directories cut.
+    """
+    text = "".join(_typed_frames(exc, set()))
+    for prefix, replacement in _local_prefixes():
+        text = text.replace(prefix, replacement)
+    return _FRAME_FILE_RE.sub(_frame_file_name, text)
+
+
+# How many chained exceptions a portable traceback shows: enough for a real chain, and a long or
+# self-referencing one cannot exhaust the stack of the handler that records the failure.
+_MAX_CHAINED_EXCEPTIONS = 16
+# A traceback frame line, ``  File "<path>", line N``; the path is the second group.
+_FRAME_FILE_RE = re.compile(r'^(\s*File ")([^"\n]+)(", line )', re.MULTILINE)
+# An absolute path in either OS's form: ``/x``, ``\x``, ``C:\x`` or ``C:/x``.
+_ABSOLUTE_PATH_RE = re.compile(r"^(?:[A-Za-z]:)?[\\/]")
+
+
+def _frame_file_name(match: re.Match[str]) -> str:
+    """
+    Args:
+        match (re.Match[str]): A frame line matched by ``_FRAME_FILE_RE``.
+
+    Returns:
+        str: The line unchanged when its path is relative, else with the path cut to its
+            file name.
+    """
+    head, path, tail = match.groups()
+    if _ABSOLUTE_PATH_RE.match(path):
+        path = re.split(r"[\\/]", path)[-1]
+    return f"{head}{path}{tail}"
 
 
 # ---------------------------------------------------------------------------
@@ -459,6 +574,11 @@ def _cut_points(text: str, *, cut_edges: bool) -> tuple[set[int], set[int]]:
 # Log
 # ---------------------------------------------------------------------------
 
+# The ``extra`` key that gives a record a :func:`portable_traceback` in place of an exception: the
+# filter makes it the record's ``exc_text``, which every formatter appends, so the log shows where
+# an error happened without the exception, whose message a handler would print.
+PORTABLE_TRACEBACK: Final = "webvigil_portable_traceback"
+
 
 class SafeLogFilter(logging.Filter):
     """
@@ -479,8 +599,9 @@ class SafeLogFilter(logging.Filter):
             bool: Always ``True``: no record is dropped. The record's message is rendered,
                 treated and stored with no arguments left, and an exception's traceback is
                 rebuilt by :func:`safe_traceback` into ``exc_text``, which every formatter uses
-                when it is set. A record whose message cannot be rendered is left alone, so
-                :mod:`logging` reports its own formatting error.
+                when it is set; a :data:`PORTABLE_TRACEBACK` given in ``extra`` becomes
+                ``exc_text`` as it is, bounded the same way. A record whose message cannot be
+                rendered is left alone, so :mod:`logging` reports its own formatting error.
         """
         try:
             message = record.getMessage()
@@ -488,7 +609,10 @@ class SafeLogFilter(logging.Filter):
             return True
         record.msg = safe_text(message, Sink.LOG, one_line=True)
         record.args = ()
-        if record.exc_info and record.exc_info[1] is not None:
+        portable = record.__dict__.get(PORTABLE_TRACEBACK)
+        if isinstance(portable, str):
+            record.exc_text = _cut_lines(portable.splitlines())
+        elif record.exc_info and record.exc_info[1] is not None:
             record.exc_text = safe_traceback(record.exc_info[1])
         return True
 

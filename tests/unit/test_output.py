@@ -37,6 +37,7 @@ from webvigil.core.findings import EvidenceItem
 from webvigil.core.output import (
     CUT_MARKERS,
     MIN_SECRET_LENGTH,
+    PORTABLE_TRACEBACK,
     REDACTED,
     TERMINAL_MAX_CHARS,
     Redactor,
@@ -44,6 +45,7 @@ from webvigil.core.output import (
     Sink,
     _spellings,
     get_logger,
+    portable_traceback,
     safe_text,
     safe_traceback,
 )
@@ -724,6 +726,53 @@ def test_the_filter_skips_an_empty_exc_info() -> None:
     raised = logging.LogRecord("x", logging.ERROR, __file__, 1, "m", (), (ValueError, error, None))
     SafeLogFilter().filter(raised)
     assert raised.exc_text == "ValueError: v"
+
+
+def test_a_portable_traceback_is_the_records_traceback_without_the_message(
+    logger: logging.Logger, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The frames and the type are printed after the message; the exception's text is not."""
+    text = "the secret text\nINFO forged record"  # off the raise line, which a frame quotes
+    try:
+        raise RuntimeError(text)
+    except RuntimeError as exc:
+        portable = portable_traceback(exc)
+    with caplog.at_level(logging.DEBUG):
+        logger.error("scan 1 failed (RuntimeError)", extra={PORTABLE_TRACEBACK: portable})
+    (record,) = caplog.records
+    assert record.exc_info is None
+    assert record.exc_text == portable.rstrip("\n")
+    lines = logging.Formatter("%(message)s").format(record).splitlines()
+    assert lines[0] == "scan 1 failed (RuntimeError)"
+    assert lines[1] == "Traceback (most recent call last):"
+    assert lines[-1] == "RuntimeError"
+    assert "secret" not in caplog.text and "forged" not in caplog.text
+
+
+def test_a_portable_traceback_wins_over_an_exception_and_is_bounded(
+    logger: logging.Logger, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Given with an exception, the portable one is kept; past the bound it is cut by lines."""
+    long = "\n".join(f'  File "frame_{n}.py", line {n}' for n in range(URL_MAX_CHARS // 20))
+    with caplog.at_level(logging.DEBUG):
+        try:
+            raise ValueError("the message")
+        except ValueError:
+            logger.exception("failed", extra={PORTABLE_TRACEBACK: long})
+    (record,) = caplog.records
+    assert record.exc_text is not None and "the message" not in record.exc_text
+    assert record.exc_text.endswith("\n" + TRUNCATION_MARKER)
+    assert len(record.exc_text) - len("\n" + TRUNCATION_MARKER) <= URL_MAX_CHARS
+    assert record.exc_text.startswith('  File "frame_0.py", line 0\n')
+    # positive control: a value that is not text is ignored, and the exception is rebuilt
+    with caplog.at_level(logging.DEBUG):
+        try:
+            raise ValueError("the message")
+        except ValueError:
+            logger.exception("failed", extra={PORTABLE_TRACEBACK: 7})
+    rebuilt = caplog.records[-1]
+    assert rebuilt.exc_info is not None and rebuilt.exc_info[1] is not None
+    assert rebuilt.exc_text == safe_traceback(rebuilt.exc_info[1])
 
 
 def test_get_logger_attaches_one_filter_and_keeps_level_and_handlers() -> None:

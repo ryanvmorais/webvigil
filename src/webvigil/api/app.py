@@ -36,6 +36,29 @@ from webvigil.core.output import Sink, get_logger, safe_text
 _TREATED_LIBRARY_LOGGERS = ("uvicorn.error", "httpx2")
 
 
+class EscapedJSONResponse(JSONResponse):
+    r"""
+    The API's JSON, with what an encoder writes raw shown as escapes (spec 027).
+
+    The encoder escapes the C0 controls and leaves DEL, the C1 controls and the bidirectional and
+    zero-width characters as they are, so a finding's evidence or a scan's error read with
+    ``curl`` in a terminal could act on it. Each becomes a ``\uNNNN`` escape, as in the JSON
+    report: the same document to a JSON parser, so the dashboard reads the same values. A ``422``
+    keeps its own response, whose messages are already shown on one line (spec 025).
+    """
+
+    def render(self, content: object) -> bytes:
+        """
+        Args:
+            content (object): The response's content, as FastAPI hands it over.
+
+        Returns:
+            bytes: The UTF-8 JSON document, escaped.
+        """
+        document = super().render(content).decode("utf-8")
+        return safe_text(document, Sink.JSON).encode("utf-8")
+
+
 async def _validation_failed(_request: Request, exc: Exception) -> JSONResponse:
     """
     Answer a request whose input failed validation, on every endpoint.
@@ -144,6 +167,7 @@ def create_app(
         lifespan=lifespan,
         docs_url=None,
         redoc_url=None,
+        default_response_class=EscapedJSONResponse,
     )
     install_docs(app)
     app.add_exception_handler(RequestValidationError, _validation_failed)

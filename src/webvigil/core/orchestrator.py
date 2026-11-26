@@ -9,14 +9,8 @@ checks concurrently against a shared context → dedupe findings → assemble a
 from __future__ import annotations
 
 import asyncio
-import os
-import re
-import sys
-import sysconfig
-import traceback
 from collections.abc import Sequence
 from datetime import UTC, datetime
-from pathlib import Path
 
 from webvigil import __version__
 from webvigil.auth.login import Authenticator, Credentials
@@ -45,6 +39,7 @@ from webvigil.core.errors import (
     WebVigilError,
 )
 from webvigil.core.findings import Category, Finding, ScanMode
+from webvigil.core.output import portable_traceback
 from webvigil.core.result import CheckError, ScanMetadata, ScanResult
 from webvigil.core.secrets import collect_secrets
 from webvigil.core.target import Target
@@ -880,7 +875,7 @@ class Orchestrator:
                     CheckError(
                         check_id=check_cls.id,
                         message=_check_error_message(exc),
-                        traceback=_portable_traceback(exc),
+                        traceback=portable_traceback(exc),
                     )
                 )
                 return
@@ -943,22 +938,6 @@ def _dedupe(findings: Sequence[Finding]) -> tuple[Finding, ...]:
     return tuple(unique)
 
 
-def _local_prefixes() -> list[tuple[str, str]]:
-    """
-    Returns:
-        list[tuple[str, str]]: ``(directory + separator, replacement)`` for each place this
-            install lives (the directory that holds the ``webvigil`` package, the interpreter's
-            library paths and prefixes, then the user's home as ``~``), longest first so a
-            nested directory is cut before its parent.
-    """
-    paths = sysconfig.get_paths()
-    places = {str(Path(__file__).resolve().parents[2]), sys.prefix, sys.base_prefix}
-    places |= {paths[key] for key in ("purelib", "platlib", "stdlib", "platstdlib") if key in paths}
-    pairs = {(str(Path(place)) + os.sep, "") for place in places if place}
-    pairs.add((str(Path.home()) + os.sep, "~" + os.sep))
-    return sorted(pairs, key=lambda pair: len(pair[0]), reverse=True)
-
-
 def _check_error_message(exc: Exception) -> str:
     """
     Args:
@@ -971,82 +950,3 @@ def _check_error_message(exc: Exception) -> str:
             bytes, and the result is shared; the check id, the type and the frames locate it.
     """
     return str(exc) if isinstance(exc, WebVigilError) else type(exc).__name__
-
-
-def _typed_frames(exc: BaseException, seen: set[int], depth: int = 0) -> list[str]:
-    """
-    Format one exception and what it chained as frames and type names, without any message.
-
-    Args:
-        exc (BaseException): The exception to format.
-        seen (set[int]): The ids already formatted, since a chain can loop.
-        depth (int): How many links led here. Defaults to ``0``.
-
-    Returns:
-        list[str]: The lines, oldest exception first, stopping after
-            :data:`_MAX_CHAINED_EXCEPTIONS` links.
-    """
-    if depth >= _MAX_CHAINED_EXCEPTIONS or id(exc) in seen:
-        return []
-    seen.add(id(exc))
-    lines: list[str] = []
-    linked = exc.__cause__ or (None if exc.__suppress_context__ else exc.__context__)
-    if linked is not None and (earlier := _typed_frames(linked, seen, depth + 1)):
-        lines += [*earlier, "\nThe above exception led to the one below:\n\n"]
-    lines.append("Traceback (most recent call last):\n")
-    lines += traceback.format_tb(exc.__traceback__)
-    kind = type(exc)
-    prefix = "" if kind.__module__ == "builtins" else f"{kind.__module__}."
-    lines.append(f"{prefix}{kind.__qualname__}\n")
-    if isinstance(exc, BaseExceptionGroup):
-        for inner in exc.exceptions:
-            lines += _typed_frames(inner, seen, depth + 1)
-    return lines
-
-
-def _portable_traceback(exc: BaseException) -> str:
-    r"""
-    Format a check's exception for the result without the machine's paths or any message.
-
-    The traceback is stored in ``ScanResult.errors`` and travels with the JSON report, which
-    gets shared. The install path names the OS user (``/home/<name>/...``), so each frame
-    keeps only its path inside the install (``webvigil/checks/...``, ``httpx2/...``). A frame
-    still absolute after that (a plugin in a directory outside the install and the home,
-    such as ``D:\work\plugin`` on Windows) keeps only its file name. Exception messages are
-    left out, chained ones included: a library's can quote a credential.
-
-    Args:
-        exc (BaseException): The exception a check raised.
-
-    Returns:
-        str: The frames and exception types, chained exceptions included, with local
-            directories cut.
-    """
-    text = "".join(_typed_frames(exc, set()))
-    for prefix, replacement in _local_prefixes():
-        text = text.replace(prefix, replacement)
-    return _FRAME_FILE_RE.sub(_frame_file_name, text)
-
-
-# How many chained exceptions a check error shows: enough for a real chain, and a long or
-# self-referencing one cannot exhaust the stack of the handler that records the failure.
-_MAX_CHAINED_EXCEPTIONS = 16
-# A traceback frame line, ``  File "<path>", line N``; the path is the second group.
-_FRAME_FILE_RE = re.compile(r'^(\s*File ")([^"\n]+)(", line )', re.MULTILINE)
-# An absolute path in either OS's form: ``/x``, ``\x``, ``C:\x`` or ``C:/x``.
-_ABSOLUTE_PATH_RE = re.compile(r"^(?:[A-Za-z]:)?[\\/]")
-
-
-def _frame_file_name(match: re.Match[str]) -> str:
-    """
-    Args:
-        match (re.Match[str]): A frame line matched by ``_FRAME_FILE_RE``.
-
-    Returns:
-        str: The line unchanged when its path is relative, else with the path cut to its
-            file name.
-    """
-    head, path, tail = match.groups()
-    if _ABSOLUTE_PATH_RE.match(path):
-        path = re.split(r"[\\/]", path)[-1]
-    return f"{head}{path}{tail}"

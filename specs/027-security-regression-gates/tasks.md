@@ -206,25 +206,29 @@ A failure the suite finds that exposes a credential in a released version stops 
 
 ## Stage 5 — The API harness
 
-- [ ] `tests/failure/faults.py`: `failing_store`, `failing_claim` and `raising_orchestrator`. — RF-02
-- [ ] `tests/failure/outputs.py`: `Outputs` for the API (every response of the scan, findings, report and list
+- [x] `tests/failure/faults.py`: `failing_store`, `failing_claim` and `raising_orchestrator`. — RF-02
+- [x] `tests/failure/outputs.py`: `Outputs` for the API (every response of the scan, findings, report and list
   routes, every table row as text, the server log). — RF-03, RF-04
-- [ ] `tests/failure/test_api.py`: the results of Stage 4 through a stand-in orchestrator and the real `ScanRunner`,
+- [x] `tests/failure/test_api.py`: the results of Stage 4 through a stand-in orchestrator and the real `ScanRunner`,
   with credential markers in the scan's options; the orchestrator raising a `RuntimeError` and a `WebVigilError`, the
   store and the claim raising `OperationalError`; each with the design's assertions and the positive controls. —
-  RF-02, RF-03, RF-04, RF-05, ADR-3
-- [ ] The fixes the API harness forces, each with its run seen failing on `main` first:
+  RF-02, RF-03, RF-04, RF-05, ADR-3. The Web API takes no scan credential, so its markers are the account's
+  (deviation 20); the six full runs (deviation 21); the proxy lookup has a run too (deviation 25).
+- [x] The fixes the API harness forces, each with its run seen failing on `main` first:
   - `src/webvigil/core/output.py`: the portable traceback, moved from `core/orchestrator.py`;
   - `src/webvigil/api/runner.py`: `scan <id> failed (<type>)` with the portable traceback in place of
-    `logger.exception`;
-  - anything else the runs find.
+    `logger.exception` (deviation 24);
+  - anything else the runs find: `src/webvigil/api/app.py` escapes the hidden characters of the API's JSON
+    (deviation 22).
 
   — RF-04, ADR-4
-- [ ] Apply the design's sabotage and watch each test fail: the runner back to `logger.exception`, and the stand-in
+- [x] Apply the design's sabotage and watch each test fail: the runner back to `logger.exception`, and the stand-in
   orchestrator returning a result without the markers (the controls go red). — RF-15
-- [ ] Mutation testing in batch over the changed functions of `api/runner.py`. — RNF-06
-- [ ] `CHANGELOG.md` `[Unreleased]`, **Changed:** the server log line of an engine error. — RNF-02
-- [ ] Quality gate.
+- [x] Mutation testing in batch over the changed functions of `api/runner.py`. — RNF-06. With the log filter and
+  the API's JSON response: 15 mutants, 15 killed.
+- [x] `CHANGELOG.md` `[Unreleased]`, **Changed:** the server log line of an engine error. — RNF-02. And the escapes
+  of the API's JSON.
+- [x] Quality gate. — 3903 passed, 4 skipped (Windows), 123 s with coverage, 98 %.
 
 ## Stage 6 — Cross-check and documentation
 

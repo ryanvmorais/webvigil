@@ -644,6 +644,39 @@ request.
 19. **`failing_osv` is the fault transport with its stage fixed to `osv`**, not a `MockTransport`
     handler, and the fault transport takes the set of stages that fail in the run. `attributed`
     takes the classes it wraps, so a test can wrap throwaway ones.
+20. **The Web API's credential markers are its own (RF-03).** The tasks put credential markers in
+    the scan's options. The Web API takes no credential for a scan: `ScanCreate` has no such field,
+    and a target with one is refused (spec `024`). Its markers are the account's password, the
+    signing key of its sessions and the session token the login issued, each with its control (the
+    login with the password, the token verified with the key); the scan harness's three come in the
+    result, with the session ids the fixture issued.
+21. **The API harness takes the six full runs (ADR-3, RNF-06).** Each full run holds a failure of
+    every pass the scan goes on after, with the echo check's quoted server error among them. Through
+    the API a result costs about 0.6 s with coverage on a developer machine, so the thirty runs
+    alone would take the failure suite past its budget; their stages end the scan or leave one
+    warning, which the CLI harness already searches.
+22. **The API's JSON escapes hidden characters (RF-04, ADR-4).** The design searches every output a
+    failure may reach for raw characters. The database is checked for the bound only: a stored value
+    is bounded and neutralized where it is shown (spec `025`, the `STORE` profile). The API's JSON is
+    checked like a report, and its first run found FastAPI's encoder writing the bidirectional and
+    zero-width characters of a finding's evidence and of a scan's error raw (JSON escapes only the
+    C0 controls). The API's default response, `EscapedJSONResponse` in `api/app.py`, passes the
+    document through `safe_text(Sink.JSON)`, as the JSON report does; a parser reads the same
+    values. The `422` keeps its own response, whose messages are already shown on one line.
+23. **The log collector leaves the exception object out (RF-03).** `LogLines` keeps every attribute
+    of a record but `exc_info`: every formatter writes `exc_text`, which the project's filter
+    rebuilt, and the object's `repr` repeated the whole message, past every bound, where no handler
+    prints it.
+24. **The portable traceback reaches the record through `extra` (RF-04, ADR-4).** The runner logs
+    `scan <id> failed (<type>)` with no `exc_info`, and the filter makes the `PORTABLE_TRACEBACK`
+    value the record's `exc_text`, cut as `safe_traceback` cuts. With `exc_info` attached, a handler
+    that formats the exception itself, not `exc_text`, would print the message again.
+25. **The proxy lookup has a run (RF-02, RF-06).** The `api-proxies` row (deviation 9) gets the run
+    the tasks left out: the resolver raises with the marker on the login. The login works, the
+    forwarded address is not believed, and the text reaches no output. It passed on `main`.
+26. **A numbered output keeps its family (RF-04).** `family` kept the number `Outputs.add` gives a
+    second output of a name with no colon (`server-log#5`), so the second record of the log could
+    not hold what the first may. It now drops the number, and a test keeps it.
 
 ## Implementation notes
 
@@ -735,3 +768,24 @@ request.
   handlers, the type names and the exit code), 19 killed, and every new run killed at least one. The two
   left survive the whole suite and are guards this stage does not change: `_fingerprint` and
   `_probe_disclosure` run with no check selected that reads their result.
+- **Stage 5.** The API harness is 11 runs: the six full runs' results through the real runner and
+  every route, and five failures of its own (the engine raising a `RuntimeError` and a
+  `WebVigilError`, the store and the claim raising `OperationalError`, the proxy name that does not
+  resolve). With two more tests of the searches, the failure suite is 86 tests, about 37 s with
+  coverage on a developer machine against 32 s without the API harness. On CI, with coverage, it
+  takes about 18.7 s (3.12), 13.5 s (3.13), 19.0 s (3.14) and 18.1 s (3.15) on Linux, plus under
+  0.6 s for the last ten checks of the table, read from the progress line that holds only failure
+  tests and the `--durations` of the four full runs on the line before; within the 20 s budget, so
+  no two kinds share a run. On `main`, the `RuntimeError`
+  run failed: the server log held the exception's message. Once the API's JSON was searched like a
+  report, the full run whose echo check got a server error and the `WebVigilError` run failed on
+  the raw bidirectional and zero-width characters of the JSON (deviation 22). Every other run passed
+  on `main`. Each test failed once with the line it guards broken (twelve sabotages): the stand-in
+  returning a result without the markers (the controls go red), the loop stopping after a failed
+  claim, the claim and store seams that never raise, the proxy lookup letting the resolver's error
+  through, `family` keeping the number, the stored outputs checked for raw characters and not checked
+  at all, the log collector keeping `exc_info`, the API's default response back to FastAPI's, and its
+  render without the escapes. Mutation over `_run_scan`, `SafeLogFilter.filter` and `_cut_lines`: 13
+  mutants (all by hand: the log call, its type name and traceback, the stored errors, the store's
+  log, the filter's branches and the cut), 13 killed, with the two of the JSON response above, 15 of
+  15. The two runs no mutant failed, the full runs and the claim, each failed under a sabotage.

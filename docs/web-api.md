@@ -129,6 +129,12 @@ cut at 1 Ki characters, with control, bidirectional and zero-width characters sh
 secrets that a log line, a traceback or an error shows as `[redacted]`; only signing and checking a
 session token, and hashing and verifying a password, read them.
 
+**The JSON shows hidden characters as escapes.** A finding's evidence, a scan's error and every
+other value in a JSON response can hold what the scanned site sent. Besides the C0 controls, which
+any JSON encoder escapes, DEL, the C1 controls and the bidirectional and zero-width characters are
+written as `\uNNNN` escapes, as in the JSON report: a JSON parser reads the same value, and a
+terminal that prints the body does not act on them.
+
 **Reports are served contained.** A report is built from what the scanned site sent, and
 `GET /api/scans/{id}/report?format=html&download=false` shows the HTML one inline, from the API's
 own origin. The template escapes everything, so nothing is known to be wrong; these headers are what
@@ -181,7 +187,7 @@ state, at most 100 of them (a new scan beyond that gets `429`). Cancelling a run
 and stores no partial findings; once its result is in and being written, a cancel gets `409` and
 the scan ends `completed`. If the process dies mid-scan, that scan is marked `interrupted` on the
 next start and the queue resumes. A scan that crashes is `failed` with the error `internal error`;
-the details are in the server log, not in the API.
+the server log says where, not the API.
 
 **What the server log shows.** A crash can carry what the scanned site sent, so the API's own
 loggers, uvicorn's `uvicorn.error` and the HTTP client's `httpx2` pass every record through one
@@ -189,8 +195,11 @@ filter. The message is cut at 16 Ki characters and kept on one line, with contro
 and zero-width characters shown as escapes. A traceback is rebuilt the same way: the frames as
 Python writes them, each exception's message on a line of its own, up to 64 Ki characters in all.
 The filter changes neither the level nor the handlers, so the logging uvicorn or the operator set
-up still applies. A database error names the failed statement but never its values, so finding
-text and password hashes stay out of the log.
+up still applies. A scan whose engine raised an error nothing expects is logged as
+`scan <id> failed (<type>)` with the frames and the exception types, the paths cut to the install
+and no message, as a check's error appears in a report: that message may quote anything the scan
+held. A database error names the failed statement but never its values, so finding text and
+password hashes stay out of the log.
 
 ## Active Mode
 

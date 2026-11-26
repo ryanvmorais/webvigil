@@ -134,8 +134,9 @@ SENSITIVE_POINTS: Final[Mapping[str, str]] = {
     "webvigil.api.runner:ScanRunner._run_scan error log-traceback:logger.exception": (
         _LOG_TRACEBACK
     ),
-    "webvigil.api.runner:ScanRunner._run_scan error log-traceback:logger.exception#2": (
-        _LOG_TRACEBACK
+    "webvigil.api.runner:ScanRunner._run_scan error log:logger.error": (
+        "the scan id and the exception's type name; the traceback is portable_traceback, the "
+        "frames and types without any message (spec 027)"
     ),
     "webvigil.api.runner:ScanRunner._claim_next_queued sql session.exec": _SQLMODEL,
     "webvigil.api.runner:ScanRunner._load_config message LookupError": "the scan id, an integer",

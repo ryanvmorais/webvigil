@@ -2,8 +2,9 @@
 Every output of a run, and the two searches over it (spec 027, RF-03, RF-04).
 
 :class:`Outputs` holds each output a user or an operator can see, by name: ``stdout``,
-``stderr``, ``report:<format>``, ``log``; the API harness adds its own. The part of a name before
-the colon is its family, which :data:`ALLOWED` and :func:`bound_of` read.
+``stderr``, ``report:<format>``, ``log``; the API harness adds ``api-body:<route>``,
+``api-header:<route>``, ``db:<table>`` and ``server-log``. The part of a name before the colon is
+its family, which :data:`ALLOWED`, :data:`STORED` and :func:`bound_of` read.
 
 :func:`credential_hits` must come back empty. :func:`failure_hits` names every output a failure
 marker reached; each must be one its kind may reach, and there the text must be cut at its bound
@@ -20,6 +21,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final
 
+import httpx2
+from fastapi.testclient import TestClient
+from sqlalchemy import Engine
+from sqlmodel import SQLModel
 from typer.testing import CliRunner, Result
 
 from tests.failure.table import PAD_CHAR, Kind
@@ -36,6 +41,11 @@ ALLOWED: Final[Mapping[Kind, frozenset[str]]] = {
     Kind.SERVER_ERROR: frozenset({"report", "api-body", "db"}),
     Kind.DB: frozenset({"server-log"}),
 }
+
+# The outputs that hold a value as it was stored: the database. A stored value is bounded, and
+# neutralized where it is shown (spec 025, the ``STORE`` profile), so only the bound is checked
+# there.
+STORED: Final = frozenset({"db"})
 
 # A raw control, bidirectional or zero-width character: tab and line feed are layout.
 _RAW_CONTROL_RE: Final = re.compile(rf"[\x00-\x08\x0b-\x1f\x7f-\x9f{INVISIBLE_CHARS}]")
@@ -69,9 +79,10 @@ def family(name: str) -> str:
         name (str): An output's name.
 
     Returns:
-        str: Its family: the part before the first colon.
+        str: Its family: the part before the first colon, without the number
+            :meth:`Outputs.add` gives a second output of the same name (``log#2``).
     """
-    return name.split(":", 1)[0]
+    return name.split(":", 1)[0].split("#", 1)[0]
 
 
 def bound_of(name: str) -> int:
@@ -112,7 +123,9 @@ class Outputs:
 class LogLines(logging.Handler):
     """
     Keeps each record of :data:`OUTPUT_LOGGERS` as text: the message, its arguments and every
-    attribute, the traceback and any ``extra`` included.
+    attribute, the traceback and any ``extra`` included. The exception object itself is left out:
+    every formatter writes ``exc_text``, which the project's log filter rebuilt from it, so the
+    exception's own ``repr`` is never an output.
 
     Attributes:
         lines (list[str]): One entry per record, in the order they were emitted.
@@ -133,7 +146,8 @@ class LogLines(logging.Handler):
         if not is_output_logger(record.name):
             self.other += 1
             return
-        self.lines.append(f"{self.format(record)} {record.args!r} {vars(record)!r}")
+        attributes = {key: value for key, value in vars(record).items() if key != "exc_info"}
+        self.lines.append(f"{self.format(record)} {record.args!r} {attributes!r}")
 
 
 @contextmanager
@@ -188,6 +202,77 @@ def cli_outputs(runner: CliRunner, result: Result, report: Path, logs: LogLines)
                 outputs.add("stderr:report", again.stderr)
     for line in logs.lines:
         outputs.add("log", line)
+    return outputs
+
+
+# The report formats the Web API serves.
+_API_FORMATS: Final = ("json", "sarif", "html", "md")
+
+
+def _headers(response: httpx2.Response) -> str:
+    """
+    Args:
+        response (httpx2.Response): A response of the Web API.
+
+    Returns:
+        str: Every header, one per line.
+    """
+    return "\n".join(f"{key}: {value}" for key, value in response.headers.multi_items())
+
+
+def _response(outputs: Outputs, route: str, response: httpx2.Response) -> None:
+    """
+    Args:
+        outputs (Outputs): Where the response goes.
+        route (str): The route's name, after the family.
+        response (httpx2.Response): The route's response.
+    """
+    outputs.add(f"api-header:{route}", _headers(response))
+    outputs.add(f"api-body:{route}", response.text)
+
+
+def api_outputs(client: TestClient, scan_id: int, engine: Engine, logs: LogLines) -> Outputs:
+    """
+    Collect every output of one scan the Web API ran.
+
+    Args:
+        client (TestClient): A client logged in to the API.
+        scan_id (int): The scan.
+        engine (Engine): An engine over the API's database.
+        logs (LogLines): The records kept while it ran.
+
+    Returns:
+        Outputs: The body and headers of the scan, findings (every page), check-count and list
+            routes; the four reports when the scan has results, each a ``report:<format>``
+            output like the CLI's; every row of every table; the server log.
+    """
+    outputs = Outputs()
+    scan = client.get(f"/api/scans/{scan_id}")
+    _response(outputs, "scan", scan)
+    cursor: str | None = None
+    while True:
+        params = {"limit": "200", **({"cursor": cursor} if cursor else {})}
+        page = client.get(f"/api/scans/{scan_id}/findings", params=params)
+        _response(outputs, "findings", page)
+        cursor = page.json().get("next_cursor")
+        if not cursor:
+            break
+    _response(outputs, "checks", client.get(f"/api/scans/{scan_id}/findings/checks"))
+    _response(outputs, "list", client.get("/api/scans", params={"limit": "100"}))
+    for fmt in _API_FORMATS:
+        report = client.get(f"/api/scans/{scan_id}/report", params={"format": fmt})
+        if report.status_code == 200:
+            outputs.add(f"report:{fmt}", report.text)
+            outputs.add(f"api-header:report-{fmt}", _headers(report))
+        else:
+            _response(outputs, f"report-{fmt}", report)
+    with engine.connect() as connection:
+        for table in SQLModel.metadata.sorted_tables:
+            for row in connection.execute(table.select()):
+                cells = " ".join(f"{column}={value}" for column, value in row._mapping.items())
+                outputs.add(f"db:{table.name}", cells)
+    for line in logs.lines:
+        outputs.add("server-log", line)
     return outputs
 
 
@@ -254,7 +339,8 @@ def _problems(name: str, text: str) -> tuple[str, ...]:
     Returns:
         tuple[str, ...]: What breaks the rules of spec 025 there.
     """
-    problems = [f"raw {match!r}" for match in sorted(set(_RAW_CONTROL_RE.findall(text)))]
+    raw = set() if family(name) in STORED else set(_RAW_CONTROL_RE.findall(text))
+    problems = [f"raw {match!r}" for match in sorted(raw)]
     longest = max((len(run) for run in _PAD_RUN_RE.findall(text)), default=0)
     if longest > bound_of(name):
         problems.append(f"a run of {longest} characters, past {bound_of(name)}")
