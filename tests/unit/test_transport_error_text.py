@@ -677,8 +677,7 @@ _DEEP_DOCUMENT = "[" * 300 + "]" * 300
         ),
         (
             {"text": "not json"},
-            "https://example.com/openapi.json is not valid JSON: "
-            "Expecting value: line 1 column 1 (char 0)",
+            "https://example.com/openapi.json is not valid JSON (line 1, column 1)",
         ),
         (
             {"text": _DEEP_DOCUMENT},

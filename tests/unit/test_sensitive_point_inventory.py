@@ -59,9 +59,6 @@ _CONSTANT_PATTERN: Final = "the pattern is built from module constants and re.es
 _OPERANDS: Final = (
     "arithmetic operands of a payload, not a secret (the marker comes from secrets.token_hex)"
 )
-_PARSER_TEXT: Final = (
-    "the json parser's message names a position (line, column, char), not document text; " + _SINKS
-)
 _CHECK_WARNING: Final = (
     "a scan warning: RequestFailed / OutOfScopeError text (display_url plus failure_kind); "
     + _SINKS
@@ -276,11 +273,10 @@ SENSITIVE_POINTS: Final[Mapping[str, str]] = {
     "webvigil.cli.app:scan error terminal:_render.error#2": _CLI_ERROR,
     "webvigil.cli.app:scan error terminal:_render.error#3": _CLI_ERROR,
     "webvigil.cli.app:report error terminal:_render.error": (
-        "the user's own path and load_result's words (an OSError quotes that path); "
-        "safe_text(Sink.TERMINAL)"
+        "the user's own path and load_result's words, built from the report's field names "
+        "(an OSError is named by its type); safe_text(Sink.TERMINAL)"
     ),
-    "webvigil.cli.app:_emit file output.write_text": "the path is the user's --output",
-    "webvigil.cli.app:_write_or_print file output.write_text": "the path is the user's --output",
+    "webvigil.cli.app:_write_report file output.write_text": "the path is the user's --output",
     # --- The engine ------------------------------------------------------------------------
     "webvigil.core:__getattr__ message AttributeError": _PROGRAMMER,
     "webvigil.core.config:LoginSection._check_extra message ValueError": (
@@ -361,9 +357,12 @@ SENSITIVE_POINTS: Final[Mapping[str, str]] = {
     ),
     "webvigil.crawler.openapi:_fetch_document message OpenApiError#5": _OPENAPI_MESSAGE,
     "webvigil.crawler.openapi:_fetch_document message OpenApiError#6": _OPENAPI_MESSAGE,
-    "webvigil.crawler.openapi:_fetch_document error raise:OpenApiError#2": _PARSER_TEXT,
-    "webvigil.crawler.openapi:_fetch_document message OpenApiError#7": _OPENAPI_MESSAGE,
+    "webvigil.crawler.openapi:_fetch_document message OpenApiError#7": (
+        "the source as display_url or display_path and the parser's line and column, never its "
+        "message; " + _SINKS
+    ),
     "webvigil.crawler.openapi:_fetch_document message OpenApiError#8": _OPENAPI_MESSAGE,
+    "webvigil.crawler.openapi:_fetch_document message OpenApiError#9": _OPENAPI_MESSAGE,
     "webvigil.crawler.robots:_escapes regex re.compile": (
         "kept is one of the module's fixed character sets"
     ),
