@@ -770,7 +770,9 @@ def test_a_portable_traceback_wins_over_an_exception_and_is_bounded(
             raise ValueError("the message")
         except ValueError:
             logger.exception("failed", extra={PORTABLE_TRACEBACK: 7})
-    assert caplog.records[-1].exc_text == safe_traceback(caplog.records[-1].exc_info[1])  # type: ignore[index]
+    rebuilt = caplog.records[-1]
+    assert rebuilt.exc_info is not None and rebuilt.exc_info[1] is not None
+    assert rebuilt.exc_text == safe_traceback(rebuilt.exc_info[1])
 
 
 def test_get_logger_attaches_one_filter_and_keeps_level_and_handlers() -> None:

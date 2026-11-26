@@ -428,6 +428,7 @@ def test_a_proxy_name_that_does_not_resolve_trusts_nobody_and_says_nothing(
     monkeypatch.setattr(client_address_mod.socket, "getaddrinfo", _getaddrinfo)
     factory, _ = raising_orchestrator(RuntimeError, failure_marker("api-engine", Kind.RAISES))
     with _api(tmp_path, monkeypatch, factory) as api:
+        # ``TestClient.app`` is typed as any ASGI app, which has no ``state``
         trusted = api.client.app.state.trusted_proxies  # type: ignore[attr-defined]
         outputs = Outputs()
         for line in api.logs.lines:

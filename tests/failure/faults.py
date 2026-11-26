@@ -600,9 +600,21 @@ def raising_orchestrator(error: type[Exception], marker: str) -> tuple[Orchestra
     fault = Fault(marker)
 
     class _Raising:
+        """Stands in for an engine whose scan raises ``error`` with the failure's text."""
+
         def __init__(self, _config: ScanConfig) -> None: ...
 
         async def run(self, _raw_target: str) -> ScanResult:
+            """
+            Args:
+                _raw_target (str): The scan target.
+
+            Returns:
+                ScanResult: Never returned.
+
+            Raises:
+                Exception: Always, of the type ``error``, recorded on the fault.
+            """
             raise fault.fire(error(failure_text(marker)))
 
     return _Raising, fault
