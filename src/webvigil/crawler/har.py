@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, unquote, urlsplit, urlunsplit
 
+from webvigil.core.destination import may_request
 from webvigil.core.errors import HarError
 from webvigil.core.target import Target
 from webvigil.core.text import replace_surrogates_in
@@ -308,7 +309,7 @@ def load_har(path: str, *, target: Target, max_operations: int) -> HarImport:
         if parts.scheme not in ("http", "https") or not parts.hostname:
             tally.out_of_scope += 1
             continue
-        if parts.scheme != scheme or not target.in_scope(parts.geturl()):
+        if parts.scheme != scheme or not may_request(target, parts.geturl()):
             tally.out_of_scope += 1
             continue
         assert isinstance(request, dict)  # _parse_request returned a parse of it

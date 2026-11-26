@@ -22,6 +22,7 @@ from selectolax.lexbor import LexborHTMLParser as HTMLParser
 from selectolax.lexbor import LexborNode as Node
 
 from webvigil.core.context import Page
+from webvigil.core.destination import may_request
 from webvigil.core.target import Target, normalize_url
 from webvigil.core.urls import resolve_url
 
@@ -130,7 +131,7 @@ def parse_forms_html(text: str, url: str, target: Target) -> list[Form]:
     forms: list[Form] = []
     for node in HTMLParser(text).css("form")[:MAX_FORMS_PER_PAGE]:
         form = _form_from_node(node, url)
-        if form is not None and target.in_scope(form.action):
+        if form is not None and may_request(target, form.action):
             forms.append(form)
     return forms
 

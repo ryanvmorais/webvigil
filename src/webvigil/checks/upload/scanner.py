@@ -24,6 +24,7 @@ from urllib.parse import urljoin, urlsplit
 from webvigil.checks.injection.points import _EXCLUDE_FORM_RE
 from webvigil.core.config import ScanConfig
 from webvigil.core.context import Page
+from webvigil.core.destination import may_request
 from webvigil.core.errors import OutOfScopeError, RequestFailed
 from webvigil.core.findings import Confidence, Severity
 from webvigil.core.target import Target
@@ -517,7 +518,7 @@ class UploadScanner:
             Response | None: The response, or ``None`` when out of scope, over
                 budget, or failed.
         """
-        if self._spent >= self._budget or not self._target.in_scope(url):
+        if self._spent >= self._budget or not may_request(self._target, url):
             return None
         self._spent += 1
         try:
@@ -535,7 +536,7 @@ class UploadScanner:
             Response | None: The response, or ``None`` when out of scope, over
                 budget, or failed.
         """
-        if self._spent >= self._budget or not self._target.in_scope(url):
+        if self._spent >= self._budget or not may_request(self._target, url):
             return None
         self._spent += 1
         try:

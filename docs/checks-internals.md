@@ -200,8 +200,8 @@ har)` (the OpenAPI wins the tie) and the GET seeds use `ApiOperation.seed_url` (
 recorded query; the OpenAPI one stays path-only). It only indexes the fields it needs: **it never reads a header
 value, cookie or response body** (the "the recording looks authenticated" warning uses only the header name),
 a parameter value with a secret-like name or longer than 256 characters becomes `wv`, a JSON body enters only
-as a typed shape, multipart enters as urlencoded fields (as in `--openapi`). Scope = `Target.in_scope`
-+ the target's scheme; the entry keeps its own origin. It filters out static assets, methods other than GET/POST and
+as a typed shape, multipart enters as urlencoded fields (as in `--openapi`). Scope = `may_request`
+(`webvigil.core.destination`) + the target's scheme; the entry keeps its own origin. It filters out static assets, methods other than GET/POST and
 login/destructive paths; a bad file is `HarError` (exit 4), a bad entry is a count in the summary
 (`HAR import: N entries read, …`). POST only goes out in the 018 phase (Active + `--submit-post-forms`). The Web API
 does not expose the field. Details in [`docs/har-import.md`](har-import.md).

@@ -21,6 +21,7 @@ from urllib.parse import urlencode, urlsplit
 
 from webvigil.core.bounded import truncate
 from webvigil.core.config import LoginSection
+from webvigil.core.destination import is_target_host, may_carry_credentials, may_request
 from webvigil.core.errors import LoginFailedError, OutOfScopeError, RequestFailed
 from webvigil.core.secrets import Secret, SecretKind
 from webvigil.core.target import Target
@@ -277,9 +278,9 @@ class Authenticator:
                 ``https`` upgrade (the password goes to no other port, no other host, and
                 not to plain ``http`` from an ``https`` target).
         """
-        if not self._target.in_scope(url):
+        if not may_request(self._target, url):
             raise LoginFailedError(f"{what} {display_url(url)} is out of scope")
-        if not self._target.carries_credentials(url):
+        if not may_carry_credentials(self._target, url):
             raise LoginFailedError(
                 f"{what} {display_url(url)} is not the target origin: the password stays home"
             )
@@ -324,7 +325,7 @@ class Authenticator:
         ends_on_a_page = (
             response.status_code < 400
             and not self.is_login_url(response.url)
-            and self._target.in_scope(response.url)
+            and may_request(self._target, response.url)
         )
         self._candidate_landing = response.url if ends_on_a_page else None
         self._candidate_transition = CookieTransition(
@@ -346,7 +347,7 @@ class Authenticator:
             return
         location = response.final_location or ""
         host = urlsplit(location).hostname or "another host"
-        if host == self._target.host or self._target.in_scope(location):
+        if is_target_host(self._target, location) or may_request(self._target, location):
             raise LoginFailedError(
                 "login redirects to a destination that may not receive the password"
             )

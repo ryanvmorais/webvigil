@@ -23,6 +23,7 @@ from webvigil.checks.session.cookies import is_jwt, is_session_cookie, session_c
 from webvigil.checks.session.ids import Rule, id_facts, judge_samples, judge_value
 from webvigil.core.config import ScanConfig
 from webvigil.core.context import Page
+from webvigil.core.destination import may_carry_credentials, may_request
 from webvigil.core.errors import OutOfScopeError, RequestFailed
 from webvigil.core.findings import Confidence, Severity
 from webvigil.core.secrets import Secret
@@ -304,8 +305,9 @@ class SessionScanner:
         """
         Whether a test may send the session's cookies to the reference page, warning if not.
 
-        These tests pass the cookies as an explicit header, which the client sends as given on the
-        first hop, and the page a login lands on can be in scope yet off the target origin.
+        These tests pass the cookies as an explicit header, and the page a login lands on can be in
+        scope yet off the target origin. The client would drop the header there without a word
+        (spec 026, ADR-2), so the test asks the same rule first, to warn and skip instead.
 
         Args:
             reference (str): The reference page URL.
@@ -314,7 +316,7 @@ class SessionScanner:
         Returns:
             bool: ``True`` when the page is where the scan's credentials may go.
         """
-        if self._target.carries_credentials(reference):
+        if may_carry_credentials(self._target, reference):
             return True
         self.warnings.append(
             f"{test} skipped: the reference page is not on the target origin, the only place the "
@@ -420,7 +422,7 @@ class SessionScanner:
                 first ``POST`` logout form; ``None`` when there is none in scope.
         """
         if configured is not None:
-            return ("GET", configured, None) if self._target.in_scope(configured) else None
+            return ("GET", configured, None) if may_request(self._target, configured) else None
         for page in self._pages:
             if not (page.ok and page.is_html and page.text):
                 continue
@@ -430,13 +432,13 @@ class SessionScanner:
                 if resolved is None:
                     continue
                 url = resolved.split("#", 1)[0]
-                if self._target.in_scope(url) and is_logout(url):
+                if may_request(self._target, url) and is_logout(url):
                     return "GET", url, None
         for form in self._forms:
             if (
                 form.method == "POST"
                 and is_logout(form.action)
-                and self._target.in_scope(form.action)
+                and may_request(self._target, form.action)
             ):
                 return "POST", form.action, form
         return None
