@@ -303,7 +303,10 @@ async def test_the_runner_logs_nothing_of_a_hostile_robots_file(
 async def test_the_runner_log_does_show_an_error_that_escapes_a_scan(
     web_engine: Engine, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """The control of the test above: this capture would have seen the text."""
+    """
+    The control of the test above: this capture sees the runner's log. The record names the
+    error's type and frames, not its text (spec 027).
+    """
 
     class _Crashing:
         """Stands in for an engine that raises."""
@@ -325,7 +328,8 @@ async def test_the_runner_log_does_show_an_error_that_escapes_a_scan(
         status = await _run_to_the_end(web_engine, lambda _config: _Crashing())
 
     assert status is ScanStatus.FAILED
-    assert _LOG_MARKER in caplog.text
+    assert "failed (RuntimeError)" in caplog.text
+    assert "in run\n    raise RuntimeError(_LOG_MARKER)\nRuntimeError\n" in caplog.text
 
 
 # ---------------------------------------------------------------------------

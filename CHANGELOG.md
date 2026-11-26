@@ -61,6 +61,11 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
   that raised it: `webvigil report` says `could not read <path> (<type>)` for a file it cannot
   read, and an OpenAPI document that is not JSON is `not valid JSON (line <n>, column <m>)`. A
   report that is not a valid WebVigil report keeps its message.
+- The Web API logs a scan whose engine raised an unexpected error as `scan <id> failed (<type>)`,
+  with the frames and the exception types and without the message, in place of
+  `scan <id> crashed` with the full traceback: the message may quote what the scanned site sent.
+  The frames name files inside the install, as a check's error does in a report. A failure to
+  store the result still logs the database's message.
 
 ### Fixed
 

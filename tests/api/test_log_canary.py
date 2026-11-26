@@ -5,7 +5,8 @@ Two failures go through the real :class:`~webvigil.api.runner.ScanRunner` with a
 orchestrator (no network), and logging is captured at ``DEBUG`` on the root logger:
 
 - a scan whose engine raises with a message that holds an escape sequence, line breaks that
-  imitate a record of their own and far more text than the bound;
+  imitate a record of their own and far more text than the bound: the record names the type and
+  the frames, and the message is left out (spec 027);
 - a scan whose result is stored into a database whose findings table was dropped, so SQLAlchemy
   raises with the failed statement, and would add its parameters (the finding's text) without
   ``hide_parameters``.
@@ -19,7 +20,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-import traceback
 from collections.abc import Callable, Iterator
 from typing import Any
 
@@ -36,7 +36,7 @@ from webvigil.api.config import WebConfig
 from webvigil.api.db import Scan, ScanStatus, run_alembic_upgrade
 from webvigil.api.runner import INTERNAL_ERROR, ScanRunner
 from webvigil.core import ScanConfig, ScanResult
-from webvigil.core.bounded import TEXT_MAX_CHARS, URL_MAX_CHARS
+from webvigil.core.bounded import URL_MAX_CHARS
 from webvigil.core.output import SafeLogFilter
 
 # A raw control, bidirectional or zero-width character; a line feed is allowed, since a traceback
@@ -145,35 +145,29 @@ def _records(caplog: pytest.LogCaptureFixture, message: str) -> list[logging.Log
     return [record for record in caplog.records if record.getMessage() == message]
 
 
-async def test_a_crash_is_logged_bounded_and_on_its_own_lines(
+async def test_a_crash_is_logged_by_its_type_and_frames_without_its_message(
     web_engine: Engine, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """The record keeps its lines, shows the controls, and holds no more than the bound."""
+    """The record names the type and keeps the frames on their lines; the message is left out."""
     with caplog.at_level(logging.DEBUG):
         scan_id, row = await _run_one(web_engine, _Crashing)
 
     assert row.status == ScanStatus.FAILED and row.error == INTERNAL_ERROR
-    # Positive control: the crash was logged, with its traceback.
-    (record,) = _records(caplog, f"scan {scan_id} crashed")
-    assert record.exc_info is not None and record.exc_text
+    # Positive control: the crash was logged, with its frames.
+    (record,) = _records(caplog, f"scan {scan_id} failed (RuntimeError)")
+    assert record.exc_info is None and record.exc_text
     formatted = _FORMAT.format(record)
-    assert "engine broke\\x1b[2J\\x0a" in formatted  # the controls, shown
+    assert "engine broke" not in caplog.text and "x" * 100 not in caplog.text
     assert not _RAW.search(caplog.text)
     assert not any(line.startswith(_FORGED) for line in formatted.splitlines())
-    assert "x" * 1000 in formatted
-    assert "x" * (TEXT_MAX_CHARS + 1) not in formatted
     assert len(record.exc_text) <= URL_MAX_CHARS
-    # Each line of the record is a line Python wrote: the message line is the last one, and every
-    # line before it is the header or a frame.
+    # Each line of the record is a line Python wrote: the header, the frames of the stand-in
+    # engine, and the type alone on the last line.
     lines = formatted.splitlines()
-    assert lines[0] == f"ERROR webvigil.api scan {scan_id} crashed"
+    assert lines[0] == f"ERROR webvigil.api scan {scan_id} failed (RuntimeError)"
     assert lines[1] == "Traceback (most recent call last):"
-    assert lines[-1].startswith("RuntimeError: engine broke")
-    # Positive control: Python's own traceback of the same exception has the forged line and the
-    # raw characters.
-    raw = "".join(traceback.format_exception(record.exc_info[1]))
-    assert any(line.startswith(_FORGED) for line in raw.splitlines())
-    assert _RAW.search(raw)
+    assert any(line.startswith("  File ") and "test_log_canary.py" in line for line in lines)
+    assert lines[-1] == "RuntimeError"
 
 
 async def test_a_failed_store_logs_the_statement_without_its_parameters(

@@ -12,15 +12,21 @@ from sqlmodel import Session, select
 from webvigil.api.db import TERMINAL_STATUSES, Scan, ScanStatus, utcnow
 from webvigil.api.mapping import build_scan_config, store_result
 from webvigil.core import Orchestrator, ScanConfig, ScanResult, WebVigilError
-from webvigil.core.output import Sink, get_logger, safe_text
+from webvigil.core.output import (
+    PORTABLE_TRACEBACK,
+    Sink,
+    get_logger,
+    portable_traceback,
+    safe_text,
+)
 
 logger = get_logger("webvigil.api")
 
 # The two outcomes of a cancel request.
 type CancelOutcome = Literal["cancelled", "not_cancellable"]
 
-# What a crashed scan records. The exception itself goes to the log only: its text can carry
-# paths, SQL or library internals that the dashboard has no reason to show.
+# What a crashed scan records. The log names the exception's type and its frames: its text can
+# carry paths, SQL, library internals or the scanned site's words, which no one has reason to see.
 INTERNAL_ERROR = "internal error"
 # How long the loop rests after an unexpected error before it looks at the queue again, so a
 # database that keeps failing does not turn the loop into a busy spin.
@@ -222,7 +228,9 @@ class ScanRunner:
 
         A :class:`~webvigil.core.errors.WebVigilError` (a bad stored config included) becomes a
         ``FAILED`` row with its message; any other exception, in loading, running or storing, is
-        logged and becomes a ``FAILED`` row with :data:`INTERNAL_ERROR`; ``CancelledError``
+        logged and becomes a ``FAILED`` row with :data:`INTERNAL_ERROR`. An error of the load or
+        the engine is logged by its type and frames, without its message; a failed write keeps the
+        database's message, which names the statement and is the operator's. ``CancelledError``
         propagates to the loop until the result is in, after which nothing cancels the write.
 
         Args:
@@ -236,8 +244,15 @@ class ScanRunner:
         except WebVigilError as exc:
             await asyncio.to_thread(self._terminate, scan_id, ScanStatus.FAILED, str(exc))
             return
-        except Exception:
-            logger.exception("scan %s crashed", scan_id)
+        except Exception as exc:
+            # By type and frames only: the message of an error nothing expected may quote anything
+            # the engine held, the scanned site's text included (spec 027, RF-04).
+            logger.error(
+                "scan %s failed (%s)",
+                scan_id,
+                type(exc).__name__,
+                extra={PORTABLE_TRACEBACK: portable_traceback(exc)},
+            )
             await asyncio.to_thread(self._terminate, scan_id, ScanStatus.FAILED, INTERNAL_ERROR)
             return
         # A cancel that holds the lock right now still wins (this ``async with`` raises it); once

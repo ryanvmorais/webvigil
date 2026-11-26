@@ -206,12 +206,12 @@ async def test_a_check_traceback_carries_no_local_path() -> None:
 )
 def test_a_frame_outside_the_install_and_home_keeps_only_its_file_name(where: str) -> None:
     r"""A plugin outside every known directory (a Windows runner's ``D:\a\...``) is cut too."""
-    from webvigil.core.orchestrator import _portable_traceback
+    from webvigil.core.output import portable_traceback
 
     try:
         exec(compile("raise RuntimeError('kaboom')", where, "exec"))
     except RuntimeError as exc:
-        text = _portable_traceback(exc)
+        text = portable_traceback(exc)
     assert 'File "check.py", line 1' in text
     assert "acme" not in text
 

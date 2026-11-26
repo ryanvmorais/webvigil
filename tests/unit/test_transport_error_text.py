@@ -54,7 +54,8 @@ from webvigil.core.errors import (
     RequestFailed,
 )
 from webvigil.core.findings import Category, Finding, Severity
-from webvigil.core.orchestrator import Orchestrator, _portable_traceback
+from webvigil.core.orchestrator import Orchestrator
+from webvigil.core.output import portable_traceback
 from webvigil.core.target import Target
 from webvigil.core.urls import HIDDEN_PATH
 from webvigil.crawler import openapi as openapi_mod
@@ -433,7 +434,7 @@ def test_a_group_and_a_looping_chain_are_formatted_without_their_text() -> None:
     first.__cause__, second.__cause__ = second, first
     group = ExceptionGroup(_RAW_TEXT, [first, TypeError(_RAW_TEXT)])
 
-    text = _portable_traceback(group)
+    text = portable_traceback(group)
 
     for name in ("ExceptionGroup", "ValueError", "KeyError", "TypeError"):
         assert text.count(f"{name}\n") == 1, name
@@ -448,7 +449,7 @@ def test_a_suppressed_context_is_left_out_as_python_leaves_it_out() -> None:
         except KeyError:
             raise ValueError(_RAW_TEXT) from None
     except ValueError as exc:
-        text = _portable_traceback(exc)
+        text = portable_traceback(exc)
 
     assert text.endswith("ValueError\n")
     assert "KeyError" not in text
@@ -462,7 +463,7 @@ def test_a_very_long_chain_is_cut_instead_of_failing_the_handler() -> None:
         link.__cause__ = head
         head = link
 
-    assert _portable_traceback(head).count("ValueError\n") == 16
+    assert portable_traceback(head).count("ValueError\n") == 16
 
 
 # ---------------------------------------------------------------------------
