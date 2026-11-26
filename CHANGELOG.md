@@ -37,6 +37,12 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
   (`webvigil.core.destination`) on every request, with no way around it. `SessionJar` takes the
   scan's `Target` instead of its host, and hands out cookies only where the scan's credentials may
   go.
+- A scan warns when the target is a public name (under a top-level domain on the Public Suffix
+  List, not a special-use one such as `.local` or `.internal`) that resolves only to internal
+  addresses: the scan still runs against them, and the warning asks to check that this is the
+  machine meant. It also warns, per host, when a host resolved to internal addresses next to its
+  public ones and only the public ones were used, naming up to ten hosts and counting the rest on
+  one more line. Neither applies behind an HTTP proxy set in the environment.
 
 ### Security
 
