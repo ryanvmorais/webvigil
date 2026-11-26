@@ -1566,7 +1566,7 @@
         ]
       },
       "post": {
-        "description": "Create the single account. Unauthenticated, but 409s once an account exists.",
+        "description": "Create the single account. Unauthenticated, but 409s once an account exists, and 429s\nwhile every password-check slot is taken.",
         "operationId": "create_first_user_api_setup_post",
         "requestBody": {
           "content": {
