@@ -167,6 +167,8 @@ def _escape(match: re.Match[str]) -> str:
 
 def _json_escape(match: re.Match[str]) -> str:
     r"""
+    Escape one character that a JSON encoder writes raw.
+
     Args:
         match (re.Match[str]): One character a JSON encoder writes raw.
 
