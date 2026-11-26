@@ -37,7 +37,7 @@ uv run mypy src
 uv run lint-imports      # contrato: engine não importa Typer/Rich/FastAPI/SQLModel/Alembic/pyjwt/argon2/Uvicorn
 uv run pytest
 uv run pytest --cov       # per-file line + branch coverage of src/webvigil (the guard of issue #101)
-# A suíte inteira leva ~1,5 min com cobertura (cerca de 3800 testes; os scans de integração zeram o backoff
+# A suíte inteira leva ~1 min com cobertura no CI Linux e ~2,5 min no Windows (cerca de 3900 testes; os scans de integração zeram o backoff
 # de retry do cliente, que custava ~3 s por sonda 5xx: #307). Specs novas seguem as regras de teste
 # de specs/README.md ("Testing a spec"): lógica em unit, integração anexa a um scan compartilhado.
 uv run webvigil scan <url>
@@ -109,6 +109,10 @@ Camadas, de cima para baixo:
    (`tests/unit/test_destination_inventory.py`).
    ⚠️ Todo ponto sensível novo ganha linha com o motivo em `SENSITIVE_POINTS`
    (`tests/unit/test_sensitive_point_inventory.py`, spec 027; o que conta: [docs/writing-checks.md](docs/writing-checks.md)).
+   ⚠️ Todo passo novo do `Orchestrator.run` (não um check) ganha linha em `STAGES`, e toda conexão,
+   leitura de arquivo ou statement novo ganha chave em `DEPENDENCIES` (`tests/failure/table.py`,
+   guardados por `tests/failure/test_table.py`, spec 027); a suíte de falhas (`tests/failure/`)
+   falha cada estágio e procura os marcadores em toda saída.
    Todo campo de texto livre do resultado tem teto (`core/bounded.py`: `Name` 1 Ki caracteres,
    `Text` 16 Ki, `Url` 64 Ki, evidência 4 Ki), cortado com `...[truncated]` na criação e na
    leitura, sem recusar; o `webvigil report` lê no máximo 64 MiB (`MAX_REPORT_BYTES`, em blocos
@@ -176,6 +180,6 @@ no CI. `webvigil.cli` e `webvigil.api` não se importam. A Web UI só fala com a
 ## Fluxo de trabalho
 
 - **Spec-driven development.** Specs em `specs/NNN-nome/` (requirements → design → tasks → implementação), com portão de aprovação humana em cada fase. Convenções e roadmap em [`specs/README.md`](specs/README.md).
-- Estado: as specs `001` a `026` estão **concluídas** e a `027` (portões de regressão de segurança) está **aprovada**, a implementar por etapa do `tasks.md`; escopo, issue e entrega de cada uma na tabela "Roadmap" do [`specs/README.md`](specs/README.md), e o que cada versão trouxe no [`CHANGELOG.md`](CHANGELOG.md). Os limites (detecção cega/OAST, request smuggling, YAML no `--openapi`) estão em "Scope and limitations" do [`README.md`](README.md).
+- Estado: as specs `001` a `027` estão **concluídas**; escopo, issue e entrega de cada uma na tabela "Roadmap" do [`specs/README.md`](specs/README.md), e o que cada versão trouxe no [`CHANGELOG.md`](CHANGELOG.md). Os limites (detecção cega/OAST, request smuggling, YAML no `--openapi`) estão em "Scope and limitations" do [`README.md`](README.md).
 - **Releases:** PyPI, `ghcr.io/ryanvmorais/webvigil` e GitHub Releases desde a `v1.0.0`. Como cortar uma versão e o molde das notas: [`docs/releasing.md`](docs/releasing.md); compatibilidade: [`docs/stability.md`](docs/stability.md). ⚠️ Toda mudança visível ao usuário entra em `[Unreleased]` do [`CHANGELOG.md`](CHANGELOG.md) **no mesmo PR**. ⚠️ Ao subir a versão, rode `uv run python scripts/dump-openapi.py` e `pnpm gen:api` (o `web/openapi.json` carrega `info.version`). ⚠️ `schema_version` (`SCHEMA_VERSION` em `core/result.py`): campo novo mantém; remover, renomear ou retipar sobe a versão e é major. O engine usa só o backend Lexbor do `selectolax` (`selectolax.lexbor`). Publicar uma versão é ato do mantenedor.
 - Commits em inglês, padrão Conventional Commits.

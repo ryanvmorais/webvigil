@@ -117,6 +117,14 @@ dangerous operation: SQL, a command, code loading, deserialization, a file path,
 regular expression, HTML, a redirect, a network connection or cryptography (a `random` number
 included). The key is `module:qualname family callee`, and the failure prints it.
 
+A new pass of the scan (a step `Orchestrator.run` calls, not a check) also needs a row in the
+failure table (spec 027): `tests/failure/test_table.py` fails until `STAGES` in
+`tests/failure/table.py` names the pass, the seam the failure suite wraps and the kinds of failure
+it gets. The suite then fails the pass in its runs and searches every output for the markers it
+planted. Each network client, file read or database statement the pass adds is a key of
+`DEPENDENCIES` in the same file, with the stage whose failure covers it, besides its line in the
+inventory above (`SENSITIVE_POINTS`, or `CONNECTIONS` for a connection).
+
 `ctx.observations` is an advanced, opt-in side channel. The `deps.*` checks (spec 004) call
 `add_technology(...)` / `add_warning(...)` to contribute to the scan result beyond their
 findings; the probe-fed `disclosure.*` checks (spec 005) read `ctx.observations.probe_hits`

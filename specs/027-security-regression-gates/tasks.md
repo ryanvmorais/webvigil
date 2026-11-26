@@ -1,6 +1,6 @@
 ---
 feature: Security regression gates — failure injection with markers at every stage, every sensitive point inventoried by a test, and the hardening left from the 1.6.0 review
-status: in progress
+status: done
 date: 2026-11-25
 related:
   - 001-foundation/design.md
@@ -232,12 +232,12 @@ A failure the suite finds that exposes a credential in a released version stops 
 
 ## Stage 6 — Cross-check and documentation
 
-- [ ] Run the baseline's four scans again and compare: the requests byte for byte, and findings, severities, check
+- [x] Run the baseline's four scans again and compare: the requests byte for byte, and findings, severities, check
   ids, fingerprints, warnings and `schema_version`; the test count, the suite time and per-file coverage against
   Stage 0. Then delete the baseline. — RF-14, RNF-04, RNF-06
-- [ ] [`docs/writing-checks.md`](../../docs/writing-checks.md): a new pass needs a row in the failure table and lines
+- [x] [`docs/writing-checks.md`](../../docs/writing-checks.md): a new pass needs a row in the failure table and lines
   in the inventory. — RF-06, RF-07
-- [ ] The project's agent notes: one line each for the failure table and the inventory. — RF-06, RF-07
-- [ ] `specs/README.md`: the roadmap row `done`; the three files `status: done`; `## Deviations` and
+- [x] The project's agent notes: one line each for the failure table and the inventory. — RF-06, RF-07
+- [x] `specs/README.md`: the roadmap row `done`; the three files `status: done`; `## Deviations` and
   `## Implementation notes` in the design. — RNF-05
 - [ ] Quality gate.

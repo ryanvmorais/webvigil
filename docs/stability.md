@@ -49,7 +49,10 @@ so under **Changed**.
   kept are `webvigil.core.Orchestrator`, `ScanConfig`, `ScanResult`, `Finding`, and
   `webvigil.checks.Check` with `register` (the check contract in
   [writing-checks.md](writing-checks.md)); internals such as the crawler, the HTTP client and
-  the injection scanner are not.
+  the injection scanner are not. The engine never changes the level or the handlers of another
+  package's logger. At `DEBUG`, `httpcore2` (the transport under `httpx2`) logs the headers of
+  every response, the target's session cookies included, so a program that embeds the engine
+  keeps the `httpcore2` logger at `INFO` or above.
 - **The Web API (`webvigil-web`) and the dashboard (`web/`).** Their endpoints, the database
   schema and the dashboard are provisional. Database migrations move forward only. The dashboard
   is part of the repository; it is not in the Python package.
