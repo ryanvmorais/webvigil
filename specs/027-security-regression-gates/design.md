@@ -1,6 +1,6 @@
 ---
 feature: Security regression gates — failure injection with markers at every stage, every sensitive point inventoried by a test, and the hardening left from the 1.6.0 review
-status: in progress
+status: done
 date: 2026-11-25
 related:
   - 001-foundation/design.md
@@ -677,6 +677,18 @@ request.
 26. **A numbered output keeps its family (RF-04).** `family` kept the number `Outputs.add` gives a
     second output of a name with no colon (`server-log#5`), so the second record of the log could
     not hold what the first may. It now drops the number, and a test keeps it.
+27. **The stability page says how `httpcore2` logs (RF-04).** The Python API part of
+    `docs/stability.md` gains a factual note: the engine never changes the level or the handlers of
+    another package's logger, and `httpcore2` at `DEBUG` logs the headers of every response, the
+    target's session cookies included, so a program that embeds the engine keeps that logger at
+    `INFO` or above. The code does not change: the project's filter covers the loggers the project
+    owns (spec `025`, ADR-4).
+28. **The two-minute bound of the whole suite holds on Linux CI (RNF-06).** On the developer
+    machine of Stage 0 the suite with coverage went from 120 s to 151 s, the failure suite being
+    37 s of it. On CI, with coverage, it takes 53 s to 68 s on Linux, the required checks, and 106 s
+    to 111 s on Windows with Python 3.13 to 3.15; on Windows with Python 3.12 it took 194 s before
+    Stage 0 and 246 s at the end. The bound is read on Linux CI, and the other times are recorded
+    here.
 
 ## Implementation notes
 
@@ -789,3 +801,15 @@ request.
   mutants (all by hand: the log call, its type name and traceback, the stored errors, the store's
   log, the filter's branches and the cut), 13 killed, with the two of the JSON response above, 15 of
   15. The two runs no mutant failed, the full runs and the claim, each failed under a sabotage.
+- **Stage 6.** The four scans of the baseline ran again on `main` at `7c5ede6`, against the same
+  recording fixture: 1321, 1321, 1348 and 1321 requests, as before, and 61, 61, 65 and 61 findings,
+  in 60 s to 62 s each. The requests are the same multiset once the random values are masked
+  (hex runs of eight or more characters, then digit runs); 340 of each scan (345 with the
+  automated login) differ before the mask, all of them injection probes that carry the scan's random
+  token. In the reports, `schema_version`, the warnings, the errors, the technologies, the counts
+  and, for every finding, the check id, the severity, the fingerprint, the location and the masked
+  title are identical; the titles differ only by the random name of the uploaded file and the
+  number it printed. The suite went from 3769 to 3907 tests (3903 passed and 4 skipped on Windows),
+  in 151 s with coverage (deviation 28). Total coverage stays at 98 %, with 172 lines and 135
+  branches left uncovered against 191 and 142, and no file of `src/webvigil` leaves more lines or
+  branches uncovered than at Stage 0, or has a lower percentage. The baseline folder was then deleted. This stage changes no code.
