@@ -143,37 +143,42 @@ A failure the suite finds that exposes a credential in a released version stops 
 
 ## Stage 3 — The failure table and the CLI harness
 
-- [ ] `tests/support.py`: `spellings(value)`, the seven forms of the design; the integration and CLI canaries of
-  spec `024` use it in place of their own copies, and still pass. — RF-03
-- [ ] `tests/failure/table.py`: `Kind`, `Stage`, `STAGES` (every pass of `Orchestrator.run`, `crawl`, `target`,
+- [x] `tests/support.py`: `spellings(value)`, the seven forms of the design; the integration and CLI canaries of
+  spec `024` use it in place of their own copies, and still pass. — RF-03. Eight forms, with the
+  two base64 alphabets (design, deviation 12).
+- [x] `tests/failure/table.py`: `Kind`, `Stage`, `STAGES` (every pass of `Orchestrator.run`, `crawl`, `target`,
   `osv`, the CLI stages and the API stages), `DEPENDENCIES`, the markers and `HOSTILE`, and `fault_for`. — RF-01,
   RF-02, ADR-1
-- [ ] `tests/failure/faults.py`: `failing_resolver`, `failing_read`, `failing_write`, `failing_render`; each records
+- [x] `tests/failure/faults.py`: `failing_resolver`, `failing_read`, `failing_write`, `failing_render`; each records
   what it raised. — RF-02, RF-05
-- [ ] `tests/failure/outputs.py`: `Outputs` for a CLI run (standard output and error, the report, the three other
+- [x] `tests/failure/outputs.py`: `Outputs` for a CLI run (standard output and error, the report, the three other
   formats through `webvigil report`, the log records), `credential_hits` and `failure_hits` with the allowed outputs
   per kind. — RF-03, RF-04
-- [ ] `tests/failure/test_table.py`: every pass of `Orchestrator.run` and `discover` is a seam, with the throwaway
+- [x] `tests/failure/test_table.py`: every pass of `Orchestrator.run` and `discover` is a seam, with the throwaway
   class as the positive control; every `CONNECTIONS` entry and every `file` and `sql` point of the inventory is a key
   of `DEPENDENCIES`, and every key has one; `fault_for` is fixed and covers every pair of stage and kind. — RF-02,
   RF-06
-- [ ] `tests/failure/test_cli.py`: the runs `resolver`, `openapi-read`, `har-read`, `config-read`, `openapi-parse`,
+- [x] `tests/failure/test_cli.py`: the runs `resolver`, `openapi-read`, `har-read`, `config-read`, `openapi-parse`,
   `report-write`, `report-render` and `report-read`, each with the design's assertions and the positive controls. —
   RF-02, RF-03, RF-04, RF-05, ADR-3
-- [ ] The fixes the CLI harness forces, each with its run seen failing on `main` first:
+- [x] The fixes the CLI harness forces, each with its run seen failing on `main` first:
   - `src/webvigil/cli/app.py`: a report that cannot be written or rendered prints one error line in the project's
     words and exits with `4`; `webvigil report` says `could not read <path> (<type>)`;
   - `src/webvigil/crawler/openapi.py`: `not valid JSON (line <n>, column <m>)`;
-  - anything else the runs find.
+  - anything else the runs find. Nothing else: the other runs passed on `main`.
 
-  — RF-02, RF-04, ADR-4
-- [ ] Apply the design's sabotage and watch each test fail: `safe_text` stops redacting one credential, the CLI's
+  — RF-02, RF-04, ADR-4. `webvigil report` keeps `load_result`'s own message for a file that is not
+  a report (deviation 7); the same handling covers `webvigil report --output`.
+- [x] Apply the design's sabotage and watch each test fail: `safe_text` stops redacting one credential, the CLI's
   error line prints `str(exc)`, the seams stop raising (the controls go red), a pass renamed in the throwaway class,
   and `fault_for` on the run number alone. — RF-15
-- [ ] Mutation testing in batch over the changed functions of `cli/app.py` and `crawler/openapi.py`. — RNF-06
-- [ ] `CHANGELOG.md` `[Unreleased]`: **Changed**, the new error lines; **Fixed**, a report that cannot be written
+- [x] Mutation testing in batch over the changed functions of `cli/app.py` and `crawler/openapi.py`. — RNF-06.
+  39 mutants, 39 killed; every new run killed at least one.
+- [x] `CHANGELOG.md` `[Unreleased]`: **Changed**, the new error lines; **Fixed**, a report that cannot be written
   ends with exit code `4` instead of a traceback. — RNF-02
-- [ ] Quality gate.
+- [x] Quality gate. — 3843 passed, 4 skipped (Windows), 114 s with coverage, 98 %; ruff, black, mypy, import-linter
+  and the package check clean. The output inventory of spec `025` names `_write_report` in place of the two
+  callers that no longer write.
 
 ## Stage 4 — The scan harness
 

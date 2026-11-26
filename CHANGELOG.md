@@ -57,9 +57,17 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 - A `robots.txt` rule whose path ends in `?` matches the same path with an empty query (`/a?`),
   and the rule `/a$` no longer covers that URL. A `robots.txt` larger than 500 KiB is read in the
   charset it declares, as a smaller file is, instead of always as UTF-8.
+- Error lines name a failure in the project's words, without the text of the library or the system
+  that raised it: `webvigil report` says `could not read <path> (<type>)` for a file it cannot
+  read, and an OpenAPI document that is not JSON is `not valid JSON (line <n>, column <m>)`. A
+  report that is not a valid WebVigil report keeps its message.
 
 ### Fixed
 
+- A report that cannot be written (`--output` on a full disk, a missing folder, a file without
+  write permission) or rendered ends with one error line, `could not write the report to <path>
+  (<type>)` or `could not render the <format> report (<type>)`, and exit code `4`, in `scan` and in
+  `webvigil report`, instead of a traceback and exit code `1`.
 - The session logout test (`--test-logout`) uses only a logout endpoint the scan's credentials
   may reach. Under `--scope subdomains`, a logout link or form on a sibling host got no session
   cookie, so the old session still worked afterwards and the scan reported
