@@ -772,7 +772,11 @@ request.
   every route, and five failures of its own (the engine raising a `RuntimeError` and a
   `WebVigilError`, the store and the claim raising `OperationalError`, the proxy name that does not
   resolve). With two more tests of the searches, the failure suite is 86 tests, about 37 s with
-  coverage on a developer machine against 32 s without the API harness. On `main`, the `RuntimeError`
+  coverage on a developer machine against 32 s without the API harness. On CI, with coverage, it
+  takes about 18.7 s (3.12), 13.5 s (3.13), 19.0 s (3.14) and 18.1 s (3.15) on Linux, plus under
+  0.6 s for the last ten checks of the table, read from the progress line that holds only failure
+  tests and the `--durations` of the four full runs on the line before; within the 20 s budget, so
+  no two kinds share a run. On `main`, the `RuntimeError`
   run failed: the server log held the exception's message. Once the API's JSON was searched like a
   report, the full run whose echo check got a server error and the `WebVigilError` run failed on
   the raw bidirectional and zero-width characters of the JSON (deviation 22). Every other run passed
