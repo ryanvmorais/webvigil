@@ -1,6 +1,6 @@
 ---
 feature: Destination policy — one place decides what each URL may receive, and a public name that resolves only to internal addresses is reported
-status: in progress
+status: done
 date: 2026-11-25
 related:
   - 001-foundation/design.md
@@ -194,16 +194,18 @@ makes it.
 
 ## Stage 4 — Cross-check and documentation
 
-- [ ] RF-08: repeat the four scans of Stage 0 from the new `main`. Compare the requests the fixture received
+- [x] RF-08: repeat the four scans of Stage 0 from the new `main`. Compare the requests the fixture received
   and the JSON reports, leaving out timestamps, durations and per-run random values: the requests are byte for
   byte the same, and findings, severities, check ids, fingerprints, warnings and `schema_version` are
-  identical. Compare the scan durations with the baseline. — RF-08, RNF-04
-- [ ] `.github/workflows/`: confirm the whole CI matrix on the last merge commit: `quality` on Linux and Windows
-  for every Python version, `package`, `docker`, `web` and `compose`. — RNF-05
-- [ ] `CLAUDE.md`: one line in the architecture section saying that every destination decision goes through
+  identical. Compare the scan durations with the baseline. — RF-08, RNF-04; the four scans give the same
+  requests and reports once the per-run random values are masked, and durations within 1 s of the baseline.
+- [x] `.github/workflows/`: confirm the whole CI matrix on the last merge commit: `quality` on Linux and Windows
+  for every Python version, `package`, `docker`, `web` and `compose`. — RNF-05; all green on `9dd1e48`.
+- [x] `CLAUDE.md`: one line in the architecture section saying that every destination decision goes through
   `core/destination.py`, and that a new comparison or connection needs its line in
   `tests/unit/test_destination_inventory.py`. — RF-01, RF-09
-- [ ] `design.md`: fill in `## Implementation notes` with the measurements: tests before and after, coverage
+- [x] `design.md`: fill in `## Implementation notes` with the measurements: tests before and after, coverage
   per file, suite time, scan durations, the mutation scores. Set `status: done` in the three files and on the
   roadmap of `specs/README.md`. — RF-10
-- [ ] Quality gate. —
+- [x] Quality gate. — 3765 passed, 4 skipped (Windows); 98 % line and branch coverage; ruff, black, mypy,
+  import-linter and the package check green.
