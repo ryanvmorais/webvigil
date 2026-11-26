@@ -20,7 +20,8 @@ from fastapi.testclient import TestClient
 from tests.api.conftest import ADMIN
 from webvigil.api import security
 from webvigil.api.routes import auth, setup
-from webvigil.api.throttle import FREE_ATTEMPTS, LoginThrottle
+from webvigil.api.throttle import BUSY_RETRY_S, FREE_ATTEMPTS, LoginThrottle
+from webvigil.core.secrets import Secret
 
 _PARALLEL = FREE_ATTEMPTS * 2
 _SLOW_S = 0.3
@@ -96,3 +97,90 @@ def test_parallel_setups_create_exactly_one_account(
 
     codes = _together(4, create)
     assert codes == Counter({201: 1, 409: 3})
+
+
+# ---------------------------------------------------------------------------
+# The setup hash and the password-check slots (spec 027, RF-08)
+# ---------------------------------------------------------------------------
+
+
+def _counting_hash(monkeypatch: pytest.MonkeyPatch, during: Callable[[], None]) -> list[int]:
+    """
+    Args:
+        monkeypatch (pytest.MonkeyPatch): Replaces the setup route's hash.
+        during (Callable[[], None]): Runs inside each hash, before the real one.
+
+    Returns:
+        list[int]: One entry per hash, appended as each one starts.
+    """
+    real_hash = security.hash_password
+    hashed: list[int] = []
+
+    def counted(password: Secret) -> str:
+        hashed.append(len(hashed) + 1)
+        during()
+        return real_hash(password)
+
+    monkeypatch.setattr(setup, "hash_password", counted)
+    return hashed
+
+
+def test_a_setup_without_a_free_check_slot_is_told_to_retry_and_creates_nothing(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every slot taken: 429 with Retry-After, no hash, no account; a free slot then creates it."""
+    hashed = _counting_hash(monkeypatch, lambda: None)
+    # ``TestClient.app`` is typed as a bare ASGI app, which declares no ``state``.
+    state = client.app.state  # type: ignore[attr-defined]
+    state.login_throttle = LoginThrottle(max_concurrent_checks=0)
+
+    response = client.post("/api/setup", json=ADMIN)
+
+    assert response.status_code == 429
+    assert response.headers["retry-after"] == str(BUSY_RETRY_S)
+    assert response.json() == {"detail": "too many password checks in progress: try again shortly"}
+    assert hashed == []
+    assert client.get("/api/setup").json()["needs_setup"] is True
+    # The control: with a slot free, the same request creates the account.
+    state.login_throttle = LoginThrottle()
+    assert client.post("/api/setup", json=ADMIN).status_code == 201
+    assert hashed == [1]
+
+
+def test_the_setup_hash_runs_while_it_holds_a_check_slot(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With one slot, the hash runs while that slot is taken, and gives it back afterwards."""
+    throttle = LoginThrottle(max_concurrent_checks=1)
+    # ``TestClient.app`` is typed as a bare ASGI app, which declares no ``state``.
+    client.app.state.login_throttle = throttle  # type: ignore[attr-defined]
+    held: list[bool] = []
+
+    def check_held() -> None:
+        with throttle.check_slot() as admitted:
+            held.append(not admitted)
+
+    hashed = _counting_hash(monkeypatch, check_held)
+
+    assert client.post("/api/setup", json=ADMIN).status_code == 201
+    assert hashed == [1]
+    assert held == [True]
+    with throttle.check_slot() as admitted:
+        assert admitted  # the slot came back
+
+
+def test_a_second_setup_gets_409_without_asking_for_a_slot(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An instance already set up answers 409 even while every slot is taken."""
+    assert client.post("/api/setup", json=ADMIN).status_code == 201
+    hashed = _counting_hash(monkeypatch, lambda: None)
+    # ``TestClient.app`` is typed as a bare ASGI app, which declares no ``state``.
+    client.app.state.login_throttle = LoginThrottle(  # type: ignore[attr-defined]
+        max_concurrent_checks=0
+    )
+
+    response = client.post("/api/setup", json={"username": "other", "password": "password456"})
+
+    assert response.status_code == 409
+    assert hashed == []

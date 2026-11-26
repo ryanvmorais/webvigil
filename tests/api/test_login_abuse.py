@@ -13,6 +13,7 @@ from __future__ import annotations
 import re
 import socket
 import threading
+import time
 from collections import Counter
 from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
@@ -783,6 +784,136 @@ def test_a_request_without_the_header_needs_no_lookup(clock: _Clock) -> None:
     trusted = TrustedProxies(["web"], resolve=resolve, clock=clock)
     assert client_address("172.18.0.3", [], trusted) == "172.18.0.3"
     assert asked == []
+
+
+_ASKERS = 8  # threads asking about one expired name at once
+
+
+class _HeldResolver:
+    """A resolver that blocks until the test lets it answer, and counts its calls."""
+
+    def __init__(self, answer: list[str]) -> None:
+        """
+        Args:
+            answer (list[str]): The addresses every call returns once released.
+        """
+        self.answer = frozenset(_address(text) for text in answer)
+        self.calls = 0
+        self.entered = threading.Event()
+        self.release = threading.Event()
+        self.release.set()  # answers at once until the test holds it
+
+    def __call__(self, name: str) -> frozenset[IPAddress]:
+        """
+        Args:
+            name (str): The name asked for (each test lists one).
+
+        Returns:
+            frozenset[IPAddress]: ``answer``, once the test releases the call.
+        """
+        self.calls += 1
+        self.entered.set()
+        assert self.release.wait(_WAIT_S)
+        return self.answer
+
+
+class _WatchedClock(_Clock):
+    """The test's clock, which also records the threads that read it."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.readers: set[int] = set()
+
+    def __call__(self) -> float:
+        """
+        Returns:
+            float: The time the test set, after recording the calling thread.
+        """
+        self.readers.add(threading.get_ident())
+        return self.now
+
+
+def _ask_together(
+    trusted: TrustedProxies, clock: _WatchedClock, resolver: _HeldResolver, *, lookup: bool
+) -> list[bool]:
+    """
+    Ask ``_ASKERS`` threads at once whether ``172.18.0.4`` is a trusted proxy.
+
+    The resolver is held until every thread has read the clock (and, when a lookup is expected,
+    until one has entered the resolver), so each of them has seen the cached answer before any
+    lookup can finish.
+
+    Args:
+        trusted (TrustedProxies): The proxies under test, on ``clock`` and ``resolver``.
+        clock (_WatchedClock): Their clock.
+        resolver (_HeldResolver): Their resolver.
+        lookup (bool): Whether the cached answer has expired, so a lookup must start.
+
+    Returns:
+        list[bool]: Each thread's answer.
+    """
+    barrier = threading.Barrier(_ASKERS)
+    clock.readers.clear()
+    resolver.entered.clear()
+    resolver.release.clear()
+
+    def ask() -> bool:
+        barrier.wait()
+        return _address("172.18.0.4") in trusted
+
+    with ThreadPoolExecutor(max_workers=_ASKERS) as pool:
+        futures = [pool.submit(ask) for _ in range(_ASKERS)]
+        try:
+            entered = not lookup or resolver.entered.wait(_WAIT_S)
+            polled = threading.Event()
+            deadline = time.monotonic() + _WAIT_S
+            # The other threads are about to read the clock; a bound in seconds, not in polls,
+            # as a short wait lasts a whole scheduler tick on Windows.
+            while len(clock.readers) < _ASKERS and time.monotonic() < deadline:
+                polled.wait(0.001)
+        finally:
+            resolver.release.set()  # even on a failure, so no thread is left waiting
+        assert entered
+        assert len(clock.readers) == _ASKERS
+        return [future.result(_WAIT_S) for future in futures]
+
+
+def test_concurrent_requests_past_the_expiry_share_one_lookup() -> None:
+    """One thread resolves the expired name; the others wait for it and use its answer."""
+    clock = _WatchedClock()
+    resolver = _HeldResolver(["172.18.0.4"])
+    trusted = TrustedProxies(["web"], resolve=resolver, clock=clock)
+    assert _address("172.18.0.4") in trusted  # the first answer, now cached
+    assert resolver.calls == 1
+
+    clock.now += NAME_TTL_S
+    assert _ask_together(trusted, clock, resolver, lookup=True) == [True] * _ASKERS
+    assert resolver.calls == 2
+
+
+def test_a_failed_lookup_trusts_nobody_for_every_waiting_request() -> None:
+    """A lookup that finds nothing is the answer of every thread that waited for it."""
+    clock = _WatchedClock()
+    resolver = _HeldResolver(["172.18.0.4"])
+    trusted = TrustedProxies(["web"], resolve=resolver, clock=clock)
+    assert _address("172.18.0.4") in trusted
+
+    resolver.answer = frozenset()  # the name stopped resolving, which the resolver reports as empty
+    clock.now += NAME_TTL_S
+    assert _ask_together(trusted, clock, resolver, lookup=True) == [False] * _ASKERS
+    assert resolver.calls == 2
+
+
+def test_concurrent_requests_before_the_expiry_need_no_lookup() -> None:
+    """The control: before the expiry, every thread is answered from memory."""
+    clock = _WatchedClock()
+    resolver = _HeldResolver(["172.18.0.4"])
+    trusted = TrustedProxies(["web"], resolve=resolver, clock=clock)
+    assert _address("172.18.0.4") in trusted
+
+    clock.now += NAME_TTL_S - 1
+    assert _ask_together(trusted, clock, resolver, lookup=False) == [True] * _ASKERS
+    assert resolver.calls == 1
 
 
 # ---------------------------------------------------------------------------

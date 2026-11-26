@@ -5,13 +5,16 @@ The route runs on a thread pool, so two setup requests can arrive together. The 
 account exists and the insert happen under one lock, so exactly one of them creates the account
 and the other gets ``409`` (GHSA-q373-8m5q-qwww). The server runs as one process (``serve``
 starts a single uvicorn worker), so a process-wide lock covers every request.
+
+The hash takes one of the login throttle's password-check slots, so setup requests cannot run
+more Argon2 checks at once than logins can (spec 027, RF-08).
 """
 
 from __future__ import annotations
 
 import threading
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 from sqlalchemy import func
 from sqlmodel import select
 
@@ -19,6 +22,7 @@ from webvigil.api.db import User
 from webvigil.api.deps import OptionalUser, SessionDep
 from webvigil.api.schemas import SetupIn, SetupStatusOut, UserOut
 from webvigil.api.security import hash_password
+from webvigil.api.throttle import BUSY_RETRY_S, LoginThrottle
 
 router = APIRouter(tags=["setup"])
 _SETUP_LOCK = threading.Lock()
@@ -48,11 +52,22 @@ def setup_status(session: SessionDep, user: OptionalUser) -> SetupStatusOut:
 
 
 @router.post("/setup", status_code=status.HTTP_201_CREATED)
-def create_first_user(body: SetupIn, session: SessionDep) -> UserOut:
-    """Create the single account. Unauthenticated, but 409s once an account exists."""
+def create_first_user(body: SetupIn, request: Request, session: SessionDep) -> UserOut:
+    """
+    Create the single account. Unauthenticated, but 409s once an account exists, and 429s
+    while every password-check slot is taken.
+    """
     if _user_count(session) > 0:  # the common answer, before paying for an Argon2 hash
         raise HTTPException(status.HTTP_409_CONFLICT, "setup has already been completed")
-    password_hash = hash_password(body.password)  # the slow part, outside the lock
+    throttle: LoginThrottle = request.app.state.login_throttle
+    with throttle.check_slot() as admitted:
+        if not admitted:
+            raise HTTPException(
+                status.HTTP_429_TOO_MANY_REQUESTS,
+                "too many password checks in progress: try again shortly",
+                headers={"Retry-After": str(BUSY_RETRY_S)},
+            )
+        password_hash = hash_password(body.password)  # the slow part, outside the lock
     with _SETUP_LOCK:  # checked again: another request may have created it meanwhile
         if _user_count(session) > 0:
             raise HTTPException(status.HTTP_409_CONFLICT, "setup has already been completed")
