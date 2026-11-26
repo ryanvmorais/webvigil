@@ -602,3 +602,12 @@ and the score goes in the pull request.
   `may_request` from the landing page check and is equivalent: `response.url` is the last URL the client
   requested, and the client requests only what `may_request` allows. The other survivor makes the landing
   page's ternary always true, on a line the stage did not change.
+- **Stage 3.** The guard records the two notices under its lock, the first time it sees each host, and the
+  orchestrator turns them into warnings after the blocked-address one. Each new test failed once with the line
+  it guards broken: the internal-target record removed, the `is_public_name` test dropped (eleven lab, cluster
+  and address names then warned), the left-out record removed, the first-time check removed (a host asked twice
+  was counted twice), the summary line removed, and the orchestrator's `extend` removed. Mutation over
+  `AddressGuard.addresses`, `AddressGuard.notices` and `address_warnings`: 39 mutants (28 generated over the
+  guards, 11 by hand over the records, the counts, the cap and the orchestrator's call), 38 killed. The survivor
+  makes the guard work out `_public_only` on every call; it is equivalent, as the target's resolution is pinned
+  and gives the same answer each time.

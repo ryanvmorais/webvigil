@@ -93,9 +93,19 @@ Persistence       webvigil.api.db  (SQLite via SQLModel + Alembic, web only)
 2. Enforce the Active-Mode gate: `active` mode without an `authorized_by` attestation is
    refused here, in the engine, so every caller is bound by it.
 3. The `HttpClient` opens; all requests route through its shared rate limiter (concurrency
-   cap + per-host delay), the scope guard (host, port and scheme) and the address guard
-   (`http/addresses.py`: each name resolved once per scan, the connection made to the checked
-   address, no internal address when the target is public).
+   cap + per-host delay), the destination policy and the address guard. The destination policy
+   (`core/destination.py`) is the one place that says what a URL may receive: whether it may be
+   requested at all (host, port and scheme in scope) and whether it may carry the scan's
+   credentials (the target's origin or its `https` upgrade). The client, the session jar and
+   every pass ask it, and an inventory test fails on any other destination comparison or
+   network opening that is not listed with its reason. The address guard (`http/addresses.py`)
+   resolves each name once per scan, connects to the checked address and keeps every host off
+   internal addresses when the target is public.
+   It also records two facts that become scan warnings: a target with a public name that
+   resolves only to internal addresses (the scan still runs against them), and each host whose
+   internal addresses were left out next to public ones (ten hosts by name, then one line for
+   the rest). When an HTTP proxy is set in the environment, the proxy resolves the names, so the
+   guard does not apply and records nothing.
 4. The crawler discovers in-scope pages — `<a href>` links plus optional `sitemap.xml` seeds —
    bounded by `max_pages` and gated by `robots.txt`. WebVigil reads `robots.txt` with its own
    RFC 9309 parser (`crawler/robots.py`), so a decision is the same on every Python: the first

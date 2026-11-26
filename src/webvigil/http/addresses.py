@@ -9,8 +9,13 @@ the internet never sends the scanner into the network it runs on. A target that 
 non-public addresses (``localhost``, a Compose service, an intranet host) was chosen by the user,
 so its scan may reach them.
 
+The guard also records what the user should know (:class:`AddressNotices`): a target with a
+public name that resolved only to internal addresses, and each host whose internal addresses were
+left out next to public ones. :func:`address_warnings` turns them into the scan's warnings.
+
 When an HTTP proxy is set in the environment (``HTTP_PROXY`` / ``HTTPS_PROXY``), ``httpx2``
-connects to the proxy and the proxy resolves the names: the check does not apply there.
+connects to the proxy and the proxy resolves the names: the check does not apply there, and
+nothing is recorded.
 """
 
 from __future__ import annotations
@@ -19,8 +24,11 @@ import asyncio
 import ipaddress
 import socket
 from collections.abc import Awaitable, Callable, Iterable
+from dataclasses import dataclass
 
 import httpcore2
+
+from webvigil.core.destination import is_public_name
 
 # Resolves ``(host, port)`` to the IP addresses a connection may use, in preference order.
 Resolver = Callable[[str, int], Awaitable[list[str]]]
@@ -34,6 +42,26 @@ _IPV4_TRANSLATED = ipaddress.IPv6Network("::ffff:0:0:0/96")
 # The only IPv6 range allocated for global unicast (RFC 4291). An allow-list keeps every reserved
 # range out, including one the ``ipaddress`` table of this Python does not know yet.
 _GLOBAL_UNICAST = ipaddress.IPv6Network("2000::/3")
+
+# Hosts named one per line in the warnings before the summary line (RF-07). Under
+# ``--scope subdomains`` the site chooses its links, so the number of hosts is the site's.
+MAX_LEFT_OUT_LINES = 10
+
+
+@dataclass(frozen=True)
+class AddressNotices:
+    """
+    What the address guard saw that the user should know.
+
+    Attributes:
+        internal_target (str | None): The target host, when it is a public name that resolved
+            only to internal addresses.
+        left_out (tuple[tuple[str, int], ...]): ``(host, internal addresses dropped)`` per host,
+            in the order the hosts were first asked for.
+    """
+
+    internal_target: str | None = None
+    left_out: tuple[tuple[str, int], ...] = ()
 
 
 class BlockedAddressError(httpcore2.ConnectError):
@@ -132,6 +160,9 @@ class AddressGuard:
         self._lock = asyncio.Lock()
         self._pinned: dict[str, list[str]] = {}
         self._public_only: bool | None = None
+        self._noticed: set[str] = set()
+        self._internal_target: str | None = None
+        self._left_out: list[tuple[str, int]] = []
 
     async def _pin(self, host: str, port: int) -> list[str]:
         """
@@ -166,14 +197,56 @@ class AddressGuard:
             if self._public_only is None:
                 target = await self._pin(self._target_host, port)
                 self._public_only = any(is_public(a) for a in target)
+                if not self._public_only and is_public_name(self._target_host):
+                    self._internal_target = self._target_host
             resolved = await self._pin(host, port)
-        allowed = [a for a in resolved if is_public(a)] if self._public_only else resolved
+            allowed = [a for a in resolved if is_public(a)] if self._public_only else resolved
+            if host not in self._noticed:
+                self._noticed.add(host)
+                if allowed and len(allowed) < len(resolved):
+                    self._left_out.append((host, len(resolved) - len(allowed)))
         if not allowed:
             raise BlockedAddressError(
                 f"{host} resolves to no public address; the target resolves to a public one, "
                 "so the scan does not connect to internal addresses"
             )
         return allowed
+
+    def notices(self) -> AddressNotices:
+        """
+        Returns:
+            AddressNotices: A snapshot of what the guard recorded so far.
+        """
+        return AddressNotices(internal_target=self._internal_target, left_out=tuple(self._left_out))
+
+
+def address_warnings(notices: AddressNotices) -> list[str]:
+    """
+    The scan warnings for what the address guard recorded.
+
+    Args:
+        notices (AddressNotices): The guard's snapshot at the end of the scan.
+
+    Returns:
+        list[str]: One line for an internal target, then one line per host with addresses left
+            out, up to :data:`MAX_LEFT_OUT_LINES`, and one summary line for the rest.
+    """
+    lines: list[str] = []
+    if notices.internal_target is not None:
+        lines.append(
+            f"the target host {notices.internal_target} is a public name but resolves only to "
+            "internal addresses (loopback, private, link-local); the scan ran against them: "
+            "check that this is the machine you meant to scan"
+        )
+    for host, count in notices.left_out[:MAX_LEFT_OUT_LINES]:
+        lines.append(
+            f"{host} resolves to {count} internal address(es) besides its public ones; "
+            "the scan used only the public addresses"
+        )
+    more = len(notices.left_out) - MAX_LEFT_OUT_LINES
+    if more > 0:
+        lines.append(f"{more} more host(s) resolve to internal addresses besides their public ones")
+    return lines
 
 
 class GuardedBackend(httpcore2.AsyncNetworkBackend):
@@ -293,10 +366,13 @@ def install(client_transport: object, guard: AddressGuard) -> None:
 
 
 __all__ = [
+    "MAX_LEFT_OUT_LINES",
     "AddressGuard",
+    "AddressNotices",
     "BlockedAddressError",
     "GuardedBackend",
     "Resolver",
+    "address_warnings",
     "install",
     "is_public",
     "system_resolver",
