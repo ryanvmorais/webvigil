@@ -719,7 +719,8 @@ request.
   nine passes the scan goes on after failing at once, 30 runs alone (the login, the OpenAPI import, the
   target URL, the crawl and the OSV lookup, one per kind) in a light configuration, and 5 runs of a
   vendored file; with the table check and the two tests of `attributed`, the failure suite is 73 tests,
-  about 39 s with coverage on a developer machine. Run as designed first, four of the six full scans ended
+  about 39 s with coverage on a developer machine and 12 to 17 s on CI (Linux, Python 3.12 to 3.15),
+  within the 20 s budget. Run as designed first, four of the six full scans ended
   at the login, the OpenAPI import or the crawl (deviation 13). On `main`, eight runs failed, each for the
   defect its fix removes: a `RuntimeError` from the login, the OpenAPI import, the target URL or the crawl
   ended with a traceback and exit code `1`, and an unreadable Retire.js database, its provenance, the
