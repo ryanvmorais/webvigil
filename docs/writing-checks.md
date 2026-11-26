@@ -109,6 +109,14 @@ scan, and each output applies its own sink. Three things are still the check's p
   fails `tests/unit/test_output_inventory.py` until it has a line in `OUTPUT_SINKS` with the reason
   its values are safe.
 
+One more test reads the whole source (spec 027): a new sensitive point fails
+`tests/unit/test_sensitive_point_inventory.py` until it has a line in `SENSITIVE_POINTS` with the
+reason it is safe, naming the guard. A sensitive point is a place where the text of an exception
+reaches an output, an exception raised with a dynamic value in its message, or a call of a
+dangerous operation: SQL, a command, code loading, deserialization, a file path, XML, a dynamic
+regular expression, HTML, a redirect, a network connection or cryptography (a `random` number
+included). The key is `module:qualname family callee`, and the failure prints it.
+
 `ctx.observations` is an advanced, opt-in side channel. The `deps.*` checks (spec 004) call
 `add_technology(...)` / `add_warning(...)` to contribute to the scan result beyond their
 findings; the probe-fed `disclosure.*` checks (spec 005) read `ctx.observations.probe_hits`

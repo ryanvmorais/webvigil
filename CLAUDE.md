@@ -107,6 +107,8 @@ Camadas, de cima para baixo:
    guardar cookie) passa por `core/destination.py` (spec 026), nunca por `Target` direto; comparação
    de destino ou conexão de rede nova ganha linha com o motivo em `COMPARISONS` ou `CONNECTIONS`
    (`tests/unit/test_destination_inventory.py`).
+   ⚠️ Todo ponto sensível novo ganha linha com o motivo em `SENSITIVE_POINTS`
+   (`tests/unit/test_sensitive_point_inventory.py`, spec 027; o que conta: [docs/writing-checks.md](docs/writing-checks.md)).
    Todo campo de texto livre do resultado tem teto (`core/bounded.py`: `Name` 1 Ki caracteres,
    `Text` 16 Ki, `Url` 64 Ki, evidência 4 Ki), cortado com `...[truncated]` na criação e na
    leitura, sem recusar; o `webvigil report` lê no máximo 64 MiB (`MAX_REPORT_BYTES`, em blocos
