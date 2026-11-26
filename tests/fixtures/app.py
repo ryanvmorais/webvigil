@@ -905,11 +905,14 @@ def _signin_page(token: str, error: str = "") -> HTMLResponse:
     return page
 
 
-def _signin(cookie_name: str, *, lockout: bool) -> Callable[[Request], Awaitable[Response]]:
+def _signin(
+    cookie_name: str, *, lockout: bool, password: str
+) -> Callable[[Request], Awaitable[Response]]:
     """
     Args:
         cookie_name (str): The profile's session cookie name.
         lockout (bool): Whether to refuse logins after ``SIGNIN_LOCKOUT`` wrong passwords.
+        password (str): The account's password.
 
     Returns:
         Callable[[Request], Awaitable[Response]]: The ``GET`` / ``POST`` ``/signin`` handler.
@@ -938,7 +941,7 @@ def _signin(cookie_name: str, *, lockout: bool) -> Callable[[Request], Awaitable
         if lockout and state.failed_logins >= SIGNIN_LOCKOUT:
             state.login_log.append("locked")
             return HTMLResponse("too many attempts", status_code=429)
-        if form.get("email") != SIGNIN_USER or form.get("pass") != SIGNIN_PASSWORD:
+        if form.get("email") != SIGNIN_USER or form.get("pass") != password:
             state.failed_logins += 1
             state.login_log.append("bad-password")
             return _signin_page(csrf, "Invalid credentials")
@@ -1510,7 +1513,9 @@ def _recorder(
     return _Recorder
 
 
-def make_app(profile: str, *, session_ttl: int | None = None) -> Starlette:
+def make_app(
+    profile: str, *, session_ttl: int | None = None, password: str = SIGNIN_PASSWORD
+) -> Starlette:
     """
     Build the target app in one of the two profiles.
 
@@ -1520,6 +1525,8 @@ def make_app(profile: str, *, session_ttl: int | None = None) -> Starlette:
             equivalent.
         session_ttl (int | None): How many authenticated requests a session issued by
             ``/signin`` survives (spec 019); ``None`` means it never expires.
+        password (str): The password ``/signin`` accepts. Defaults to ``SIGNIN_PASSWORD``; the
+            failure-injection suite gives a credential marker (spec 027).
 
     Returns:
         Starlette: The app; ``app.state.requests`` records every request,
@@ -1537,7 +1544,11 @@ def make_app(profile: str, *, session_ttl: int | None = None) -> Starlette:
     routes.append(Route("/login", _login, methods=["GET", "POST"]))
     cookie_name = "session" if is_insecure else "__Host-session"
     routes.append(
-        Route("/signin", _signin(cookie_name, lockout=not is_insecure), methods=["GET", "POST"])
+        Route(
+            "/signin",
+            _signin(cookie_name, lockout=not is_insecure, password=password),
+            methods=["GET", "POST"],
+        )
     )
     routes.append(Route("/signin/done", _signin_done))
     if is_insecure:
