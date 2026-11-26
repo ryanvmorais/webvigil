@@ -98,8 +98,9 @@ Persistence       webvigil.api.db  (SQLite via SQLModel + Alembic, web only)
    requested at all (host, port and scheme in scope) and whether it may carry the scan's
    credentials (the target's origin or its `https` upgrade). The client, the session jar and
    every pass ask it, and an inventory test fails on any other destination comparison or
-   network opening that is not listed with its reason. The address guard (`http/addresses.py`) resolves each name once per scan, connects to
-   the checked address and keeps every host off internal addresses when the target is public.
+   network opening that is not listed with its reason. The address guard (`http/addresses.py`)
+   resolves each name once per scan, connects to the checked address and keeps every host off
+   internal addresses when the target is public.
    It also records two facts that become scan warnings: a target with a public name that
    resolves only to internal addresses (the scan still runs against them), and each host whose
    internal addresses were left out next to public ones (ten hosts by name, then one line for
