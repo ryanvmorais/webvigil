@@ -303,7 +303,8 @@ export interface paths {
         put?: never;
         /**
          * Create First User
-         * @description Create the single account. Unauthenticated, but 409s once an account exists.
+         * @description Create the single account. Unauthenticated, but 409s once an account exists, and 429s
+         *     while every password-check slot is taken.
          */
         post: operations["create_first_user_api_setup_post"];
         delete?: never;

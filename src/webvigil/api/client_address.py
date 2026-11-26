@@ -9,13 +9,15 @@ read here.
 
 An entry of ``trusted_proxies`` may be a name, because a Compose service has no fixed address: the
 name is resolved when it is needed and again after ``NAME_TTL_S``, so a recreated container is
-recognized without a restart of the API.
+recognized without a restart of the API. One lookup runs at a time, and the requests that arrive
+during it use its answer.
 """
 
 from __future__ import annotations
 
 import ipaddress
 import socket
+import threading
 import time
 from collections.abc import Callable, Iterable, Sequence
 
@@ -91,9 +93,10 @@ class TrustedProxies:
                 self._names.append(entry)
         self._resolve = resolve
         self._clock = clock
-        # Replaced as one tuple, so a parallel reader sees the old answer or the new one. Two
-        # threads may resolve at once after the expiry, which only costs a second lookup.
+        # Replaced as one tuple, so a reader without the lock sees the old answer or the new one.
+        # The lock lets one thread resolve after the expiry while the others wait for its answer.
         self._resolved: tuple[float, frozenset[IPAddress]] | None = None
+        self._refresh = threading.Lock()
 
     def __contains__(self, address: IPAddress) -> bool:
         """
@@ -112,12 +115,18 @@ class TrustedProxies:
         Returns:
             frozenset[IPAddress]: The current addresses of every listed name.
         """
-        now = self._clock()
-        if self._resolved is not None and now < self._resolved[0]:
-            return self._resolved[1]
-        addresses = frozenset().union(*(self._resolve(name) for name in self._names))
-        self._resolved = (now + NAME_TTL_S, addresses)
-        return addresses
+        resolved = self._resolved
+        if resolved is not None and self._clock() < resolved[0]:
+            return resolved[1]
+        with self._refresh:
+            # Checked again: another thread may have resolved while this one waited for the lock.
+            now = self._clock()
+            resolved = self._resolved
+            if resolved is not None and now < resolved[0]:
+                return resolved[1]
+            addresses = frozenset().union(*(self._resolve(name) for name in self._names))
+            self._resolved = (now + NAME_TTL_S, addresses)
+            return addresses
 
 
 def client_address(peer: str | None, forwarded_for: Sequence[str], trusted: TrustedProxies) -> str:

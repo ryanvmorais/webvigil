@@ -21,17 +21,21 @@ type FakeRequest = {
  * Send one request through a patched fake server.
  *
  * @param request - The request to emit.
+ * @param event - The event that carries it: an ordinary request or a protocol upgrade.
  * @returns The headers the server's listener saw.
  */
-function received(request: FakeRequest): Record<string, string | undefined> {
+function received(
+  request: FakeRequest,
+  event: "request" | "upgrade" = "request",
+): Record<string, string | undefined> {
   class FakeServer extends EventEmitter {}
   forwardPeerAddress(FakeServer as unknown as typeof http.Server);
   const server = new FakeServer();
   let seen: Record<string, string | undefined> = {};
-  server.on("request", (incoming: FakeRequest) => {
+  server.on(event, (incoming: FakeRequest) => {
     seen = { ...incoming.headers };
   });
-  server.emit("request", request);
+  server.emit(event, request);
   return seen;
 }
 
@@ -64,21 +68,37 @@ describe("forwardPeerAddress", () => {
     expect(seen["x-forwarded-for"]).toBe("198.51.100.7, 192.0.2.1");
   });
 
+  it("rewrites the header of an upgrade request too", () => {
+    const seen = received(
+      { headers: { "x-forwarded-for": "198.51.100.7" }, socket: { remoteAddress: "192.0.2.1" } },
+      "upgrade",
+    );
+    expect(seen["x-forwarded-for"]).toBe("198.51.100.7, 192.0.2.1");
+  });
+
+  it("drops a client's header from an upgrade when the connection has no address", () => {
+    const seen = received(
+      { headers: { "x-forwarded-for": "198.51.100.7" }, socket: {} },
+      "upgrade",
+    );
+    expect(seen).not.toHaveProperty("x-forwarded-for");
+  });
+
   it("drops a client's header when the connection has no address", () => {
     const seen = received({ headers: { "x-forwarded-for": "198.51.100.7" }, socket: {} });
     expect(seen).not.toHaveProperty("x-forwarded-for");
   });
 
-  it("leaves other events alone", () => {
+  it.each(["checkContinue", "connection"])("leaves the %s event alone", (event) => {
     class FakeServer extends EventEmitter {}
     forwardPeerAddress(FakeServer as unknown as typeof http.Server);
     const server = new FakeServer();
     const headers = { "x-forwarded-for": "198.51.100.7" };
     let calls = 0;
-    server.on("checkContinue", () => {
+    server.on(event, () => {
       calls += 1;
     });
-    server.emit("checkContinue", { headers, socket: { remoteAddress: "192.0.2.1" } });
+    server.emit(event, { headers, socket: { remoteAddress: "192.0.2.1" } });
     expect(calls).toBe(1);
     expect(headers["x-forwarded-for"]).toBe("198.51.100.7");
   });

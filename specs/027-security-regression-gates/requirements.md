@@ -1,6 +1,6 @@
 ---
 feature: Security regression gates — failure injection with markers at every stage, every sensitive point inventoried by a test, and the hardening left from the 1.6.0 review
-status: approved
+status: in progress
 date: 2026-11-25
 related:
   - 001-foundation/design.md

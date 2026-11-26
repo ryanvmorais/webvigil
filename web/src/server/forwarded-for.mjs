@@ -23,6 +23,10 @@ export const appendPeer = (existing, peer) => {
 /**
  * Rewrite the header of every request a server class receives, before Next sees it.
  *
+ * Both `"request"` and `"upgrade"` (a request that asks for another protocol, such as a WebSocket
+ * handshake) carry the request as their first argument, and Next can forward both to `/api/*`, so
+ * both are rewritten. Other events are left alone.
+ *
  * Patched on the class because the standalone `server.js` creates its server privately.
  *
  * @param {typeof import("node:http").Server} serverClass - The class to patch.
@@ -33,7 +37,7 @@ export const forwardPeerAddress = (serverClass) => {
   // A `function`, not an arrow: `emit` runs with `this` set to the server that received the event.
   /** @type {(this: import("node:http").Server, event: string, ...args: any[]) => boolean} */
   const patched = function (event, ...args) {
-    if (event === "request") {
+    if (event === "request" || event === "upgrade") {
       const { headers, socket } = args[0];
       const value = appendPeer(headers["x-forwarded-for"], socket.remoteAddress);
       if (value === undefined) delete headers["x-forwarded-for"];

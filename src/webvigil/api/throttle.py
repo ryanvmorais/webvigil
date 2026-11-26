@@ -21,7 +21,8 @@ is not waiting* is dropped to make room. Dropping a waiting key would hand its c
 it is waiting for, so a table holding nothing else refuses a new key until the first wait ends.
 
 Each check costs a full Argon2 in memory and CPU whatever the username, so only
-``MAX_CONCURRENT_CHECKS`` run at once and the excess is answered at once.
+``MAX_CONCURRENT_CHECKS`` run at once and the excess is answered at once. The hash of the initial
+setup takes the same slots.
 
 The login route runs on a thread pool, so requests arrive in parallel. Every method takes one lock,
 and the routes check the wait and count the attempt as a failure in the same step: a burst of
@@ -58,8 +59,9 @@ MAX_KEY_CHARS = 128
 # short, because it is the one limit that also delays the owner.
 USER_WINDOW_S = 30
 USER_MAX_ATTEMPTS = 20
-# Argon2 checks of a login running at once. Each one holds its full memory cost, so this bounds
-# what the login route can use, and one person never logs in this many times at once.
+# Argon2 checks of a login or the initial setup running at once. Each one holds its full memory
+# cost, so this bounds what those routes can use, and one person never logs in this many times at
+# once.
 MAX_CONCURRENT_CHECKS = 4
 # What a login turned away for lack of a free check is told: the checks in progress end in well
 # under a second.
@@ -94,8 +96,8 @@ class LoginThrottle:
         Args:
             clock (Callable[[], float]): A monotonic clock in seconds. Injectable so tests do
                 not sleep. Defaults to :func:`time.monotonic`.
-            max_concurrent_checks (int): Password checks of a login allowed at once. Defaults
-                to ``MAX_CONCURRENT_CHECKS``.
+            max_concurrent_checks (int): Password checks of a login or a setup allowed at once.
+                Defaults to ``MAX_CONCURRENT_CHECKS``.
         """
         self._clock = clock
         self._failures: dict[str, _Entry] = {}

@@ -43,6 +43,12 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
   machine meant. It also warns, per host, when a host resolved to internal addresses next to its
   public ones and only the public ones were used, naming up to ten hosts and counting the rest on
   one more line. Neither applies behind an HTTP proxy set in the environment.
+- The Web API's initial setup takes one of the password checks a login takes: while all of them
+  are in progress, a setup request gets `429` with `Retry-After` and creates no account, as a
+  login does. An instance already set up still answers `409`.
+- The dashboard's server appends the connection's address to `X-Forwarded-For` on a request that
+  asks for a protocol upgrade (such as a WebSocket handshake), as on every other request it
+  forwards to the Web API.
 
 ### Security
 

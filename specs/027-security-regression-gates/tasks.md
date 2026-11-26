@@ -1,6 +1,6 @@
 ---
 feature: Security regression gates — failure injection with markers at every stage, every sensitive point inventoried by a test, and the hardening left from the 1.6.0 review
-status: approved
+status: in progress
 date: 2026-11-25
 related:
   - 001-foundation/design.md
@@ -51,7 +51,7 @@ A failure the suite finds that exposes a credential in a released version stops 
 
 ## Stage 0 — Baseline and the Web API hardening
 
-- [ ] Record the baseline on `main`, on one Python version:
+- [x] Record the baseline on `main`, on one Python version:
   - the test count and the suite time;
   - `uv run pytest --cov` per file;
   - four JSON reports of the fixture application, from `tests.fixtures.serve:app` served by `uv run uvicorn`:
@@ -60,14 +60,14 @@ A failure the suite finds that exposes a credential in a released version stops 
   - the requests the fixture received in each scan and the duration of each scan.
 
   The baseline is kept outside the repository for Stage 6. — RF-14, RNF-04, RNF-06
-- [ ] `src/webvigil/api/routes/setup.py`: `create_first_user` hashes inside `throttle.check_slot()`; without a slot,
+- [x] `src/webvigil/api/routes/setup.py`: `create_first_user` hashes inside `throttle.check_slot()`; without a slot,
   `429` with `Retry-After: BUSY_RETRY_S` and `too many password checks in progress: try again shortly`. The `409`
   before the hash stays first. — RF-08
-- [ ] `src/webvigil/api/client_address.py`: `_name_addresses` refreshes under a `threading.Lock` with the expiry
+- [x] `src/webvigil/api/client_address.py`: `_name_addresses` refreshes under a `threading.Lock` with the expiry
   checked again inside it; the comment about a second lookup goes. — RF-09
-- [ ] `web/src/server/forwarded-for.mjs`: the patched `emit` rewrites the header on `"upgrade"` as on `"request"`;
+- [x] `web/src/server/forwarded-for.mjs`: the patched `emit` rewrites the header on `"upgrade"` as on `"request"`;
   the file's comment says both. — RF-10, ADR-7
-- [ ] Tests, from the design's test strategy:
+- [x] Tests, from the design's test strategy:
   - `tests/api/`: setup with no free slot (`429`, `Retry-After`, no `user` row), with a free slot (the account), and
     a second setup (`409` without a slot);
   - `tests/unit/` (client address): eight threads past the expiry with a blocking, counting resolver stub; a failing
@@ -76,12 +76,13 @@ A failure the suite finds that exposes a credential in a released version stops 
     alone.
 
   — RF-08, RF-09, RF-10, RF-15
-- [ ] Apply the design's sabotage and watch each test fail: the hash outside the slot, the lock removed, the
+- [x] Apply the design's sabotage and watch each test fail: the hash outside the slot, the lock removed, the
   `upgrade` branch dropped. — RF-15
-- [ ] Mutation testing in batch over `create_first_user` and `_name_addresses`. — RNF-06
-- [ ] `CHANGELOG.md` `[Unreleased]`, **Changed:** the setup `429` and the dashboard's forwarding of an upgrade. —
+- [x] Mutation testing in batch over `create_first_user` and `_name_addresses`. — RNF-06
+- [x] `CHANGELOG.md` `[Unreleased]`, **Changed:** the setup `429` and the dashboard's forwarding of an upgrade. —
   RNF-02
-- [ ] Quality gate, Python and `web/`.
+- [x] Quality gate, Python and `web/`. — 3771 passed, 4 skipped (Windows), 113 s with coverage, 98 %;
+  ruff/black/mypy/import-linter green; package check ok; `web/` 579 passed, build ok.
 
 ## Stage 1 — `robots.txt` and the logout test
 

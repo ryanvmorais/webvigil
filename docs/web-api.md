@@ -70,9 +70,9 @@ Guesses spread over many addresses are contained by a shared limit per username:
 30 seconds, after which that username waits for the rest of the window. That wait falls on everyone
 using the username, so guesses from many addresses can still delay your login for as long as they
 last. It is set so one client is always stopped by its own wait first, and a successful login does
-not count against it. At most 4 password checks of a login run at once, because each one costs a
-full Argon2 in memory and CPU; the excess gets `429` with `Retry-After: 1`, and a client already
-waiting is answered before it competes for one. The password change re-checks the current password
+not count against it. At most 4 password checks of a login or of the initial setup run at once,
+because each one costs a full Argon2 in memory and CPU; the excess gets `429` with
+`Retry-After: 1`, and a client already waiting is answered before it competes for one. The password change re-checks the current password
 under its own limit, per user, so a stolen session cannot guess it without limit. A username that
 does not exist takes the same time as a wrong password (one Argon2 check each) and gets the same
 answers, so the response does not say which usernames are real.
