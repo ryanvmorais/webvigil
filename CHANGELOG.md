@@ -69,6 +69,12 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 - The Web API's JSON responses write DEL, the C1 controls and the bidirectional and zero-width
   characters as `\uNNNN` escapes, as the JSON report does: a JSON parser reads the same values, and
   a body printed in a terminal (`curl`) no longer carries them raw.
+- A scan with an automated login gives the session up, as it already did once the target had set
+  1 024 distinct session cookie values, when the target sets one value longer than 4 096
+  characters (the cookie size RFC 6265 asks a browser to keep at least) or 64 Ki characters of
+  values in all. The rest of the scan runs without the session, a re-login included, and the
+  warning says so: `the target changed the session cookies too many times or set one too long to
+  keep - the rest of the scan ran without the session`.
 
 ### Fixed
 
@@ -100,7 +106,9 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
   after the ellipsis a check writes where it cuts a snippet. A fragment of 4 or more characters of
   any spelling of a secret next to such a cut is now shown as `[redacted]`, and the redaction
   warning counts the field. Evidence is matched at its start and its end too, since a check can
-  cut a snippet out of a page without writing a marker.
+  cut a snippet out of a page without writing a marker. The search takes a fixed amount of memory
+  and a bounded amount of work per field; a field that would take more (a secret that repeats one
+  short run, or hundreds of cuts next to a secret) is shown as `[redacted]` whole.
 - **The Web API's log keeps each record on its own lines, bounded, and without statement
   values.** A scan that crashed with text from the scanned site in its exception could write a
   record of any size, with line breaks that looked like records of their own and escape sequences

@@ -35,10 +35,12 @@ import re
 import sys
 import sysconfig
 import traceback
-from collections.abc import Callable, Iterable, Mapping
+from bisect import bisect_right
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from contextlib import suppress
 from dataclasses import dataclass
 from enum import StrEnum
+from itertools import accumulate
 from pathlib import Path
 from typing import Final
 from urllib.parse import quote, quote_plus
@@ -74,6 +76,22 @@ CUT_MARKERS: Final[tuple[str, ...]] = (EVIDENCE_MARKER, TRUNCATION_MARKER, "..."
 # ``quote`` writes upper-case hex (``%2F``); some servers echo it lower case (``%2f``), so each
 # encoded spelling is also scrubbed with its escapes lowered.
 _PERCENT_RE = re.compile(r"%[0-9A-F]{2}")
+
+# The fragment search of :class:`Redactor` keeps one bit per hashed run of
+# :data:`MIN_SECRET_LENGTH` characters of the spellings (1 MiB), so its memory does not grow
+# with the secrets: an index of every position took about 490 bytes per character of every
+# spelling, and the target is the one that sets the session values.
+_FILTER_BITS: Final = 1 << 23
+
+# The most work the fragment search may spend on one field, in characters scanned or compared.
+# Only a secret that repeats one run over and over, or a field with hundreds of cuts next to
+# runs of a secret, gets near it; a field past it is redacted whole, which hides at least as
+# much as the search would have.
+FRAGMENT_WORK_BUDGET: Final = 4 * 1024 * 1024
+
+# Joins the spellings into the one string the fragment search scans. A run that spans it
+# belongs to no spelling, and the search drops it.
+_SPELLING_SEPARATOR: Final = "\x00"
 
 # How much of an exception group the log shows, as ``traceback`` does.
 _GROUP_WIDTH: Final = 15
@@ -388,9 +406,11 @@ class Redactor:
     A fragment is a prefix or a suffix of a spelling, at least :data:`MIN_SECRET_LENGTH`
     characters and shorter than the spelling. A prefix is looked for just before a cut (a
     :data:`CUT_MARKERS` occurrence, and the end of the text with ``cut_edges``), a suffix just
-    after one (and at the start of the text with ``cut_edges``). Both are indexed by their
-    :data:`MIN_SECRET_LENGTH` characters next to the cut, so memory grows with the secrets'
-    length rather than with its square.
+    after one (and at the start of the text with ``cut_edges``). The run of
+    :data:`MIN_SECRET_LENGTH` characters next to the cut is first asked of a fixed-size filter,
+    which answers for nearly every cut that no spelling holds it; only then are the spellings
+    scanned for it. The work on one field is bounded by :data:`FRAGMENT_WORK_BUDGET`, past which
+    the field is redacted whole.
 
     Attributes:
         hits (int): Fields changed so far, by either rule, for the warning that makes a
@@ -399,7 +419,7 @@ class Redactor:
 
     def __init__(self, texts: Iterable[str]) -> None:
         """
-        Index every spelling of the secrets and their prefixes and suffixes.
+        Gather every spelling of the secrets and fill the filter of their runs.
 
         Args:
             texts (Iterable[str]): The values to hide; the ones under
@@ -411,20 +431,17 @@ class Redactor:
                 spellings |= _spellings(text)
         # longest first, so a secret that contains another is replaced whole
         self._ordered = sorted((s for s in spellings if s), key=len, reverse=True)
-        # the last characters of each prefix -> (spelling, prefix length)
-        self._prefixes: dict[str, list[tuple[str, int]]] = {}
-        # the first characters of each suffix -> (spelling, where the suffix starts)
-        self._suffixes: dict[str, list[tuple[str, int]]] = {}
+        # where each spelling starts in the joined string, for the spelling of a match
+        self._starts = list(
+            accumulate((len(s) + len(_SPELLING_SEPARATOR) for s in self._ordered[:-1]), initial=0)
+        )
+        self._joined = _SPELLING_SEPARATOR.join(self._ordered)
+        self._filter = bytearray(_FILTER_BITS // 8 if self._ordered else 0)
         edge = MIN_SECRET_LENGTH
         for spelling in self._ordered:
-            for length in range(edge, len(spelling)):
-                self._prefixes.setdefault(spelling[length - edge : length], []).append(
-                    (spelling, length)
-                )
-            for start in range(1, len(spelling) - edge + 1):
-                self._suffixes.setdefault(spelling[start : start + edge], []).append(
-                    (spelling, start)
-                )
+            for start in range(len(spelling) - edge + 1):
+                bit = hash(spelling[start : start + edge]) & (_FILTER_BITS - 1)
+                self._filter[bit >> 3] |= 1 << (bit & 7)
         self.hits = 0
 
     @property
@@ -449,7 +466,8 @@ class Redactor:
 
         Returns:
             str: ``text`` with every secret spelling, and every fragment of one at a cut,
-                replaced by :data:`REDACTED`.
+                replaced by :data:`REDACTED`; :data:`REDACTED` alone when the fragment search
+                would pass :data:`FRAGMENT_WORK_BUDGET`.
         """
         if not self._ordered:
             return text
@@ -457,7 +475,10 @@ class Redactor:
         for spelling in self._ordered:
             if spelling in text:
                 text = text.replace(spelling, REDACTED)
-        text = self._redact_fragments(text, cut_edges=cut_edges)
+        try:
+            text = self._redact_fragments(text, cut_edges=cut_edges, work=_Work())
+        except _OverBudget:
+            text = REDACTED
         if text != original:
             self.hits += 1
         return text
@@ -474,21 +495,25 @@ class Redactor:
         """
         return None if text is None else self(text)
 
-    def _redact_fragments(self, text: str, *, cut_edges: bool) -> str:
+    def _redact_fragments(self, text: str, *, cut_edges: bool, work: _Work) -> str:
         """
         Redact the fragments of a secret found at the cuts of a field.
 
         Args:
             text (str): A field whose whole spellings are already replaced.
             cut_edges (bool): Whether the start and the end of ``text`` are cuts.
+            work (_Work): The field's work so far.
 
         Returns:
             str: ``text`` with the longest fragment found at each cut replaced, overlapping
                 fragments joined into one :data:`REDACTED`.
+
+        Raises:
+            _OverBudget: When the search passes :data:`FRAGMENT_WORK_BUDGET`.
         """
         before, after = _cut_points(text, cut_edges=cut_edges)
-        spans = [span for point in before if (span := self._prefix_before(text, point))]
-        spans += [span for point in after if (span := self._suffix_after(text, point))]
+        spans = [span for point in before if (span := self._prefix_before(text, point, work))]
+        spans += [span for point in after if (span := self._suffix_after(text, point, work))]
         if not spans:
             return text
         spans.sort()
@@ -506,42 +531,121 @@ class Redactor:
         pieces.append(text[last:])
         return "".join(pieces)
 
-    def _prefix_before(self, text: str, point: int) -> tuple[int, int] | None:
+    def _prefix_before(self, text: str, point: int, work: _Work) -> tuple[int, int] | None:
         """
         Find the longest prefix of a secret that ends at a cut.
 
         Args:
             text (str): The field.
             point (int): A cut: the text before it may end with a prefix of a spelling.
+            work (_Work): The field's work so far.
 
         Returns:
             tuple[int, int] | None: The span of the longest such prefix, or ``None``.
+
+        Raises:
+            _OverBudget: When the search passes :data:`FRAGMENT_WORK_BUDGET`.
         """
         if point < MIN_SECRET_LENGTH:
             return None
         best = 0
-        for spelling, length in self._prefixes.get(text[point - MIN_SECRET_LENGTH : point], ()):
-            if best < length <= point and text.startswith(spelling[:length], point - length):
-                best = length
+        for spelling, start in self._runs(text[point - MIN_SECRET_LENGTH : point], work):
+            # the run ends the prefix: a prefix as long as the spelling is a whole one
+            length = start + MIN_SECRET_LENGTH
+            if best < length < len(spelling) and length <= point:
+                work.spend(length)
+                if text.startswith(spelling[:length], point - length):
+                    best = length
         return (point - best, point) if best else None
 
-    def _suffix_after(self, text: str, point: int) -> tuple[int, int] | None:
+    def _suffix_after(self, text: str, point: int, work: _Work) -> tuple[int, int] | None:
         """
         Find the longest suffix of a secret that starts at a cut.
 
         Args:
             text (str): The field.
             point (int): A cut: the text after it may start with a suffix of a spelling.
+            work (_Work): The field's work so far.
 
         Returns:
             tuple[int, int] | None: The span of the longest such suffix, or ``None``.
+
+        Raises:
+            _OverBudget: When the search passes :data:`FRAGMENT_WORK_BUDGET`.
         """
         best = 0
-        for spelling, start in self._suffixes.get(text[point : point + MIN_SECRET_LENGTH], ()):
+        for spelling, start in self._runs(text[point : point + MIN_SECRET_LENGTH], work):
+            # the run starts the suffix: a suffix from the first character is a whole spelling
             length = len(spelling) - start
-            if length > best and text.startswith(spelling[start:], point):
-                best = length
+            if start and length > best:
+                work.spend(length)
+                if text.startswith(spelling[start:], point):
+                    best = length
         return (point, point + best) if best else None
+
+    def _runs(self, run: str, work: _Work) -> Iterator[tuple[str, int]]:
+        """
+        Find a run of characters in the spellings.
+
+        Args:
+            run (str): :data:`MIN_SECRET_LENGTH` characters next to a cut (fewer at the end of
+                the text, which no spelling run matches).
+            work (_Work): The field's work so far; every scan of the joined spellings is spent.
+
+        Yields:
+            tuple[str, int]: ``(spelling, where the run starts in it)`` for each occurrence;
+                nothing is yielded when the filter says no spelling holds the run.
+
+        Raises:
+            _OverBudget: When the search passes :data:`FRAGMENT_WORK_BUDGET`.
+        """
+        if len(run) < MIN_SECRET_LENGTH:
+            return
+        bit = hash(run) & (_FILTER_BITS - 1)
+        if not self._filter[bit >> 3] & (1 << (bit & 7)):
+            return
+        joined = self._joined
+        start = 0
+        while (found := joined.find(run, start)) != -1:
+            work.spend(found + len(run) - start)
+            index = bisect_right(self._starts, found) - 1
+            offset = found - self._starts[index]
+            spelling = self._ordered[index]
+            if offset + len(run) <= len(spelling):  # not across a separator
+                yield spelling, offset
+            start = found + 1
+        work.spend(len(joined) - start)
+
+
+class _OverBudget(Exception):
+    """The fragment search of one field passed :data:`FRAGMENT_WORK_BUDGET`."""
+
+
+class _Work:
+    """
+    The work the fragment search spent on one field.
+
+    Attributes:
+        spent (int): Characters scanned or compared so far.
+    """
+
+    def __init__(self) -> None:
+        """Start a field with nothing spent."""
+        self.spent = 0
+
+    def spend(self, amount: int) -> None:
+        """
+        Spend ``amount`` of the field's work, or give the field up past the budget.
+
+        Args:
+            amount (int): Characters about to be scanned or compared.
+
+        Raises:
+            _OverBudget: When the field's total passes :data:`FRAGMENT_WORK_BUDGET`.
+        """
+        self.spent += amount
+        if self.spent > FRAGMENT_WORK_BUDGET:
+            raise _OverBudget
 
 
 def _cut_points(text: str, *, cut_edges: bool) -> tuple[set[int], set[int]]:
