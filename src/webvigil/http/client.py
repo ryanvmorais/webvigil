@@ -252,27 +252,31 @@ class Response:
         return "html" in self.headers.get("content-type", "").lower()
 
 
-def _decode_text(raw: httpx2.Response) -> str:
+def decode_text(content: bytes, content_type: str | None) -> str:
     """
-    The body as text, in the charset the response declares, or UTF-8 when that cannot decode.
+    A body as text, in the charset ``content_type`` declares, or UTF-8 when that cannot decode.
 
-    ``charset=`` is the target's to write, and Python's codec registry also holds codecs that
-    are not text encodings (``base64``, ``zlib``, ``hex``) or that refuse the ``replace``
-    error handler (``idna``): ``httpx2`` looks the name up and then fails inside ``.text`` with
-    whatever that codec raises. Such a body is read as UTF-8 with replacement characters, as an
-    unknown charset already is. Text that does decode can still hold a character no later step
-    could encode: it is replaced here, where the text enters the engine.
+    This is the decoding :attr:`Response.text` holds, so a part of a body (``robots.txt`` past
+    its size limit) reads as the whole body would. ``charset=`` is the target's to write, and
+    Python's codec registry also holds codecs that are not text encodings (``base64``, ``zlib``,
+    ``hex``) or that refuse the ``replace`` error handler (``idna``): ``httpx2`` looks the name
+    up and then fails inside ``.text`` with whatever that codec raises. Such a body is read as
+    UTF-8 with replacement characters, as an unknown charset already is. Text that does decode
+    can still hold a character no later step could encode: it is replaced here, where the text
+    enters the engine.
 
     Args:
-        raw (httpx2.Response): A response with its body loaded.
+        content (bytes): The body, or a part of it.
+        content_type (str | None): The response's ``Content-Type``, or ``None`` when it sent none.
 
     Returns:
         str: The decoded body, always encodable as UTF-8.
     """
+    headers = () if content_type is None else (("content-type", content_type),)
     try:
-        return replace_surrogates(raw.text)
+        return replace_surrogates(httpx2.Response(200, headers=headers, content=content).text)
     except Exception:  # any codec's own error: the charset name came from the target
-        return raw.content.decode("utf-8", errors="replace")
+        return content.decode("utf-8", errors="replace")
 
 
 def _host_of(url: str) -> str:
@@ -805,7 +809,7 @@ class HttpClient:
             requested_url=requested_url,
             status_code=raw.status_code,
             headers=response_headers,
-            text=_decode_text(raw),
+            text=decode_text(raw.content, raw.headers.get("content-type")),
             content=raw.content,
             elapsed_ms=raw.elapsed.total_seconds() * 1000,
             history=tuple(hops),
@@ -1020,6 +1024,7 @@ __all__ = [
     "RedirectHop",
     "Response",
     "blocked_address_warning",
+    "decode_text",
     "truncated_warning",
     "unreachable_warning",
 ]

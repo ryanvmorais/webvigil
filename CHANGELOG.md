@@ -49,6 +49,24 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 - The dashboard's server appends the connection's address to `X-Forwarded-For` on a request that
   asks for a protocol upgrade (such as a WebSocket handshake), as on every other request it
   forwards to the Web API.
+- `robots.txt` that answers a `5xx` status after the client's retries, or cannot be fetched
+  because of a network error, now disallows every URL, as RFC 9309 says: the crawl keeps the
+  target URL alone, and one warning says that `robots.txt` could not be read and how to turn
+  `follow_robots` off, in place of the count of URLs it kept out. A `4xx`, a missing and an empty
+  file still allow every URL.
+- A `robots.txt` rule whose path ends in `?` matches the same path with an empty query (`/a?`),
+  and the rule `/a$` no longer covers that URL. A `robots.txt` larger than 500 KiB is read in the
+  charset it declares, as a smaller file is, instead of always as UTF-8.
+
+### Fixed
+
+- The session logout test (`--test-logout`) uses only a logout endpoint the scan's credentials
+  may reach. Under `--scope subdomains`, a logout link or form on a sibling host got no session
+  cookie, so the old session still worked afterwards and the scan reported
+  `session.logout.not-invalidated` where the site's logout may well work. Such an endpoint is now
+  passed over; with no other, the test is skipped with its warning. A configured
+  `[auth.login] logout_url` the credentials may not reach skips the test with a warning that names
+  it.
 
 ### Security
 

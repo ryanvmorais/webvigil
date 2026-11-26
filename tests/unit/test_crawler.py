@@ -643,3 +643,115 @@ def test_from_response_passes_the_method_through() -> None:
     )
     assert Page.from_response(response).method == "GET"
     assert Page.from_response(response, method="POST").method == "POST"
+
+
+# ---------------------------------------------------------------------------
+# An unreadable robots.txt (spec 027, RF-11)
+# ---------------------------------------------------------------------------
+
+
+class _RefusingRouter(_Router):
+    """A router whose ``robots.txt`` cannot be reached: the connection is refused."""
+
+    def __call__(self, request: httpx2.Request) -> httpx2.Response:
+        if request.url.path == "/robots.txt":
+            self.seen.append(str(request.url))
+            raise httpx2.ConnectError("connection refused", request=request)
+        return super().__call__(request)
+
+
+@pytest.fixture
+def _no_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The client retries a 5xx GET and a refused connection; only the wait is zeroed."""
+    from webvigil.http import client as client_mod
+
+    monkeypatch.setattr(client_mod, "BACKOFF_BASE_S", 0.0)
+    monkeypatch.setattr(client_mod, "BACKOFF_JITTER_S", 0.0)
+
+
+def _linking_site(robots: tuple[int, str, str] | None) -> dict[str, tuple[int, str, str]]:
+    """
+    Args:
+        robots (tuple[int, str, str] | None): The ``robots.txt`` route, or ``None`` for none.
+
+    Returns:
+        dict[str, tuple[int, str, str]]: A home page that links ``/a`` and ``/b``, both live.
+    """
+    routes = {
+        _SEED: _page(_html("/a", "/b")),
+        "https://example.com/a": _page(_html()),
+        "https://example.com/b": _page(_html()),
+    }
+    if robots is not None:
+        routes["https://example.com/robots.txt"] = robots
+    return routes
+
+
+async def _crawl_site(router: _Router, httpx_mock: object, config: ScanConfig) -> Crawler:
+    """
+    Args:
+        router (_Router): The response router.
+        httpx_mock: The ``httpx_mock`` fixture.
+        config (ScanConfig): The scan config.
+
+    Returns:
+        Crawler: The crawler after ``discover()``.
+    """
+    httpx_mock.add_callback(router, is_reusable=True)  # type: ignore[attr-defined]
+    async with HttpClient(Target.parse(_SEED), config) as http:
+        crawler = Crawler(http, Target.parse(_SEED), config)
+        await crawler.discover()
+    return crawler
+
+
+@pytest.mark.usefixtures("_no_backoff")
+@pytest.mark.parametrize(
+    ("router", "reason"),
+    [
+        (_Router(_linking_site((503, "", "text/plain"))), "HTTP 503"),
+        (_RefusingRouter(_linking_site(None)), "ConnectError"),
+    ],
+    ids=["503", "refused"],
+)
+async def test_an_unreadable_robots_file_keeps_only_the_target_url(
+    router: _Router, reason: str, httpx_mock: object
+) -> None:
+    """RFC 9309, 2.3.1.4: the queue is not fetched, and the crawler says why (spec 027, RF-11)."""
+    crawler = await _crawl_site(router, httpx_mock, ScanConfig())
+
+    assert "https://example.com/robots.txt" in router.seen  # the path under test ran
+    assert _SEED in router.seen
+    assert "https://example.com/a" not in router.seen
+    assert "https://example.com/b" not in router.seen
+    assert crawler.robots_unreadable == reason
+    assert crawler.skipped_by_robots == 2
+
+
+@pytest.mark.usefixtures("_no_backoff")
+async def test_an_unreadable_robots_file_decides_nothing_with_follow_robots_off(
+    httpx_mock: object,
+) -> None:
+    """The same 503 with ``follow_robots`` off: the queue is crawled and nothing is reported."""
+    router = _Router(_linking_site((503, "", "text/plain")))
+    config = ScanConfig.model_validate({"scan": {"follow_robots": False}})
+    crawler = await _crawl_site(router, httpx_mock, config)
+
+    assert "https://example.com/a" in router.seen
+    assert crawler.robots_unreadable is None
+
+
+@pytest.mark.parametrize(
+    "robots",
+    [(404, "", "text/plain"), (403, "User-agent: *\nDisallow: /\n", "text/plain"), None],
+    ids=["404", "403", "missing"],
+)
+async def test_a_robots_file_that_is_not_there_lets_the_queue_through(
+    robots: tuple[int, str, str] | None, httpx_mock: object
+) -> None:
+    """A ``4xx`` or no route at all (the router's 404) allows every URL, as before."""
+    router = _Router(_linking_site(robots))
+    crawler = await _crawl_site(router, httpx_mock, ScanConfig())
+
+    assert "https://example.com/a" in router.seen
+    assert "https://example.com/b" in router.seen
+    assert crawler.robots_unreadable is None

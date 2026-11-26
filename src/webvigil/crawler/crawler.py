@@ -164,6 +164,7 @@ class Crawler:
         self._forms: dict[_FormKey, Form] = {}
         self._skipped_destructive = 0
         self._skipped_by_robots = 0
+        self._robots_unreadable: str | None = None
         pages_cap = max(1, config.scan.max_pages)
         self._seen_cap = max(_MIN_SEEN, _SEEN_PER_PAGE * pages_cap)
         self._links_per_page = max(_MIN_LINKS_PER_PAGE, pages_cap)
@@ -206,6 +207,16 @@ class Crawler:
         return self._skipped_by_robots
 
     @property
+    def robots_unreadable(self) -> str | None:
+        """
+        Returns:
+            str | None: Why ``robots.txt`` could not be read (a ``5xx`` or a network error),
+                when ``follow_robots`` is on and it could not: the crawl then kept the target
+                URL alone (spec 027, RF-11). ``None`` otherwise.
+        """
+        return self._robots_unreadable
+
+    @property
     def limit_warning(self) -> str | None:
         """
         Returns:
@@ -245,6 +256,8 @@ class Crawler:
         """
         max_pages = max(1, self._config.scan.max_pages)
         robots = await robots_mod.load(self._http, self._target.origin, self._user_agent)
+        if self._config.scan.follow_robots:
+            self._robots_unreadable = robots.unreadable
 
         seed = normalize_url(self._target.entry_url)
         seen: set[str] = {seed}

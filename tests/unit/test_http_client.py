@@ -423,6 +423,21 @@ async def test_a_charset_that_is_not_a_text_encoding_reads_as_utf8(
     assert response.text == "héllo"
 
 
+async def test_a_charset_that_decodes_to_a_lone_surrogate_gives_encodable_text(
+    httpx_mock: object,
+) -> None:
+    """``unicode_escape`` turns a written escape into a lone surrogate; the text is replaced."""
+    escape = chr(92).encode() + b"ud800"  # the six characters of the escape, not the character
+    httpx_mock.add_response(  # type: ignore[attr-defined]
+        content=b"a" + escape + b"b", headers={"content-type": "text/plain; charset=unicode_escape"}
+    )
+    async with _http() as http:
+        response = await http.get("https://example.com/")
+    assert response.text.startswith("a") and response.text.endswith("b")
+    assert response.text != "ab"  # the path under test ran: the escape decoded to something
+    response.text.encode("utf-8")  # a lone surrogate would raise here
+
+
 async def test_a_body_that_does_not_decode_fails_the_request_once(httpx_mock: object) -> None:
     """A ``gzip`` body that is not gzip is a failed request, not an exception, and not retried."""
     httpx_mock.add_response(  # type: ignore[attr-defined]

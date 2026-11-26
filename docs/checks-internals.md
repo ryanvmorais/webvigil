@@ -187,8 +187,9 @@ sequence, timestamp series, low variance); (3) fixation: `Authenticator.transiti
 cookies before/after the login (for free, no 2nd login), candidate = a session cookie equal in both,
 confirmed with 1 GET of the reference page (`check_url` or the landing one) without that cookie; (4)
 `--test-logout` / `[session] test_logout` (Active + login only): finds the logout (`logout_url` > 1st link >
-1st POST form of the crawl, never guesses `/logout`), checks that the anonymous reference page looks
-logged out (oracle), takes the cookie snapshot, performs the logout and re-sends the anonymous snapshot;
+1st POST form of the crawl, each only where `may_carry_credentials` allows, never guesses `/logout`),
+checks that the anonymous reference page looks logged out (oracle), takes the cookie snapshot, performs
+the logout and re-sends the anonymous snapshot;
 `Session.close()` prevents a re-login afterwards. `anonymous()` is a `ContextVar` like
 `handshake()`. The jar now refuses a `Secure` cookie coming from an `http` response (like the browser). Details in
 [`docs/authenticated-scanning.md`](authenticated-scanning.md#session-security-checks).

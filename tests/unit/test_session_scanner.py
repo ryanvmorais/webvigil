@@ -171,6 +171,7 @@ def _scanner(
     session: Session | None = None,
     auth: SimpleNamespace | None = None,
     base: str = _BASE,
+    scope: Scope = Scope.HOST,
 ) -> tuple[SessionScanner, HttpClient]:
     """
     Args:
@@ -182,11 +183,12 @@ def _scanner(
         session (Session | None): The login session.
         auth (SimpleNamespace | None): The authenticator stand-in.
         base (str): The scan target. Defaults to ``http://demo.test``.
+        scope (Scope): The scan scope. Defaults to the target's host.
 
     Returns:
         tuple[SessionScanner, HttpClient]: The scanner and its (not yet opened) client.
     """
-    target = Target.parse(base, scope=Scope.HOST)
+    target = Target.parse(base, scope=scope)
     cfg = config or _config()
     http = HttpClient(target, cfg, transport=HandlerTransport(site.handle))
     scanner = SessionScanner(
@@ -523,6 +525,7 @@ async def _logout(
     cookies: tuple[str, ...] = ("sid=ok; Path=/",),
     base: str = _BASE,
     reference: str = _REF,
+    scope: Scope = Scope.HOST,
 ) -> tuple[list[SessionHit], SessionScanner, Session]:
     """
     Args:
@@ -533,6 +536,7 @@ async def _logout(
         cookies (tuple[str, ...]): What the live session holds. Defaults to one ``sid``.
         base (str): The scan target. Defaults to ``http://demo.test``.
         reference (str): The reference page. Defaults to ``/account``.
+        scope (Scope): The scan scope. Defaults to the target's host.
 
     Returns:
         tuple[list[SessionHit], SessionScanner, Session]: The hits, the scanner and the session.
@@ -555,6 +559,7 @@ async def _logout(
         session=session,
         auth=_auth({}, {}, reference),
         base=base,
+        scope=scope,
     )
     async with http:
         hits = await scanner.run()
@@ -654,6 +659,120 @@ async def test_without_an_in_scope_logout_endpoint_the_test_is_skipped_with_a_wa
     hits, scanner, session = await _logout(site, pages=(page,))
     assert hits == [] and site.log == [] and not session.closed
     assert any("no logout endpoint found" in w for w in scanner.warnings)
+
+
+# A sibling under ``--scope subdomains``: it may be requested, but the session's cookies are the
+# target origin's, so a logout there would end nothing (spec 027, RF-13).
+_SIBLING_LOGOUT = "http://www.demo.test/logout"
+
+
+class _CookieLogoutSite(_Site):
+    """A site whose logout ends only the session it is sent, as a real one does."""
+
+    def handle(self, request: httpx2.Request) -> httpx2.Response:
+        """
+        Args:
+            request (httpx2.Request): The request the client sent.
+
+        Returns:
+            httpx2.Response: The site's answer; ``/logout`` without a live ``sid`` ends nothing.
+        """
+        if request.url.path == "/logout" and "sid=ok" not in request.headers.get("cookie", ""):
+            self.log.append((request.method, f"{request.url.host}/logout", ""))
+            return httpx2.Response(200, text="bye")
+        return super().handle(request)
+
+
+async def test_a_sibling_logout_link_alone_is_not_used() -> None:
+    """The link gets no cookie, so the session would look alive: no hit, the usual warning."""
+    site = _CookieLogoutSite()
+    page = _page(f"{_BASE}/", text=f'<a href="{_SIBLING_LOGOUT}">Log out</a>')
+    hits, scanner, session = await _logout(site, pages=(page,), scope=Scope.SUBDOMAINS)
+
+    assert hits == [] and site.log == [] and not session.closed
+    assert scanner.warnings == ["session logout test skipped: no logout endpoint found"]
+
+
+async def test_the_origin_logout_after_a_sibling_one_is_used() -> None:
+    """The search goes on past the sibling link; the target origin's logout is the one tested."""
+    site = _CookieLogoutSite()
+    site.logout_invalidates = False
+    text = f'<a href="{_SIBLING_LOGOUT}">Log out</a> <a href="/logout">Log out</a>'
+    hits, scanner, _session = await _logout(
+        site, pages=(_page(f"{_BASE}/", text=text),), scope=Scope.SUBDOMAINS
+    )
+
+    (hit,) = hits
+    assert hit.url == f"{_BASE}/logout"
+    assert ("GET", "/logout", "sid=ok") in site.log  # the logout went with the live session
+    assert scanner.warnings == []
+
+
+async def test_a_sibling_post_logout_form_is_not_used() -> None:
+    """The same rule for a form: it is not submitted, and nothing is reported."""
+    site = _CookieLogoutSite()
+    form = Form(
+        method="POST",
+        action=_SIBLING_LOGOUT,
+        enctype="application/x-www-form-urlencoded",
+        fields=(),
+        source_url=f"{_BASE}/",
+    )
+    hits, scanner, session = await _logout(site, forms=(form,), scope=Scope.SUBDOMAINS)
+
+    assert hits == [] and site.log == [] and not session.closed
+    assert scanner.warnings == ["session logout test skipped: no logout endpoint found"]
+
+
+async def test_a_configured_sibling_logout_url_is_skipped_with_its_own_warning() -> None:
+    """``logout_url`` is the user's choice, so the warning names it instead of "not found"."""
+    site = _CookieLogoutSite()
+    hits, scanner, session = await _logout(
+        site,
+        pages=(_page(f"{_BASE}/", text=_LOGOUT_PAGE),),
+        logout_url=_SIBLING_LOGOUT,
+        scope=Scope.SUBDOMAINS,
+    )
+
+    assert hits == [] and site.log == [] and not session.closed
+    assert scanner.warnings == [
+        "session logout test skipped: [auth.login] logout_url may not receive the scan's "
+        "credentials"
+    ]
+
+
+async def test_a_configured_logout_url_is_used_even_where_the_crawl_links_another() -> None:
+    """``logout_url`` decides: the crawl's own logout link is not the one requested."""
+    site = _Site()
+    hits, _scn, _session = await _logout(
+        site,
+        pages=(_page(f"{_BASE}/", text='<a href="/logout">out</a>'),),
+        logout_url=f"{_BASE}/signout",
+    )
+    paths = [p for _m, p, _c in site.log]
+    assert "/signout" in paths and "/logout" not in paths
+    assert hits  # /signout is not the site's logout, so the old session still works
+
+
+@pytest.mark.parametrize(
+    ("method", "action"),
+    [("GET", f"{_BASE}/logout"), ("POST", f"{_BASE}/profile")],
+    ids=["get-logout", "post-other"],
+)
+async def test_only_a_post_logout_form_is_chosen(method: str, action: str) -> None:
+    """A ``GET`` form, or a ``POST`` form that is not a logout, is not submitted as one."""
+    site = _Site()
+    form = Form(
+        method=method,
+        action=action,
+        enctype="application/x-www-form-urlencoded",
+        fields=(),
+        source_url=f"{_BASE}/",
+    )
+    hits, scanner, _session = await _logout(site, forms=(form,))
+
+    assert hits == [] and site.log == []
+    assert scanner.warnings == ["session logout test skipped: no logout endpoint found"]
 
 
 async def test_a_public_reference_page_makes_the_test_meaningless_so_it_is_skipped() -> None:

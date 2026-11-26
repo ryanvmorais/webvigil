@@ -17,7 +17,7 @@ from enum import Enum
 from urllib.parse import urlsplit
 
 from webvigil.core.errors import OutOfScopeError, RequestFailed
-from webvigil.http.client import HttpClient
+from webvigil.http.client import HttpClient, decode_text
 
 # RFC 9309, 2.5: a crawler must parse at least the first 500 KiB of robots.txt, and may stop
 # there. A longer file is cut at its last whole line; every queued URL is checked against the
@@ -187,14 +187,18 @@ class _RuleSet:
 @dataclass(frozen=True, slots=True)
 class Robots:
     """
-    A parsed robots.txt, or a permissive stand-in when there is none.
+    A parsed robots.txt, a permissive stand-in when there is none, or a refusal when it could
+    not be read.
 
     Attributes:
         sitemaps (tuple[str, ...]): ``Sitemap:`` URLs declared in the file.
+        unreadable (str | None): Why the file could not be read (``"HTTP 503"``, the kind of a
+            network failure), when it could not: every URL is then disallowed (RFC 9309, 2.3.1.4).
     """
 
     _rules: _RuleSet | None
     sitemaps: tuple[str, ...]
+    unreadable: str | None = None
 
     def verdict(self, user_agent: str, url: str) -> Verdict:
         """
@@ -206,8 +210,11 @@ class Robots:
             url (str): The absolute URL the crawler wants to fetch.
 
         Returns:
-            Verdict: The decision. :attr:`Verdict.ALLOW` when there is no ``robots.txt``.
+            Verdict: The decision. :attr:`Verdict.ALLOW` when there is no ``robots.txt``, and
+                :attr:`Verdict.DISALLOW` for every URL when it could not be read.
         """
+        if self.unreadable is not None:
+            return Verdict.DISALLOW
         if self._rules is None:
             return Verdict.ALLOW
         applied = self._rules.for_agent(_product_token(user_agent))
@@ -230,7 +237,8 @@ class Robots:
 
         Returns:
             bool: ``True`` when the rules allow it, or always when there is no
-                ``robots.txt``. ``False`` when ``url`` cannot be evaluated against the rules.
+                ``robots.txt``. ``False`` when ``url`` cannot be evaluated against the rules,
+                and always when the file could not be read.
         """
         return self.verdict(user_agent, url) is Verdict.ALLOW
 
@@ -241,6 +249,17 @@ class Robots:
             Robots: A permissive instance with no rules and no sitemaps.
         """
         return cls(_rules=None, sitemaps=())
+
+    @classmethod
+    def disallow_all(cls, reason: str) -> Robots:
+        """
+        Args:
+            reason (str): Why the file could not be read, in words written by this project.
+
+        Returns:
+            Robots: An instance that disallows every URL, with no sitemaps.
+        """
+        return cls(_rules=None, sitemaps=(), unreadable=reason)
 
 
 # ---------------------------------------------------------------------------
@@ -287,17 +306,19 @@ def _request_target(url: str) -> _RequestTarget | None:
 
     Returns:
         _RequestTarget | None: Its path and query in canonical form (at least ``/``, and never
-            the fragment, which is not sent), or ``None`` when it cannot be parsed.
+            the fragment, which is not sent), or ``None`` when it cannot be parsed. A ``?`` with
+            an empty query is kept, so ``/a?`` is not ``/a`` and a rule ``/a?`` matches it.
     """
     try:
         parts = urlsplit(url)
     except ValueError:
         return None
     path = parts.path or "/"
-    target = f"{path}?{parts.query}" if parts.query else path
+    has_query = "?" in url.partition("#")[0]  # ``urlsplit`` drops the ``?`` of an empty query
+    target = f"{path}?{parts.query}" if has_query else path
     head = _URL_PATH.sub(_rewrite, path)
     flat = head
-    if parts.query:
+    if has_query:
         flat = f"{head}?{_URL_PATH.sub(_rewrite, parts.query).replace(_ESCAPED_SLASH, '/')}"
     return _RequestTarget(
         parts=_canonical(target, _URL_PATH, _URL_QUERY), flat=flat, path_end=len(head)
@@ -500,7 +521,10 @@ def _parse(text: str) -> Robots:
 
 async def load(http: HttpClient, origin: str, user_agent: str) -> Robots:
     """
-    Fetch and parse ``<origin>/robots.txt``; any failure yields a permissive result.
+    Fetch and parse ``<origin>/robots.txt``.
+
+    RFC 9309, 2.3.1: a file that is not there (``4xx``) allows every URL, and one that cannot be
+    reached (``5xx`` after the client's retries, or a network error) disallows every URL.
 
     Args:
         http (HttpClient): The shared HTTP client.
@@ -509,18 +533,25 @@ async def load(http: HttpClient, origin: str, user_agent: str) -> Robots:
             for symmetry with :meth:`Robots.can_fetch`).
 
     Returns:
-        Robots: The parsed rules, or :meth:`Robots.allow_all` when the file is
-            missing, empty, non-200, or unreachable.
+        Robots: The parsed rules; :meth:`Robots.disallow_all` on a ``5xx`` or a network
+            error; :meth:`Robots.allow_all` when the file is missing, empty or answers any
+            other status.
     """
     try:
         response = await http.get(f"{origin}/robots.txt")
-    except (RequestFailed, OutOfScopeError):
+    except OutOfScopeError:  # the file is at the target's origin, so this cannot happen
         return Robots.allow_all()
+    except RequestFailed as exc:
+        return Robots.disallow_all(exc.reason)
+    if 500 <= response.status_code <= 599:
+        return Robots.disallow_all(f"HTTP {response.status_code}")
     if response.status_code != 200 or not response.text.strip():
         return Robots.allow_all()
 
     text = response.text
     if len(response.content) > MAX_ROBOTS_BYTES:
+        # The part within the limit, cut at its last whole line and read in the same charset as
+        # a smaller file is.
         head = response.content[:MAX_ROBOTS_BYTES].rpartition(b"\n")[0]
-        text = head.decode("utf-8", "replace")  # RFC 9309, 2.3: the file is UTF-8
+        text = decode_text(head, response.headers.get("content-type"))
     return _parse(text)

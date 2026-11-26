@@ -227,14 +227,18 @@ evidence says it was not verified. At most three candidates are confirmed.
 
 **Logout that does not invalidate** (`session.logout.not-invalidated`, CWE-613). With `--test-logout`
 the scan takes the logout from `[auth.login] logout_url` (or `--logout-url`), else the first logout
-link, else the first `POST` logout form of the crawl; it does not guess `/logout`. It first checks
+link, else the first `POST` logout form of the crawl; it does not guess `/logout`. Only a logout
+the scan's credentials may reach counts: under `--scope subdomains` a link or form on a sibling host
+is passed over, since it would end no session, and a `logout_url` there skips the test with a
+warning. It first checks
 that an **anonymous** visit to the reference page looks logged out (otherwise "the old session still
 works" would prove nothing and the test is skipped with a warning), snapshots the session cookies,
 requests the logout once with the live session, and replays the snapshot **without the session
 jar**. A page that still answers as logged in is the finding. This is the last pass of the scan and
 it ends the session WebVigil itself created, so no re-login follows it.
 
-Skipped tests (no logout endpoint, a public reference page, a failing logout request, no login) are
+Skipped tests (no logout endpoint, a `logout_url` the credentials may not reach, a public reference
+page, a failing logout request, no login) are
 warnings, never findings. The summary prints one line, e.g. `Session checks: 10 ids sampled,
 fixation checked, logout tested`.
 
