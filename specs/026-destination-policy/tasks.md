@@ -1,6 +1,6 @@
 ---
 feature: Destination policy — one place decides what each URL may receive, and a public name that resolves only to internal addresses is reported
-status: approved
+status: in progress
 date: 2026-11-25
 related:
   - 001-foundation/design.md
@@ -43,7 +43,7 @@ makes it.
 
 ## Stage 0 — The policy module and the table of cases
 
-- [ ] Record the baseline on `main`, on one Python version:
+- [x] Record the baseline on `main`, on one Python version:
   - the test count and the suite time;
   - `uv run pytest --cov` per file;
   - four JSON reports of the fixture application, from `tests.fixtures.serve:app` served by `uv run uvicorn`:
@@ -52,13 +52,13 @@ makes it.
   - the requests the fixture received in each scan and the duration of each scan.
 
   The baseline is kept outside the repository for Stage 4. — RF-08, RNF-04, RNF-06
-- [ ] `src/webvigil/core/destination.py`: `CREDENTIAL_HEADERS`, `SPECIAL_USE_LABELS`, `may_request`,
+- [x] `src/webvigil/core/destination.py`: `CREDENTIAL_HEADERS`, `SPECIAL_USE_LABELS`, `may_request`,
   `may_carry_credentials`, `keeps_data`, `without_credentials`, `is_target_host` and `is_public_name`, as in the
   design's Components. `Target` only under `TYPE_CHECKING`; the list from `core/suffixes.py`. — RF-01, RF-02,
   RF-06, ADR-1, ADR-5
-- [ ] `src/webvigil/core/target.py`: the docstrings of `in_scope` and `carries_credentials` say that the package
+- [x] `src/webvigil/core/target.py`: the docstrings of `in_scope` and `carries_credentials` say that the package
   asks them through `core/destination.py`. No change in the rules. — ADR-1
-- [ ] `tests/unit/test_destination.py`, from the design's test strategy:
+- [x] `tests/unit/test_destination.py`, from the design's test strategy:
   - the table of `(target, scope, url)` rows, asserted against the module and against `Target`;
   - `keeps_data` over the four combinations of URLs, with `credentialed` true and false;
   - `without_credentials` dropping `Cookie`, `Authorization` and an `[auth]` name in mixed case, with the
@@ -66,15 +66,16 @@ makes it.
   - `is_public_name` with its true and false rows.
 
   — RF-02, RF-06, RF-10, ADR-5
-- [ ] Apply the design's sabotage and watch each test fail:
+- [x] Apply the design's sabotage and watch each test fail:
   - `may_carry_credentials` returning `may_request`;
   - `keeps_data` without its `credentialed` test;
   - `is_public_name` without `SPECIAL_USE_LABELS`;
   - `is_public_name` through `registrable_domain`.
 
   — RF-10
-- [ ] Mutation testing in batch over `core/destination.py`. — RNF-06
-- [ ] Quality gate. —
+- [x] Mutation testing in batch over `core/destination.py`. — RNF-06; 51 mutants, 49 killed, 2 equivalent.
+- [x] Quality gate. — 3727 passed, 4 skipped (Windows); 98 % line and branch coverage, `core/destination.py` 100 %;
+  ruff, black, mypy, import-linter and the package check green.
 
 ## Stage 1 — The HTTP client and the session jar
 

@@ -1,6 +1,6 @@
 ---
 feature: Destination policy — one place decides what each URL may receive, and a public name that resolves only to internal addresses is reported
-status: approved
+status: in progress
 date: 2026-11-25
 related:
   - 001-foundation/design.md
