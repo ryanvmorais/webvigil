@@ -26,7 +26,10 @@ LABEL org.opencontainers.image.source="https://github.com/ryanvmorais/webvigil" 
 
 # Debian's security updates that the base image does not carry yet: Debian publishes a fix before
 # the official Python image is rebuilt, and the release refuses an image with a fixable HIGH or
-# CRITICAL vulnerability. A rebuild picks up whatever Debian has fixed since.
+# CRITICAL vulnerability. A rebuild picks up whatever Debian has fixed since. The release passes a
+# value of its own run here, so the build cache never hands it the upgrade layer of an earlier
+# build, from before Debian's latest fix; a build without it keeps using the cache.
+ARG OS_UPDATES_REFRESH
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*

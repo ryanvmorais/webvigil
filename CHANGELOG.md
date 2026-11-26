@@ -91,6 +91,9 @@ read as RFC 9309 says).
 
 ### Fixed
 
+- The container image of a release applies the Debian security updates published when it is
+  built. The build cache could hand the release an upgrade made in an earlier build, so the image
+  could miss a fix Debian had published since.
 - A report that cannot be written (`--output` on a full disk, a missing folder, a file without
   write permission) or rendered ends with one error line, `could not write the report to <path>
   (<type>)` or `could not render the <format> report (<type>)`, and exit code `4`, in `scan` and in
