@@ -579,3 +579,15 @@ and the score goes in the pull request.
   own. A test now feeds `is_public_name` a list that carries every special-use label and a numeric rule. One
   more survivor showed that `is_target_host` lower-cased a host `urlsplit` already lower-cases, and the call was
   removed.
+- **Stage 1.** The client and the session jar ask the module. Each new or rewritten test failed once with the
+  line it guards broken: the first request sent with the caller's headers unfiltered (the two first-request
+  tests), the jar back on the host match (another port and plain `http` from an `https` target), the client
+  without its `OutOfScopeError` (the two refusal tests), and the credential rule replaced by the scope rule
+  (the two sibling-subdomain tests). Mutation over the changed functions of `http/client.py` and
+  `SessionJar.pairs_for`: 101 mutants (90 generated over the guards, 11 by hand over the calls that changed),
+  94 killed. Three survivors are equivalent: the `on_target` test before `pairs_for`, which the jar now asks
+  itself (ADR-4), an empty session list that rebuilds the same static cookie header, and the `[auth]` loop over
+  an empty list. Four are on lines the stage did not change (the `learn` after a retry, the pending-jar
+  fallback and the parse of the `Cookie` header in `pairs_for`). The first run left two more on changed lines,
+  and each got a test: a 401 from a sibling subdomain no longer counts as a dropped session only through the
+  credential rule, and the jar's `repr` names the target origin.

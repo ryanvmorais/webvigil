@@ -79,7 +79,7 @@ makes it.
 
 ## Stage 1 — The HTTP client and the session jar
 
-- [ ] `src/webvigil/http/client.py`:
+- [x] `src/webvigil/http/client.py`:
   - the scope check asks `may_request` and raises `OutOfScopeError` itself;
   - the credential attachment, the re-login check and the `Set-Cookie` intake ask `may_carry_credentials`;
   - `_withholds_data` becomes `not keeps_data(..., credentialed=self._credentialed())`;
@@ -88,32 +88,33 @@ makes it.
   - `_CREDENTIAL_HEADERS` comes from `core/destination.py`.
 
   — RF-01, RF-03, ADR-2
-- [ ] `src/webvigil/http/client.py`: remove `allow_out_of_scope` from `get`, `request` and
+- [x] `src/webvigil/http/client.py`: remove `allow_out_of_scope` from `get`, `request` and
   `_send_with_redirects`. Delete `src/webvigil/http/scope_guard.py` and the `ScopeGuard` export of
   `src/webvigil/http/__init__.py`. — ADR-3
-- [ ] `tests/unit/test_http_client.py`: rewrite the two tests that used `allow_out_of_scope`, so that they prove
+- [x] `tests/unit/test_http_client.py`: rewrite the two tests that used `allow_out_of_scope`, so that they prove
   the out-of-scope refusal and an in-scope URL instead. Drop the keyword from the fake clients of
   `test_envelope_scanner.py`, `test_injection_engine.py` and `test_upload_scanner.py`. — ADR-3
-- [ ] `src/webvigil/http/session.py`: `SessionJar(target)`. `pairs_for` asks `may_carry_credentials` in place of
+- [x] `src/webvigil/http/session.py`: `SessionJar(target)`. `pairs_for` asks `may_carry_credentials` in place of
   the host match, and the `repr` shows the target's origin. `src/webvigil/auth/login.py` builds
   `SessionJar(target)`. Tests that build a jar pass a `Target`. — RF-04, ADR-4
-- [ ] `tests/unit/test_http_redirect_credentials.py`: a request with an explicit `Cookie` and `Authorization`,
+- [x] `tests/unit/test_http_redirect_credentials.py`: a request with an explicit `Cookie` and `Authorization`,
   under `--scope subdomains`, to a sibling subdomain, both on the first request and after a redirect, leaves
   them off the wire. The positive control is the same request to the origin, which carries them. Seen failing
   on `main`. — RF-03, RF-10
-- [ ] `tests/unit/test_session_jar.py`: `pairs_for` returns nothing for another port, for plain `http` from an
+- [x] `tests/unit/test_session_jar.py`: `pairs_for` returns nothing for another port, for plain `http` from an
   `https` target and for a sibling subdomain. It returns the cookies for the origin and for the `https` upgrade
   of an `http` target. Seen failing with the host match restored. — RF-04, RF-10
-- [ ] `CHANGELOG.md` `[Unreleased]`:
+- [x] `CHANGELOG.md` `[Unreleased]`:
   - **Security:** a credential header that a pass sends itself follows the client's rule on the first request
     too.
   - **Changed:** `webvigil.http.ScopeGuard` and the `allow_out_of_scope` keyword of `HttpClient` are removed
     from the provisional Python API, and `SessionJar` takes a `Target`.
 
   — RNF-02, ADR-3, ADR-8
-- [ ] Mutation testing in batch over the changed functions of `http/client.py` and `SessionJar.pairs_for`.
-  — RNF-06
-- [ ] Quality gate. —
+- [x] Mutation testing in batch over the changed functions of `http/client.py` and `SessionJar.pairs_for`.
+  — RNF-06; 101 mutants, 94 killed, 3 equivalent, 4 outside the change.
+- [x] Quality gate. — 3737 passed, 4 skipped (Windows); 98 % line and branch coverage, as on `main`; ruff, black,
+  mypy, import-linter and the package check green.
 
 ## Stage 2 — The passes and the inventory gate
 
