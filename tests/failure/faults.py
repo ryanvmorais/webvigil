@@ -4,10 +4,10 @@ The seams that raise, for the failure-injection suite of spec 027 (RF-02, RF-05,
 The scan harness fails requests: :func:`attributed` names the running stage in a ``ContextVar``
 while each pass of the table runs, and :class:`FaultTransport`, around the fixture's transport,
 applies the fault plan of ``tests/failure/table.py`` to that stage's requests and records each
-fault in a :class:`FaultLog`. The CLI harness fails a dependency: each helper patches one with
-``monkeypatch`` and returns a :class:`Fault`, which records every exception it raised. Either
-way a run checks that its faults really happened, so a stage the run never reached does not pass
-(RF-05).
+fault in a :class:`FaultLog`. The CLI and API harnesses fail a dependency: each helper patches
+one with ``monkeypatch``, or builds a stand-in orchestrator, and returns a :class:`Fault`, which
+records every exception it raised. Either way a run checks that its faults really happened, so a
+stage the run never reached does not pass (RF-05).
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ import errno
 import functools
 import hashlib
 import inspect
+import sqlite3
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -26,6 +27,7 @@ from typing import Any, Final
 import httpcore2
 import httpx2
 import pytest
+from sqlalchemy.exc import OperationalError
 
 from tests.failure.table import (
     STAGES,
@@ -36,6 +38,9 @@ from tests.failure.table import (
     fault_for,
     stage,
 )
+from webvigil.api import runner as runner_mod
+from webvigil.api.runner import OrchestratorFactory, ScanRunner
+from webvigil.core import ScanConfig, ScanResult
 from webvigil.core.orchestrator import Orchestrator
 from webvigil.crawler.crawler import Crawler
 from webvigil.http import addresses
@@ -506,3 +511,98 @@ def failing_render(monkeypatch: pytest.MonkeyPatch, fmt: str, marker: str) -> Fa
     render: Callable[..., str] = _render
     monkeypatch.setattr(_REPORTERS[fmt], "render", render)
     return fault
+
+
+# ---------------------------------------------------------------------------
+# The API harness: the runner's seams that raise
+# ---------------------------------------------------------------------------
+
+# The statement a failing write names, as SQLAlchemy names the one that failed.
+_FAILED_STATEMENT: Final = "INSERT INTO finding (scan_id, check_id) VALUES (?, ?)"
+
+
+def _db_error(fault: Fault) -> OperationalError:
+    """
+    Args:
+        fault (Fault): The seam that raises it.
+
+    Returns:
+        OperationalError: What SQLAlchemy raises when SQLite fails a statement, with the failure's
+            text as SQLite's message, recorded on ``fault``.
+    """
+    exc = OperationalError(
+        _FAILED_STATEMENT, None, sqlite3.OperationalError(failure_text(fault.marker))
+    )
+    fault.fire(exc)
+    return exc
+
+
+def failing_store(monkeypatch: pytest.MonkeyPatch, marker: str) -> Fault:
+    """
+    Make the runner's write of a finished scan's result raise ``OperationalError``.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): The test's patcher.
+        marker (str): The failure's marker.
+
+    Returns:
+        Fault: What the write raised.
+    """
+    fault = Fault(marker)
+
+    def _store(_self: ScanRunner, _scan_id: int, _result: ScanResult) -> None:
+        raise _db_error(fault)
+
+    monkeypatch.setattr(ScanRunner, "_store", _store)
+    return fault
+
+
+def failing_claim(monkeypatch: pytest.MonkeyPatch, marker: str) -> Fault:
+    """
+    Make the runner's first claim of a queued scan raise ``OperationalError``; the next ones run.
+
+    The loop's rest after an unexpected error is dropped, as the scan harness drops the client's
+    backoff: the retry still happens, without the wait.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): The test's patcher.
+        marker (str): The failure's marker.
+
+    Returns:
+        Fault: What the claim raised.
+    """
+    fault = Fault(marker)
+    claim = ScanRunner._claim_next_queued
+
+    def _claim(self: ScanRunner) -> int | None:
+        if not fault.raised:
+            raise _db_error(fault)
+        return claim(self)
+
+    monkeypatch.setattr(ScanRunner, "_claim_next_queued", _claim)
+    monkeypatch.setattr(runner_mod, "_RETRY_AFTER_ERROR_S", 0.0)
+    return fault
+
+
+def raising_orchestrator(error: type[Exception], marker: str) -> tuple[OrchestratorFactory, Fault]:
+    """
+    Build a stand-in orchestrator whose scan raises.
+
+    Args:
+        error (type[Exception]): What the scan raises: ``RuntimeError`` for an error nothing
+            expects, ``WebVigilError`` for one the engine names.
+        marker (str): The failure's marker.
+
+    Returns:
+        tuple[OrchestratorFactory, Fault]: The factory to give the runner, and what its scans
+            raised.
+    """
+    fault = Fault(marker)
+
+    class _Raising:
+        def __init__(self, _config: ScanConfig) -> None: ...
+
+        async def run(self, _raw_target: str) -> ScanResult:
+            raise fault.fire(error(failure_text(marker)))
+
+    return _Raising, fault
