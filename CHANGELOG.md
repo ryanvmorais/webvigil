@@ -68,6 +68,14 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
   write permission) or rendered ends with one error line, `could not write the report to <path>
   (<type>)` or `could not render the <format> report (<type>)`, and exit code `4`, in `scan` and in
   `webvigil report`, instead of a traceback and exit code `1`.
+- A scan that cannot read a data file WebVigil ships for one pass (the Retire.js rules and their
+  provenance for the dependency fingerprint, the catalogue of exposed paths for the disclosure
+  probe) goes on without that pass, with its warning (`dependency fingerprint pass failed:
+  OSError`, `disclosure probe pass failed: OSError`), as for any other failure of the pass,
+  instead of a traceback and exit code `1`.
+- An unexpected error during a scan ends it with one line, `the scan stopped on an unexpected
+  error (<type>)`, and exit code `1`, instead of a traceback that showed the error's text, which
+  can come from the scanned site or a library.
 - The session logout test (`--test-logout`) uses only a logout endpoint the scan's credentials
   may reach. Under `--scope subdomains`, a logout link or form on a sibling host got no session
   cookie, so the old session still worked afterwards and the scan reported

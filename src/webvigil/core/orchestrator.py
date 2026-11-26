@@ -428,11 +428,11 @@ class Orchestrator:
         """
         if not any(check.category is Category.DEPS for check in check_types):
             return ()
-        rules = RetireJsRules.load()
-        warnings.extend(staleness_warning(rules))
-        fingerprinter = Fingerprinter(http, target, rules)
         try:
-            result = await fingerprinter.scan(pages)
+            # the vendored rules load here, so a file that cannot be read fails this pass only
+            rules = RetireJsRules.load()
+            warnings.extend(staleness_warning(rules))
+            result = await Fingerprinter(http, target, rules).scan(pages)
         except Exception as exc:  # a pass bug must not abort the whole scan
             warnings.append(
                 _PassFailure(f"dependency fingerprint pass failed: {type(exc).__name__}")
@@ -521,9 +521,9 @@ class Orchestrator:
             return ()
         if not any(getattr(check, "family", None) in _PROBE_FAMILIES for check in check_types):
             return ()
-        probe = DisclosureProbe(http, target, load_catalogue(), pages)
         try:
-            report = await probe.run()
+            # the vendored catalogue loads here, so a file that cannot be read fails this pass only
+            report = await DisclosureProbe(http, target, load_catalogue(), pages).run()
         except Exception as exc:  # a pass bug must not abort the whole scan
             warnings.append(_PassFailure(f"disclosure probe pass failed: {type(exc).__name__}"))
             return ()

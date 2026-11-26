@@ -65,12 +65,16 @@ class Stage:
             attributes, or the dotted name of the function a CLI or API run patches.
         harness (Literal["scan", "cli", "api"]): Which harness runs it.
         kinds (tuple[Kind, ...]): The kinds of failure it gets, in rotation order.
+        alone (bool): Whether the scan harness fails it in runs of its own, one per kind, with
+            every other stage left alone: its failure can end the scan, or take away what a later
+            pass needs, so in a full run it would leave the later stages without their fault.
     """
 
     name: str
     seam: str
     harness: Literal["scan", "cli", "api"]
     kinds: tuple[Kind, ...]
+    alone: bool = False
 
 
 # The kinds every network stage of the scan harness gets, one per run (ADR-1).
@@ -84,28 +88,30 @@ NETWORK_KINDS: Final = (
 )
 
 
-def _scan(name: str, seam: str) -> Stage:
+def _scan(name: str, seam: str, *, alone: bool = False) -> Stage:
     """
     Args:
         name (str): The stage's name.
         seam (str): The pass method the scan harness wraps.
+        alone (bool): Whether it fails in runs of its own. Defaults to ``False``.
 
     Returns:
         Stage: A network stage of the scan harness.
     """
-    return Stage(name, seam, "scan", NETWORK_KINDS)
+    return Stage(name, seam, "scan", NETWORK_KINDS, alone)
 
 
 # The scan stages in the order ``Orchestrator.run`` reaches them, then the CLI's and the Web API's.
 # ``target`` is the target URL itself, whichever pass asks for it: the crawl must not lose it in
-# the other stages' runs.
+# the other stages' runs. The login, the OpenAPI import, the target URL and the crawl can end the
+# scan, and the OSV lookup has nothing to ask when the fingerprint pass failed: they fail alone.
 STAGES: Final[tuple[Stage, ...]] = (
-    _scan("login", "Orchestrator._log_in"),
-    _scan("openapi", "Orchestrator._load_openapi"),
-    _scan("target", "Target.entry_url"),
-    _scan("crawl", "Crawler.discover"),
+    _scan("login", "Orchestrator._log_in", alone=True),
+    _scan("openapi", "Orchestrator._load_openapi", alone=True),
+    _scan("target", "Target.entry_url", alone=True),
+    _scan("crawl", "Crawler.discover", alone=True),
     _scan("fingerprint", "Orchestrator._fingerprint"),
-    _scan("osv", "Orchestrator._osv_lookup"),
+    _scan("osv", "Orchestrator._osv_lookup", alone=True),
     _scan("probe", "Orchestrator._probe_disclosure"),
     _scan("injection", "Orchestrator._inject"),
     _scan("stored-xss", "Orchestrator._inject_stored"),
@@ -129,6 +135,10 @@ STAGES: Final[tuple[Stage, ...]] = (
 )
 
 STAGE_NAMES: Final = frozenset(stage.name for stage in STAGES)
+
+# The stages a full run of the scan harness fails together, and those that fail alone.
+TOGETHER: Final = tuple(row for row in STAGES if row.harness == "scan" and not row.alone)
+ALONE: Final = tuple(row for row in STAGES if row.harness == "scan" and row.alone)
 
 # How many scan runs give every scan stage every one of its kinds (ADR-1).
 SCAN_RUNS: Final = len(NETWORK_KINDS)

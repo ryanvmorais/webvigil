@@ -182,23 +182,27 @@ A failure the suite finds that exposes a credential in a released version stops 
 
 ## Stage 4 — The scan harness
 
-- [ ] `tests/failure/faults.py`: `FaultTransport`, `attributed` and `failing_osv`, as in the design. — RF-02, ADR-2
-- [ ] `tests/failure/test_scan.py`: six runs of the full configuration with the credential markers, each with the
+- [x] `tests/failure/faults.py`: `FaultTransport`, `attributed` and `failing_osv`, as in the design. — RF-02, ADR-2.
+  The transport takes the stages that fail in the run (design, deviation 19).
+- [x] `tests/failure/test_scan.py`: six runs of the full configuration with the credential markers, each with the
   design's assertions and the positive controls of RF-05; the results kept for Stage 5. — RF-01, RF-02, RF-03,
-  RF-04, RF-05, ADR-1
-- [ ] The fixes the scan harness forces, each with its run seen failing on `main` first:
+  RF-04, RF-05, ADR-1. The stages that can end the scan fail alone, 30 runs (deviation 13); the vendored files
+  have five runs (deviation 17); the `checks` stage has a throwaway check (deviation 16).
+- [x] The fixes the scan harness forces, each with its run seen failing on `main` first:
   - `src/webvigil/core/orchestrator.py`: the Retire.js rules, the staleness warning and the disclosure catalogue load
     inside their pass's `try`;
-  - anything else the runs find.
+  - anything else the runs find: `src/webvigil/cli/app.py` ends an unexpected error with one line and exit code
+    `1` (deviation 14).
 
   — RF-02, ADR-4
-- [ ] Measure the failure-injection suite with coverage on CI and write it in the pull request; past 20 s, two kinds
+- [x] Measure the failure-injection suite with coverage on CI and write it in the pull request; past 20 s, two kinds
   share a run on alternating stages before the merge. — RNF-06
-- [ ] Apply the design's sabotage and watch each test fail: the fault transport stops applying faults, and one
+- [x] Apply the design's sabotage and watch each test fail: the fault transport stops applying faults, and one
   stage's seam name changed. — RF-15
-- [ ] Mutation testing in batch over the changed functions of `core/orchestrator.py`. — RNF-06
-- [ ] `CHANGELOG.md` `[Unreleased]`, **Fixed:** what the runs found. — RNF-02
-- [ ] Quality gate.
+- [x] Mutation testing in batch over the changed functions of `core/orchestrator.py`. — RNF-06. With the new
+  handler of `cli/app.py`: 21 mutants, 19 killed.
+- [x] `CHANGELOG.md` `[Unreleased]`, **Fixed:** what the runs found. — RNF-02
+- [x] Quality gate. — 3887 passed, 4 skipped (Windows), 158 s with coverage, 98 %.
 
 ## Stage 5 — The API harness
 

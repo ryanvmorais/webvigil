@@ -20,6 +20,9 @@ import textwrap
 from collections.abc import Mapping
 from typing import Final
 
+import pytest
+
+from tests.failure import faults
 from tests.failure.table import (
     DEPENDENCIES,
     HOSTILE,
@@ -28,6 +31,7 @@ from tests.failure.table import (
     STAGE_NAMES,
     STAGES,
     TARGET,
+    TOGETHER,
     Kind,
     _bucket,
     credential_marker,
@@ -203,6 +207,52 @@ def test_the_rows_are_unique_and_well_formed() -> None:
             assert len(row.kinds) == SCAN_RUNS, row
 
 
+def _owners(missing: str = "") -> dict[str, type]:
+    """
+    Args:
+        missing (str): A seam the throwaway classes leave out. Defaults to none.
+
+    Returns:
+        dict[str, type]: Throwaway classes with every seam of the scan stages, each of which
+            returns the stage the fault transport would read.
+    """
+
+    async def _stage(*_args: object) -> str | None:
+        return faults._STAGE.get()
+
+    methods: dict[str, dict[str, object]] = {"Orchestrator": {}, "Crawler": {}}
+    for row in STAGES:
+        owner, _, method = row.seam.partition(".")
+        if row.harness == "scan" and owner in methods and row.seam != missing:
+            methods[owner][method] = _stage
+    return {name: type(name, (), body) for name, body in methods.items()}
+
+
+async def test_each_pass_names_its_stage_while_it_runs() -> None:
+    """``attributed`` makes every wrapped pass name its stage, and only while it runs."""
+    owners = _owners()
+    with faults.attributed(owners):
+        for row in STAGES:
+            owner, _, method = row.seam.partition(".")
+            if row.harness == "scan" and owner in owners:
+                assert await getattr(owners[owner](), method)() == row.name
+    assert faults._STAGE.get() is None
+    # the positive control: unwrapped, the same methods name nothing
+    assert await owners["Orchestrator"]()._fingerprint() is None
+
+
+def test_a_seam_that_is_gone_fails_before_any_scan() -> None:
+    """A pass method the table names but its class lacks is an error, and nothing stays wrapped."""
+    owners = _owners(missing="Orchestrator._scan_csrf")
+    wrapped = owners["Orchestrator"].__dict__["_fingerprint"]
+    with (
+        pytest.raises(AttributeError, match=r"Orchestrator\._scan_csrf"),
+        faults.attributed(owners),
+    ):
+        pass
+    assert owners["Orchestrator"].__dict__["_fingerprint"] is wrapped
+
+
 # ---------------------------------------------------------------------------
 # Every dependency has a row (RF-06)
 # ---------------------------------------------------------------------------
@@ -247,14 +297,13 @@ def test_the_plan_gives_the_same_answer_twice() -> None:
 def test_the_runs_give_every_stage_every_kind_and_neighbours_differ() -> None:
     """
     Over the scan runs, every stage gets each of its kinds once; in one run two neighbouring
-    scan stages never get the same kind, so a warning names one cause.
+    stages of a full run never get the same kind, so a warning names one cause.
     """
-    scan = [row for row in STAGES if row.harness == "scan"]
     for row in STAGES:
         runs = range(len(row.kinds))
         assert sorted(kind_for(run, row) for run in runs) == sorted(row.kinds), row
     for run in range(SCAN_RUNS):
-        for before, after in itertools.pairwise(scan):
+        for before, after in itertools.pairwise(TOGETHER):
             assert kind_for(run, before) != kind_for(run, after), (run, before.name, after.name)
 
 
