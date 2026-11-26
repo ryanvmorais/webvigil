@@ -1,6 +1,6 @@
 ---
 feature: Security regression gates — failure injection with markers at every stage, every sensitive point inventoried by a test, and the hardening left from the 1.6.0 review
-status: approved
+status: in progress
 date: 2026-11-25
 related:
   - 001-foundation/design.md
@@ -544,3 +544,36 @@ after the last: the requests the fixture receives in the four configurations and
 **Mutation.** Every changed guard (`setup`, `_name_addresses`, `load`, `_request_target`, `_find_logout`, the CLI's
 write handling) goes through mutation testing in batch; the score and the triage of survivors go in each pull
 request.
+
+## Deviations
+
+1. **The concurrent proxy-lookup tests sit in `tests/api/test_login_abuse.py` (RF-09, test strategy).** The
+   tasks put them under `tests/unit/`. The existing tests of `TrustedProxies` (a name resolved again after its
+   time to live, a name that does not resolve, a request with no header) already live in that file, with the
+   test clock and the resolver helper the new tests build on, so the new ones sit next to them.
+
+## Implementation notes
+
+- **Stage 0.** The baseline was taken on `main` at `d3f05ae` (Python 3.15.2, Windows): 3769 tests collected
+  (3765 passed and 4 skipped on Windows), 98 % line and branch coverage in total, the per-file table, and the
+  suite in 120 s with coverage. The four scans ran through the CLI in Active mode with every opt-in except the
+  time-delay detectors, with the OpenAPI import and the exposed-path probe (no HAR and no OSV lookup), against
+  the fixture application served by `uvicorn` on `localhost`, which recorded every request it received:
+
+  | Scan | Requests | Findings | Duration |
+  |---|---|---|---|
+  | anonymous | 1321 | 61 | 66.4 s |
+  | `[auth]` cookie and headers | 1321 | 61 | 61.7 s |
+  | automated login and session tests | 1348 | 65 | 62.8 s |
+  | `--scope subdomains` | 1321 | 61 | 61.7 s |
+
+  The setup route hashes inside a password-check slot, the proxy lookup runs under a lock with the expiry checked
+  again inside it, and the dashboard rewrites the header on `upgrade`. Each new test failed once with the line it
+  guards broken: the route of `main` (the hash with no slot) and the hash moved after the slot's block, the
+  lookup of `main` (no lock) and the lock without its second expiry check, and the `upgrade` branch dropped.
+  Mutation over `create_first_user` and `_name_addresses`: 28 mutants (21 generated over the guards, 7 by hand
+  over the slot, the `429`'s status, message and `Retry-After`, the lock, the store of the answer and its time
+  to live), 28 killed, and every new test killed at least one. The first run timed out on the mutant that never
+  stores the answer: the test waited out a fixed number of short polls, each a scheduler tick on Windows, and
+  left the resolver held when its assertion failed. The wait is now bounded in seconds and the resolver is
+  released in a `finally`, and the mutant is killed.
