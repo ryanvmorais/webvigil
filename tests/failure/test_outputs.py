@@ -10,10 +10,14 @@ from __future__ import annotations
 import base64
 import html
 import json
+import logging
+import re
 from urllib.parse import quote, quote_plus
 
 from tests.failure.outputs import (
+    OUTPUT_LOGGERS,
     STORED,
+    LogLines,
     Outputs,
     bad_failure_hits,
     bound_of,
@@ -157,3 +161,42 @@ def test_outputs_of_the_same_name_are_numbered() -> None:
     for text in ("a", "b", "c"):
         outputs.add("log", text)
     assert outputs.texts == {"log": "a", "log#2": "b", "log#3": "c"}
+
+
+def _kept(**attributes: object) -> str:
+    """
+    Args:
+        **attributes (object): Attributes of the record, over a plain project record.
+
+    Returns:
+        str: The line :class:`LogLines` keeps for it.
+    """
+    record = logging.makeLogRecord(
+        {"name": f"{sorted(OUTPUT_LOGGERS)[0]}.test", "msg": "scan %s", "args": ("done",)}
+        | attributes
+    )
+    handler = LogLines()
+    handler.emit(record)
+    assert handler.lines, "the record was not one of the project's"
+    return handler.lines[0]
+
+
+def test_the_clock_and_thread_numbers_of_a_record_are_not_kept() -> None:
+    """``relativeCreated`` past 100 s, a thread or a process id is no output of the scan."""
+    whole = re.compile(r"(?<![0-9A-Za-z])100001(?![0-9A-Za-z])")
+    line = _kept(
+        created=1795800834.5,
+        msecs=500.0,
+        relativeCreated=100001.4,
+        thread=100001,
+        threadName="Thread-100001",
+        process=100001,
+        processName="Process-100001",
+        taskName="Task-100001",
+    )
+    assert "scan done" in line
+    assert not whole.search(line), line
+    # the controls: the same value in the message, an argument or an ``extra`` is kept
+    assert whole.search(_kept(msg="session 100001", args=()))
+    assert whole.search(_kept(args=("100001",)))
+    assert whole.search(_kept(detail="100001"))

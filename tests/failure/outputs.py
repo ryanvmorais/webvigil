@@ -120,12 +120,30 @@ class Outputs:
         self.texts[key] = text
 
 
+# What ``logging`` itself fills from the clock, the process and the threads. None comes from a
+# scan, and the numbers change on every run: ``relativeCreated`` reaches ``100001.4`` a hundred
+# seconds into the suite, which reads as the first session id the insecure fixture issues.
+_RUNTIME_ATTRIBUTES: Final = frozenset(
+    {
+        "created",
+        "msecs",
+        "relativeCreated",
+        "thread",
+        "threadName",
+        "process",
+        "processName",
+        "taskName",
+    }
+)
+
+
 class LogLines(logging.Handler):
     """
     Keeps each record of :data:`OUTPUT_LOGGERS` as text: the message, its arguments and every
     attribute, the traceback and any ``extra`` included. The exception object itself is left out:
     every formatter writes ``exc_text``, which the project's log filter rebuilt from it, so the
-    exception's own ``repr`` is never an output.
+    exception's own ``repr`` is never an output. So are the clock, process and thread attributes
+    (:data:`_RUNTIME_ATTRIBUTES`), which no scan sets.
 
     Attributes:
         lines (list[str]): One entry per record, in the order they were emitted.
@@ -146,7 +164,11 @@ class LogLines(logging.Handler):
         if not is_output_logger(record.name):
             self.other += 1
             return
-        attributes = {key: value for key, value in vars(record).items() if key != "exc_info"}
+        attributes = {
+            key: value
+            for key, value in vars(record).items()
+            if key != "exc_info" and key not in _RUNTIME_ATTRIBUTES
+        }
         self.lines.append(f"{self.format(record)} {record.args!r} {attributes!r}")
 
 
