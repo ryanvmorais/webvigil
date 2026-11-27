@@ -35,7 +35,7 @@ from webvigil.core.errors import OutOfScopeError, RequestFailed
 from webvigil.core.html import parse_html
 from webvigil.core.target import Target
 from webvigil.crawler.forms import Form, form_body, parse_forms
-from webvigil.crawler.safety import is_destructive_form, is_login_url
+from webvigil.crawler.safety import is_login_url, is_unsafe_form
 from webvigil.http.client import HttpClient, Response
 
 type Verdict = Literal["confirmed", "refuted", "inconclusive"]
@@ -359,7 +359,7 @@ class CsrfScanner:
                 form.enctype != "application/x-www-form-urlencoded"
                 or any(field.type == "file" for field in form.fields)
                 or not is_candidate(form)
-                or is_destructive_form(form)
+                or is_unsafe_form(form)
             ):
                 skipped += 1
             elif len(testable) >= _MAX_FORMS:

@@ -42,12 +42,11 @@ from webvigil.crawler import sitemap as sitemap_mod
 from webvigil.crawler.forms import Form, form_body, parse_forms, submission_url
 from webvigil.crawler.openapi import ApiOperation
 from webvigil.crawler.safety import (
-    is_auth_form,
     is_candidate,
     is_destructive,
-    is_destructive_form,
-    is_logout,
-    looks_unsafe_operation,
+    is_unsafe_api_operation,
+    is_unsafe_form,
+    is_unsafe_url,
 )
 from webvigil.http.client import HttpClient
 
@@ -384,7 +383,7 @@ class Crawler:
             op_key = _op_key(op)
             if op_key in self._post_done:
                 continue
-            if looks_unsafe_operation(op) or not self._robots_allow(robots, op.url):
+            if is_unsafe_api_operation(op) or not self._robots_allow(robots, op.url):
                 self._post_done.add(op_key)
                 summary.skipped += 1
             else:
@@ -405,8 +404,7 @@ class Crawler:
             form.enctype in (_URLENCODED, _MULTIPART)
             and not any(field.type == "file" for field in form.fields)
             and is_candidate(form)
-            and not is_destructive_form(form)
-            and not is_logout(form.action)
+            and not is_unsafe_form(form)
             and self._robots_allow(robots, form.action)
         )
 
@@ -651,12 +649,10 @@ class Crawler:
         if len(seen) >= self._seen_cap:
             self._limits_hit.add("links")
             return
-        if is_logout(normalized):
+        if is_unsafe_url(normalized):
             seen.add(normalized)  # do not revisit it via another link either
-            return
-        if is_destructive(normalized):
-            seen.add(normalized)
-            self._skipped_destructive += 1
+            if is_destructive(normalized):
+                self._skipped_destructive += 1
             return
         seen.add(normalized)
         queue.append(normalized)
@@ -665,8 +661,9 @@ class Crawler:
         """
         Record every ``<form>`` on ``page`` and enqueue the safe ``GET`` ones' submissions.
 
-        Auth forms and logout forms are never submitted; a destructive-looking
-        action is skipped (and counted).
+        A form :func:`~webvigil.crawler.safety.is_unsafe_form` refuses (auth, logout,
+        destructive, transaction) is never submitted; a destructive-looking action is
+        also counted.
 
         Args:
             page (Page): The page whose forms to walk; skipped when not OK HTML.
@@ -683,10 +680,9 @@ class Crawler:
             self._forms.setdefault(key, form)
             if not self._submit_forms or form.method != "GET":
                 continue
-            if is_auth_form(form) or is_logout(form.action):
-                continue
-            if is_destructive(form.action):
-                self._skipped_destructive += 1
+            if is_unsafe_form(form):
+                if is_destructive(form.action):
+                    self._skipped_destructive += 1
                 continue
             url = submission_url(form)
             if url is not None:

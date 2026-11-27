@@ -16,6 +16,7 @@ from webvigil.checks.injection.models import InjectionPoint
 from webvigil.core.context import Page
 from webvigil.crawler.forms import Form
 from webvigil.crawler.openapi import ApiOperation
+from webvigil.crawler.safety import is_unsafe_form
 
 # Input types worth putting a payload in. Everything else (hidden, submit, checkbox,
 # radio, file, password, ...) is submitted with its discovered value but not fuzzed.
@@ -25,15 +26,6 @@ _FUZZ_TYPES = frozenset({"", "text", "search", "email", "url", "tel", "number", 
 # option, a client can send anything, and a server that trusts the list is as exposed as one that
 # trusts a text box. It is tested last, so on a budget that runs out it is the first thing dropped.
 _SELECT_TYPE = "select"
-
-# A form whose action / field names match this is never fuzzed (RF-04). Best-effort — a
-# login form at /session slips through; documented in docs/active-injection.md.
-_EXCLUDE_FORM_RE = re.compile(
-    r"log[\s_-]?in|log[\s_-]?out|log[\s_-]?off|sign[\s_-]?in|sign[\s_-]?out|sign[\s_-]?up|"
-    r"register|delete|remove|destroy|\bdrop\b|password|passwd|\breset\b|checkout|\bpay\b|"
-    r"purchase|\border\b|transfer|unsubscribe|deactivate",
-    re.I,
-)
 
 # Parameters the open-redirect / traversal detectors try first, within budget.
 _PREFERRED_REDIRECT = frozenset(
@@ -294,8 +286,10 @@ def enumerate_points(
             _add(InjectionPoint("GET", base, name, value, pairs, source="query"), seen, points)
 
     for form in forms:
-        blob = form.action + " " + " ".join(f.name for f in form.fields)
-        if _EXCLUDE_FORM_RE.search(blob):
+        # RF-04: never fuzzed when it looks like auth, a logout, a destructive action or a
+        # transaction. Best-effort: a login form at /session slips through
+        # (docs/active-injection.md).
+        if is_unsafe_form(form):
             continue
         base, query = _base_of(form.action)
         fields = tuple((f.name, f.value) for f in form.fields)

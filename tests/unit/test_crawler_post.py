@@ -268,6 +268,21 @@ async def test_a_button_only_form_is_submitted_and_a_destructive_one_is_not() ->
     assert (crawler.post_summary.forms, crawler.post_summary.skipped) == (1, 1)
 
 
+async def test_a_post_form_named_in_camel_case_or_a_transaction_is_not_submitted() -> None:
+    """``deleteAccount``, a percent-encoded verb and a checkout are skipped like ``delete``."""
+    page = (
+        _form("/contact", "msg")
+        + _form("/account", "deleteAccount")
+        + _form("/items/%64elete", "id")
+        + _form("/cart/checkout", "card")
+    )
+    http = _FakeHttp({_ROOT: page})
+    crawler, _ = await _crawl(http)
+    assert _posted(http) == ["/contact"]
+    assert crawler.post_summary is not None
+    assert (crawler.post_summary.forms, crawler.post_summary.skipped) == (1, 3)
+
+
 async def test_the_same_form_on_two_pages_is_submitted_once() -> None:
     """One submission per distinct ``(method, action, field names)``."""
     http = _FakeHttp(

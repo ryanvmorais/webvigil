@@ -36,11 +36,10 @@ from webvigil.crawler.openapi import (
     _MAX_BODY_DEPTH,
     _MAX_BODY_KEYS,
     _MAX_BODY_UNITS,
-    _SKIP_OPERATION_RE,
     ApiOperation,
     _Budget,
 )
-from webvigil.crawler.safety import looks_unsafe_operation
+from webvigil.crawler.safety import is_unsafe_api_operation
 
 # ---------------------------------------------------------------------------
 # Bounds (RNF-02, ADR-7): a HAR can come from a third party, so reading it must stay cheap
@@ -188,7 +187,7 @@ class HarTally:
         out_of_scope (int): Another host or scheme, or a URL that is not ``http`` / ``https``.
         static (int): An image, font, stylesheet, script, media file or source map.
         other_method (int): A method that is neither ``GET`` nor ``POST``.
-        unsafe (int): A login, logout or state-changing path (``looks_unsafe_operation``).
+        unsafe (int): A login, logout or state-changing path (``is_unsafe_api_operation``).
         token_path (int): A path segment that looks like a credential (a reset link, a token
             in the URL); replaying it would carry the secret into the report.
         malformed (int): No usable request, URL or parameter name.
@@ -327,7 +326,7 @@ def load_har(path: str, *, target: Target, max_operations: int) -> HarImport:
         if operation is None:
             tally.malformed += 1
             continue
-        if _is_unsafe(operation):
+        if is_unsafe_api_operation(operation):
             tally.unsafe += 1
             continue
         key = _key(operation)
@@ -426,20 +425,6 @@ def _parse_request(request: Any) -> tuple[str, Any] | None:
     if parts.scheme.lower() in ("http", "https") and len(url) > _MAX_URL:
         return None
     return method.upper(), parts
-
-
-def _is_unsafe(operation: ApiOperation) -> bool:
-    """
-    Args:
-        operation (ApiOperation): A built operation.
-
-    Returns:
-        bool: ``True`` when its path looks like authentication or a state-changing action
-            (RF-09): the vocabulary of the OpenAPI importer (``checkout``, ``pay``, ``order`` ...)
-            or of the ``POST`` phase's safety filter (``delete``, ``logout``, ``password`` ...).
-    """
-    path = urlsplit(operation.url_template).path
-    return bool(_SKIP_OPERATION_RE.search(path)) or looks_unsafe_operation(operation)
 
 
 def _looks_authenticated(request: dict[str, Any]) -> bool:
