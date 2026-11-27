@@ -46,8 +46,9 @@ from webvigil.crawler.safety import is_unsafe_api_operation
 # ---------------------------------------------------------------------------
 
 # The largest file read. A HAR with response bodies embedded is far larger than the requests it
-# holds; the error names the fix (export without bodies). json.loads builds several times this in
-# memory and the standard library has no streaming parser, so the file size is the bound.
+# holds; the error names the fix (export without bodies). json.loads was measured building about
+# 45 times the file in memory (about 2.9 GiB at the limit) and the standard library has no
+# streaming parser, so the file size is the bound.
 _MAX_FILE_BYTES = 64 * 1024 * 1024
 
 # Entries walked; a longer recording is cut with a warning, not refused.

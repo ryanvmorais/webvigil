@@ -149,7 +149,9 @@ Camadas, de cima para baixo:
    que não seja o do próprio servidor (o `Host`, ou o `X-Forwarded-Host` do proxy do dashboard) nem esteja em
    `web.cors_origins` leva `403` (`api/origin_check.py`); sem `Origin` (curl, CLI) passa. Toda resposta de
    relatório manda `nosniff`, e a de HTML também `Content-Security-Policy: sandbox; default-src 'none';
-   style-src 'unsafe-inline'`.
+   style-src 'unsafe-inline'`. Toda resposta leva `Cache-Control: no-store` (`api/cache_control.py`), e
+   cada login, troca de senha e setup, aceito ou recusado, vira uma linha no logger
+   `webvigil.api.events` (`api/events.py`, sem a senha; o `serve` o liga ao handler do uvicorn).
 6. **Web UI** (`web/`) — dashboard Next.js (App Router). Cliente fino da Web API: nunca fala
    com o engine, não guarda estado além do cache do TanStack Query. Tipos gerados de
    `openapi.json` (`scripts/dump-openapi.py` → `pnpm gen:api`). O servidor Next faz proxy de

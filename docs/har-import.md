@@ -98,7 +98,8 @@ carries a session and the scan carries none, the scan says so in one warning, wi
 - **JSON values are not fuzzed**, and a recorded GraphQL query becomes the shape `{"query": "wv", ...}`,
   which the server will reject. The route is still seeded.
 - **A recorded `multipart/form-data` body is sent urlencoded**, as `--openapi` does.
-- **Bounds.** A file over 64 MiB is refused; only the first 20,000 entries are read; at most
+- **Bounds.** A file over 64 MiB is refused, and parsing one near that size can take about 3 GiB of
+  memory at the peak; only the first 20,000 entries are read; at most
   `har_max_operations` (150) operations are seeded; a value is kept up to 256 characters. Past the entry
   or operation limit the scan warns and goes on.
 - **A bad file is fatal.** A missing file, a URL, invalid JSON or a document with no `log.entries` stops

@@ -6,15 +6,17 @@ The command docstrings double as Typer ``--help`` text, so they stay terse.
 
 from __future__ import annotations
 
+import copy
 import os
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 from sqlmodel import Session, select
 
 from webvigil.api.config import WebConfig, insecure_bind_warning
 from webvigil.api.db import User, make_engine, run_alembic_upgrade
+from webvigil.api.events import EVENTS_LOGGER
 from webvigil.api.schemas import PASSWORD_MAX_CHARS, PASSWORD_MIN_CHARS
 from webvigil.api.security import hash_password, store_password_hash
 from webvigil.core.errors import ConfigError
@@ -56,6 +58,24 @@ def _load(config: Path | None) -> WebConfig:
         raise typer.Exit(_EXIT_OPERATIONAL) from exc
 
 
+def _log_config(base: dict[str, Any]) -> dict[str, Any]:
+    """
+    Args:
+        base (dict[str, Any]): uvicorn's default logging configuration.
+
+    Returns:
+        dict[str, Any]: A copy that also writes the security event log, at ``INFO``, through
+            uvicorn's own standard-error handler.
+    """
+    config = copy.deepcopy(base)
+    config["loggers"][EVENTS_LOGGER] = {
+        "handlers": ["default"],
+        "level": "INFO",
+        "propagate": False,
+    }
+    return config
+
+
 @app.command()
 def serve(
     config: _ConfigOpt = None,
@@ -65,6 +85,7 @@ def serve(
 ) -> None:
     """Serve the API with uvicorn."""
     import uvicorn
+    from uvicorn.config import LOGGING_CONFIG
 
     if config is not None:
         os.environ["WEBVIGIL_CONFIG"] = str(config)
@@ -78,6 +99,7 @@ def serve(
         host=bind,
         port=port or cfg.port,
         reload=reload,
+        log_config=_log_config(LOGGING_CONFIG),
         # Off, or uvicorn would replace the connection's address with what a loopback peer wrote
         # in X-Forwarded-For. The API reads that header itself, under `web.trusted_proxies`.
         proxy_headers=False,

@@ -56,9 +56,10 @@ _MAX_DOC_UNITS = 1_000_000
 _EXTERNAL_REF_WARNING = "OpenAPI import skipped one or more external $ref pointers"
 
 # Bounds on what one document can make the import build. A local file is read up to the HAR
-# import's size; a ``$ref`` chain, the parameters of one operation, one synthesized value and one
-# filled-in URL are bounded, so a small document cannot expand into a large amount of memory or
-# work.
+# import's size; parsing a document of many small values was measured at about 45 times its size
+# at the peak, so about 2.9 GiB at the limit. A ``$ref`` chain, the parameters of one operation,
+# one synthesized value and one filled-in URL are bounded, so a small document cannot expand into
+# a large amount of memory or work.
 MAX_DOCUMENT_BYTES = 64 * 1024 * 1024
 _MAX_REF_HOPS = 32
 # How deep a document's arrays and objects may nest. The parser's own recursion limit depends on

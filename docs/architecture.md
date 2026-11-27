@@ -141,7 +141,8 @@ Persistence       webvigil.api.db  (SQLite via SQLModel + Alembic, web only)
    result has a size bound (`core/bounded.py`: 1 Ki characters for a name or a title, 16 Ki for
    a paragraph, 64 Ki for a URL or a traceback, 4 Ki for a piece of evidence); a longer value
    is cut and marked `...[truncated]`. `webvigil report` reads a JSON file of at most 64 MiB,
-   1 MiB at a time, refuses a `schema_version` that is not an integer, and recomputes the
+   1 MiB at a time (parsing a file of many small values at that size can take about 2.2 GiB of
+   memory at the peak), refuses a `schema_version` that is not an integer, and recomputes the
    severity counts from the findings, since the file may come from someone else; `scan` warns
    when it writes a JSON report larger than that.
 

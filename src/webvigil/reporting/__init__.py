@@ -27,10 +27,11 @@ from webvigil.reporting.json_report import JsonReporter
 from webvigil.reporting.markdown import MarkdownReporter
 from webvigil.reporting.sarif import SarifReporter
 
-# The largest report file ``load_result`` reads (spec 025, ADR-6). Parsing a file of many small
-# values takes up to about 16 times its size at the peak, so this keeps a file someone sent near
-# 1 GiB of memory, while a real report (about 10 KiB per finding at worst) reaches it only with
-# thousands of findings. It is the limit of the HAR and OpenAPI imports too.
+# The largest report file ``load_result`` reads (spec 025, ADR-6). Parsing and validating a file
+# of many small values was measured at about 34 times its size at the peak, so a file someone sent
+# at the limit needs about 2.2 GiB of memory, while a real report
+# (about 10 KiB per finding at worst) reaches the limit only with thousands of findings. It is the
+# limit of the HAR and OpenAPI imports too.
 MAX_REPORT_BYTES: Final = 64 * 1024 * 1024
 # How much of a report file one read asks for: memory follows what the file holds, never the limit.
 _READ_CHUNK_BYTES: Final = 1024 * 1024
