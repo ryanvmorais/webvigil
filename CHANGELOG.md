@@ -11,6 +11,33 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 ## [Unreleased]
 
+### Security
+
+- **The report hides more of what the scanned site echoes back of a credential or session
+  value.** Each value is also redacted as the common frameworks write it: the quote references of
+  Go, Jinja2, Django and PHP (`&#39;`, `&#34;`, `&#039;`, `&apos;`), the characters JavaScript's
+  `encodeURIComponent`, PHP's `urlencode` and Java's `URLEncoder` keep or encode (`~`, `!*'()`),
+  and PHP's `\/`, Go's `<` and upper-case `\u` escapes in JSON. Two values that overlap in a
+  field are hidden as one. The redaction looks for every spelling in one pass over each field, so
+  its time follows the report's size and no longer the number of session values times the
+  number of fields.
+- **The evidence of an exposed file hides more of its secrets.** A catalogue entry that named no
+  redaction (`.git/config`, `Dockerfile`, manifests, server and trace pages) now gets the generic
+  masking, which also hides the user information of a URL and the value assigned to a
+  secret-sounding name, however short (`Password=`, `SECRET_KEY =`, `define('DB_PASSWORD',`). A
+  `.env` value quoted over several lines is dropped whole, a token shape on a comment line is
+  masked, `.htpasswd` hides every hash, and a JSON document masks a key whose name holds a secret
+  word in any spelling (`DB_PASSWORD`, `jwtSecret`, `ConnectionStrings`). The line-based
+  strategies read only the head of a long body.
+- **A session identifier in a URL is hidden in every copy.** The evidence of
+  `disclosure.session-id-in-url` also hides the value where it appears again percent-encoded, in
+  a URL nested in a parameter, and a URL with more than eight session values is hidden from its
+  first parameter on.
+- **A `Set-Cookie` line no longer shows a value outside its first pair.** A pair without `=` (a
+  cookie with no name, whose text is its value) is masked whole and named `(no name)` in the
+  findings of `http.cookies.flags`, and a second pair joined into the line or folded in after a
+  comma has its value masked too.
+
 ## [1.8.2] - 2026-11-27
 
 A patch release with one security fix (GHSA-w973-5349-3rcx): error pages, library references and

@@ -16,6 +16,7 @@ from importlib.resources import files
 from itertools import islice
 from typing import Any
 
+from webvigil.checks.disclosure.redaction import STRATEGIES
 from webvigil.core.errors import ConfigError
 from webvigil.core.findings import Confidence, Severity
 
@@ -163,8 +164,9 @@ class ProbeEntry:
         title (str): Finding title.
         description (str): Finding description.
         validator (Validator): How a response is confirmed to be the real file.
-        redaction (str): Redaction strategy for the body. Defaults to
-            ``"none"``.
+        redaction (str): Redaction strategy for the body, one of
+            :data:`~webvigil.checks.disclosure.redaction.STRATEGIES`. Defaults to
+            ``"generic"``.
         ok_status (frozenset[int]): Status codes that count as a reachable
             resource. Defaults to ``{200, 206}``.
     """
@@ -177,7 +179,7 @@ class ProbeEntry:
     title: str
     description: str
     validator: Validator
-    redaction: str = "none"
+    redaction: str = "generic"
     ok_status: frozenset[int] = field(default_factory=lambda: _DEFAULT_OK_STATUS)
 
 
@@ -224,7 +226,7 @@ def _entry_from_toml(item: dict[str, Any]) -> ProbeEntry:
         title=str(item["title"]),
         description=str(item.get("description") or _DEFAULT_DESCRIPTION[family]),
         validator=_validator_from_toml(item),
-        redaction=str(item.get("redact", "none")),
+        redaction=str(item.get("redact", "generic")),
         ok_status=frozenset(int(code) for code in item.get("ok_status", _DEFAULT_OK_STATUS)),
     )
 
@@ -350,8 +352,8 @@ def _validate(entries: list[ProbeEntry]) -> None:
         entries (list[ProbeEntry]): The fully expanded catalogue.
 
     Raises:
-        ConfigError: If the catalogue is empty or an entry names a check id not
-            in ``PROBE_CHECK_IDS``.
+        ConfigError: If the catalogue is empty, an entry names a check id not
+            in ``PROBE_CHECK_IDS`` or a redaction strategy not in ``STRATEGIES``.
     """
     if not entries:  # pragma: no cover - shipped file
         raise ConfigError("disclosure catalogue is empty")
@@ -359,4 +361,8 @@ def _validate(entries: list[ProbeEntry]) -> None:
         if entry.check_id not in PROBE_CHECK_IDS:  # pragma: no cover - shipped file
             raise ConfigError(
                 f"catalogue entry {entry.path!r} names unknown check {entry.check_id!r}"
+            )
+        if entry.redaction not in STRATEGIES:  # pragma: no cover - shipped file
+            raise ConfigError(
+                f"catalogue entry {entry.path!r} names unknown redaction {entry.redaction!r}"
             )

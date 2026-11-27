@@ -72,11 +72,13 @@ class CookieFlagsCheck(Check):
 
         Returns:
             list[Finding]: One finding per weak attribute, or empty when the
-                value has no parseable name.
+                value has no pair. A cookie with no name (a pair without ``=``, whose
+                text is its value) is shown as ``(no name)``.
         """
         name, attrs = parse_set_cookie(raw)
-        if not name:
+        if not raw.partition(";")[0].strip():
             return []
+        name = name or "(no name)"
 
         secure = attrs.get("secure") is True
         http_only = attrs.get("httponly") is True

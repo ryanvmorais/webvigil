@@ -57,17 +57,128 @@ def test_generic_masks_known_secret_shapes() -> None:
 
 
 def test_every_strategy_is_length_bounded() -> None:
-    """No strategy — including ``none`` — ever returns more than the cap."""
+    """No strategy, an unknown name included, ever returns more than the cap."""
     big = "SECRET_KEY=" + "x" * 20000 + "\n"
-    for strategy in ("dotenv", "json-env", "generic", "none"):
+    for strategy in (*redaction.STRATEGIES, "unknown"):
         assert len(redaction.apply(strategy, big)) <= 2000
 
 
-def test_none_strategy_still_bounds_but_keeps_structure() -> None:
-    """``none`` truncates only — the leading lines survive verbatim."""
-    out = redaction.apply("none", "line1\nline2\n" + "z" * 5000)
+def test_an_unknown_strategy_gets_the_generic_masking() -> None:
+    """A name outside ``STRATEGIES`` masks like ``generic``: no entry goes out unmasked."""
+    body = f"line1\nline2 {_AWS_KEY}\n" + "z" * 5000
+    out = redaction.apply("none", body)
+    assert out == redaction.apply("generic", body)
     assert out.startswith("line1")
+    assert _AWS_KEY not in out
     assert len(out) <= 1024
+
+
+def test_dotenv_drops_every_line_of_a_quoted_value_that_spans_lines() -> None:
+    body = f'PRIVATE_KEY="{_PEM}"\nNEXT=1\nAFTER=2'
+    out = redaction.apply("dotenv", body)
+    assert "MIIabc123" not in out
+    assert "PRIVATE KEY-----" not in out
+    assert out == "PRIVATE_KEY=***\nNEXT=***\nAFTER=***"
+
+
+def test_dotenv_masks_a_token_in_a_line_that_is_not_an_assignment() -> None:
+    out = redaction.apply("dotenv", f"# old key {_AWS_KEY}\nA=1")
+    assert _AWS_KEY not in out
+    assert out.startswith("# old key ")
+
+
+@pytest.mark.parametrize(
+    ("body", "secret"),
+    [
+        pytest.param('<add key="DbPassword" value="hunter2" />', "hunter2", id="web-config"),
+        pytest.param(
+            'connectionString="Server=db;User Id=app;Password=hunter2;"', "hunter2", id="conn"
+        ),
+        pytest.param("SECRET_KEY = 'short-one'", "short-one", id="django"),
+        pytest.param("'PASSWORD': 'two words'", "two words", id="python-dict"),
+        pytest.param("define('DB_PASSWORD', 'hunter2');", "hunter2", id="php-define"),
+        pytest.param('$db_pass = "hunter2";', "hunter2", id="php-variable"),
+        pytest.param("'db_password' => 'hunter2',", "hunter2", id="php-array"),
+        pytest.param("//registry.example/:_authToken=npm_abc123", "npm_abc123", id="npmrc"),
+        pytest.param("url=https://example.test/?password=abc123", "abc123", id="nested"),
+        pytest.param("url = https://bob:tok3n@git.example/x.git", "tok3n", id="userinfo"),
+    ],
+)
+def test_generic_masks_a_short_secret_by_the_name_it_is_assigned_to(body: str, secret: str) -> None:
+    out = redaction.apply("generic", f"DEBUG = True\n{body}")
+    assert secret not in out
+    # positive control: an assignment to a plain name stays readable
+    assert out.startswith("DEBUG = True\n")
+
+
+def test_generic_hides_the_whole_user_information_of_a_url() -> None:
+    out = redaction.apply("generic", "remote = https://bob:tok3n@git.example/x.git")
+    assert out == "remote = https://***@git.example/x.git"
+
+
+def test_json_env_masks_a_secret_by_any_spelling_of_its_name() -> None:
+    body = json.dumps(
+        {
+            "DB_PASSWORD": "short1",
+            "jwtSecret": "short2",
+            "ConnectionStrings": {"Default": "Server=x;Password=short3"},
+            "app": {"name": "shop"},
+        }
+    )
+    out = redaction.apply("json-env", body)
+    for secret in ("short1", "short2", "short3"):
+        assert secret not in out
+    # positive control: a value under a plain name stays readable
+    assert '"shop"' in out
+
+
+@pytest.mark.parametrize("strategy", ["dotenv", "htpasswd"])
+def test_a_line_strategy_reads_only_the_head_of_a_long_body(strategy: str) -> None:
+    # a million short lines: splitting the whole body made a million strings
+    body = "a\n" * (1024 * 1024)
+    tracemalloc.start()
+    try:
+        out = redaction.apply(strategy, body)
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+    assert peak < 4 * 1024 * 1024
+    # positive control: the head of the body is still there
+    assert out.startswith("a\na\n")
+
+
+@pytest.mark.parametrize("strategy", ["dotenv", "htpasswd"])
+def test_a_line_strategy_stops_masking_once_the_output_is_full(
+    strategy: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[str] = []
+    generic = redaction._generic
+
+    def counted(text: str) -> str:
+        calls.append(text)
+        return generic(text)
+
+    monkeypatch.setattr(redaction, "_generic", counted)
+    redaction.apply(strategy, ("word " * 20 + "\n") * 80)
+    # 1024 characters fill up on the 11th line of 100; the other 69 were masked for nothing
+    assert len(calls) == 11
+
+
+def test_an_assignment_inside_a_masked_value_is_not_masked_twice() -> None:
+    out = redaction.apply("generic", 'api_token="one password=two three" next=1')
+    assert out == "api_token=*** next=1"
+
+
+def test_json_env_gives_a_plain_named_string_the_generic_masking() -> None:
+    body = json.dumps({"db": {"url": "postgres://app:pw1234@db/shop"}})
+    out = redaction.apply("json-env", body)
+    assert "pw1234" not in out
+    assert "postgres://***@db/shop" in out
+
+
+def test_htpasswd_keeps_the_user_names_and_masks_every_hash() -> None:
+    out = redaction.apply("htpasswd", "alice:$apr1$abc$def123\nbob:{SHA}xyz=")
+    assert out == "alice:***\nbob:***"
 
 
 def test_json_env_falls_back_to_generic_masking_on_deep_nesting() -> None:

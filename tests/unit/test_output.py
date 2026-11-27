@@ -19,6 +19,7 @@ import string
 import traceback
 import tracemalloc
 from collections.abc import Callable, Iterator
+from typing import Any
 
 import pytest
 from pydantic import TypeAdapter
@@ -26,6 +27,7 @@ from pydantic import TypeAdapter
 from webvigil.checks.envelope.scanner import _SENTINEL, EnvelopeScanner
 from webvigil.checks.injection.detect import cmdi, ssrf, xss
 from webvigil.checks.upload import scanner as upload
+from webvigil.core import output
 from webvigil.core.bounded import (
     EVIDENCE_MARKER,
     NAME_MAX_CHARS,
@@ -517,6 +519,112 @@ def test_a_field_with_many_cuts_and_many_secrets_loses_only_the_real_fragment() 
     assert redactor(field) == f"{spreads}{REDACTED}..."
 
 
+# A secret with every character the common encoders treat differently: the quotes, ``~``,
+# ``!*()``, ``/``, ``<``, ``&``, a non-ASCII letter and a space. Each spelling below is written
+# by hand from the encoder's documented rule, not computed by the code under test.
+_MIXED_SECRET = "k~!*()'\"/<&é z9"
+
+
+@pytest.mark.parametrize(
+    "spelling",
+    [
+        pytest.param("k~!*()'%22%2F%3C%26%C3%A9%20z9", id="js-encodeURIComponent"),
+        pytest.param("k%7E%21%2A%28%29%27%22%2F%3C%26%C3%A9+z9", id="php-urlencode"),
+        pytest.param("k%7E%21*%28%29%27%22%2F%3C%26%C3%A9+z9", id="java-URLEncoder"),
+        pytest.param("k%7e%21*%28%29%27%22%2f%3c%26%c3%a9+z9", id="java-lower-hex"),
+        pytest.param("k~!*()&#39;&#34;/&lt;&amp;é z9", id="html-go-jinja"),
+        pytest.param("k~!*()&#039;&quot;/&lt;&amp;é z9", id="html-php"),
+        pytest.param("k~!*()&#39;&quot;/&lt;&amp;é z9", id="html-django"),
+        pytest.param("k~!*()&apos;&quot;/&lt;&amp;é z9", id="html5-apos"),
+        pytest.param("k~!*()'\\\"\\/<&\\u00e9 z9", id="json-php"),
+        pytest.param("k~!*()'\\\"/\\u003c\\u0026é z9", id="json-go"),
+        pytest.param("k~!*()'\\\"/<&\\u00E9 z9", id="json-upper-hex"),
+    ],
+)
+def test_a_spelling_of_another_framework_is_redacted(spelling: str) -> None:
+    redactor = Redactor([_MIXED_SECRET])
+    assert redactor(f"echo [{spelling}] done") == f"echo [{REDACTED}] done"
+
+
+def test_a_secret_without_special_characters_keeps_one_spelling() -> None:
+    # the extra spellings exist only where a character is spelled differently
+    assert _spellings("plainSecret42") == {"plainSecret42"}
+
+
+def _overlap_case(draw: random.Random) -> tuple[list[str], str]:
+    """
+    Draw secrets and a field from three letters, so occurrences overlap and repeat.
+
+    Args:
+        draw (random.Random): The seeded source.
+
+    Returns:
+        tuple[list[str], str]: The secrets and a field that holds pieces of them.
+    """
+    secrets = ["".join(draw.choices("abc", k=draw.randint(4, 9))) for _ in range(6)]
+    pieces = [
+        draw.choice(secrets) if draw.random() < 0.5 else draw.choice("abcxy") for _ in range(30)
+    ]
+    return secrets, "".join(pieces)
+
+
+@pytest.mark.parametrize("seed", range(40))
+def test_the_indexed_and_the_direct_search_hide_the_same(
+    seed: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    secrets, field = _overlap_case(random.Random(seed))
+    monkeypatch.setattr(output, "_DIRECT_SPELLINGS", 10_000)
+    direct = Redactor(secrets)(field)
+    monkeypatch.setattr(output, "_DIRECT_SPELLINGS", 0)
+    indexed = Redactor(secrets)(field)
+    assert indexed == direct
+    # no four characters of a secret's occurrence survive, by either path
+    for secret in secrets:
+        assert secret not in direct
+
+
+def test_overlapping_secrets_are_hidden_as_their_union() -> None:
+    # the longer secret starts inside the shorter one: replacing one first left the other's tail
+    redactor = Redactor(["abcd1234", "cd1234zzzzzz"])
+    assert redactor("<abcd1234zzzzzz>") == f"<{REDACTED}>"
+
+
+class _CountingText(str):
+    """
+    A field that counts the searches run over it.
+
+    Attributes:
+        calls (int): Searches so far (``in``, ``find`` and ``startswith``), over every instance.
+    """
+
+    calls = 0
+
+    def __contains__(self, key: Any) -> bool:
+        type(self).calls += 1
+        return super().__contains__(key)
+
+    def find(self, *args: Any) -> int:
+        type(self).calls += 1
+        return super().find(*args)
+
+    def startswith(self, *args: Any) -> bool:
+        type(self).calls += 1
+        return super().startswith(*args)
+
+
+def test_the_search_of_a_field_does_not_follow_the_number_of_spellings() -> None:
+    # a session that set a thousand values: one search over the field, not one per spelling
+    redactor = Redactor(_random_values(1024, 64, seed=3))
+    _CountingText.calls = 0
+    field = _CountingText("".join(random.Random(4).choices(string.printable, k=TEXT_MAX_CHARS)))
+    redactor(field)
+    assert _CountingText.calls <= 2 * len(CUT_MARKERS)
+    # positive control: the counter sees the searches of the direct path
+    _CountingText.calls = 0
+    Redactor(_random_values(8, 64, seed=5))(field)
+    assert _CountingText.calls >= 8
+
+
 # ---------------------------------------------------------------------------
 # Traceback
 # ---------------------------------------------------------------------------
@@ -864,3 +972,21 @@ def test_get_logger_attaches_one_filter_and_keeps_level_and_handlers() -> None:
         for item in list(log.filters):
             log.removeFilter(item)
         log.setLevel(logging.NOTSET)
+
+
+def test_the_direct_search_stops_at_the_work_budget() -> None:
+    # spellings that each occur at almost every position: the search gives up, it does not walk
+    # every occurrence of every one
+    redactor = Redactor(["a" * length for length in range(4, 65)])
+    _CountingText.calls = 0
+    assert redactor(_CountingText("a" * TEXT_MAX_CHARS)) == REDACTED
+    assert _CountingText.calls < 100_000
+
+
+def test_the_indexed_search_stops_at_the_work_budget() -> None:
+    # hundreds of spellings with one head, a field made of it: every position compares them all
+    draw = random.Random(6)
+    redactor = Redactor(["aaaa" + "".join(draw.choices("bcdefg", k=8)) for _ in range(300)])
+    _CountingText.calls = 0
+    assert redactor(_CountingText("a" * TEXT_MAX_CHARS)) == REDACTED
+    assert _CountingText.calls < 1_000_000

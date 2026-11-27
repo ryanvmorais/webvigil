@@ -163,7 +163,20 @@ async def test_response_headers_evidence_masks_every_set_cookie_value() -> None:
         ("sid=abc", "sid=***"),
         ("sid=a=b=c; HttpOnly", "sid=***; HttpOnly"),
         ("sid=; Max-Age=0", "sid=; Max-Age=0"),
-        ("garbage", "garbage"),
+        # a pair without "=" is a value with no name, as a browser reads it
+        ("abc123token", "***"),
+        ("abc123token; Path=/", "***; Path=/"),
+        # a second pair joined into the line, and a cookie folded in after a comma
+        ("sid=abc; other=SECRET2; HttpOnly", "sid=***; other=***; HttpOnly"),
+        ("sid=abc; SECRET2; Secure", "sid=***; ***; Secure"),
+        ("sid=abc; Path=/, two=SECRET2; HttpOnly", "sid=***; Path=/, two=***; HttpOnly"),
+        # an empty segment is left as it is
+        ("sid=abc; Path=/;", "sid=***; Path=/;"),
+        # positive control: the comma of a date is not a fold
+        (
+            "sid=abc; Expires=Wed, 21 Oct 2026 07:28:00 GMT; Path=/",
+            "sid=***; Expires=Wed, 21 Oct 2026 07:28:00 GMT; Path=/",
+        ),
     ],
 )
 def test_mask_set_cookie(raw: str, expected: str) -> None:

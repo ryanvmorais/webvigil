@@ -237,6 +237,9 @@ SENSITIVE_POINTS: Final[Mapping[str, str]] = {
     "webvigil.checks.disclosure.catalogue:_validate message ConfigError": (
         "a path and a check id of the shipped catalogue"
     ),
+    "webvigil.checks.disclosure.catalogue:_validate message ConfigError#2": (
+        "a path and a redaction name of the shipped catalogue"
+    ),
     "webvigil.checks.disclosure.leakage:<module> regex re.compile": _CONSTANT_PATTERN,
     "webvigil.checks.disclosure.probe:_hash crypto hashlib.sha1": (
         "SHA-1 to compare two bodies, not a security use"

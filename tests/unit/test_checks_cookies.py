@@ -64,6 +64,19 @@ async def test_http_site_does_not_require_secure() -> None:
     assert findings == []
 
 
+async def test_a_cookie_without_a_name_is_flagged_without_its_value() -> None:
+    # a pair without "=" is the value of a cookie with no name, as a browser reads it
+    findings = await _run("TOPSECRET42; Path=/")
+    assert {f.title for f in findings} >= {"Cookie '(no name)' is set without the Secure attribute"}
+    for finding in findings:
+        assert "TOPSECRET42" not in finding.model_dump_json()
+
+
+async def test_a_line_with_no_pair_sets_no_cookie() -> None:
+    # nothing before the first ";": a browser ignores the line (the control is the test above)
+    assert await _run("; Path=/") == []
+
+
 async def test_the_cookie_value_never_reaches_the_evidence() -> None:
     """The target's cookie value is masked; the name and the attributes stay readable."""
     findings = await _run("session=TOPSECRET; Path=/")
