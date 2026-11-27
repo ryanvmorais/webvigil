@@ -17,10 +17,16 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
   injection, the file-upload pass and the `GET` form crawl now also skip a form whose button reads
   like a destructive verb (`Cancel`, `Remove`), as the `POST` phase and the CSRF confirmation
   already did, and every pass skips a form whose action or fields name a transaction (`checkout`,
-  `transfer`, `order`), as active injection already did. The CSRF confirmation no longer submits a
-  transfer form.
+  `transfer`, `order`), as active injection already did. A long verb stops a form or an imported
+  operation inside a longer name too (`deleteall`, `/account/deleted`, `/purchases`), as active
+  injection and the `--openapi` import already read it, so the crawler's `POST` phase and the
+  CSRF confirmation now skip such a form as well; a link still has to name the whole word. The
+  CSRF confirmation no longer submits a transfer form.
 
 ### Security
+
+- **The dashboard no longer names its framework.** Its pages and files no longer carry
+  `X-Powered-By: Next.js`.
 
 - **The report hides more of what the scanned site echoes back of a credential or session
   value.** Each value is also redacted as the common frameworks write it: the quote references of

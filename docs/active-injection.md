@@ -391,7 +391,8 @@ behaviour is documented, like a stored-XSS marker.
   ([the form and operation filter](authenticated-scanning.md#the-form-and-operation-filter))
   matches `login`, `logout`, `register`, `delete`, `password`, `checkout`, `pay`,
   `transfer`, and similar in the action, the field names or a button label, read as words
-  (`deleteAccount`, `transfer_amount`, `%64elete`). It is best-effort: a login form at
+  (`deleteAccount`, `transfer_amount`, `%64elete`), with a long verb counted inside a longer
+  name too (`deleteall`, `purchases`). It is best-effort: a login form at
   `/session` with generic field names would slip through.
 - **A `<select>` is fuzzed, after the other fields.** A browser sends only a listed option, but
   a client can send anything, and a server that builds a query from the option is as exposed as

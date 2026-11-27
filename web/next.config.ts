@@ -22,6 +22,8 @@ const nextConfig: NextConfig = {
   // agent instructions live in the root CLAUDE.md, so keep the generator off.
   agentRules: false,
   output: process.env.NEXT_OUTPUT_STANDALONE ? "standalone" : undefined,
+  // No `X-Powered-By: Next.js`: the header only tells a visitor which framework to look up.
+  poweredByHeader: false,
   async rewrites() {
     return [{ source: "/api/:path*", destination: `${apiProxyTarget}/api/:path*` }];
   },

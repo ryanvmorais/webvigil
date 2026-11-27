@@ -41,6 +41,7 @@ import httpx2
 import pytest
 from starlette.applications import Starlette
 
+from tests.failure.outputs import RUNTIME_ATTRIBUTES
 from tests.fixtures.app import (
     _INSECURE_PAGE,
     CANARY_COOKIE,
@@ -264,7 +265,9 @@ def _har_file(tmp_path_factory: pytest.TempPathFactory) -> None:
 class _LogLines(logging.Handler):
     """
     A handler that keeps each record as text: the message, its arguments and every attribute,
-    the traceback and any ``extra`` included.
+    the traceback and any ``extra`` included. The clock, process and thread attributes
+    (:data:`~tests.failure.outputs.RUNTIME_ATTRIBUTES`) are left out: no scan sets them, and
+    ``relativeCreated`` reads as the fixture's first session id a hundred seconds into the suite.
 
     Attributes:
         lines (list[str]): One entry per record, in the order they were emitted.
@@ -280,7 +283,21 @@ class _LogLines(logging.Handler):
         Args:
             record (logging.LogRecord): One record of any logger.
         """
-        self.lines.append(f"{self.format(record)} {record.args!r} {vars(record)!r}")
+        attributes = {k: v for k, v in vars(record).items() if k not in RUNTIME_ATTRIBUTES}
+        self.lines.append(f"{self.format(record)} {record.args!r} {attributes!r}")
+
+
+def test_the_log_capture_leaves_out_the_clock_and_thread_numbers() -> None:
+    """A record emitted at 100001 ms keeps its message and extra, not its runtime numbers."""
+    handler = _LogLines()
+    record = logging.LogRecord("httpx2", logging.INFO, __file__, 1, "sent %s", ("x",), None)
+    record.relativeCreated = 100001.4
+    record.thread = 100001
+    record.marker = "kept-extra"
+    handler.emit(record)
+    [line] = handler.lines
+    assert "sent x" in line and "kept-extra" in line
+    assert "100001" not in line
 
 
 @pytest.fixture

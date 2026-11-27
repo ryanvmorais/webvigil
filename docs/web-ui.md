@@ -96,7 +96,7 @@ technology names. React escapes it; the headers below are the second layer (issu
 request gets the origin, never the path) and a `Permissions-Policy` that grants camera, microphone,
 geolocation, payment and USB to nobody. The list is
 [`web/src/lib/security-headers.ts`](../web/src/lib/security-headers.ts), applied by `headers()` in
-`next.config.ts`.
+`next.config.ts`, which also turns off Next's `X-Powered-By` header (`poweredByHeader: false`).
 
 **Every page** also carries one `Content-Security-Policy` with a fresh nonce, built per request by
 [`web/src/proxy.ts`](../web/src/proxy.ts) (Next 16's name for the middleware) from the pure function in

@@ -15,10 +15,12 @@ gates first, so a logout or a state-changing action is left alone the same way e
 The ``csrf.*`` checks also read the classifiers here (which form is a login / search form
 and therefore not a CSRF target).
 
-Every predicate is a word-boundary match, after :func:`_words` has percent-decoded the text
-and split ``_``, ``camelCase`` and ``PascalCase`` into words. They are deliberately
-conservative and imperfect; the limits are documented in ``docs/authenticated-scanning.md``
-and ``docs/active-injection.md``.
+Every predicate reads the text after :func:`_words` has percent-decoded it and split ``_``,
+``camelCase`` and ``PascalCase`` into words. A link must name a verb as a whole word
+(``/deleted-items`` is followed); a form or an operation is refused when a long verb appears
+anywhere in a name (``deleteall``, ``purchases``), as the injection and import filters did
+before there was one gate. They are deliberately conservative and imperfect; the limits are
+documented in ``docs/authenticated-scanning.md`` and ``docs/active-injection.md``.
 """
 
 from __future__ import annotations
@@ -55,13 +57,20 @@ _DESTRUCTIVE_RE = re.compile(
 _AUTH_FORM_RE = re.compile(
     r"log[\s_-]?in|sign[\s_-]?in|sign[\s_-]?up|register|/auth(?:$|/|\b)|password|passwd", re.I
 )
-# A payment, an order, a transfer, a reset: a form or an operation the scan never submits,
-# although a link that names it is still followed (``?order=asc`` sorts, ``?reset=1`` clears a
-# filter).
-_TRANSACTION_RE = re.compile(r"\b(?:reset|checkout|pay|purchase|order|transfers?)\b", re.I)
-# What a form or an operation must not name: a logout, a destructive verb, a login or a
-# registration, a transaction.
-_UNSAFE_ACTION_RES = (_LOGOUT_RE, _DESTRUCTIVE_RE, _AUTH_FORM_RE, _TRANSACTION_RE)
+# A destructive verb or a transaction in a form or an operation, inside a longer name too
+# (``deleteall``, ``unsubscribed``, ``purchases``): a benign form skipped costs coverage, a
+# destructive one submitted costs the target's data. ``drop``, ``reset``, ``pay`` and ``order``
+# sit inside common benign names (``dropdown``, ``payload``, ``ordering``), so they stay whole
+# words. A link that names a transaction is still followed (``?order=asc`` sorts, ``?reset=1``
+# clears a filter).
+_ACTION_VERB_RE = re.compile(
+    r"delete|remove|destroy|revoke|deactivate|disable|unsubscribe|cancel|purge|wipe|"
+    r"checkout|purchase|transfer|\b(?:drop|reset|pay|order)\b",
+    re.I,
+)
+# What a form or an operation must not name: a logout, a login or a registration, a destructive
+# verb or a transaction.
+_UNSAFE_ACTION_RES = (_LOGOUT_RE, _AUTH_FORM_RE, _ACTION_VERB_RE)
 # A search / filter form: the canonical *safe* GET form (the crawler submits it), but not a
 # meaningful CSRF target.
 _SEARCH_FORM_RE = re.compile(r"\b(?:search|query|find|filter)\b", re.I)
@@ -87,6 +96,22 @@ def _path_and_query(url: str) -> str:
     return f"{parts.path}?{parts.query}"
 
 
+def _decoded(text: str) -> str:
+    """
+    Args:
+        text (str): A URL path and query, field names, button labels or an ``operationId``.
+
+    Returns:
+        str: ``text`` percent-decoded, at most twice.
+    """
+    for _ in range(_DECODE_ROUNDS):
+        decoded = unquote(text)
+        if decoded == text:
+            break
+        text = decoded
+    return text
+
+
 def _words(text: str) -> str:
     """
     Args:
@@ -97,12 +122,21 @@ def _words(text: str) -> str:
             ``PascalCase`` boundary turned into a space, so ``delete_account``,
             ``deleteAccount`` and ``%64elete`` all read as the word ``delete``.
     """
-    for _ in range(_DECODE_ROUNDS):
-        decoded = unquote(text)
-        if decoded == text:
-            break
-        text = decoded
-    return _CAMEL_RE.sub(" ", text).replace("_", " ")
+    return _CAMEL_RE.sub(" ", _decoded(text)).replace("_", " ")
+
+
+def _names_unsafe_action(text: str) -> bool:
+    """
+    Args:
+        text (str): The text of a form or an operation, not yet decoded.
+
+    Returns:
+        bool: Whether it names a logout, a login or a registration, a destructive verb or a
+            transaction (:data:`_UNSAFE_ACTION_RES`). The text is read decoded and as words,
+            so a verb a ``camelCase`` boundary cuts in two (``unSubscribe``) still counts.
+    """
+    haystack = f"{_decoded(text)} {_words(text)}"
+    return any(pattern.search(haystack) for pattern in _UNSAFE_ACTION_RES)
 
 
 def is_logout(url: str) -> bool:
@@ -195,20 +229,19 @@ def is_login_url(url: str) -> bool:
     return bool(_AUTH_FORM_RE.search(urlsplit(url).path))
 
 
-def _verb_haystack(form: Form) -> str:
+def _verb_parts(form: Form) -> list[str]:
     """
     Args:
         form (Form): The form to flatten.
 
     Returns:
-        str: The action's path and query, the field names and the value of every named
-            ``submit`` / ``button`` input, read as words (:func:`_words`) — what the
-            destructive vocabulary is matched on.
+        list[str]: The action's path and query, the field names and the value of every named
+            ``submit`` / ``button`` input — what the destructive vocabulary is matched on.
     """
     parts = [_path_and_query(form.action)]
     parts += [field.name for field in form.fields]
     parts += [field.value for field in form.fields if field.type in ("submit", "button")]
-    return _words(" ".join(parts))
+    return parts
 
 
 def is_unsafe_form(form: Form) -> bool:
@@ -222,13 +255,12 @@ def is_unsafe_form(form: Form) -> bool:
         bool: ``True`` when the form looks like a logout, a destructive action, a login or a
             registration, or a transaction (``checkout``, ``pay``, ``order``, ``transfer``,
             ``reset``): the action's path and query, a field name, the value of a named
-            ``submit`` / ``button`` input or the label of any button, read as words
-            (:func:`_words`), names one. The form is not submitted.
+            ``submit`` / ``button`` input or the label of any button names one
+            (:func:`_names_unsafe_action`). The form is not submitted.
     """
-    # The labels are read here and not in ``_verb_haystack``: a ``GET`` form's button
+    # The labels are read here and not in ``_verb_parts``: a ``GET`` form's button
     # ("Remove filters") must not widen ``state_change_signal`` (issue #144).
-    haystack = _verb_haystack(form) + " " + _words(" ".join(form.labels))
-    return any(pattern.search(haystack) for pattern in _UNSAFE_ACTION_RES)
+    return _names_unsafe_action(" ".join([*_verb_parts(form), *form.labels]))
 
 
 def state_change_signal(form: Form) -> str | None:
@@ -249,7 +281,7 @@ def state_change_signal(form: Form) -> str | None:
     """
     if form.method != "GET" or looks_like_search(form):
         return None
-    if _DESTRUCTIVE_RE.search(_verb_haystack(form)):
+    if _DESTRUCTIVE_RE.search(_words(" ".join(_verb_parts(form)))):
         return "destructive verb"
     if _AUTH_ACTION_RE.search(urlsplit(form.action).path):
         return None
@@ -283,12 +315,11 @@ def is_unsafe_operation(path: str, operation_id: str = "") -> bool:
             empty.
 
     Returns:
-        bool: ``True`` when the path or the ``operationId``, read as words (:func:`_words`),
-            names what :func:`is_unsafe_form` refuses (``login``, ``deleteUser``,
-            ``/orders/remove``, ``checkout``).
+        bool: ``True`` when the path or the ``operationId`` names what :func:`is_unsafe_form`
+            refuses (``login``, ``deleteUser``, ``/orders/remove``, ``checkout``), read as
+            :func:`_names_unsafe_action` reads it.
     """
-    haystack = _words(f"{urlsplit(path).path} {operation_id}")
-    return any(pattern.search(haystack) for pattern in _UNSAFE_ACTION_RES)
+    return _names_unsafe_action(f"{urlsplit(path).path} {operation_id}")
 
 
 def is_unsafe_api_operation(op: ApiOperation) -> bool:

@@ -51,6 +51,12 @@ describe("securityHeaders", () => {
   });
 });
 
+describe("next.config poweredByHeader", () => {
+  it("is off, so no response names the framework", () => {
+    expect(nextConfig.poweredByHeader).toBe(false);
+  });
+});
+
 describe("next.config headers()", () => {
   it("applies the security headers to every route", async () => {
     const rules = await nextConfig.headers?.();

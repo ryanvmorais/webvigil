@@ -284,9 +284,13 @@ path or query, a field name, a submit value or the label of a button names:
 - a transaction: `checkout`, `pay`, `purchase`, `order`, `transfer`, `reset`.
 
 An operation is left alone when its path or `operationId` names one (`deleteUser`,
-`createOrder`). The text is read as words, as above. A transaction word stops a form, not a
-link: `?order=asc` sorts a listing. The filter **over-skips** a form with a plain `Cancel`
-button or a sort field named `order`, which is neither submitted nor fuzzed.
+`createOrder`). The text is read as words, as above, and a long verb also counts inside a longer
+name, unlike on a link: `deleteall`, `/account/deleted`, `/purchases`, `unsubscribed` and
+`cancelSubscription` all stop a form or an operation. `drop`, `reset`, `pay` and `order` still have
+to be whole words, so `dropdown`, `payload` and `ordering` pass. A transaction word stops a form,
+not a link: `?order=asc` sorts a listing. The filter **over-skips** a form with a plain `Cancel`
+button, a sort field named `order` or a page such as `/deleted-items`, which is neither submitted
+nor fuzzed.
 
 ## Form-driven crawling
 
