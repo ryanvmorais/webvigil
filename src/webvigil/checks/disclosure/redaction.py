@@ -17,6 +17,9 @@ _VALUE_MASK = "***"
 _LIMIT = 1024
 _JSON_LIMIT = 2000
 _MAX_LINES = 80
+# Characters of a body the line strategies split into lines: what their ``_MAX_LINES`` lines can
+# hold, without a list of every line of a long body.
+_LINES_READ_MAX = 64 * 1024
 # Characters of a JSON body parsed for the ``json-env`` strategy. The parsed document takes many
 # times the memory of its text; a longer body gets the generic masking of its first ``_LIMIT``.
 _JSON_PARSE_MAX = 256 * 1024
@@ -36,7 +39,47 @@ _SECRET_RE = re.compile(
     r")"
 )
 _KV_RE = re.compile(r"^(\s*(?:export\s+)?[A-Za-z_][A-Za-z0-9_.]*\s*[:=]\s*)(\S.*)$")
-_SECRET_KEYS = {"value", "password", "passwd", "secret", "token", "apikey", "api_key", "key"}
+
+# The user name of an ``.htpasswd`` line, before the hash.
+_HTPASSWD_RE = re.compile(r"^([^:\s]{1,256}):")
+
+# The user information of a URL (``https://user:token@host``), whatever it holds.
+_USERINFO_RE = re.compile(r"(?<=://)[^/\s@]{1,256}@")
+
+# A name followed by an assignment, as a config file, a source file or a connection string
+# writes one: ``name=``, ``name:``, ``"name":``, ``name =>`` and PHP's ``define('name',``. Only
+# a secret-sounding name (:func:`_is_secret_name`) gets its value masked.
+_ASSIGNMENT_RE = re.compile(
+    r"(?<![\w.-])([A-Za-z_][\w.-]{0,127})"
+    r"(?:[\"']?[ \t]{0,8}(?:=>|[:=])|[\"'][ \t]{0,8},)[ \t]{0,8}"
+)
+# The value after an assignment: quoted (up to its closing quote) or bare.
+_VALUE_RE = re.compile(r"\"[^\"\n]{0,512}\"?|'[^'\n]{0,512}'?|[^\s\"'<>&;,]{1,512}")
+
+# Names whose value is a secret: an exact name, a word anywhere in the name, or an ending. The
+# name is lower-cased with everything but letters and digits removed (``DB_PASSWORD`` is
+# ``dbpassword``), so every spelling of one word counts.
+_SECRET_NAMES = frozenset({"value", "key", "pw", "pass", "auth"})
+_SECRET_WORDS = (
+    "password",
+    "passwd",
+    "passphrase",
+    "pwd",
+    "secret",
+    "token",
+    "apikey",
+    "accesskey",
+    "privatekey",
+    "signingkey",
+    "credential",
+    "connectionstring",
+    "authorization",
+    "jwt",
+)
+_SECRET_ENDINGS = ("key", "pw", "pass", "auth")
+
+#: The strategies a catalogue entry may name. An entry that names none gets ``generic``.
+STRATEGIES: frozenset[str] = frozenset({"dotenv", "json-env", "generic", "htpasswd"})
 
 
 def apply(strategy: str, body: str) -> str:
@@ -44,9 +87,10 @@ def apply(strategy: str, body: str) -> str:
     Return ``body`` with secrets removed according to ``strategy``, length-bounded.
 
     Args:
-        strategy (str): One of ``"dotenv"`` (mask every ``KEY=value``),
-            ``"json-env"`` (mask secret-named JSON keys), ``"generic"`` (mask
-            well-known token shapes), or anything else (truncate only).
+        strategy (str): One of ``"dotenv"`` (mask every ``KEY=value``), ``"json-env"`` (mask
+            secret-named JSON keys), ``"htpasswd"`` (mask every hash after a user name) or
+            ``"generic"`` (mask well-known token shapes, URL user information and the value
+            of a secret-named assignment); any other name gets ``"generic"``.
         body (str): The raw response body.
 
     Returns:
@@ -56,9 +100,63 @@ def apply(strategy: str, body: str) -> str:
         return _dotenv(body)
     if strategy == "json-env":
         return _json_env(body)
-    if strategy == "generic":
-        return _SECRET_RE.sub(_MASK, body[:_LIMIT])
-    return body[:_LIMIT]
+    if strategy == "htpasswd":
+        return _htpasswd(body)
+    return _generic(body[:_LIMIT])
+
+
+def _generic(text: str) -> str:
+    """
+    Args:
+        text (str): Already bounded text.
+
+    Returns:
+        str: ``text`` with URL user information, the value of every secret-named assignment
+            and every well-known token shape masked.
+    """
+    text = _USERINFO_RE.sub(f"{_VALUE_MASK}@", text)
+    return _SECRET_RE.sub(_MASK, _mask_assignments(text))
+
+
+def _mask_assignments(text: str) -> str:
+    """
+    Args:
+        text (str): Already bounded text.
+
+    Returns:
+        str: ``text`` with the value of every assignment to a secret-sounding name replaced by
+            ``***``. The search goes on right after each assignment, so a secret assigned
+            inside another value (a query string in a URL) is found too.
+    """
+    pieces: list[str] = []
+    last = 0
+    for match in _ASSIGNMENT_RE.finditer(text):
+        if match.start() < last or not _is_secret_name(match.group(1)):
+            continue
+        value = _VALUE_RE.match(text, match.end())
+        if value is None:
+            continue
+        pieces += [text[last : match.end()], _VALUE_MASK]
+        last = value.end()
+    pieces.append(text[last:])
+    return "".join(pieces)
+
+
+def _is_secret_name(name: str) -> bool:
+    """
+    Args:
+        name (str): A key or variable name.
+
+    Returns:
+        bool: Whether its value is likely a secret (:data:`_SECRET_NAMES`,
+            :data:`_SECRET_WORDS`, :data:`_SECRET_ENDINGS`).
+    """
+    plain = "".join(char for char in name.lower() if char.isascii() and char.isalnum())
+    return (
+        plain in _SECRET_NAMES
+        or any(word in plain for word in _SECRET_WORDS)
+        or plain.endswith(_SECRET_ENDINGS)
+    )
 
 
 def _dotenv(body: str) -> str:
@@ -67,14 +165,62 @@ def _dotenv(body: str) -> str:
         body (str): A dotenv-style body.
 
     Returns:
-        str: The body with every value after a ``KEY=`` / ``KEY:`` replaced by a
-            mask, capped at ``_MAX_LINES`` lines and ``_LIMIT`` chars.
+        str: The body with every value after a ``KEY=`` / ``KEY:`` replaced by a mask, the
+            lines of a quoted value that spans lines dropped with it, and every other line
+            given the generic masking; capped at ``_MAX_LINES`` lines and ``_LIMIT`` chars.
     """
     lines: list[str] = []
-    for line in body.splitlines()[:_MAX_LINES]:
+    open_quote = ""
+    kept = 0
+    for line in _head_lines(body):
+        if open_quote:  # inside a value that spans lines: dropped up to its closing quote
+            if open_quote in line:
+                open_quote = ""
+            continue
         match = _KV_RE.match(line)
-        lines.append(f"{match.group(1)}{_VALUE_MASK}" if match else line)
+        if match is None:
+            lines.append(_generic(line[:_LIMIT]))
+        else:
+            lines.append(f"{match.group(1)}{_VALUE_MASK}")
+            value = match.group(2)
+            if value[0] in "\"'" and value[0] not in value[1:]:
+                open_quote = value[0]
+        kept += len(lines[-1]) + 1
+        if kept > _LIMIT:  # the output is full: no later line is worth masking
+            break
     return "\n".join(lines)[:_LIMIT]
+
+
+def _htpasswd(body: str) -> str:
+    """
+    Args:
+        body (str): An ``.htpasswd``-style body (``user:hash`` lines).
+
+    Returns:
+        str: The body with every hash after a user name replaced by a mask, every other line
+            given the generic masking; capped at ``_MAX_LINES`` lines and ``_LIMIT`` chars.
+    """
+    lines: list[str] = []
+    kept = 0
+    for line in _head_lines(body):
+        match = _HTPASSWD_RE.match(line)
+        lines.append(f"{match.group(1)}:{_VALUE_MASK}" if match else _generic(line[:_LIMIT]))
+        kept += len(lines[-1]) + 1
+        if kept > _LIMIT:  # the output is full: no later line is worth masking
+            break
+    return "\n".join(lines)[:_LIMIT]
+
+
+def _head_lines(body: str) -> list[str]:
+    """
+    Args:
+        body (str): A line-oriented body.
+
+    Returns:
+        list[str]: Its first ``_MAX_LINES`` lines, read from its first ``_LINES_READ_MAX``
+            characters, so a long body is not split whole.
+    """
+    return body[:_LINES_READ_MAX].splitlines()[:_MAX_LINES]
 
 
 def _json_env(body: str) -> str:
@@ -89,14 +235,14 @@ def _json_env(body: str) -> str:
             ``_JSON_PARSE_MAX``, is not valid JSON or is nested too deep to walk.
     """
     if len(body) > _JSON_PARSE_MAX:
-        return _SECRET_RE.sub(_MASK, body[:_LIMIT])
+        return _generic(body[:_LIMIT])
     try:
         data = json.loads(body)
         # _scrub and the encoder recurse too: a body just inside the parser's depth limit can
         # still exhaust the stack here.
         return _serialised_head(_scrub(data, [_JSON_LIMIT]))
     except (ValueError, RecursionError):
-        return _SECRET_RE.sub(_MASK, body[:_LIMIT])
+        return _generic(body[:_LIMIT])
 
 
 def _serialised_head(data: Any) -> str:
@@ -141,7 +287,7 @@ def _scrub(node: Any, budget: list[int]) -> Any:
     """
     if isinstance(node, dict):
         return {
-            key: (_VALUE_MASK if key.lower() in _SECRET_KEYS else _scrub(value, budget))
+            key: (_VALUE_MASK if _is_secret_name(key) else _scrub(value, budget))
             for key, value in node.items()
         }
     if isinstance(node, list):
@@ -151,5 +297,5 @@ def _scrub(node: Any, budget: list[int]) -> Any:
             budget[0] = 0
             return _VALUE_MASK
         budget[0] -= len(node)
-        return _SECRET_RE.sub(_MASK, node)
+        return _generic(node)
     return node

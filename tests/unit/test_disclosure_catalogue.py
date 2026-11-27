@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import pytest
 
-from webvigil.checks.disclosure import catalogue
+from webvigil.checks.disclosure import catalogue, redaction
 from webvigil.checks.disclosure.catalogue import (
     PROBE_CHECK_IDS,
     Validator,
@@ -67,6 +67,14 @@ def test_build_backup_entry_for_a_host_label() -> None:
 # ---------------------------------------------------------------------------
 # Validators
 # ---------------------------------------------------------------------------
+
+
+def test_every_entry_names_a_redaction_and_an_unnamed_one_gets_the_generic() -> None:
+    entries = {entry.path: entry for entry in load_catalogue()}
+    assert {entry.redaction for entry in entries.values()} <= redaction.STRATEGIES
+    # .git/config names no strategy in the shipped file: a remote URL can carry a token
+    assert entries[".git/config"].redaction == "generic"
+    assert entries[".htpasswd"].redaction == "htpasswd"
 
 
 def test_dotenv_entry_requires_two_key_value_lines() -> None:

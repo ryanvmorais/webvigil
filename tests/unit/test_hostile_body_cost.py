@@ -28,6 +28,7 @@ from pathlib import Path
 
 import pytest
 
+from webvigil.checks.disclosure import redaction
 from webvigil.checks.disclosure.signatures import (
     _SCAN_MAX,
     ERROR_SIGNATURES,
@@ -346,6 +347,18 @@ _SIGNATURE_TABLE = [
 ] + [
     pytest.param(pattern, id=f"listing-{index}") for index, pattern in enumerate(LISTING_SIGNATURES)
 ]
+# The patterns that mask a probe's evidence, swept up to the most text one call gives them.
+_REDACTION_TABLE = [
+    pytest.param(pattern, id=f"redaction-{name}")
+    for name, pattern in (
+        ("secret", redaction._SECRET_RE),
+        ("kv", redaction._KV_RE),
+        ("htpasswd", redaction._HTPASSWD_RE),
+        ("userinfo", redaction._USERINFO_RE),
+        ("assignment", redaction._ASSIGNMENT_RE),
+        ("value", redaction._VALUE_RE),
+    )
+]
 
 
 def _repeated(unit: str, chars: int) -> str:
@@ -450,4 +463,19 @@ def test_every_signature_reads_bodies_built_from_its_own_pieces_in_time(
         spent = _timed(lambda body=body: pattern.search(body))
         if spent >= _SWEEP_BUDGET_S:  # a busy runner: the best of three decides
             spent = min(_timed(lambda body=body: pattern.search(body)) for _ in range(3))
+        assert spent < _SWEEP_BUDGET_S, unit[:40]
+
+
+@pytest.mark.parametrize("pattern", _REDACTION_TABLE)
+def test_every_redaction_pattern_reads_bodies_built_from_its_own_pieces_in_time(
+    pattern: re.Pattern[str],
+) -> None:
+    """Each pattern of the probe redaction, on the longest text one call reads (the JSON cap)."""
+    units = _shapes(pattern)
+    assert len(units) > 20  # the pattern has literals to build from: the sweep is not empty
+    for unit in units:
+        body = _repeated(unit, redaction._JSON_LIMIT)
+        spent = _timed(lambda body=body: pattern.sub("", body))
+        if spent >= _SWEEP_BUDGET_S:  # a busy runner: the best of three decides
+            spent = min(_timed(lambda body=body: pattern.sub("", body)) for _ in range(3))
         assert spent < _SWEEP_BUDGET_S, unit[:40]

@@ -11,7 +11,7 @@
 # A hit passes if ANY configured validator passes.
 #
 # severity/confidence override the emitting check's class default. redact selects the
-# evidence redaction strategy (dotenv | json-env | generic | none). ok_status defaults to
+# evidence redaction strategy (dotenv | json-env | htpasswd | generic, the default). ok_status defaults to
 # [200, 206]; directory-index entries add 403.
 
 # --- Version control -----------------------------------------------------------------
@@ -131,7 +131,7 @@ check = "disclosure.config.dotenv-exposed"
 severity = "high"
 title = "HTTP Basic-Auth password file exposed"
 content = '(?m)^[^:\s]{1,200}:[^:\s]{1,200}$'
-redact = "generic"
+redact = "htpasswd"
 
 [[entry]]
 path = ".htaccess"
