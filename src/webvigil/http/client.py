@@ -16,6 +16,7 @@ the address guard (:mod:`webvigil.http.addresses`).
 from __future__ import annotations
 
 import asyncio
+import codecs
 import contextlib
 import contextvars
 import random
@@ -55,6 +56,58 @@ _IDEMPOTENT = frozenset({"GET", "HEAD", "OPTIONS", "TRACE"})
 _REDIRECT_KEEPS_METHOD = frozenset({307, 308})
 # RFC 1035, 2.3.4: a DNS label holds at most 63 octets.
 _MAX_DNS_LABEL = 63
+# The charsets a body is decoded in: the encodings of the WHATWG Encoding Standard (what a
+# browser decodes), plus ASCII, Latin-1 and UTF-32, by the name Python gives each codec. A body
+# that names another charset is read as UTF-8, as one naming an unknown charset already is:
+# Python's codec registry also holds codecs whose decoding time grows faster than the input.
+_TEXT_CHARSETS = frozenset(
+    codecs.lookup(name).name
+    for name in (
+        "utf-8",
+        "utf-16",
+        "utf-16-be",
+        "utf-16-le",
+        "utf-32",
+        "utf-32-be",
+        "utf-32-le",
+        "ascii",
+        "latin-1",
+        "cp866",
+        "iso8859-2",
+        "iso8859-3",
+        "iso8859-4",
+        "iso8859-5",
+        "iso8859-6",
+        "iso8859-7",
+        "iso8859-8",
+        "iso8859-10",
+        "iso8859-13",
+        "iso8859-14",
+        "iso8859-15",
+        "iso8859-16",
+        "koi8-r",
+        "koi8-u",
+        "mac-roman",
+        "mac-cyrillic",
+        "cp874",
+        "cp1250",
+        "cp1251",
+        "cp1252",
+        "cp1253",
+        "cp1254",
+        "cp1255",
+        "cp1256",
+        "cp1257",
+        "cp1258",
+        "gbk",
+        "gb18030",
+        "big5",
+        "euc-jp",
+        "iso2022-jp",
+        "shift-jis",
+        "euc-kr",
+    )
+)
 
 # spec 019. Set only inside the task that called ``HttpClient.handshake()`` / ``quiet()``, so a
 # re-login running in one task never switches another task's requests into handshake mode.
@@ -252,6 +305,20 @@ class Response:
         return "html" in self.headers.get("content-type", "").lower()
 
 
+def _codec_name(charset: str) -> str | None:
+    """
+    Args:
+        charset (str): A charset name, as the target wrote it.
+
+    Returns:
+        str | None: The name of the Python codec it stands for, or ``None`` when there is none.
+    """
+    try:
+        return codecs.lookup(charset).name
+    except (LookupError, ValueError):
+        return None
+
+
 def decode_text(content: bytes, content_type: str | None) -> str:
     """
     A body as text, in the charset ``content_type`` declares, or UTF-8 when that cannot decode.
@@ -260,10 +327,12 @@ def decode_text(content: bytes, content_type: str | None) -> str:
     its size limit) reads as the whole body would. ``charset=`` is the target's to write, and
     Python's codec registry also holds codecs that are not text encodings (``base64``, ``zlib``,
     ``hex``) or that refuse the ``replace`` error handler (``idna``): ``httpx2`` looks the name
-    up and then fails inside ``.text`` with whatever that codec raises. Such a body is read as
-    UTF-8 with replacement characters, as an unknown charset already is. Text that does decode
-    can still hold a character no later step could encode: it is replaced here, where the text
-    enters the engine.
+    up and then fails inside ``.text`` with whatever that codec raises, and some text codecs
+    decode in time that grows faster than the input. Only a charset in :data:`_TEXT_CHARSETS`
+    is honoured: a body that names another one, or a codec that fails, is read as UTF-8 with
+    replacement characters, as an unknown charset already is. Text that does decode can still
+    hold a character no later step could encode: it is replaced here, where the text enters
+    the engine.
 
     Args:
         content (bytes): The body, or a part of it.
@@ -274,7 +343,11 @@ def decode_text(content: bytes, content_type: str | None) -> str:
     """
     headers = () if content_type is None else (("content-type", content_type),)
     try:
-        return replace_surrogates(httpx2.Response(200, headers=headers, content=content).text)
+        response = httpx2.Response(200, headers=headers, content=content)
+        charset = response.charset_encoding
+        if charset is not None and _codec_name(charset) not in _TEXT_CHARSETS:
+            response.encoding = "utf-8"
+        return replace_surrogates(response.text)
     except Exception:  # any codec's own error: the charset name came from the target
         return content.decode("utf-8", errors="replace")
 

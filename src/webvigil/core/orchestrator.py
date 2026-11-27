@@ -39,6 +39,7 @@ from webvigil.core.errors import (
     WebVigilError,
 )
 from webvigil.core.findings import Category, Finding, ScanMode
+from webvigil.core.html import track_partial_parses
 from webvigil.core.output import portable_traceback
 from webvigil.core.result import CheckError, ScanMetadata, ScanResult
 from webvigil.core.secrets import collect_secrets
@@ -133,6 +134,7 @@ class Orchestrator:
         started_at = datetime.now(UTC)
         target = Target.parse(raw_target, scope=self._config.scan.scope)
         self._enforce_active_gate()
+        partial_parses = track_partial_parses()
 
         warnings: list[str] = []
         if self._config.injection.stored_xss and self._config.scan.mode is not ScanMode.ACTIVE:
@@ -243,6 +245,7 @@ class Orchestrator:
                 warnings.append(line)
             if line := truncated_warning(http.stats, self._config.http.max_body_bytes):
                 warnings.append(line)
+            warnings.extend(partial_parses.warnings())
             if http.stats.deadline_reached:
                 warnings.append(
                     f"the scan reached [scan] max_duration_s "

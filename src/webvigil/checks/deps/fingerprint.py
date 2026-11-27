@@ -18,12 +18,13 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass, field
 
-from selectolax.lexbor import LexborHTMLParser as HTMLParser
+from selectolax.lexbor import LexborHTMLParser
 
 from webvigil.checks.deps.rules import _BODY_MAX, RetireJsRules
 from webvigil.core.context import Detection, Page
 from webvigil.core.destination import may_request
 from webvigil.core.errors import OutOfScopeError, RequestFailed
+from webvigil.core.html import parse_html
 from webvigil.core.target import Target, normalize_url
 from webvigil.core.technology import DetectionMethod
 from webvigil.core.urls import resolve_url
@@ -103,7 +104,7 @@ class Fingerprinter:
         for page in pages:
             if not (page.ok and page.is_html and page.text):
                 continue
-            tree = HTMLParser(page.text)
+            tree = parse_html(page.text)
             raw.extend(self._from_inline_scripts(tree, page.url, inline))
             for url in self._resource_urls(tree, page.url):
                 if url in seen_resources:
@@ -141,10 +142,10 @@ class Fingerprinter:
         result.detections = _dedupe(raw)
         return result
 
-    def _resource_urls(self, tree: HTMLParser, base: str) -> list[str]:
+    def _resource_urls(self, tree: LexborHTMLParser, base: str) -> list[str]:
         """
         Args:
-            tree (HTMLParser): The parsed page.
+            tree (LexborHTMLParser): The parsed page.
             base (str): The page URL, for resolving relative references.
 
         Returns:
@@ -167,11 +168,11 @@ class Fingerprinter:
         return urls
 
     def _from_inline_scripts(
-        self, tree: HTMLParser, page_url: str, budget: _InlineBudget
+        self, tree: LexborHTMLParser, page_url: str, budget: _InlineBudget
     ) -> list[Detection]:
         """
         Args:
-            tree (HTMLParser): The parsed page.
+            tree (LexborHTMLParser): The parsed page.
             page_url (str): The page URL, recorded as the detection source.
             budget (_InlineBudget): What is left to read in this scan, updated in place.
 

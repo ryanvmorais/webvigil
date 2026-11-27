@@ -28,12 +28,11 @@ from itertools import islice
 from typing import Literal
 from urllib.parse import urlencode, urlsplit
 
-from selectolax.lexbor import LexborHTMLParser as HTMLParser
-
 from webvigil.checks.csrf.tokens import is_candidate, is_token_field
 from webvigil.core.config import ScanConfig
 from webvigil.core.context import Page
 from webvigil.core.errors import OutOfScopeError, RequestFailed
+from webvigil.core.html import parse_html
 from webvigil.core.target import Target
 from webvigil.crawler.forms import Form, form_body, parse_forms
 from webvigil.crawler.safety import is_destructive_form, is_login_url
@@ -188,7 +187,7 @@ def _visible(response: Response) -> str:
     """
     if not response.is_html or not response.text.strip():
         return response.text
-    tree = HTMLParser(response.text)
+    tree = parse_html(response.text)
     tree.strip_tags(["script", "style"])
     return str(tree.text(separator=" "))
 

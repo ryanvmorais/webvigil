@@ -92,8 +92,15 @@ class _LoneDecoder(codecs.IncrementalDecoder):
 
 
 @pytest.fixture(autouse=True)
-def _test_codec() -> Iterator[None]:
-    """Register :data:`_FIXTURE_ENCODING` for one test, and take it away afterwards."""
+def _test_codec(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """
+    Register :data:`_FIXTURE_ENCODING` for one test, and take it away afterwards.
+
+    The client decodes only in the charsets it lists, so the test codec joins that list.
+    """
+    monkeypatch.setattr(
+        client_mod, "_TEXT_CHARSETS", client_mod._TEXT_CHARSETS | {_FIXTURE_ENCODING}
+    )
 
     def find(name: str) -> codecs.CodecInfo | None:
         if name != _FIXTURE_ENCODING:

@@ -14,15 +14,15 @@ not this module's.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from urllib.parse import urlencode, urlsplit, urlunsplit
 
-from selectolax.lexbor import LexborHTMLParser as HTMLParser
 from selectolax.lexbor import LexborNode as Node
 
 from webvigil.core.context import Page
 from webvigil.core.destination import may_request
+from webvigil.core.html import parse_html
 from webvigil.core.target import Target, normalize_url
 from webvigil.core.urls import resolve_url
 
@@ -50,6 +50,16 @@ _TYPED_FALLBACK = {
     "date": "2000-01-01",
 }
 _SUBMIT_TYPES = frozenset({"submit", "button", "image"})
+
+# Mis-nested markup can put a form inside a form, a <button> inside a <button>, a <select> or an
+# <option> inside an <option>: a search of each one's whole subtree would then read the inner
+# ones again for every outer one. What belongs to an element is read without entering the inner
+# ones of these kinds, so every node is read once however the markup nests.
+_FORM_CONTROLS = frozenset({"input", "textarea", "select", "button"})
+_IN_FORM = frozenset({"form"})
+_IN_BUTTON = frozenset({"button"})
+_IN_SELECT = frozenset({"select"})
+_IN_OPTION = frozenset({"select", "option"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -129,7 +139,7 @@ def parse_forms_html(text: str, url: str, target: Target) -> list[Form]:
         list[Form]: The in-scope forms, in document order.
     """
     forms: list[Form] = []
-    for node in HTMLParser(text).css("form")[:MAX_FORMS_PER_PAGE]:
+    for node in parse_html(text).css("form")[:MAX_FORMS_PER_PAGE]:
         form = _form_from_node(node, url)
         if form is not None and may_request(target, form.action):
             forms.append(form)
@@ -280,8 +290,9 @@ def _form_from_node(node: Node, page_url: str) -> Form | None:
     method = "POST" if (attrs.get("method") or "").strip().upper() == "POST" else "GET"
     enctype = (attrs.get("enctype") or "").strip().lower() or _DEFAULT_ENCTYPE
 
+    controls = _own(node, _FORM_CONTROLS, _IN_FORM)
     fields: list[FormField] = []
-    for child in node.css("input, textarea, select")[:MAX_FIELDS_PER_FORM]:
+    for child in [c for c in controls if c.tag != "button"][:MAX_FIELDS_PER_FORM]:
         name = (child.attributes.get("name") or "").strip()
         if not name:
             continue
@@ -293,7 +304,7 @@ def _form_from_node(node: Node, page_url: str) -> Form | None:
                 checked="checked" in child.attributes,
             )
         )
-    labels = _button_labels(node)
+    labels = _button_labels([c for c in controls if c.tag in ("input", "button")])
     if not fields and not (method == "POST" and labels):
         return None
     return Form(
@@ -306,10 +317,87 @@ def _form_from_node(node: Node, page_url: str) -> Form | None:
     )
 
 
-def _button_labels(node: Node) -> tuple[str, ...]:
+def _walk(root: Node, skip: frozenset[str]) -> Iterator[Node]:
+    """
+    Every node below ``root``, in document order, without entering the elements named in ``skip``.
+
+    Args:
+        root (Node): An element.
+        skip (frozenset[str]): Tag names whose element is yielded but not entered.
+
+    Yields:
+        Node: The nodes below ``root``.
+    """
+    root_id = root.mem_id
+    node = root.child
+    while node is not None:
+        yield node
+        child = None if node.tag in skip else node.child
+        if child is not None:
+            node = child
+            continue
+        while True:
+            sibling = node.next
+            if sibling is not None:
+                node = sibling
+                break
+            parent = node.parent
+            if parent is None or parent.mem_id == root_id:
+                return
+            node = parent
+
+
+def _nests(root: Node, kinds: frozenset[str]) -> bool:
     """
     Args:
-        node (Node): The parsed ``<form>`` element.
+        root (Node): An element.
+        kinds (frozenset[str]): Tag names.
+
+    Returns:
+        bool: ``True`` when an element named in ``kinds`` lies below ``root``, or when ``root``
+            itself lies inside an element of its own kind (the selector also sees the ancestors
+            of ``root``; such a ``root`` is read with :func:`_walk` too, to the same result).
+    """
+    selector = ", ".join(f"{root.tag} {kind}" for kind in sorted(kinds))
+    return root.css_first(selector) is not None
+
+
+def _own(root: Node, tags: frozenset[str], inner: frozenset[str]) -> list[Node]:
+    """
+    The elements below ``root`` named in ``tags``, in document order, leaving out those inside an
+    element named in ``inner`` (which reads its own).
+
+    Args:
+        root (Node): An element.
+        tags (frozenset[str]): The tag names to collect.
+        inner (frozenset[str]): The tag names not to enter.
+
+    Returns:
+        list[Node]: The elements found.
+    """
+    if not _nests(root, inner):
+        return list(root.css(", ".join(sorted(tags))))
+    return [node for node in _walk(root, inner) if node.tag in tags]
+
+
+def _own_text(root: Node, inner: frozenset[str]) -> str:
+    """
+    Args:
+        root (Node): An element.
+        inner (frozenset[str]): The tag names whose text is not part of ``root``'s.
+
+    Returns:
+        str: The text below ``root``, without that of the elements named in ``inner``.
+    """
+    if not _nests(root, inner):
+        return root.text(deep=True) or ""
+    return "".join(node.text_content or "" for node in _walk(root, inner) if node.is_text_node)
+
+
+def _button_labels(controls: list[Node]) -> tuple[str, ...]:
+    """
+    Args:
+        controls (list[Node]): The ``<input>`` and ``<button>`` elements of a form, in order.
 
     Returns:
         tuple[str, ...]: The label of each submit / button control, in parser order: the
@@ -317,12 +405,12 @@ def _button_labels(node: Node) -> tuple[str, ...]:
             (a ``<button>`` with no ``type`` submits). Empty labels are left out.
     """
     labels: list[str] = []
-    for child in node.css("input, button")[:MAX_FIELDS_PER_FORM]:
+    for child in controls[:MAX_FIELDS_PER_FORM]:
         kind = (child.attributes.get("type") or "").strip().lower()
         if child.tag == "button":
             if kind not in ("", "submit", "button"):
                 continue
-            text = (child.text(deep=True) or "").strip()
+            text = _own_text(child, _IN_BUTTON).strip()
         elif kind in ("submit", "button"):
             text = (child.attributes.get("value") or "").strip()
         else:
@@ -361,10 +449,10 @@ def _field_value(node: Node) -> str:
     if tag == "textarea":
         return node.text(deep=True) or ""
     if tag == "select":
-        options = node.css("option")
+        options = _own(node, frozenset({"option"}), _IN_SELECT)
         selected = [o for o in options if "selected" in o.attributes]
         chosen = selected[0] if selected else (options[0] if options else None)
         if chosen is None:
             return ""
-        return (chosen.attributes.get("value") or chosen.text(deep=True) or "").strip()
+        return (chosen.attributes.get("value") or _own_text(chosen, _IN_OPTION)).strip()
     return (node.attributes.get("value") or "").strip()

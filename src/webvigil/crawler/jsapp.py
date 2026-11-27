@@ -12,9 +12,8 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from selectolax.lexbor import LexborHTMLParser as HTMLParser
-
 from webvigil.core.context import Page
+from webvigil.core.html import parse_html
 
 # A page with fewer visible characters than this, once scripts, styles and <noscript> are set aside,
 # has no content of its own. A real page, even a sparse one, is above it.
@@ -37,7 +36,7 @@ def looks_like_script_app(html: str) -> bool:
         bool: ``True`` when the page runs at least one script and shows almost no text without
             them: the shape of a client-rendered application shell.
     """
-    tree = HTMLParser(html)
+    tree = parse_html(html)
     body = tree.body
     if body is None:
         return False

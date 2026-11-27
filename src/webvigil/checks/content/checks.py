@@ -20,13 +20,13 @@ from __future__ import annotations
 
 from urllib.parse import urlsplit
 
-from selectolax.lexbor import LexborHTMLParser as HTMLParser
 from selectolax.lexbor import LexborNode as Node
 
 from webvigil.checks.base import PER_PAGE_FINDINGS_CAP, Check, note_more_on_page
 from webvigil.checks.registry import register
 from webvigil.core.context import Page, ScanContext
 from webvigil.core.findings import Category, Confidence, EvidenceItem, Finding, Location, Severity
+from webvigil.core.html import parse_html
 from webvigil.core.urls import resolve_url
 
 _EVIDENCE_TAG_CHARS = 300
@@ -148,7 +148,7 @@ class SriMissingCheck(Check):
             list[Finding]: The page's findings, at most ``PER_PAGE_FINDINGS_CAP``; the last
                 one notes when the page lists more.
         """
-        tree = HTMLParser(page.text)
+        tree = parse_html(page.text)
         findings: list[Finding] = []
         for selector in _SRI_SELECTORS:
             for node in tree.css(selector):
@@ -253,7 +253,7 @@ class MixedContentCheck(Check):
             list[Finding]: The mixed-content findings on this page, at most
                 ``PER_PAGE_FINDINGS_CAP``; the last one notes when the page lists more.
         """
-        tree = HTMLParser(page.text)
+        tree = parse_html(page.text)
         findings: list[Finding] = []
         for active, attrs in ((True, _ACTIVE_MIXED), (False, _PASSIVE_MIXED)):
             for tag, attr in attrs.items():

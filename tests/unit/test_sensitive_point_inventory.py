@@ -307,6 +307,10 @@ SENSITIVE_POINTS: Final[Mapping[str, str]] = {
     "webvigil.core.config:ScanConfig.model_validate_or_raise error raise:ConfigError": (
         "describe_validation_error leaves out pydantic's input values (cookies, headers, password)"
     ),
+    "webvigil.core.html:_parse_into error collection:box.append": (
+        "the exception object is handed back unchanged to parse_html, which raises it in the "
+        "caller's thread, as a parse in that thread would have"
+    ),
     "webvigil.core.orchestrator:Orchestrator.run error raise:TargetUnreachableError": (
         "Page.error holds RequestFailed / OutOfScopeError text (display_url plus failure_kind)"
     ),

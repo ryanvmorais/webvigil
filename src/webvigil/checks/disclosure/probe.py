@@ -19,8 +19,6 @@ import secrets
 from dataclasses import dataclass, field
 from urllib.parse import urlsplit
 
-from selectolax.lexbor import LexborHTMLParser as HTMLParser
-
 from webvigil.checks.disclosure import redaction
 from webvigil.checks.disclosure.catalogue import (
     ProbeEntry,
@@ -32,6 +30,7 @@ from webvigil.core.context import Page
 from webvigil.core.destination import may_request
 from webvigil.core.errors import OutOfScopeError, RequestFailed
 from webvigil.core.findings import Confidence, Severity
+from webvigil.core.html import parse_html
 from webvigil.core.target import Target
 from webvigil.core.urls import resolve_url
 from webvigil.http.client import HttpClient, Response
@@ -273,7 +272,7 @@ class DisclosureProbe:
         for page in self._pages:
             if not (page.ok and page.is_html and page.text):
                 continue
-            for node in HTMLParser(page.text).css("script"):
+            for node in parse_html(page.text).css("script"):
                 src = node.attributes.get("src")
                 if not src:
                     continue

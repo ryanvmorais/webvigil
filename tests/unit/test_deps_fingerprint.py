@@ -220,10 +220,13 @@ async def test_inline_scripts_past_the_scan_budget_are_not_read(
     """Distinct full-size inline scripts stop at ``_MAX_INLINE_CHARS``, with a warning."""
     calls = _spy_identify(monkeypatch)
     fit = _MAX_INLINE_CHARS // _BODY_MAX
-    scripts = "".join(f"<script>{i:08d}{'x' * (_BODY_MAX - 8)}</script>" for i in range(fit + 3))
-    result, _ = await _run(
-        (_page(f"<html><body>{scripts}</body></html>"),), _router({}), httpx_mock
+    scripts = [f"<script>{i:08d}{'x' * (_BODY_MAX - 8)}</script>" for i in range(fit + 3)]
+    # Four scripts a page: each page stays within what the HTML parser reads of one.
+    pages = tuple(
+        _page(f"<html><body>{''.join(scripts[n : n + 4])}</body></html>", f"{_SEED}p{n}")
+        for n in range(0, len(scripts), 4)
     )
+    result, _ = await _run(pages, _router({}), httpx_mock)
     assert len(calls) == fit
     assert any("stopped reading inline scripts" in w for w in result.warnings)
 

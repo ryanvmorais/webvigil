@@ -29,13 +29,12 @@ from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from urllib.parse import urlencode, urlsplit
 
-from selectolax.lexbor import LexborHTMLParser as HTMLParser
-
 from webvigil.core.config import ScanConfig
 from webvigil.core.context import Page
 from webvigil.core.destination import may_request
 from webvigil.core.errors import OutOfScopeError, RequestFailed
 from webvigil.core.findings import ScanMode
+from webvigil.core.html import parse_html
 from webvigil.core.target import Target, normalize_url
 from webvigil.core.urls import resolve_url
 from webvigil.crawler import robots as robots_mod
@@ -727,7 +726,7 @@ def _extract_hrefs(html: str) -> list[str]:
             links.
     """
     hrefs: list[str] = []
-    for node in HTMLParser(html).css("a[href]"):
+    for node in parse_html(html).css("a[href]"):
         href = (node.attributes.get("href") or "").strip()
         if href and not href.lower().startswith(_SKIP_LINK_PREFIXES):
             hrefs.append(href)

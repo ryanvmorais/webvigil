@@ -11,6 +11,19 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 ## [Unreleased]
 
+### Security
+
+- **A charset or an HTML page served by the scanned site no longer keeps a scan busy for hours**
+  (GHSA-8754-v84r-vm9j). A body is decoded in its declared charset only when that is a web
+  encoding (the WHATWG Encoding Standard), ASCII, Latin-1 or UTF-32; any other charset reads as
+  UTF-8, as an unknown one already did. HTML is parsed up to 2 MiB per page and within 5 seconds:
+  a page not parsed in time is read in its first 16 KiB, as is every longer page while that parse
+  still runs, and a scan warning counts the pages read in part. In `webvigil-web`, the API is held
+  for those seconds at most, no longer until the page is processed. Mis-nested forms, buttons and
+  selects are each read once: a control inside nested forms now belongs only to the nearest form
+  around it, as in a browser, and a button's label or a select's value no longer includes those
+  of a button or select nested in it.
+
 ## [1.8.0] - 2026-11-26
 
 A minor release that gives every output one treatment and every request one destination rule:

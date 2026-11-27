@@ -19,13 +19,12 @@ from __future__ import annotations
 
 import re
 
-from selectolax.lexbor import LexborHTMLParser as HTMLParser
-
 from webvigil.checks.base import PER_PAGE_FINDINGS_CAP, Check, note_more_on_page
 from webvigil.checks.disclosure import redaction
 from webvigil.checks.registry import register
 from webvigil.core.context import Page, ScanContext
 from webvigil.core.findings import Category, Confidence, EvidenceItem, Finding, Location, Severity
+from webvigil.core.html import parse_html
 from webvigil.core.urls import resolve_url
 
 _WSTG_SESSION = (
@@ -128,7 +127,7 @@ def _link_urls(page: Page) -> list[str]:
     if page.final_location:
         urls.append(page.final_location)
     if page.ok and page.is_html and page.text:
-        for node in HTMLParser(page.text).css("a[href], form[action]"):
+        for node in parse_html(page.text).css("a[href], form[action]"):
             raw = (node.attributes.get("href") or node.attributes.get("action") or "").strip()
             if raw and (url := resolve_url(page.url, raw)) is not None:
                 urls.append(url)

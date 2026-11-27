@@ -399,6 +399,25 @@ async def test_truncated_bodies_become_a_warning(monkeypatch: pytest.MonkeyPatch
     assert not any("cut" in w for w in quiet.warnings)
 
 
+async def test_a_page_read_in_part_becomes_a_warning(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A page a check parsed only in part is counted by its scan, and only by it, and reported."""
+    from webvigil.core import html
+
+    monkeypatch.setattr(html, "MAX_PARSE_CHARS", 64 * 1024)
+
+    class LongPageReader(_Base):
+        id = "test.longpagereader"
+
+        async def run(self, ctx: ScanContext) -> list[object]:
+            html.parse_html("<p>text</p>" * 8_000)
+            return []
+
+    result = await Orchestrator(ScanConfig(), check_types=[LongPageReader]).run(_TARGET)
+    assert sum("parsed only up to it" in w for w in result.warnings) == 1
+    quiet = await Orchestrator(ScanConfig(), check_types=[PassiveOne]).run(_TARGET)
+    assert not any("parsed only up to it" in w for w in quiet.warnings)
+
+
 async def test_a_blocked_address_becomes_a_warning(monkeypatch: pytest.MonkeyPatch) -> None:
     """A name that resolved to an address the scan refuses is reported, and only then."""
     monkeypatch.setattr(orch_mod, "blocked_address_warning", lambda stats: "an address was refused")

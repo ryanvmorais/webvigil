@@ -16,8 +16,6 @@ from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
-from selectolax.lexbor import LexborHTMLParser as HTMLParser
-
 from webvigil.auth.login import Authenticator
 from webvigil.checks.session.cookies import is_jwt, is_session_cookie, session_cookies
 from webvigil.checks.session.ids import Rule, id_facts, judge_samples, judge_value
@@ -26,6 +24,7 @@ from webvigil.core.context import Page
 from webvigil.core.destination import may_carry_credentials
 from webvigil.core.errors import OutOfScopeError, RequestFailed
 from webvigil.core.findings import Confidence, Severity
+from webvigil.core.html import parse_html
 from webvigil.core.secrets import Secret
 from webvigil.core.target import Target
 from webvigil.core.urls import resolve_url
@@ -439,7 +438,7 @@ class SessionScanner:
         for page in self._pages:
             if not (page.ok and page.is_html and page.text):
                 continue
-            for node in HTMLParser(page.text).css("a[href]"):
+            for node in parse_html(page.text).css("a[href]"):
                 href = (node.attributes.get("href") or "").strip()
                 resolved = resolve_url(page.url, href) if href else None
                 if resolved is None:
