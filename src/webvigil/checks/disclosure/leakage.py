@@ -142,12 +142,12 @@ def _redact(url: str) -> str:
     for value in sorted(values, key=len, reverse=True):
         if len(value) < MIN_SECRET_LENGTH:
             continue
-        once = quote(value, safe="")
-        for spelling in sorted({value, once, quote(once, safe="")}, key=len, reverse=True):
+        # upper- and lower-case hex, each encoded once more as a nested URL carries it
+        upper = quote(value, safe="")
+        lower = _PERCENT_RE.sub(lambda m: m.group().lower(), upper)
+        spellings = {value, upper, lower, quote(upper, safe=""), quote(lower, safe="")}
+        for spelling in sorted(spellings, key=len, reverse=True):
             redacted = redacted.replace(spelling, "***")
-            redacted = redacted.replace(
-                _PERCENT_RE.sub(lambda m: m.group().lower(), spelling), "***"
-            )
     return redacted
 
 

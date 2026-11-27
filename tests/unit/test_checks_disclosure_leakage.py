@@ -149,6 +149,12 @@ async def test_a_percent_encoded_copy_of_the_value_is_redacted_too() -> None:
     ]
 
 
+async def test_a_copy_encoded_in_lower_case_hex_is_redacted() -> None:
+    # copies outside any session parameter, so only the value's own spellings find them
+    urls = await _redacted_urls("/a?sid=S3cr/et&amp;ref=S3cr%2fet&amp;back=S3cr%252fet")
+    assert urls == ["https://app.example/a?sid=***&ref=***&back=***"]
+
+
 async def test_a_value_only_seen_encoded_is_redacted() -> None:
     # the plain parameter has another value: the nested one is found once decoded
     urls = await _redacted_urls("/a?sid=FIRST1&amp;next=%2Fb%3Fsid%3DOTHER2")
