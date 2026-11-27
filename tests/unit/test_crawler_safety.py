@@ -8,6 +8,8 @@ out inline.
 
 from __future__ import annotations
 
+from typing import Final
+
 import pytest
 
 from webvigil.crawler.forms import Form, FormField
@@ -187,7 +189,8 @@ def test_destructive_form_reads_a_named_submit_value() -> None:
         (("Save", "Remove item"), True),
         (("Log out",), True),  # the logout vocabulary counts too
         (("Generate",), False),
-        (("Deleted items",), False),  # the word boundary holds
+        (("Deleted items",), True),  # on a form, a long verb counts inside a longer word
+        (("Dropdown",), False),  # a short word stays a whole word
     ],
 )
 def test_destructive_form_reads_the_button_labels(
@@ -210,7 +213,7 @@ def test_destructive_form_reads_the_button_labels(
     [
         ("https://example.com/newsletter", ("email", "topic")),
         ("https://example.com/settings", ("display_name",)),
-        ("https://example.com/deleted-items", ("page",)),  # the delete word boundary holds
+        ("https://example.com/prefs", ("dropdown", "ordering")),  # short words stay whole
     ],
 )
 def test_destructive_form_leaves_benign_forms_alone(action: str, names: tuple[str, ...]) -> None:
@@ -397,7 +400,11 @@ def test_unsafe_operations_are_recognised(path: str, operation_id: str) -> None:
 
 @pytest.mark.parametrize(
     "path, operation_id",
-    [("/api/notes", "create_note"), ("/api/tickets", "openTicket"), ("/api/deleted-items", "")],
+    [
+        ("/api/notes", "create_note"),
+        ("/api/tickets", "openTicket"),
+        ("/api/payloads", "listOrderings"),
+    ],
 )
 def test_benign_operations_are_not_unsafe(path: str, operation_id: str) -> None:
     """Ordinary create operations — and a near-miss word — pass."""
@@ -503,3 +510,68 @@ def test_the_operation_gate_reads_camel_case_operation_ids(path: str, operation_
 def test_the_operation_gate_passes_reads(path: str, operation_id: str) -> None:
     """A read operation is imported."""
     assert is_unsafe_operation(path, operation_id) is False
+
+
+# ---------------------------------------------------------------------------
+# A form or an operation: a long verb counts inside a longer name
+# ---------------------------------------------------------------------------
+
+# Names the gate must refuse on a form and an operation, although no word boundary sets the verb
+# apart: compounds in lower case, inflections, a digit suffix, a verb a camelCase boundary cuts.
+_COMPOUND_NAMES: Final = (
+    "/account/deleteaccount",
+    "/users/deleteall",
+    "/items/removeitem",
+    "/account/deleted",
+    "/delete2",
+    "/purchases",
+    "/checkouts",
+    "/transferring",
+    "/unsubscribed",
+    "/user/deactivated",
+    "/billing/cancelsubscription",
+    "/data/wipeall",
+    "/mail/unSubscribe",
+)
+
+# The terms of the filters this gate replaced in the injection pass and the OpenAPI import, which
+# matched anywhere in the text: the one gate must refuse each of them inside a longer name.
+_FORMER_FILTER_ANYWHERE: Final = (
+    "login", "log-in", "logout", "log_out", "logoff", "signin", "sign-out", "signup",
+    "register", "delete", "remove", "destroy", "password", "passwd", "checkout", "purchase",
+    "transfer", "unsubscribe", "deactivate", "revoke",
+)  # fmt: skip
+# The terms the same filters matched as whole words only.
+_FORMER_FILTER_WORDS: Final = ("drop", "reset", "pay", "order")
+
+
+@pytest.mark.parametrize("path", _COMPOUND_NAMES)
+def test_the_form_gate_refuses_a_verb_inside_a_longer_name(path: str) -> None:
+    """A form whose action names a destructive verb or a transaction inside a word is refused."""
+    assert is_unsafe_form(_form(f"https://example.com{path}", "id")) is True
+
+
+@pytest.mark.parametrize("path", _COMPOUND_NAMES)
+def test_the_operation_gate_refuses_a_verb_inside_a_longer_name(path: str) -> None:
+    """An imported operation whose path names such a verb inside a word is left out."""
+    assert is_unsafe_operation(path) is True
+
+
+@pytest.mark.parametrize("term", _FORMER_FILTER_ANYWHERE)
+def test_every_anywhere_term_of_the_former_filters_is_still_refused(term: str) -> None:
+    """Inside a longer field name and operationId, as the former per-pass filters refused it."""
+    assert is_unsafe_form(_form("https://example.com/account", f"x{term}x")) is True
+    assert is_unsafe_operation("/api/things", f"x{term}x") is True
+
+
+@pytest.mark.parametrize("term", _FORMER_FILTER_WORDS)
+def test_every_whole_word_term_of_the_former_filters_is_still_refused(term: str) -> None:
+    """As a word of a field name and an operation path."""
+    assert is_unsafe_form(_form("https://example.com/account", f"{term}_now")) is True
+    assert is_unsafe_operation(f"/api/{term}") is True
+
+
+@pytest.mark.parametrize("path", _COMPOUND_NAMES[:6])
+def test_a_link_still_needs_the_whole_word(path: str) -> None:
+    """The link gate keeps its documented word boundary: such a link is followed."""
+    assert is_unsafe_url(f"https://example.com{path}") is False
