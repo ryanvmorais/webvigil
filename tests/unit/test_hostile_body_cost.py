@@ -404,6 +404,9 @@ def _literals(pattern: re.Pattern[str]) -> list[str]:
                     flush()
             elif op in (_PATTERN_PARSER.MAX_REPEAT, _PATTERN_PARSER.MIN_REPEAT):
                 walk(value[2])
+            elif op in (_PATTERN_PARSER.ASSERT, _PATTERN_PARSER.ASSERT_NOT):
+                # a lookaround's literals gate the rest: a body without them is never read
+                walk(value[1])
         flush()
 
     walk(_PATTERN_PARSER.parse(pattern.pattern, pattern.flags))
