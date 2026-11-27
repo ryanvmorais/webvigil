@@ -18,8 +18,10 @@ from fastapi import APIRouter, HTTPException, Request, status
 from sqlalchemy import func
 from sqlmodel import select
 
+from webvigil.api.client_address import request_client
 from webvigil.api.db import User
 from webvigil.api.deps import OptionalUser, SessionDep
+from webvigil.api.events import AuthEvent, record
 from webvigil.api.schemas import SetupIn, SetupStatusOut, UserOut
 from webvigil.api.security import hash_password
 from webvigil.api.throttle import BUSY_RETRY_S, LoginThrottle
@@ -57,11 +59,14 @@ def create_first_user(body: SetupIn, request: Request, session: SessionDep) -> U
     Create the single account. Unauthenticated, but 409s once an account exists, and 429s
     while every password-check slot is taken.
     """
+    client = request_client(request)
     if _user_count(session) > 0:  # the common answer, before paying for an Argon2 hash
+        record(AuthEvent.SETUP_REFUSED, username=body.username, client=client)
         raise HTTPException(status.HTTP_409_CONFLICT, "setup has already been completed")
     throttle: LoginThrottle = request.app.state.login_throttle
     with throttle.check_slot() as admitted:
         if not admitted:
+            record(AuthEvent.SETUP_BUSY, username=body.username, client=client)
             raise HTTPException(
                 status.HTTP_429_TOO_MANY_REQUESTS,
                 "too many password checks in progress: try again shortly",
@@ -70,10 +75,12 @@ def create_first_user(body: SetupIn, request: Request, session: SessionDep) -> U
         password_hash = hash_password(body.password)  # the slow part, outside the lock
     with _SETUP_LOCK:  # checked again: another request may have created it meanwhile
         if _user_count(session) > 0:
+            record(AuthEvent.SETUP_REFUSED, username=body.username, client=client)
             raise HTTPException(status.HTTP_409_CONFLICT, "setup has already been completed")
         user = User(username=body.username, password_hash=password_hash)
         session.add(user)
         session.commit()
     session.refresh(user)
     assert user.id is not None
+    record(AuthEvent.SETUP_SUCCEEDED, username=user.username, client=client)
     return UserOut(id=user.id, username=user.username, created_at=user.created_at)

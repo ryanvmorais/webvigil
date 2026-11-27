@@ -5,9 +5,10 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request, Response, status
 from sqlmodel import select
 
-from webvigil.api.client_address import client_address
+from webvigil.api.client_address import request_client
 from webvigil.api.db import User, utcnow
 from webvigil.api.deps import CurrentUser, SessionDep
+from webvigil.api.events import AuthEvent, record
 from webvigil.api.schemas import LoginIn, PasswordChangeIn, UserOut
 from webvigil.api.security import (
     clear_session_cookie,
@@ -22,19 +23,6 @@ from webvigil.api.security import (
 from webvigil.api.throttle import BUSY_RETRY_S, LoginThrottle
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-
-
-def _client_key(request: Request) -> str:
-    """
-    Args:
-        request (Request): The login request.
-
-    Returns:
-        str: ``client:<address>``, the key whose wait this client alone pays.
-    """
-    peer = request.client.host if request.client else None
-    forwarded = request.headers.getlist("x-forwarded-for")
-    return f"client:{client_address(peer, forwarded, request.app.state.trusted_proxies)}"
 
 
 def _too_many(wait: int, what: str) -> HTTPException:
@@ -59,15 +47,18 @@ def _too_many(wait: int, what: str) -> HTTPException:
 def login(body: LoginIn, request: Request, response: Response, session: SessionDep) -> None:
     """Verify the credentials and set the session cookie. 401 on a mismatch, 429 after too many."""
     throttle: LoginThrottle = request.app.state.login_throttle
-    client_key = _client_key(request)
+    client = request_client(request)
+    client_key = f"client:{client}"  # the key whose wait this client alone pays
     user_key = f"user:{body.username.lower()}"
     # A client already waiting does not compete for a check. The answer depends on the client
     # alone, so it is the same for every username; ``begin_login`` below still decides atomically.
     if wait := throttle.retry_after(client_key):
+        record(AuthEvent.LOGIN_THROTTLED, username=body.username, client=client)
         raise _too_many(wait, "logins")
     with throttle.check_slot() as admitted:
         # Asked before the username is looked at, so the answer is the same for every name.
         if not admitted:
+            record(AuthEvent.LOGIN_BUSY, username=body.username, client=client)
             raise HTTPException(
                 status.HTTP_429_TOO_MANY_REQUESTS,
                 "too many logins in progress: try again shortly",
@@ -76,6 +67,7 @@ def login(body: LoginIn, request: Request, response: Response, session: SessionD
         # Checked and counted in one step, so parallel guesses cannot all slip through one window.
         wait = throttle.begin_login(client_key, user_key)
         if wait:
+            record(AuthEvent.LOGIN_THROTTLED, username=body.username, client=client)
             raise _too_many(wait, "logins")
         # Before the hash is read: a change that lands during the check is then later than this
         # session's token, which it ends.
@@ -85,6 +77,7 @@ def login(body: LoginIn, request: Request, response: Response, session: SessionD
         stored_hash = user.password_hash if user is not None else dummy_password_hash()
         password_ok = verify_password(body.password, stored_hash)
     if user is None or not password_ok:
+        record(AuthEvent.LOGIN_FAILED, username=body.username, client=client)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid username or password")
     throttle.finish_login(client_key, user_key)
     assert user.id is not None
@@ -95,6 +88,7 @@ def login(body: LoginIn, request: Request, response: Response, session: SessionD
         user.id, request.app.state.session_secret, config.session_ttl_hours, issued_at=issued_at
     )
     set_session_cookie(response, token, config)
+    record(AuthEvent.LOGIN_SUCCEEDED, username=user.username, client=client)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
@@ -128,19 +122,24 @@ def change_password(
     """
     assert user.id is not None
     user_id = user.id
+    username = user.username
+    client = request_client(request)
     throttle: LoginThrottle = request.app.state.login_throttle
     key = f"password:user:{user_id}"
     wait = throttle.begin_attempt(key)
     if wait:
+        record(AuthEvent.PASSWORD_CHANGE_THROTTLED, username=username, client=client)
         raise _too_many(wait, "password checks")
     verified_hash = user.password_hash
     if not verify_password(body.current_password, verified_hash):
+        record(AuthEvent.PASSWORD_CHANGE_FAILED, username=username, client=client)
         raise HTTPException(status.HTTP_403_FORBIDDEN, "current password is incorrect")
     throttle.clear(key)
     changed_at = store_password_hash(
         session, user_id, hash_password(body.new_password), expected_hash=verified_hash
     )
     if changed_at is None:
+        record(AuthEvent.PASSWORD_CHANGE_CONFLICT, username=username, client=client)
         raise HTTPException(status.HTTP_409_CONFLICT, "the password was changed by another request")
     config = request.app.state.config
     # Issued at the very moment stored as the change, so this cookie is never older than it.
@@ -148,3 +147,4 @@ def change_password(
         user_id, request.app.state.session_secret, config.session_ttl_hours, issued_at=changed_at
     )
     set_session_cookie(response, token, config)
+    record(AuthEvent.PASSWORD_CHANGED, username=username, client=client)

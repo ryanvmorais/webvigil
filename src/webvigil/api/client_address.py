@@ -20,6 +20,10 @@ import socket
 import threading
 import time
 from collections.abc import Callable, Iterable, Sequence
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from starlette.requests import Request
 
 type IPAddress = ipaddress.IPv4Address | ipaddress.IPv6Address
 
@@ -160,3 +164,18 @@ def client_address(peer: str | None, forwarded_for: Sequence[str], trusted: Trus
     if isinstance(current, ipaddress.IPv6Address):
         return str(ipaddress.ip_network((int(current), _IPV6_CLIENT_PREFIX), strict=False))
     return str(current)
+
+
+def request_client(request: Request) -> str:
+    """
+    Name the client of a Web API request.
+
+    Args:
+        request (Request): The request; its app's state holds the trusted proxies.
+
+    Returns:
+        str: :func:`client_address` of the connection's peer and its ``X-Forwarded-For`` headers.
+    """
+    peer = request.client.host if request.client else None
+    forwarded = request.headers.getlist("x-forwarded-for")
+    return client_address(peer, forwarded, request.app.state.trusted_proxies)

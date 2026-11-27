@@ -18,6 +18,7 @@ from fastapi.responses import JSONResponse
 
 from webvigil import __version__
 from webvigil.api.body_limit import BodyLimitMiddleware
+from webvigil.api.cache_control import NoStoreMiddleware
 from webvigil.api.client_address import TrustedProxies
 from webvigil.api.config import WebConfig
 from webvigil.api.db import make_engine, run_alembic_upgrade
@@ -188,9 +189,12 @@ def create_app(
     app.add_middleware(OriginCheckMiddleware, allowed_origins=cfg.cors_origins)
     # An oversized body is refused before anything else (CORS included) looks at it.
     app.add_middleware(BodyLimitMiddleware)
-    # Added last, so it is the outermost layer: a request addressed to a host name this server
-    # does not know is refused before anything else runs (GHSA-q373-8m5q-qwww).
+    # The outermost check: a request addressed to a host name this server does not know is
+    # refused before any other check or route runs (GHSA-q373-8m5q-qwww).
     app.add_middleware(HostCheckMiddleware, allowed_hosts=[*cfg.allowed_hosts, cfg.host])
+    # Added last, so it wraps everything: every answer, a refusal of the checks above included,
+    # tells caches not to store it.
+    app.add_middleware(NoStoreMiddleware)
     for router in (meta.router, setup.router, auth.router, scans.router, reports.router):
         app.include_router(router, prefix="/api")
     return app
