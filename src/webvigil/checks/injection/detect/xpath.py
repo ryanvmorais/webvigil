@@ -6,8 +6,9 @@ Two signals, both differential:
 
 * an **error probe** appends an expression-breaking character; a hit needs an
   XPath/XQuery parser error in the response, absent from the baseline;
-* a **boolean probe** sends a tautology (``' or '1'='1``) and a contradiction
-  (``' and '1'='2``); a hit needs the classic two-sided split
+* a **boolean probe** ANDs in a condition that always holds
+  (``' and string-length('wv')=2 and 'a'='a``) and one that never does (``...=3``), never an
+  ``or`` that would select every node; a hit needs the classic two-sided split
   (:func:`~webvigil.checks.injection.detect._diff.two_sided_split`) to reproduce.
 
 WebVigil parses no XML / XPath itself — it sends the payload and reads the response.

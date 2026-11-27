@@ -12,6 +12,7 @@ none of the template-engine errors, and no probe names anything with a side effe
 from __future__ import annotations
 
 import re
+import sqlite3
 
 import pytest
 
@@ -140,3 +141,58 @@ def test_no_sql_probe_is_a_condition_true_for_every_row() -> None:
     probes = [*payloads.SQLI_ERROR, *(t + f for t, f in payloads.SQLI_BOOLEAN_PAIRS)]
     for probe in probes:
         assert not re.search(r"\bOR\b", probe, re.I), probe
+
+
+def test_no_xpath_probe_is_a_condition_true_for_every_node() -> None:
+    """The expression may pick the node an update acts on: an ``or`` would select every node."""
+    probes = [*payloads.XPATH_ERROR, *(t + f for t, f in payloads.XPATH_BOOLEAN_PAIRS)]
+    assert probes
+    for probe in probes:
+        assert not re.search(r"\bOR\b", probe, re.I), probe
+
+
+def _sql_outcome(db: sqlite3.Connection, query: str) -> object:
+    """
+    Args:
+        db (sqlite3.Connection): The database to run the query on.
+        query (str): The statement, with the payload already in it.
+
+    Returns:
+        object: The rows, or ``"error"`` when the statement does not run.
+    """
+    try:
+        return db.execute(query).fetchall()
+    except sqlite3.Error:
+        return "error"
+
+
+# A value concatenated into SQL in the three contexts the XPath pairs target: single-quoted,
+# double-quoted and numeric. No XPath pair may split on any of them.
+_SQL_SINKS = (
+    "SELECT title FROM books WHERE title='Dune{}'",
+    'SELECT title FROM books WHERE title="Dune{}"',
+    "SELECT title FROM books WHERE id=1{}",
+)
+
+
+def test_a_sql_sink_answers_both_sides_of_an_xpath_pair_alike(
+    request: pytest.FixtureRequest,
+) -> None:
+    """The XPath pairs do not split on SQL: a SQL injection is not reported as XPath too."""
+    db = sqlite3.connect(":memory:")
+    request.addfinalizer(db.close)
+    db.execute("CREATE TABLE books (id INTEGER, title TEXT)")
+    db.executemany("INSERT INTO books VALUES (?, ?)", [(1, "Dune"), (2, "Neuromancer")])
+    # control: the SQL pairs split on the same sinks, so a split is visible here
+    splits = {
+        _sql_outcome(db, sink.format(true)) != _sql_outcome(db, sink.format(false))
+        for sink in _SQL_SINKS
+        for true, false in payloads.SQLI_BOOLEAN_PAIRS
+    }
+    assert True in splits
+    for sink in _SQL_SINKS:
+        for true, false in payloads.XPATH_BOOLEAN_PAIRS:
+            assert _sql_outcome(db, sink.format(true)) == _sql_outcome(db, sink.format(false)), (
+                sink,
+                true,
+            )

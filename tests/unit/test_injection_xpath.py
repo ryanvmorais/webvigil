@@ -22,6 +22,9 @@ from webvigil.http.client import Response
 _POINT = InjectionPoint("GET", "https://example.com/xdoc", "node", "Dune", (("node", "Dune"),))
 _BASE_BODY = "<book><title>Dune</title></book>"
 _FALSE_BODY = "<empty/>"
+# A sent value is the original plus one side of a pair: its ending says which side.
+_TRUE_ENDINGS = tuple(true for true, _ in payloads.XPATH_BOOLEAN_PAIRS)
+_FALSE_ENDINGS = tuple(false for _, false in payloads.XPATH_BOOLEAN_PAIRS)
 
 
 def _resp(text: str, *, status: int = 200) -> Response:
@@ -71,9 +74,9 @@ async def test_boolean_split_that_reproduces_is_a_medium_hit() -> None:
     """TRUE tracks the baseline, FALSE returns an empty node set, reproduced -> MEDIUM."""
 
     def render(v: str) -> Response:
-        if "1'='1" in v or "1=1" in v:
+        if v.endswith(_TRUE_ENDINGS):
             return _resp(_BASE_BODY)
-        if "1'='2" in v or "1=2" in v:
+        if v.endswith(_FALSE_ENDINGS):
             return _resp(_FALSE_BODY)
         return _resp(_BASE_BODY)
 
@@ -95,7 +98,7 @@ async def test_one_sided_change_is_not_a_hit() -> None:
     """FALSE staying close to the baseline (only TRUE moved) is not a split."""
 
     def render(v: str) -> Response:
-        if "1'='1" in v or "1=1" in v:
+        if v.endswith(_TRUE_ENDINGS):
             return _resp("a wholly different document " * 20)
         return _resp(_BASE_BODY)
 
@@ -117,7 +120,7 @@ def _split(value: str) -> Response:
     Returns:
         Response: The baseline page for a TRUE payload, an empty node set for a FALSE one.
     """
-    if "1'='2" in value or "1=2" in value:
+    if value.endswith(_FALSE_ENDINGS):
         return _resp(_FALSE_BODY)
     return _resp(_BASE_BODY)
 
@@ -169,7 +172,7 @@ async def test_a_split_that_does_not_reproduce_is_not_a_hit() -> None:
     falses = {"n": 0}
 
     def render(value: str) -> Response:
-        if "1'='2" in value or "1=2" in value:
+        if value.endswith(_FALSE_ENDINGS):
             falses["n"] += 1
             return _resp(_FALSE_BODY if falses["n"] % 2 else _BASE_BODY)
         return _resp(_BASE_BODY)

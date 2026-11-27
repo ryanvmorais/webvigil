@@ -514,11 +514,15 @@ LDAP_BOOLEAN: tuple[tuple[str, str], ...] = (
 # --- XPath / XQuery injection (spec 014, RF-09) --------------------------------------
 #
 # Error probes appended to break the expression. Boolean pairs ``(true, false)`` appended:
-# ``true`` closes the quote and ORs in a tautology, ``false`` ANDs in a contradiction. A
-# hit needs an XPath-parser signature absent from the baseline, or the ``two_sided_split``
-# differential.
+# ``true`` closes the quote and ANDs in a condition that always holds, so the expression
+# selects what the original value selected; ``false`` ANDs in one that never does. No probe
+# ORs in a condition true for every node: the expression may pick the node an update or a
+# delete acts on, and an ``or`` would widen it to all of them (as for SQL, above). The
+# condition is ``string-length``, a function XPath has and SQL does not, so a SQL sink
+# answers both sides with the same error and the pair does not split there. A hit needs an
+# XPath-parser signature absent from the baseline, or the ``two_sided_split`` differential.
 
-XPATH_ERROR: tuple[str, ...] = ("'", '"', "]", "count(//*", "' or ''='")
+XPATH_ERROR: tuple[str, ...] = ("'", '"', "]", "count(//*", "' and ''='")
 
 XPATH_ERROR_SIGNATURES: tuple[re.Pattern[str], ...] = (
     re.compile(r"XPathException|XPathEvalError|lxml\.etree\.XPath", re.I),
@@ -531,9 +535,9 @@ XPATH_ERROR_SIGNATURES: tuple[re.Pattern[str], ...] = (
 )
 
 XPATH_BOOLEAN_PAIRS: tuple[tuple[str, str], ...] = (
-    ("' or '1'='1", "' and '1'='2"),
-    ("x' or 1=1 or 'x'='y", "x' and 1=2 and 'x'='y"),
-    (" or 1=1", " and 1=2"),
+    ("' and string-length('wv')=2 and 'a'='a", "' and string-length('wv')=3 and 'a'='a"),
+    ('" and string-length("wv")=2 and "a"="a', '" and string-length("wv")=3 and "a"="a'),
+    (" and string-length('wv')=2", " and string-length('wv')=3"),
 )
 
 # --- Server-Side Includes / ESI injection (spec 014, RF-10) ------------------------
