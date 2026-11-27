@@ -11,6 +11,15 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 ## [Unreleased]
 
+## [1.8.1] - 2026-11-27
+
+A patch release with one security fix (GHSA-8754-v84r-vm9j): a charset or an HTML page served by
+the scanned site no longer keeps a scan busy for hours, nor `webvigil-web` unresponsive meanwhile.
+It is backward compatible with [docs/stability.md](docs/stability.md): no check id, JSON report
+field or configuration key changes. What changes is in tuned limits (HTML is parsed up to 2 MiB per
+page and within 5 seconds) and in detection (a charset outside the web encodings reads as UTF-8,
+and a control inside mis-nested forms belongs only to the nearest form around it).
+
 ### Security
 
 - **A charset or an HTML page served by the scanned site no longer keeps a scan busy for hours**
@@ -1100,7 +1109,8 @@ confirmed against a per-request baseline)
 - A security policy with private vulnerability reporting, a code of conduct, and the
   [stability policy](docs/stability.md).
 
-[Unreleased]: https://github.com/ryanvmorais/webvigil/compare/v1.8.0...HEAD
+[Unreleased]: https://github.com/ryanvmorais/webvigil/compare/v1.8.1...HEAD
+[1.8.1]: https://github.com/ryanvmorais/webvigil/compare/v1.8.0...v1.8.1
 [1.8.0]: https://github.com/ryanvmorais/webvigil/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/ryanvmorais/webvigil/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/ryanvmorais/webvigil/compare/v1.5.0...v1.6.0
