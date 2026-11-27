@@ -165,7 +165,9 @@ not a field), a report, a log line, a warning or the metadata. The JSON report g
 If a target reflects the password, a configured cookie or header (a bearer token also on its
 own), or a session value into a page, an error or a URL, the final result is scrubbed of it
 (`[redacted]`, in the raw, JSON-escaped, HTML-escaped, percent-encoded, form-encoded and
-Python bytes `repr` spellings) in findings, locations, references, technologies, warnings and
+Python bytes `repr` spellings, each as the common frameworks write it: the quote references of
+Go, Django or PHP, the characters `encodeURIComponent` or PHP's `urlencode` keep, PHP's `\/` and
+Go's `<` in JSON) in findings, locations, references, technologies, warnings and
 check errors, and a warning counts the fields changed. A session value the target set is
 scrubbed only when it looks like a session id (8 or more characters mixing two of lower case,
 upper case and digits), so a target cannot blank the report by setting a cookie to a common word.

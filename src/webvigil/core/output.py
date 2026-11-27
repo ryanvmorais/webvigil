@@ -44,7 +44,7 @@ from enum import StrEnum
 from itertools import accumulate
 from pathlib import Path
 from typing import Final
-from urllib.parse import quote, quote_plus
+from urllib.parse import quote
 
 from webvigil.core.bounded import (
     EVIDENCE_MARKER,
@@ -78,16 +78,44 @@ CUT_MARKERS: Final[tuple[str, ...]] = (EVIDENCE_MARKER, TRUNCATION_MARKER, "..."
 # encoded spelling is also scrubbed with its escapes lowered.
 _PERCENT_RE = re.compile(r"%[0-9A-F]{2}")
 
+# The characters each common percent-encoder keeps as they are, besides letters, digits and
+# ``-_.``: RFC 3986 (Python, PHP ``rawurlencode``, Go), none (PHP ``urlencode``, older Python),
+# JavaScript's ``encodeURIComponent``, and Java's ``URLEncoder``.
+_URL_KEPT: Final[tuple[str, ...]] = ("~", "", "~!*'()", "*")
+
+# The quote references of the common HTML escapers, ``(double, single)``: Python's
+# ``html.escape``; Go, Jinja2 and the OWASP encoder; Django, Ruby and Node; PHP's
+# ``htmlspecialchars``; and the HTML5 entity.
+_HTML_QUOTES: Final[tuple[tuple[str, str], ...]] = (
+    ("&quot;", "&#x27;"),
+    ("&#34;", "&#39;"),
+    ("&quot;", "&#39;"),
+    ("&quot;", "&#039;"),
+    ("&quot;", "&apos;"),
+)
+
+# The characters an HTML-safe JSON encoder (Go's, by default) writes as ``\u`` escapes.
+_JSON_HTML_ESCAPES: Final = str.maketrans({"<": "\\u003c", ">": "\\u003e", "&": "\\u0026"})
+
+# A ``\u`` escape of a JSON string, for its upper-case hex spelling.
+_JSON_ESCAPE_RE = re.compile(r"\\u([0-9a-f]{4})")
+
+# Up to this many spellings, the whole-spelling search of :class:`Redactor` looks for each one
+# in the field (fast, one scan per spelling); past it, it walks the field once and asks an index
+# of the spellings' first characters at each position, so the work follows the field and not
+# the number of spellings, which the target sets with its session values.
+_DIRECT_SPELLINGS: Final = 256
+
 # The fragment search of :class:`Redactor` keeps one bit per hashed run of
 # :data:`MIN_SECRET_LENGTH` characters of the spellings (1 MiB), so its memory does not grow
 # with the secrets: an index of every position took about 490 bytes per character of every
 # spelling, and the target is the one that sets the session values.
 _FILTER_BITS: Final = 1 << 23
 
-# The most work the fragment search may spend on one field, in characters scanned or compared.
-# Only a secret that repeats one run over and over, or a field with hundreds of cuts next to
-# runs of a secret, gets near it; a field past it is redacted whole, which hides at least as
-# much as the search would have.
+# The most work the whole-spelling and fragment searches may spend on one field, in characters
+# scanned or compared. Only a secret that repeats one run over and over, a field with hundreds
+# of cuts next to runs of a secret, or hundreds of spellings that start alike, gets near it; a
+# field past it is redacted whole, which hides at least as much as the search would have.
 FRAGMENT_WORK_BUDGET: Final = 4 * 1024 * 1024
 
 # Joins the spellings into the one string the fragment search scans. A run that spans it
@@ -373,36 +401,93 @@ def _spellings(secret: str) -> set[str]:
         secret (str): A secret value.
 
     Returns:
-        set[str]: The ways a target is likely to echo it: raw, JSON-escaped (with and without
-            ``\u`` escapes for non-ASCII), HTML-escaped (with and without the quotes),
-            percent-encoded and form-encoded (UTF-8 and Latin-1, upper- and lower-case hex), and
-            as a Python library quotes it in an error: the ``repr`` of its bytes, without the
-            ``b''``, in the same encodings.
+        set[str]: The ways a target is likely to echo it: raw, JSON-escaped
+            (:func:`_json_spellings`), HTML-escaped (:func:`_html_spellings`), percent-encoded
+            and form-encoded (:func:`_percent_spellings`, UTF-8 and Latin-1, upper- and
+            lower-case hex), and as a Python library quotes it in an error: the ``repr`` of its
+            bytes, without the ``b''``, in the same encodings.
     """
-    encoded = {quote(secret, safe=""), quote_plus(secret)}
+    encoded = _percent_spellings(secret, "utf-8")
     as_bytes = {repr(secret.encode("utf-8", "surrogatepass"))[2:-1]}
     # A page in Latin-1 escapes the same characters as other bytes (``é`` is ``%E9``).
     with suppress(UnicodeEncodeError):  # a character outside Latin-1 has no such spelling
-        encoded |= {
-            quote(secret, safe="", encoding="latin-1"),
-            quote_plus(secret, encoding="latin-1"),
-        }
+        encoded |= _percent_spellings(secret, "latin-1")
         as_bytes.add(repr(secret.encode("latin-1"))[2:-1])
     return {
         secret,
-        json.dumps(secret)[1:-1],
-        json.dumps(secret, ensure_ascii=False)[1:-1],
-        html.escape(secret),
-        html.escape(secret, quote=False),
+        *_json_spellings(secret),
+        *_html_spellings(secret),
         *encoded,
         *as_bytes,
         *(_PERCENT_RE.sub(lambda m: m.group().lower(), text) for text in encoded),
     }
 
 
+def _json_spellings(secret: str) -> set[str]:
+    r"""
+    Args:
+        secret (str): A secret value.
+
+    Returns:
+        set[str]: The secret inside a JSON string, as the common encoders write it: with and
+            without ``\u`` escapes for non-ASCII, with ``/`` as ``\/`` (PHP), with ``<``, ``>``
+            and ``&`` as ``\u`` escapes (Go), and with upper-case hex in the ``\u`` escapes
+            (.NET, Java).
+    """
+    spellings: set[str] = set()
+    for ensure_ascii in (True, False):
+        text = json.dumps(secret, ensure_ascii=ensure_ascii)[1:-1]
+        spellings |= {text, text.replace("/", "\\/"), text.translate(_JSON_HTML_ESCAPES)}
+    return spellings | {_JSON_ESCAPE_RE.sub(lambda m: f"\\u{m[1].upper()}", s) for s in spellings}
+
+
+def _html_spellings(secret: str) -> set[str]:
+    """
+    Args:
+        secret (str): A secret value.
+
+    Returns:
+        set[str]: The secret HTML-escaped, without the quotes and with each pair of quote
+            references of :data:`_HTML_QUOTES`.
+    """
+    plain = html.escape(secret, quote=False)
+    if '"' not in secret and "'" not in secret:
+        return {plain}
+    return {plain} | {
+        plain.replace('"', double).replace("'", single) for double, single in _HTML_QUOTES
+    }
+
+
+def _percent_spellings(secret: str, encoding: str) -> set[str]:
+    """
+    Args:
+        secret (str): A secret value.
+        encoding (str): The character encoding of the escaped bytes.
+
+    Returns:
+        set[str]: The secret percent-encoded with each set of :data:`_URL_KEPT`, a space as
+            ``%20`` and as ``+``, upper-case hex.
+
+    Raises:
+        UnicodeEncodeError: When ``encoding`` cannot encode the secret.
+    """
+    spellings: set[str] = set()
+    for kept in _URL_KEPT:
+        # ``quote`` always keeps ``~``: an encoder that does not keep it writes ``%7E``
+        text = quote(secret, safe=kept.replace("~", ""), encoding=encoding)
+        if "~" not in kept:
+            text = text.replace("~", "%7E")
+        spellings |= {text, text.replace("%20", "+")}
+    return spellings
+
+
 class Redactor:
     """
     Replaces every spelling of every secret in a string, and the fragments of one at a cut.
+
+    The spellings are found in one search over the field (:meth:`_whole_spans`), whose work
+    follows the field's length and not the number of spellings; the spans found are joined, so
+    overlapping occurrences of two secrets become one :data:`REDACTED`.
 
     A fragment is a prefix or a suffix of a spelling, at least :data:`MIN_SECRET_LENGTH`
     characters and shorter than the spelling. A prefix is looked for just before a cut (a
@@ -432,6 +517,11 @@ class Redactor:
                 spellings |= _spellings(text)
         # longest first, so a secret that contains another is replaced whole
         self._ordered = sorted((s for s in spellings if s), key=len, reverse=True)
+        # the spellings by their first characters, longest first in each, for a long list
+        heads: dict[str, list[str]] = {}
+        for spelling in self._ordered:
+            heads.setdefault(spelling[:MIN_SECRET_LENGTH], []).append(spelling)
+        self._by_head = {head: tuple(group) for head, group in heads.items()}
         # where each spelling starts in the joined string, for the spelling of a match
         self._starts = list(
             accumulate((len(s) + len(_SPELLING_SEPARATOR) for s in self._ordered[:-1]), initial=0)
@@ -473,11 +563,10 @@ class Redactor:
         if not self._ordered:
             return text
         original = text
-        for spelling in self._ordered:
-            if spelling in text:
-                text = text.replace(spelling, REDACTED)
+        work = _Work()
         try:
-            text = self._redact_fragments(text, cut_edges=cut_edges, work=_Work())
+            text = _replace_spans(text, self._whole_spans(text, work))
+            text = self._redact_fragments(text, cut_edges=cut_edges, work=work)
         except _OverBudget:
             text = REDACTED
         if text != original:
@@ -515,22 +604,44 @@ class Redactor:
         before, after = _cut_points(text, cut_edges=cut_edges)
         spans = [span for point in before if (span := self._prefix_before(text, point, work))]
         spans += [span for point in after if (span := self._suffix_after(text, point, work))]
-        if not spans:
-            return text
-        spans.sort()
-        merged = [spans[0]]
-        for start, end in spans[1:]:
-            if start <= merged[-1][1]:
-                merged[-1] = (merged[-1][0], max(end, merged[-1][1]))
-            else:
-                merged.append((start, end))
-        pieces: list[str] = []
-        last = 0
-        for start, end in merged:
-            pieces += [text[last:start], REDACTED]
-            last = end
-        pieces.append(text[last:])
-        return "".join(pieces)
+        return _replace_spans(text, spans)
+
+    def _whole_spans(self, text: str, work: _Work) -> list[tuple[int, int]]:
+        """
+        Find every occurrence of every spelling in a field, overlapping ones included.
+
+        With up to :data:`_DIRECT_SPELLINGS` spellings, each one is looked for in the field;
+        past that, the field is walked once and each position asks the index of first
+        characters, and only the spellings that start there are compared. Both give the same
+        spans once they are joined: a position's longest spelling covers its shorter ones.
+
+        Args:
+            text (str): A free-text field.
+            work (_Work): The field's work so far; each comparison and each occurrence is spent.
+
+        Returns:
+            list[tuple[int, int]]: The span of each occurrence, in no order.
+
+        Raises:
+            _OverBudget: When the search passes :data:`FRAGMENT_WORK_BUDGET`.
+        """
+        spans: list[tuple[int, int]] = []
+        if len(self._ordered) <= _DIRECT_SPELLINGS:
+            for spelling in self._ordered:
+                found = text.find(spelling)
+                while found != -1:
+                    work.spend(len(spelling))
+                    spans.append((found, found + len(spelling)))
+                    found = text.find(spelling, found + 1)
+            return spans
+        by_head = self._by_head
+        for point in range(len(text) - MIN_SECRET_LENGTH + 1):
+            for spelling in by_head.get(text[point : point + MIN_SECRET_LENGTH], ()):
+                work.spend(len(spelling))
+                if text.startswith(spelling, point):
+                    spans.append((point, point + len(spelling)))
+                    break
+        return spans
 
     def _prefix_before(self, text: str, point: int, work: _Work) -> tuple[int, int] | None:
         """
@@ -633,7 +744,7 @@ class _OverBudget(Exception):
 
 class _Work:
     """
-    The work the fragment search spent on one field.
+    The work the searches of :class:`Redactor` spent on one field.
 
     Attributes:
         spent (int): Characters scanned or compared so far.
@@ -659,6 +770,34 @@ class _Work:
         self.spent += amount
         if self.spent > FRAGMENT_WORK_BUDGET:
             raise _OverBudget
+
+
+def _replace_spans(text: str, spans: list[tuple[int, int]]) -> str:
+    """
+    Args:
+        text (str): A field.
+        spans (list[tuple[int, int]]): Spans of ``text`` to hide, in any order.
+
+    Returns:
+        str: ``text`` with each span replaced by :data:`REDACTED`, overlapping or touching
+            spans joined into one.
+    """
+    if not spans:
+        return text
+    spans.sort()
+    merged = [spans[0]]
+    for start, end in spans[1:]:
+        if start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(end, merged[-1][1]))
+        else:
+            merged.append((start, end))
+    pieces: list[str] = []
+    last = 0
+    for start, end in merged:
+        pieces += [text[last:start], REDACTED]
+        last = end
+    pieces.append(text[last:])
+    return "".join(pieces)
 
 
 def _run_bit(run: str) -> int:
