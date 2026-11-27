@@ -124,6 +124,43 @@ async def test_the_page_url_of_a_followed_link_is_redacted() -> None:
     assert "ONE" not in " ".join(e.content for e in findings[0].evidence)
 
 
+async def _redacted_urls(href: str) -> list[str]:
+    """
+    Args:
+        href (str): The link on the page (HTML-escaped).
+
+    Returns:
+        list[str]: The ``URL (redacted)`` evidence of each finding.
+    """
+    page = make_page(url="https://app.example/home", text=f'<a href="{href}">go</a>')
+    findings = await SessionIdInUrlCheck().run(
+        make_context(page, target_url="https://app.example/")
+    )
+    return [{e.label: e.content for e in f.evidence}["URL (redacted)"] for f in findings]
+
+
+async def test_a_percent_encoded_copy_of_the_value_is_redacted_too() -> None:
+    # the value again inside a nested URL, encoded once and twice
+    urls = await _redacted_urls(
+        "/a?sid=S3cr/et&amp;next=%2Fb%3Fsid%3DS3cr%252Fet&amp;back=%252Fc%253Fsid%253DS3cr%25252Fet"
+    )
+    assert urls == [
+        "https://app.example/a?sid=***&next=%2Fb%3Fsid%3D***&back=%252Fc%253Fsid%253D***"
+    ]
+
+
+async def test_a_value_only_seen_encoded_is_redacted() -> None:
+    # the plain parameter has another value: the nested one is found once decoded
+    urls = await _redacted_urls("/a?sid=FIRST1&amp;next=%2Fb%3Fsid%3DOTHER2")
+    assert urls == ["https://app.example/a?sid=***&next=%2Fb%3Fsid%3D***"]
+
+
+async def test_a_url_with_many_session_values_is_hidden_from_its_query_on() -> None:
+    query = "&amp;".join(f"sid{n}=x&amp;sid=VALUE{n:03d}" for n in range(9))
+    urls = await _redacted_urls(f"/a?{query}")
+    assert urls == ["https://app.example/a?***"]
+
+
 # ---------------------------------------------------------------------------
 # disclosure.private-ip
 # ---------------------------------------------------------------------------

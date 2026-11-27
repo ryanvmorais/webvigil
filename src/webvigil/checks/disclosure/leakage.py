@@ -18,6 +18,7 @@ request of their own.
 from __future__ import annotations
 
 import re
+from urllib.parse import quote, unquote
 
 from webvigil.checks.base import PER_PAGE_FINDINGS_CAP, Check, note_more_on_page
 from webvigil.checks.disclosure import redaction
@@ -25,6 +26,7 @@ from webvigil.checks.registry import register
 from webvigil.core.context import Page, ScanContext
 from webvigil.core.findings import Category, Confidence, EvidenceItem, Finding, Location, Severity
 from webvigil.core.html import parse_html
+from webvigil.core.output import MIN_SECRET_LENGTH
 from webvigil.core.urls import resolve_url
 
 _WSTG_SESSION = (
@@ -72,6 +74,14 @@ _PRIVATE_V4 = re.compile(
 # IPv6 loopback (``::1``) and unique-local (``fc00::/7`` — first hextet ``fc``/``fd``).
 _PRIVATE_V6 = re.compile(r"(?<![:.\w])(?:::1|[fF][cCdD][0-9a-fA-F]{2}:[0-9a-fA-F:]{2,})")
 
+# How many times a URL is percent-decoded to find a session parameter nested in another one.
+_NESTED_DECODINGS = 2
+# The most distinct session values whose copies are looked for in one URL (each is searched in
+# six spellings over the whole URL); past it, everything from the URL's first parameter on is
+# hidden, which hides at least as much.
+_MAX_URL_VALUES = 8
+_PERCENT_RE = re.compile(r"%[0-9A-F]{2}")
+
 _PER_PAGE_CAP = 10
 _CONTEXT_CHARS = 60
 
@@ -100,17 +110,45 @@ def _redact(url: str) -> str:
     """
     Replace the value of every session parameter in a URL with ``***``.
 
-    The match's own span is replaced, so a value that also appears earlier in the
-    URL, or a second session parameter, is never left visible.
+    The match's own span is replaced, so a second session parameter is never left visible;
+    then every other copy of each value is replaced too: as it is, and percent-encoded once or
+    twice, as a URL nested in a parameter of the URL carries it (``next=%2Fa%3Fsid%3Dabc``).
+    The values are read from the URL and from its decoded forms, so a session parameter that
+    only appears encoded is hidden as well.
 
     Args:
         url (str): A URL, possibly carrying session parameters.
 
     Returns:
         str: ``url`` with each ``key=value`` that :data:`_SESSION_RE` matches turned
-            into ``key=***``; a URL without one comes back unchanged.
+            into ``key=***`` and every other copy of a value of
+            :data:`~webvigil.core.output.MIN_SECRET_LENGTH` characters or more into
+            ``***``; a URL without one comes back unchanged.
     """
-    return _SESSION_RE.sub(lambda m: f"{m.group(0)[: m.start(2) - m.start()]}***", url)
+    values: set[str] = set()
+    text = url
+    for _ in range(_NESTED_DECODINGS + 1):
+        values.update(match.group(2) for match in _SESSION_RE.finditer(text))
+        if (decoded := unquote(text)) == text:
+            break
+        text = decoded
+    if len(values) > _MAX_URL_VALUES:  # the URL is redacted from its first parameter on
+        # an encoded parameter may stand in a URL with none of its own: then all of it goes
+        cut = min(
+            (found for found in (url.find(char) for char in "?;#") if found != -1), default=-1
+        )
+        return f"{url[: cut + 1]}***"
+    redacted = _SESSION_RE.sub(lambda m: f"{m.group(0)[: m.start(2) - m.start()]}***", url)
+    for value in sorted(values, key=len, reverse=True):
+        if len(value) < MIN_SECRET_LENGTH:
+            continue
+        once = quote(value, safe="")
+        for spelling in sorted({value, once, quote(once, safe="")}, key=len, reverse=True):
+            redacted = redacted.replace(spelling, "***")
+            redacted = redacted.replace(
+                _PERCENT_RE.sub(lambda m: m.group().lower(), spelling), "***"
+            )
+    return redacted
 
 
 def _link_urls(page: Page) -> list[str]:

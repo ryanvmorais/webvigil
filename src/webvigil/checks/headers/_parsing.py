@@ -2,10 +2,36 @@
 
 from __future__ import annotations
 
+import re
 from urllib.parse import urlsplit
 
 from webvigil.core.context import Page
 from webvigil.core.findings import EvidenceItem
+
+# The cookie attributes of RFC 6265bis, and the ones browsers or older standards still read
+# (RFC 2965, CHIPS, Chrome's ``Priority``). Any other segment after the pair is not an attribute.
+_COOKIE_ATTRIBUTES = frozenset(
+    {
+        "expires",
+        "max-age",
+        "domain",
+        "path",
+        "secure",
+        "httponly",
+        "samesite",
+        "partitioned",
+        "priority",
+        "comment",
+        "commenturl",
+        "version",
+        "port",
+        "discard",
+    }
+)
+
+# A cookie folded into an attribute after a comma (``Path=/, sid=abc``). A date's comma
+# (``Expires=Wed, 21 Oct 2026 07:28:00 GMT``) is followed by no ``name=``.
+_FOLDED_PAIR_RE = re.compile(r"(,[ \t]*[^=;,\s]{1,256})=[^;,]*")
 
 
 def header_value(page: Page, name: str) -> str | None:
@@ -64,19 +90,46 @@ def mask_set_cookie(raw: str) -> str:
     The target issued the value, so the scan cannot know it is not a session token;
     the name and the attributes are what a finding about the cookie needs to show.
 
+    A browser reads a pair without ``=`` as a value with no name (RFC 6265bis, section 5.6),
+    so it is masked whole. An attribute the cookie standards do not define is another pair
+    written into the same line (a framework that joined two), and a ``name=value`` after a
+    comma inside an attribute is a second cookie folded into the line by a proxy
+    (``Path=/, sid=abc``): their values are masked too.
+
     Args:
         raw (str): One raw ``Set-Cookie`` header value.
 
     Returns:
         str: ``raw`` with the value of its ``name=value`` pair replaced by ``***``
-            (``sid=abc; Path=/`` becomes ``sid=***; Path=/``); a pair with an empty
-            value, or without ``=``, is kept as it is.
+            (``sid=abc; Path=/`` becomes ``sid=***; Path=/``), and so the value of every
+            other pair in the line; a pair with an empty value is kept as it is.
     """
     pair, sep, attributes = raw.partition(";")
     name, equals, value = pair.partition("=")
-    if equals and value.strip():
+    if not equals:
+        pair = "***" if pair.strip() else pair
+    elif value.strip():
         pair = f"{name}=***"
-    return f"{pair}{sep}{attributes}"
+    segments = [_mask_attribute(segment) for segment in attributes.split(";")] if sep else []
+    return f"{pair}{sep}{';'.join(segments)}"
+
+
+def _mask_attribute(segment: str) -> str:
+    """
+    Args:
+        segment (str): One ``;``-separated segment after a cookie's pair, spaces included.
+
+    Returns:
+        str: The segment as it is when it is a known attribute, with a folded cookie's value
+            masked; ``name=***``, or ``***`` for a bare word, when it is not an attribute.
+    """
+    key, equals, _ = segment.strip().partition("=")
+    if not key and not equals:
+        return segment
+    if key.strip().lower() not in _COOKIE_ATTRIBUTES:
+        indent = segment[: len(segment) - len(segment.lstrip())]
+        return f"{indent}{key.strip()}=***" if equals else f"{indent}***"
+    return _FOLDED_PAIR_RE.sub(lambda match: f"{match[1]}=***", segment)
 
 
 def parse_csp(value: str) -> dict[str, list[str]]:
@@ -109,13 +162,14 @@ def parse_set_cookie(raw: str) -> tuple[str, dict[str, str | bool]]:
         tuple[str, dict[str, str | bool]]: The cookie name and its attributes.
             Flag attributes (``Secure``, ``HttpOnly``) map to ``True``; valued
             attributes (``SameSite``, ``Domain``, ``Path``) map to their string
-            value. Attribute keys are lower-cased. An unparseable value yields
-            ``("", {})``.
+            value. Attribute keys are lower-cased. A pair without ``=`` has no name
+            (the text is its value), and an unparseable value yields ``("", {})``.
     """
     segments = [segment.strip() for segment in raw.split(";") if segment.strip()]
     if not segments:
         return "", {}
-    name = segments[0].split("=", 1)[0].strip()
+    name, equals, _ = segments[0].partition("=")
+    name = name.strip() if equals else ""
     attributes: dict[str, str | bool] = {}
     for segment in segments[1:]:
         if "=" in segment:
