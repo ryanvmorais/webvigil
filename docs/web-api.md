@@ -136,6 +136,10 @@ any JSON encoder escapes, DEL, the C1 controls and the bidirectional and invisib
 U+FFFF as the two escapes of its surrogate pair, as in the JSON report: a JSON parser reads the
 same value, and a terminal that prints the body does not act on them.
 
+**Nothing is kept in a cache.** Every response, an error included, carries
+`Cache-Control: no-store`, so neither the browser's disk cache nor a proxy in between keeps a scan,
+a finding or a report once the session ends. A response that sets its own `Cache-Control` keeps it.
+
 **Reports are served contained.** A report is built from what the scanned site sent, and
 `GET /api/scans/{id}/report?format=html&download=false` shows the HTML one inline, from the API's
 own origin. The template escapes everything, so nothing is known to be wrong; these headers are what
@@ -201,6 +205,17 @@ up still applies. A scan whose engine raised an error nothing expects is logged 
 and no message, as a check's error appears in a report: that message may quote anything the scan
 held. A database error names the failed statement but never its values, so finding text and
 password hashes stay out of the log.
+
+**The security event log.** Every login, password change and first-run setup is one line on the
+`webvigil.api.events` logger, accepted or refused: `auth event=<event> user=<name> client=<address>`.
+The events are `login.succeeded`, `login.failed` (a wrong password or an unknown username alike),
+`login.throttled`, `login.busy` (every password check taken), `password_change.succeeded`,
+`password_change.failed`, `password_change.throttled`, `password_change.conflict`,
+`setup.succeeded`, `setup.refused` and `setup.busy`. The name is the one the request gave, quoted
+(a name with spaces or an `=` cannot pass for another field), and the address is the one the login
+throttle counts: the connection's, or the one a proxy of `web.trusted_proxies` reports. A password never appears. An accepted
+attempt is `INFO` and a refused one `WARNING`; `webvigil-web serve` writes them to standard error
+next to uvicorn's own lines. Under another server, configure that logger to keep them.
 
 ## Active Mode
 

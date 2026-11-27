@@ -100,8 +100,10 @@ does nothing and the scan warns.
 An authenticated scan (`--cookie`) carries its cookies through both phases, so the
 high-value behind-login sinks are covered.
 
-**Budget.** Phase A and the re-crawl share the `[injection] request_budget`; the re-crawl
-is additionally capped at 120 pages (and by `[scan] max_pages`). Hitting either is a warning.
+**Budget.** Phase A and the re-crawl share a budget the size of `[injection] request_budget`,
+of their own: the stored-XSS pass does not draw on the injection pass's, so a scan with
+`--stored-xss` can send up to twice that many crafted requests. The re-crawl is additionally
+capped at 120 pages (and by `[scan] max_pages`). Hitting either is a warning.
 
 **Markers are not cleaned up.** WebVigil does not know the target's data model, so it does
 not delete the `wvstored…` rows it wrote. Run `--stored-xss` against dev / staging, never a
@@ -405,7 +407,7 @@ behaviour is documented, like a stored-XSS marker.
 
 ```toml
 [injection]
-request_budget = 650        # max crafted requests per scan; hitting it is a warning
+request_budget = 650        # max crafted requests of the injection pass; hitting it is a warning
 max_injection_points = 200  # max params / fields tested; excess is a warning
 time_based_sqli = true      # --no-time-based-sqli overrides
 time_based_cmdi = true      # spec 011: time-delay command-injection payloads; --no-time-based-cmdi overrides
@@ -422,8 +424,15 @@ command-injection / SSTI families, to 38 in v0.14 for LDAP / XPath / SSI, and to
 spec 016 for the expression-language canary); the time-based
 detectors share a cap of 8 sleep-inducing requests per scan; the stored-XSS re-crawl
 fetches at most 120 pages; the file-upload pass has its own `upload_budget`; the CSRF
-confirmation pass tests at most 20 forms with at most 5 requests each. Hitting any cap
-is a scan **warning**, not an error.
+confirmation pass tests at most 20 forms with at most 5 requests each; the stored-XSS pass has
+a budget of its own the size of `request_budget`. Hitting any cap is a scan **warning**, not an
+error.
+
+A budget counts the crafted requests a pass decides to send, not the attempts on the wire: an
+idempotent request (a `GET` probe) answered `500`, `502`, `503` or `504`, or met by a read timeout
+or a network error, is sent again by the HTTP layer, up to 3 attempts in all, and the repeats are
+not charged. Against a target that keeps failing, a pass can then send up to three times its
+budget.
 
 Disable any check by id (`[checks] disabled`). Disabling **every** `injection.*` id skips
 the pass entirely — no enumeration, no crafted request.

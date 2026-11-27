@@ -59,6 +59,13 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
   form field whose expression picks the node an update acts on is not widened to all of them.
   The pair uses `string-length`, which SQL does not have, so a SQL injection is not also reported
   as XPath.
+- **The Web API tells caches not to keep its answers.** Every response, a report or an error
+  included, carries `Cache-Control: no-store`, so a browser's disk cache or a proxy no longer
+  keeps a scan, its findings or a report after the session ends.
+- **The Web API logs every sign-in attempt.** Each login, password change and first-run setup,
+  accepted or refused, is one line on the `webvigil.api.events` logger with the event, the
+  username and the client address, never the password; `webvigil-web serve` writes it to
+  standard error next to uvicorn's lines.
 
 ## [1.8.2] - 2026-11-27
 
