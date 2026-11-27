@@ -11,8 +11,8 @@
 # A hit passes if ANY configured validator passes.
 #
 # severity/confidence override the emitting check's class default. redact selects the
-# evidence redaction strategy (dotenv | json-env | htpasswd | generic, the default). ok_status defaults to
-# [200, 206]; directory-index entries add 403.
+# evidence redaction strategy (dotenv | json-env | htpasswd | generic, the default).
+# ok_status defaults to [200, 206]; directory-index entries add 403.
 
 # --- Version control -----------------------------------------------------------------
 

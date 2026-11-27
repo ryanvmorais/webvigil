@@ -66,10 +66,10 @@ masked: `.env` files mask every value (a quoted value that spans lines is droppe
 `.htpasswd` every hash, JSON documents every key whose name holds a secret word in any spelling
 (`DB_PASSWORD`, `jwtSecret`, `ConnectionStrings`), and every other body gets the generic masking:
 token shapes, the user information of a URL, and the value assigned to a secret-sounding name
-(`Password=`, `SECRET_KEY =`, `'db_password' =>`, `define('DB_PASSWORD',`), however short. A JSON body is parsed for
-this only up to 256 KiB, and only the first 2,000 characters of its indented form are built; a
-longer body gets the generic masking in its first 1 KiB. The JSON key validator
-of the catalogue parses a body up to the same 256 KiB, and judges a longer one by its content
+(`Password=`, `SECRET_KEY =`, `'db_password' =>`, `define('DB_PASSWORD',`), however short. A
+JSON body is parsed for this only up to 256 KiB, and only the first 2,000 characters of its
+indented form are built; a longer body gets the generic masking in its first 1 KiB. The JSON key
+validator of the catalogue parses a body up to the same 256 KiB, and judges a longer one by its content
 patterns alone.
 
 ## What it does not do
