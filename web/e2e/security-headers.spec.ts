@@ -64,6 +64,7 @@ test("a page and a static file both carry the other security headers", async ({ 
   for (const { key, value } of securityHeaders) {
     expect(page.headers()[key.toLowerCase()], `${key} on /login`).toBe(value);
   }
+  expect(page.headers()["x-powered-by"], "no X-Powered-By on /login").toBeUndefined();
 
   // A file Next serves itself, found the way a browser finds it: in the page's own markup.
   const script = (await page.text()).match(/src="(\/_next\/static\/[^"]+\.js)"/)?.[1];
