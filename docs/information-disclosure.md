@@ -22,7 +22,9 @@ Runs against the responses the crawler already fetched — **no extra requests**
   a hyperlink, a form action, or a redirect `Location`. The page's own request URL is not
   inspected (it may be a scanner-crafted `--openapi` seed), and a bare one-time `?token=`
   link (reset / verification) is deliberately excluded. Every session value is redacted
-  (`sid=***`), in the evidence and in the finding's location.
+  (`sid=***`), in the evidence and in the finding's location, and so is every copy of it,
+  percent-encoded in a URL nested in a parameter; a URL with more than eight session values is
+  hidden from its first parameter on.
 - **`disclosure.private-ip`** (`LOW`, CWE-200 — spec 013) — an RFC-1918, loopback,
   link-local, or IPv6 unique-local address literal in a response body (an HTML comment, a
   JSON value, an error page). The target's own host is never flagged; at most ten distinct
@@ -59,9 +61,14 @@ When it is on it is the most active thing Safe Mode does.
 Any body that can carry a credential — `.env`, `/actuator/env`, `.npmrc`, a config backup —
 is redacted **before** it becomes part of a finding: keys and structure are kept, values are
 masked. The raw secret never reaches the `ScanResult`, a report, or (via the Web API) the
-database. A finding proves exposure by shape, not by quoting the secret. A JSON body is parsed for
+database. A finding proves exposure by shape, not by quoting the secret. Every catalogue entry is
+masked: `.env` files mask every value (a quoted value that spans lines is dropped whole),
+`.htpasswd` every hash, JSON documents every key whose name holds a secret word in any spelling
+(`DB_PASSWORD`, `jwtSecret`, `ConnectionStrings`), and every other body gets the generic masking:
+token shapes, the user information of a URL, and the value assigned to a secret-sounding name
+(`Password=`, `SECRET_KEY =`, `'db_password' =>`, `define('DB_PASSWORD',`), however short. A JSON body is parsed for
 this only up to 256 KiB, and only the first 2,000 characters of its indented form are built; a
-longer body gets the generic masking of token shapes in its first 1 KiB. The JSON key validator
+longer body gets the generic masking in its first 1 KiB. The JSON key validator
 of the catalogue parses a body up to the same 256 KiB, and judges a longer one by its content
 patterns alone.
 
