@@ -164,6 +164,18 @@ def test_a_line_strategy_stops_masking_once_the_output_is_full(
     assert len(calls) == 11
 
 
+def test_an_assignment_inside_a_masked_value_is_not_masked_twice() -> None:
+    out = redaction.apply("generic", 'api_token="one password=two three" next=1')
+    assert out == "api_token=*** next=1"
+
+
+def test_json_env_gives_a_plain_named_string_the_generic_masking() -> None:
+    body = json.dumps({"db": {"url": "postgres://app:pw1234@db/shop"}})
+    out = redaction.apply("json-env", body)
+    assert "pw1234" not in out
+    assert "postgres://***@db/shop" in out
+
+
 def test_htpasswd_keeps_the_user_names_and_masks_every_hash() -> None:
     out = redaction.apply("htpasswd", "alice:$apr1$abc$def123\nbob:{SHA}xyz=")
     assert out == "alice:***\nbob:***"

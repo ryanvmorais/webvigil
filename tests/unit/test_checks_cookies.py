@@ -72,6 +72,11 @@ async def test_a_cookie_without_a_name_is_flagged_without_its_value() -> None:
         assert "TOPSECRET42" not in finding.model_dump_json()
 
 
+async def test_a_line_with_no_pair_sets_no_cookie() -> None:
+    # nothing before the first ";": a browser ignores the line (the control is the test above)
+    assert await _run("; Path=/") == []
+
+
 async def test_the_cookie_value_never_reaches_the_evidence() -> None:
     """The target's cookie value is masked; the name and the attributes stay readable."""
     findings = await _run("session=TOPSECRET; Path=/")

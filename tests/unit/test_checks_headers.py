@@ -170,6 +170,8 @@ async def test_response_headers_evidence_masks_every_set_cookie_value() -> None:
         ("sid=abc; other=SECRET2; HttpOnly", "sid=***; other=***; HttpOnly"),
         ("sid=abc; SECRET2; Secure", "sid=***; ***; Secure"),
         ("sid=abc; Path=/, two=SECRET2; HttpOnly", "sid=***; Path=/, two=***; HttpOnly"),
+        # an empty segment is left as it is
+        ("sid=abc; Path=/;", "sid=***; Path=/;"),
         # positive control: the comma of a date is not a fold
         (
             "sid=abc; Expires=Wed, 21 Oct 2026 07:28:00 GMT; Path=/",

@@ -972,3 +972,21 @@ def test_get_logger_attaches_one_filter_and_keeps_level_and_handlers() -> None:
         for item in list(log.filters):
             log.removeFilter(item)
         log.setLevel(logging.NOTSET)
+
+
+def test_the_direct_search_stops_at_the_work_budget() -> None:
+    # spellings that each occur at almost every position: the search gives up, it does not walk
+    # every occurrence of every one
+    redactor = Redactor(["a" * length for length in range(4, 65)])
+    _CountingText.calls = 0
+    assert redactor(_CountingText("a" * TEXT_MAX_CHARS)) == REDACTED
+    assert _CountingText.calls < 100_000
+
+
+def test_the_indexed_search_stops_at_the_work_budget() -> None:
+    # hundreds of spellings with one head, a field made of it: every position compares them all
+    draw = random.Random(6)
+    redactor = Redactor(["aaaa" + "".join(draw.choices("bcdefg", k=8)) for _ in range(300)])
+    _CountingText.calls = 0
+    assert redactor(_CountingText("a" * TEXT_MAX_CHARS)) == REDACTED
+    assert _CountingText.calls < 1_000_000
