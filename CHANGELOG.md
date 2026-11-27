@@ -11,6 +11,16 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-11-27
+
+A minor release that hardens what a scan sends and what it shows. One filter decides, in every
+pass, which link, form or imported operation is left alone; the report hides more spellings of a
+credential or session value and more of an exposed file's secrets; the XPath probes no longer
+widen a selection; and the Web API logs every sign-in attempt and tells caches not to keep its
+answers. It is backward compatible with [docs/stability.md](docs/stability.md): no check id, JSON
+report field or configuration key changes. Some forms and imported operations that were submitted
+before are now skipped (see Changed).
+
 ### Changed
 
 - **Some forms are no longer submitted or fuzzed.** With one filter for every pass, active
@@ -24,9 +34,6 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
   CSRF confirmation no longer submits a transfer form.
 
 ### Security
-
-- **The dashboard no longer names its framework.** Its pages and files no longer carry
-  `X-Powered-By: Next.js`.
 
 - **The report hides more of what the scanned site echoes back of a credential or session
   value.** Each value is also redacted as the common frameworks write it: the quote references of
@@ -72,6 +79,8 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
   accepted or refused, is one line on the `webvigil.api.events` logger with the event, the
   username and the client address, never the password; `webvigil-web serve` writes it to
   standard error next to uvicorn's lines.
+- **The dashboard no longer names its framework.** Its pages and files no longer carry
+  `X-Powered-By: Next.js`.
 
 ## [1.8.2] - 2026-11-27
 
@@ -1197,7 +1206,8 @@ confirmed against a per-request baseline)
 - A security policy with private vulnerability reporting, a code of conduct, and the
   [stability policy](docs/stability.md).
 
-[Unreleased]: https://github.com/ryanvmorais/webvigil/compare/v1.8.2...HEAD
+[Unreleased]: https://github.com/ryanvmorais/webvigil/compare/v1.9.0...HEAD
+[1.9.0]: https://github.com/ryanvmorais/webvigil/compare/v1.8.2...v1.9.0
 [1.8.2]: https://github.com/ryanvmorais/webvigil/compare/v1.8.1...v1.8.2
 [1.8.1]: https://github.com/ryanvmorais/webvigil/compare/v1.8.0...v1.8.1
 [1.8.0]: https://github.com/ryanvmorais/webvigil/compare/v1.7.0...v1.8.0
