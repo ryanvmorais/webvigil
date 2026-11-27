@@ -11,6 +11,15 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 ## [Unreleased]
 
+## [1.8.2] - 2026-11-27
+
+A patch release with one security fix (GHSA-w973-5349-3rcx): error pages, library references and
+JSON documents served by the scanned site no longer keep a scan busy for hours or exhaust its
+memory. It is backward compatible with [docs/stability.md](docs/stability.md): no check id, JSON
+report field or configuration key changes. What changes is in limits (200 library versions, 500
+inventory entries and 500 warnings per scan, OSV.dev records of 50 packages, JSON probe bodies
+parsed up to 256 KiB) and in the OSV.dev lookup, which now stops at `[scan] max_duration_s`.
+
 ### Security
 
 - **Error pages, library references and JSON documents served by the scanned site no longer keep
@@ -1126,7 +1135,8 @@ confirmed against a per-request baseline)
 - A security policy with private vulnerability reporting, a code of conduct, and the
   [stability policy](docs/stability.md).
 
-[Unreleased]: https://github.com/ryanvmorais/webvigil/compare/v1.8.1...HEAD
+[Unreleased]: https://github.com/ryanvmorais/webvigil/compare/v1.8.2...HEAD
+[1.8.2]: https://github.com/ryanvmorais/webvigil/compare/v1.8.1...v1.8.2
 [1.8.1]: https://github.com/ryanvmorais/webvigil/compare/v1.8.0...v1.8.1
 [1.8.0]: https://github.com/ryanvmorais/webvigil/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/ryanvmorais/webvigil/compare/v1.6.0...v1.7.0
