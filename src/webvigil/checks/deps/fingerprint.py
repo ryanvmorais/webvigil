@@ -31,6 +31,7 @@ from webvigil.core.html import parse_html
 from webvigil.core.target import Target, normalize_url
 from webvigil.core.technology import DetectionMethod
 from webvigil.core.urls import resolve_url
+from webvigil.crawler.safety import is_unsafe_url
 from webvigil.http.client import HttpClient
 
 _MAX_FETCHES = 50
@@ -119,8 +120,10 @@ class Fingerprinter:
                     urls_capped = True
                     break
                 seen_resources.add(url)
-                if not may_request(self._target, url):
-                    found.add(self._rules.identify(url=url))  # CDN: URL only, never fetched
+                # a CDN, or a resource named like a logout or a destructive action: the URL
+                # alone is read, never fetched
+                if not may_request(self._target, url) or is_unsafe_url(url):
+                    found.add(self._rules.identify(url=url))
                 elif normalize_url(url) not in crawled:
                     in_scope_queue.append(url)
 

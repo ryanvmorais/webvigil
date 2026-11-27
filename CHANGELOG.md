@@ -11,6 +11,15 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 ## [Unreleased]
 
+### Changed
+
+- **Some forms are no longer submitted or fuzzed.** With one filter for every pass, active
+  injection, the file-upload pass and the `GET` form crawl now also skip a form whose button reads
+  like a destructive verb (`Cancel`, `Remove`), as the `POST` phase and the CSRF confirmation
+  already did, and every pass skips a form whose action or fields name a transaction (`checkout`,
+  `transfer`, `order`), as active injection already did. The CSRF confirmation no longer submits a
+  transfer form.
+
 ### Security
 
 - **The report hides more of what the scanned site echoes back of a credential or session
@@ -37,6 +46,19 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
   cookie with no name, whose text is its value) is masked whole and named `(no name)` in the
   findings of `http.cookies.flags`, and a second pair joined into the line or folded in after a
   comma has its value masked too.
+- **Every pass that sends a request leaves a logout or a state-changing action alone the same
+  way.** The filter reads a URL, a form or an operation as words: it percent-decodes the text and
+  splits `_` and `camelCase`, so `delete_account`, `deleteAccount`, `%64elete` and `logOut` are
+  recognised wherever `delete` and `logout` were. The request-envelope sample, dependency
+  fingerprinting and the source-map probe now apply it to the URLs they request, which they did
+  not before, and the crawler, the CSRF confirmation, active injection, the file-upload pass and
+  the `--openapi` / `--har` imports share one list of words for forms and operations (logout,
+  destructive verbs, login and registration, `checkout`, `pay`, `order`, `transfer`, `reset`).
+- **The XPath probes no longer select every node.** The boolean pair and the last error probe
+  of `injection.xpath` AND in their conditions instead of ORing in one that always holds, so a
+  form field whose expression picks the node an update acts on is not widened to all of them.
+  The pair uses `string-length`, which SQL does not have, so a SQL injection is not also reported
+  as XPath.
 
 ## [1.8.2] - 2026-11-27
 

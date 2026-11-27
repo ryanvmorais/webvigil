@@ -33,6 +33,7 @@ from webvigil.core.findings import Confidence, Severity
 from webvigil.core.html import parse_html
 from webvigil.core.target import Target
 from webvigil.core.urls import resolve_url
+from webvigil.crawler.safety import is_unsafe_url
 from webvigil.http.client import HttpClient, Response
 
 # A directory name no application is expected to have, requested once per parent directory as the
@@ -265,7 +266,9 @@ class DisclosureProbe:
         """
         Returns:
             list[str]: The absolute URLs of in-scope ``<script src>`` ``.js``
-                files across the crawled pages, de-duplicated.
+                files across the crawled pages, de-duplicated, leaving out one
+                :func:`~webvigil.crawler.safety.is_unsafe_url` refuses (its ``.map``
+                sibling would carry the same name).
         """
         found: list[str] = []
         seen: set[str] = set()
@@ -279,7 +282,7 @@ class DisclosureProbe:
                 url = resolve_url(page.url, src)
                 if url is None or not url.endswith(".js") or url in seen:
                     continue
-                if may_request(self._target, url):
+                if may_request(self._target, url) and not is_unsafe_url(url):
                     seen.add(url)
                     found.append(url)
         return found

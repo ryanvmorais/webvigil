@@ -33,6 +33,7 @@ from webvigil.core.errors import OutOfScopeError, RequestFailed
 from webvigil.core.findings import Confidence, Severity
 from webvigil.core.target import Target
 from webvigil.crawler.forms import Form
+from webvigil.crawler.safety import is_unsafe_form, is_unsafe_url
 from webvigil.http.client import HttpClient, Response
 
 _HOST_HEADER_ID = "injection.host-header"
@@ -157,19 +158,22 @@ class EnvelopeScanner:
         Returns:
             list[str]: The entry URL, then every distinct form-action path, then
                 other crawled paths, de-duplicated by path and capped at
-                ``envelope_url_sample``.
+                ``envelope_url_sample``. The action of a form
+                :func:`~webvigil.crawler.safety.is_unsafe_form` refuses, and a URL
+                :func:`~webvigil.crawler.safety.is_unsafe_url` refuses, is never sampled: a
+                ``GET`` to a logout action ends the session as surely as the form would.
         """
         seen: set[str] = set()
         ordered: list[str] = []
         candidates = [self._target.entry_url]
-        candidates += [form.action for form in self._forms]
+        candidates += [form.action for form in self._forms if not is_unsafe_form(form)]
         # spec 018: a POST answer's URL answers a GET with 405 — never sample it
         candidates += [
             page.requested_url for page in self._pages if page.ok and page.fetched_by_get
         ]
         for url in candidates:
             path = urlsplit(url).path or "/"
-            if path in seen:
+            if path in seen or is_unsafe_url(url):
                 continue
             seen.add(path)
             ordered.append(url)

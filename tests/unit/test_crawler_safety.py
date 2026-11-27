@@ -16,11 +16,13 @@ from webvigil.crawler.safety import (
     is_auth_form,
     is_candidate,
     is_destructive,
-    is_destructive_form,
     is_login_url,
     is_logout,
+    is_unsafe_api_operation,
+    is_unsafe_form,
+    is_unsafe_operation,
+    is_unsafe_url,
     looks_like_search,
-    looks_unsafe_operation,
     state_change_signal,
 )
 
@@ -160,7 +162,7 @@ def test_destructive_form_matches_action_and_field_names(
     action: str, names: tuple[str, ...]
 ) -> None:
     """A destructive verb in the path, the query or a field name (``_`` / ``-`` are breaks)."""
-    assert is_destructive_form(_form(action, *names)) is True
+    assert is_unsafe_form(_form(action, *names)) is True
 
 
 def test_destructive_form_reads_a_named_submit_value() -> None:
@@ -175,7 +177,7 @@ def test_destructive_form_reads_a_named_submit_value() -> None:
         ),
         source_url="https://example.com/",
     )
-    assert is_destructive_form(form) is True
+    assert is_unsafe_form(form) is True
 
 
 @pytest.mark.parametrize(
@@ -200,7 +202,7 @@ def test_destructive_form_reads_the_button_labels(
         source_url="https://example.com/",
         labels=labels,
     )
-    assert is_destructive_form(form) is destructive
+    assert is_unsafe_form(form) is destructive
 
 
 @pytest.mark.parametrize(
@@ -213,7 +215,7 @@ def test_destructive_form_reads_the_button_labels(
 )
 def test_destructive_form_leaves_benign_forms_alone(action: str, names: tuple[str, ...]) -> None:
     """Benign forms, including a near-miss word, are not destructive."""
-    assert is_destructive_form(_form(action, *names)) is False
+    assert is_unsafe_form(_form(action, *names)) is False
 
 
 def test_login_url() -> None:
@@ -390,7 +392,7 @@ def _operation(path: str, operation_id: str = "") -> ApiOperation:
 )
 def test_unsafe_operations_are_recognised(path: str, operation_id: str) -> None:
     """Auth, logout and destructive paths or operation ids are left alone."""
-    assert looks_unsafe_operation(_operation(path, operation_id)) is True
+    assert is_unsafe_api_operation(_operation(path, operation_id)) is True
 
 
 @pytest.mark.parametrize(
@@ -399,4 +401,105 @@ def test_unsafe_operations_are_recognised(path: str, operation_id: str) -> None:
 )
 def test_benign_operations_are_not_unsafe(path: str, operation_id: str) -> None:
     """Ordinary create operations — and a near-miss word — pass."""
-    assert looks_unsafe_operation(_operation(path, operation_id)) is False
+    assert is_unsafe_api_operation(_operation(path, operation_id)) is False
+
+
+# ---------------------------------------------------------------------------
+# Spellings: underscores, camelCase, percent-encoding (one gate per kind of send)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://example.com/account/delete_account",
+        "https://example.com/account/deleteAccount",
+        "https://example.com/account/DeleteAccount",
+        "https://example.com/api/XMLDelete",
+        "https://example.com/items/5/%64elete",  # %64 is "d"
+        "https://example.com/items/5/%2564elete",  # encoded twice
+        "https://example.com/items?do=removeItem",
+        "https://example.com/session/logOut",
+        "https://example.com/session/log%6Fut",
+        "https://example.com/sign_out",
+    ],
+)
+def test_the_url_gate_reads_every_spelling_of_a_word(url: str) -> None:
+    """``_``, a ``camelCase`` boundary and percent-encoding do not hide a logout or a verb."""
+    assert is_unsafe_url(url) is True
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://example.com/deleted-items",
+        "https://example.com/undeletable",
+        "https://example.com/payload",
+        "https://example.com/model/remover",
+        "https://example.com/orders?order=asc",  # a transaction word only counts on a form
+        "https://example.com/list?reset=1",
+        "https://example.com/blog/%70ost",
+    ],
+)
+def test_the_url_gate_leaves_near_misses_alone(url: str) -> None:
+    """A word that only contains a verb, or a sort / filter link, is still followed."""
+    assert is_unsafe_url(url) is False
+
+
+@pytest.mark.parametrize(
+    "action, names",
+    [
+        ("https://example.com/account", ("deleteAccount",)),
+        ("https://example.com/items/%72emove", ("id",)),
+        ("https://example.com/login", ("user",)),
+        ("https://example.com/profile", ("newPassword",)),
+        ("https://example.com/cart/checkout", ("card",)),
+        ("https://example.com/bank", ("transfer_amount",)),
+        ("https://example.com/shop", ("order",)),
+        ("https://example.com/prefs/reset", ("all",)),
+        ("https://example.com/pay", ("amount",)),
+    ],
+)
+def test_the_form_gate_refuses_auth_logout_verbs_and_transactions(
+    action: str, names: tuple[str, ...]
+) -> None:
+    """Every vocabulary a pass used to keep apart is in the one form gate."""
+    assert is_unsafe_form(_form(action, *names)) is True
+
+
+@pytest.mark.parametrize(
+    "action, names",
+    [
+        ("https://example.com/comment", ("body",)),
+        ("https://example.com/settings", ("displayName",)),
+        ("https://example.com/payload", ("data",)),
+        ("https://example.com/orders/history", ("page",)),
+    ],
+)
+def test_the_form_gate_passes_ordinary_forms(action: str, names: tuple[str, ...]) -> None:
+    """A comment, a settings form and a near-miss word are submitted."""
+    assert is_unsafe_form(_form(action, *names)) is False
+
+
+@pytest.mark.parametrize(
+    "path, operation_id",
+    [
+        ("/api/users/{id}", "deleteUser"),
+        ("/api/orders", "createOrder"),
+        ("/api/cart/checkout", ""),
+        ("/api/session", "signOut"),
+        ("/api/items/%64elete", ""),
+    ],
+)
+def test_the_operation_gate_reads_camel_case_operation_ids(path: str, operation_id: str) -> None:
+    """The ``operationId`` style most OpenAPI documents use is read word by word."""
+    assert is_unsafe_operation(path, operation_id) is True
+
+
+@pytest.mark.parametrize(
+    "path, operation_id",
+    [("/api/users/{id}", "getUser"), ("/api/items", "listItems"), ("/api/payloads", "")],
+)
+def test_the_operation_gate_passes_reads(path: str, operation_id: str) -> None:
+    """A read operation is imported."""
+    assert is_unsafe_operation(path, operation_id) is False

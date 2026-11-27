@@ -242,3 +242,16 @@ async def test_backup_names_come_from_a_named_host_and_not_from_an_ipv6_literal(
     assert seen["http://[::1]:8000/"]
     assert all(url.startswith("http://[::1]:8000/") for url in seen["http://[::1]:8000/"])
     assert not any("/::1" in url for url in seen["http://[::1]:8000/"])
+
+
+async def test_no_source_map_is_probed_for_a_script_named_like_a_logout(httpx_mock: object) -> None:
+    """A script whose URL names a logout or a destructive verb is not requested, nor its map."""
+    html = (
+        '<html><body><script src="/static/app.js"></script>'
+        '<script src="/session/logOut.js"></script>'
+        '<script src="/items/deleteAll.js"></script></body></html>'
+    )
+    router = _Router({}, default=(404, "", "text/html"))
+    await _run(router, (_page(html),), httpx_mock)
+    assert "https://example.com/static/app.js.map" in router.seen  # control: a map is probed
+    assert not [url for url in router.seen if "logOut" in url or "deleteAll" in url]

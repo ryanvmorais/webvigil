@@ -18,7 +18,6 @@ dependency (design ADR-3). Only local ``#/`` ``$ref`` pointers are resolved
 from __future__ import annotations
 
 import json
-import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,6 +29,7 @@ from webvigil.core.errors import OpenApiError, OutOfScopeError, RequestFailed
 from webvigil.core.target import Target
 from webvigil.core.text import replace_surrogates_in
 from webvigil.core.urls import display_path, display_url
+from webvigil.crawler.safety import is_unsafe_operation
 from webvigil.http.client import HttpClient
 
 # A JSON document is untyped; every node is walked with ``isinstance`` guards.
@@ -38,16 +38,6 @@ _Doc = dict[str, Any]
 # HTTP methods WebVigil acts on. A PUT / PATCH / DELETE operation is recorded by
 # neither the crawler nor the injection pass (spec 006 fuzzes GET / POST only).
 _ACTED_ON_METHODS = ("get", "post")
-
-# An operation whose path or operationId looks like authentication or a
-# state-changing action is not fuzzed — mirrors ``points._EXCLUDE_FORM_RE``
-# (unifying the two keyword sets is the ADR-8 follow-up).
-_SKIP_OPERATION_RE = re.compile(
-    r"log[\s_-]?in|log[\s_-]?out|log[\s_-]?off|sign[\s_-]?in|sign[\s_-]?out|sign[\s_-]?up|"
-    r"register|delete|remove|destroy|\bdrop\b|password|passwd|\breset\b|checkout|\bpay\b|"
-    r"purchase|\border\b|transfer|unsubscribe|deactivate|revoke",
-    re.I,
-)
 
 # Deterministic placeholder per JSON-schema scalar type, used when a parameter
 # has no ``example`` / ``default`` / ``enum`` (RNF-06 — no randomness).
@@ -385,7 +375,8 @@ def _candidates(doc: _Doc, base: str, warnings: list[str]) -> list[_Candidate]:
             op = item.get(method)
             if not isinstance(op, dict):
                 continue
-            if _SKIP_OPERATION_RE.search(f"{path} {_operation_id(op)}"):
+            # auth, a logout, a destructive action or a transaction is not imported
+            if is_unsafe_operation(path, _operation_id(op)):
                 continue
             template = f"{base}/{path.lstrip('/')}"
             out.append(_Candidate(template, method.upper(), shared_list, op))

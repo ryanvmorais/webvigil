@@ -32,8 +32,9 @@ declares:
   first `enum` → a type-based placeholder — so every request is well-formed.
 
 Operations whose path or `operationId` looks like authentication or a state-changing action
-(`login`, `logout`, `delete`, `password`, `checkout`, …) are **not** fuzzed, mirroring the
-form-exclusion rule.
+(`login`, `logout`, `delete`, `password`, `checkout`, …) are **not** fuzzed: the same
+[filter as forms](authenticated-scanning.md#the-form-and-operation-filter), which reads a
+`camelCase` `operationId` such as `deleteUser` word by word.
 
 With `--submit-post-forms` (spec 018, Active Mode only, off by default) the crawler also
 **submits** each remaining `POST` operation once, with its synthesised JSON or

@@ -1245,7 +1245,9 @@ async def test_csrf_confirmation_flags_the_unenforced_forms_only(scan) -> None:
     writes = _csrf_writes(scan)
     assert any(origin == "https://webvigil.invalid" for _, _, origin, _ in writes)
     refused = {route for route, accepted, origin, _ in writes if not accepted}
-    assert "prefs" in refused and "transfer" in refused
+    assert "prefs" in refused
+    # a transfer is a transaction: no pass submits it, the confirmation included
+    assert "transfer" not in {route for route, *_ in writes}
 
 
 async def test_csrf_confirmation_stops_at_the_first_confirming_replay(scan) -> None:

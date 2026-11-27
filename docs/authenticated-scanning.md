@@ -256,12 +256,37 @@ anonymous scan would have been bounced to a login page. WebVigil mitigates this:
   `remove`, `destroy`, `drop`, `revoke`, `deactivate`, `disable`, `unsubscribe`, `cancel`,
   `purge`, `wipe` (word-boundary match on the path or query). The scan records a warning
   with the count. There is no switch to turn this off.
+- **Every spelling is read as words.** The path and query are percent-decoded (twice, for a
+  value encoded twice), and `_` and every `camelCase` / `PascalCase` boundary separate words:
+  `delete_account`, `deleteAccount`, `%64elete` and `logOut` all match.
+- **The same rule holds for every `GET` the scan sends to a URL it found on a page**: the
+  request-envelope sample, the scripts and stylesheets dependency fingerprinting fetches, and
+  the source maps the information-disclosure probe asks for. A resource named like a logout
+  is identified from its URL only, never fetched.
 
 The heuristic is keyword-based and imperfect. It **misses** a delete action whose verb is
 only in the HTTP method (`DELETE /items/5`), a logout at `/session`, or a "password reset"
-link. It **over-skips** a benign `/deleted-items` listing. `reset` is deliberately excluded
-(`?reset=1` is a common benign filter). A skipped page can still be scanned by giving it as
-the target itself.
+link. It **over-skips** a name that splits into a listed word, such as `dropDown` or
+`?cancelUrl=`; `/deleted-items` and `/undeletable` do not match. `reset` is deliberately
+excluded from links (`?reset=1` is a common benign filter). A skipped page can still be
+scanned by giving it as the target itself.
+
+### The form and operation filter
+
+Every pass that submits a form — the `GET` form crawl below, the `POST` phase, the CSRF
+confirmation, active injection and the file-upload pass — and every imported operation
+(`--openapi`, `--har`) is checked against one filter. A form is left alone when its action's
+path or query, a field name, a submit value or the label of a button names:
+
+- a logout or a destructive verb (the two lists above);
+- a login or a registration: `login`, `sign-in`, `sign-up`, `register`, `/auth`, `password`,
+  `passwd`;
+- a transaction: `checkout`, `pay`, `purchase`, `order`, `transfer`, `reset`.
+
+An operation is left alone when its path or `operationId` names one (`deleteUser`,
+`createOrder`). The text is read as words, as above. A transaction word stops a form, not a
+link: `?order=asc` sorts a listing. The filter **over-skips** a form with a plain `Cancel`
+button or a sort field named `order`, which is neither submitted nor fuzzed.
 
 ## Form-driven crawling
 
@@ -273,7 +298,7 @@ results and filtered listings for every check, passive and active.
   submitted unless you opt in to the `POST` phase below. (The Active injection pass submits
   the `POST` forms it targets with payloads — spec 006 — and does not feed the answers back.)
 - **Default values only** — no payloads, no fuzzing.
-- Login / registration forms and the logout / destructive heuristic above are skipped.
+- A form [the form filter](#the-form-and-operation-filter) refuses is skipped.
 - Submitted-form URLs count against `max_pages` like any other page.
 
 Turn it off with `[scan] submit_forms = false` (there is no CLI flag).
@@ -296,11 +321,11 @@ The phase starts after the `GET` crawl has drained, so a write cannot change a p
 still reading. It then submits, once each and in order:
 
 - every distinct candidate **form** — `POST`, `application/x-www-form-urlencoded` or
-  `multipart/form-data` **without a file input**, and not a login / registration / search /
-  logout / destructive-looking form (the same filter as the CSRF confirmation). A form that is
-  only a button (`<form method="post"><input type="submit" value="Generate"></form>`) is a form
-  too: it is submitted with an empty body, as a browser would send it, and the label of its
-  button is what the destructive filter reads;
+  `multipart/form-data` **without a file input**, not a search form, and not one
+  [the form filter](#the-form-and-operation-filter) refuses. A form that is only a button
+  (`<form method="post"><input type="submit" value="Generate"></form>`) is a form too: it is
+  submitted with an empty body, as a browser would send it, and the label of its button is what
+  the form filter reads;
 - every `POST` **operation** of an `--openapi` import, with the body the importer synthesised —
   JSON, form-urlencoded or none — and every `POST` operation of a `--har` recording
   ([`har-import.md`](har-import.md)), with the shape of the body it recorded. These are the only
@@ -407,8 +432,8 @@ values and, for a field that has none, a benign `wvcsrf<token>` marker. WebVigil
 delete what it submits — the same discipline as `--stored-xss` and `--file-upload`. Point it
 at a staging copy.
 
-For each candidate form — a `POST`, urlencoded, with no file input, that is not a login,
-registration, search or destructive-looking form — the `CsrfScanner` pass runs one
+For each candidate form — a `POST`, urlencoded, with no file input, that is not a search form
+nor one [the form filter](#the-form-and-operation-filter) refuses — the `CsrfScanner` pass runs one
 experiment:
 
 1. **Fetch** the form's page again, so the token is fresh.

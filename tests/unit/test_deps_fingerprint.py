@@ -337,3 +337,15 @@ def test_a_version_less_detection_stays_only_for_a_library_with_no_version() -> 
         ("jquery", "3.4.1"),
         ("lodash", None),
     ]
+
+
+async def test_a_resource_named_like_a_logout_is_read_by_its_url_only(httpx_mock: object) -> None:
+    """A script whose URL names a logout or a destructive verb is never fetched."""
+    html = (
+        '<html><body><script src="/static/app.js"></script>'
+        '<script src="/session/logOut.js"></script>'
+        '<link rel="preload" href="/cache/purge_all.js"></body></html>'
+    )
+    router = _router({"https://example.com/static/app.js": (200, "x();")})
+    await _run((_page(html),), router, httpx_mock)
+    assert router.seen == ["https://example.com/static/app.js"]  # type: ignore[attr-defined]

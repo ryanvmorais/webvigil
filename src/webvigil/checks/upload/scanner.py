@@ -21,7 +21,6 @@ import secrets
 from dataclasses import dataclass
 from urllib.parse import urljoin, urlsplit
 
-from webvigil.checks.injection.points import _EXCLUDE_FORM_RE
 from webvigil.core.config import ScanConfig
 from webvigil.core.context import Page
 from webvigil.core.destination import may_request
@@ -30,6 +29,7 @@ from webvigil.core.findings import Confidence, Severity
 from webvigil.core.target import Target
 from webvigil.core.urls import resolve_url
 from webvigil.crawler.forms import Form
+from webvigil.crawler.safety import is_unsafe_form
 from webvigil.http.client import HttpClient, Response
 
 # Conventional directories a stored upload is served from — tried in order when the upload
@@ -172,8 +172,7 @@ class UploadScanner:
         for form in self._forms:
             if not any(field.type == "file" for field in form.fields):
                 continue
-            blob = form.action + " " + " ".join(field.name for field in form.fields)
-            if _EXCLUDE_FORM_RE.search(blob):
+            if is_unsafe_form(form):
                 continue
             if form.action in seen:
                 continue

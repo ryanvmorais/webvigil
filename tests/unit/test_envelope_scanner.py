@@ -231,3 +231,33 @@ async def test_form_pages_are_sampled() -> None:
 
     hits = await _scanner(_FakeHttp(route), forms=(form,)).run()
     assert [h for h in hits if h.check_id == "injection.host-header"]
+
+
+async def test_an_unsafe_form_action_or_url_is_never_sampled() -> None:
+    """A logout action or a destructive URL gets no request; a neutral form action does."""
+
+    def form(action: str, *labels: str) -> Form:
+        return Form(
+            method="post",
+            action=action,
+            enctype="",
+            fields=(FormField(name="x", type="text", value=""),),
+            source_url="https://example.com/",
+            labels=labels,
+        )
+
+    forms = (
+        form("https://example.com/session/logOut"),
+        form("https://example.com/items/5", "Delete item"),
+        form("https://example.com/account"),
+    )
+    pages = (make_page(), make_page(url="https://example.com/items/delete_all"))
+    http = _FakeHttp(lambda m, u, h: _resp())
+    await _scanner(http, pages=pages, forms=forms).run()
+    requested = {url for _, url, _ in http.calls}
+    assert "https://example.com/account" in requested  # control: form actions are sampled
+    assert not requested & {
+        "https://example.com/session/logOut",
+        "https://example.com/items/5",
+        "https://example.com/items/delete_all",
+    }

@@ -144,7 +144,7 @@ Crawler with a **POST** phase (spec 018, `v0.18`): opt-in `--submit-post-forms` 
 submit_post_forms` + `max_post_submissions` (25), **Active Mode only** (default off — **writes to the target**).
 It runs **inside** `Crawler.discover()`, after the GET queue empties: it submits once each candidate
 form (urlencoded or multipart POST **without** a file, same `is_candidate` /
-`is_destructive_form` filter as 017) and each `POST` operation of the `--openapi` (JSON / urlencoded body that 013
+`is_unsafe_form` filter as 017, `crawler/safety.py`) and each `POST` operation of the `--openapi` (JSON / urlencoded body that 013
 already synthesizes; JSON only comes from the OpenAPI), with default values and the `wvcrawl<token>` marker; never a payload,
 never a file. Each response becomes a `Page(method="POST")`, and its links/forms feed back into the same BFS
 (`_drain`). `Page.fetched_by_get` makes four passes ignore POST pages (the stored-XSS re-crawl, the
