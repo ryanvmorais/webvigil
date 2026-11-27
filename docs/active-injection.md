@@ -40,7 +40,7 @@ no out-of-band collaborator.
 | `injection.xxe` | HIGH | *(opt-in `--xxe`)* A POST body re-sent as XML with an external-entity payload returns a `/etc/passwd` / `win.ini` signature or a named XML-parser error, absent from the baseline. |
 | `http.methods.unsafe` | MEDIUM | `TRACE` is enabled and echoes the request (Cross-Site Tracing), or `OPTIONS` advertises `PUT` / `DELETE` / `PATCH` / `CONNECT` on an application route. `Category.HTTP`. |
 | `injection.ldap` | HIGH / MEDIUM | A filter-breaking metacharacter draws an LDAP-parser error absent from the baseline (HIGH), or an always-true filter (`*`) widens the result set while an always-false one does not (MEDIUM). |
-| `injection.xpath` | HIGH / MEDIUM | An expression-breaking character draws an XPath / XQuery parser error absent from the baseline (HIGH), or a `' or '1'='1` / `' and '1'='2` pair reproduces a two-sided boolean split (MEDIUM). |
+| `injection.xpath` | HIGH / MEDIUM | An expression-breaking character draws an XPath / XQuery parser error absent from the baseline (HIGH), or a `' and string-length('wv')=2 and 'a'='a` / `...=3...` pair reproduces a two-sided boolean split (MEDIUM). |
 | `injection.ssi` | HIGH / MEDIUM | An `<!--#echo var="DATE_LOCAL"-->` / `<!--#printenv-->` / `<esi:vars>` directive is *evaluated* into output absent from the baseline (HIGH), or an undefined-variable marker draws the SSI processor's error string (MEDIUM). Never sends `#exec` / `#include`. |
 | `upload.unrestricted` | CRITICAL-MEDIUM | *(opt-in `--file-upload`)* A benign marker file uploaded with a dangerous name / type comes back **executed** (CRITICAL), **served inline** as `text/html` / `image/svg+xml` (HIGH), **written outside the upload directory** by a `../` filename (HIGH), accepted via **`PUT`** and served back (HIGH), or merely stored as a download of a type that should be rejected (MEDIUM). `Category.UPLOAD`. |
 
@@ -295,8 +295,11 @@ one does not. WebVigil parses no LDAP itself.
 
 **XPath / XQuery injection** (`injection.xpath`, CWE-643) — an *error probe* (`'`, `"`, `]`,
 `count(//*`) draws an XPath-parser signature (`XPathEvalError`, `org.jaxen`,
-`Expression must evaluate to a node-set`, …); a *boolean probe* (`' or '1'='1` vs
-`' and '1'='2`) reproduces the classic true-tracks-baseline / false-diverges split. Each of
+`Expression must evaluate to a node-set`, …); a *boolean probe* ANDs in a condition that
+always holds (`' and string-length('wv')=2 and 'a'='a`) and one that never does (`...=3...`),
+and reproduces the classic true-tracks-baseline / false-diverges split. No XPath probe ORs in
+a condition true for every node, since the expression may select the node an update acts on,
+and `string-length` is XPath, not SQL, so a SQL injection does not also split as XPath. Each of
 `ldap` / `xpath` / `ssi` is front-loaded only for parameters whose name is distinctly that
 class's (`uid` / `cn` / `dn` for LDAP; `xpath` / `xquery` / `node` for XPath; `include` /
 `shtml` / `tpl` for SSI) — on a generic name it still runs, from the shared detector order,
@@ -381,9 +384,12 @@ behaviour is documented, like a stored-XSS marker.
 - **`--submit-post-forms` makes the crawler submit forms** (opt-in; once per distinct
   candidate form and `--openapi` `POST` operation, default values only, never a payload or a
   file). See [the POST crawl](authenticated-scanning.md#post-forms----submit-post-forms-opt-in).
-- **Forms that look like authentication or destruction are not fuzzed** — the heuristic
+- **Forms that look like authentication, a logout, destruction or a transaction are not
+  fuzzed** — the one filter every sending pass shares
+  ([the form and operation filter](authenticated-scanning.md#the-form-and-operation-filter))
   matches `login`, `logout`, `register`, `delete`, `password`, `checkout`, `pay`,
-  `transfer`, and similar in the action or field names. It is best-effort: a login form at
+  `transfer`, and similar in the action, the field names or a button label, read as words
+  (`deleteAccount`, `transfer_amount`, `%64elete`). It is best-effort: a login form at
   `/session` with generic field names would slip through.
 - **A `<select>` is fuzzed, after the other fields.** A browser sends only a listed option, but
   a client can send anything, and a server that builds a query from the option is as exposed as
