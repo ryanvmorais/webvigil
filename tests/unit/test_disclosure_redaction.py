@@ -9,6 +9,9 @@ the output is always length-bounded.
 from __future__ import annotations
 
 import json
+import tracemalloc
+
+import pytest
 
 from webvigil.checks.disclosure import redaction
 
@@ -77,3 +80,47 @@ def test_json_env_falls_back_to_generic_masking_on_deep_nesting() -> None:
         assert _AWS_KEY not in out
         assert "***redacted***" in out
         assert len(out) <= 1024
+
+
+# Bytes the ``json-env`` redaction of one body near ``_JSON_PARSE_MAX`` may allocate at its peak.
+# It takes about 20 MiB on the nested body below, whatever its depth; serialising the whole
+# document before cutting it took several times that, more for every level of nesting.
+_JSON_PEAK_BYTES = 64 * 1024 * 1024
+
+
+def test_json_env_serialises_only_as_far_as_the_kept_part_reaches() -> None:
+    """A deeply nested document near the parse cap is redacted within the memory bound."""
+    unit = "[" * 500 + "]" * 500
+    body = "[" + ",".join([unit] * ((redaction._JSON_PARSE_MAX - 2) // (len(unit) + 1))) + "]"
+    assert len(body) <= redaction._JSON_PARSE_MAX  # parsed, not sent to the generic masking
+    tracemalloc.start()
+    try:
+        out = redaction.apply("json-env", body)
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+    assert out == json.dumps(json.loads(body), indent=2)[: redaction._JSON_LIMIT]
+    assert peak < _JSON_PEAK_BYTES
+
+
+def test_json_env_keeps_the_head_of_the_indented_document() -> None:
+    """A document longer than the kept part gives exactly the head of its indented text."""
+    data = {"name": "app", "password": "hunter2", "items": [{"n": n} for n in range(500)]}
+    out = redaction.apply("json-env", json.dumps(data))
+    expected = json.dumps({**data, "password": "***"}, indent=2)[: redaction._JSON_LIMIT]
+    assert out == expected
+    assert len(out) == redaction._JSON_LIMIT
+
+
+def test_a_json_body_past_the_parse_cap_gets_the_generic_masking(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Past ``_JSON_PARSE_MAX`` the body is not parsed; at the cap it still is."""
+    body = json.dumps({"password": "hunter2", "aws": _AWS_KEY})
+    monkeypatch.setattr(redaction, "_JSON_PARSE_MAX", len(body) - 1)
+    past = redaction.apply("json-env", body)
+    assert past == redaction.apply("generic", body)
+    assert _AWS_KEY not in past
+    monkeypatch.setattr(redaction, "_JSON_PARSE_MAX", len(body))
+    at_cap = redaction.apply("json-env", body)
+    assert json.loads(at_cap) == {"password": "***", "aws": "***redacted***"}

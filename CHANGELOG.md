@@ -11,6 +11,23 @@ first release and contains `v0.1` to `v0.20`, and `v0.21` (the HAR import) and `
 
 ## [Unreleased]
 
+### Security
+
+- **Error pages, library references and JSON documents served by the scanned site no longer keep
+  a scan busy for hours or exhaust its memory** (GHSA-w973-5349-3rcx). The Node.js, Java, PHP and
+  ASP.NET error-page signatures read each part of a body from one place only: a message stops at
+  the next heading of its own signature, and the text before a stack frame or a file path can no
+  longer be split in many ways, so a page costs tens of milliseconds at most, no longer seconds.
+  The same traces are still recognised, a nested exception from its own heading.
+  Dependency fingerprinting keeps up to 200 distinct library versions per scan and warns when it
+  drops one; the technology inventory keeps up to 500 entries and the scan result up to 500
+  warnings (the first and the last 250, with a line counting the rest). With `[deps] osv_online`,
+  the records of up to 50 packages with advisories are read, and the OSV.dev lookup stops at
+  `[scan] max_duration_s` like the rest of the scan.
+  With `[disclosure] probe`, a JSON response is redacted only up to 256 KiB and only as far as
+  the 2,000 characters kept; a longer one gets the generic masking of token shapes, and the JSON
+  key validator of the probe parses a body up to the same 256 KiB.
+
 ## [1.8.1] - 2026-11-27
 
 A patch release with one security fix (GHSA-8754-v84r-vm9j): a charset or an HTML page served by

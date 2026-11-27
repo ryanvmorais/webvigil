@@ -30,6 +30,10 @@ if TYPE_CHECKING:
     from webvigil.crawler.forms import Form
     from webvigil.http.client import HttpClient, RedirectHop, Response
 
+# Entries the technology inventory of one scan keeps. The fingerprint pass already keeps a few
+# hundred distinct libraries at most; this bounds the inventory whatever fills it.
+TECHNOLOGIES_CAP = 500
+
 
 @dataclass(frozen=True, slots=True)
 class Page:
@@ -217,16 +221,27 @@ class Observations:
     csrf_hits: tuple[CsrfHit, ...] = ()
     session_hits: tuple[SessionHit, ...] = ()
     _technologies: dict[tuple[str, str | None], Technology] = field(default_factory=dict)
+    _technologies_capped: bool = False
     warnings: list[str] = field(default_factory=list)
 
     def add_technology(self, technology: Technology) -> None:
         """
         Record a detected technology, keeping the first entry per (name, version).
 
+        Up to ``TECHNOLOGIES_CAP`` entries are kept; the first one turned away queues a warning.
+
         Args:
             technology (Technology): The technology to add.
         """
-        self._technologies.setdefault((technology.name, technology.version), technology)
+        key = (technology.name, technology.version)
+        if key in self._technologies:
+            return
+        if len(self._technologies) >= TECHNOLOGIES_CAP:
+            if not self._technologies_capped:
+                self._technologies_capped = True
+                self.add_warning(f"the technology inventory stopped at {TECHNOLOGIES_CAP} entries")
+            return
+        self._technologies[key] = technology
 
     def add_warning(self, message: str) -> None:
         """

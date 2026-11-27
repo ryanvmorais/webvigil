@@ -132,10 +132,14 @@ class Validator:
             if any(token in ct for token in self.content_type):
                 return True
         if self.json_keys:
-            try:
-                data = json.loads(body)
-            except (ValueError, RecursionError):  # not JSON, or nested past the parser
-                data = None
+            # The parsed document takes many times the memory of its text: a body longer than
+            # the content patterns read is not parsed, and is judged by them alone.
+            data = None
+            if len(body) <= _SCAN_MAX:
+                try:
+                    data = json.loads(body)
+                except (ValueError, RecursionError):  # not JSON, or nested past the parser
+                    data = None
             if isinstance(data, dict) and any(key in data for key in self.json_keys):
                 return True
         if self.content is None:

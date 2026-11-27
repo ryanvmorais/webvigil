@@ -63,6 +63,9 @@ _MAX_VERSION_CHARS = 64
 # ``details`` only feeds the first sentence of a summary; a CVSS v3 vector is under 50 characters.
 _MAX_DETAILS_CHARS = 4096
 _MAX_VECTOR_CHARS = 256
+# Packages one lookup pulls the full records of (one ``/v1/query`` each, after the batch). The
+# detected libraries come from the scanned site; a real one has a handful with advisories.
+_MAX_PACKAGE_QUERIES = 50
 
 # Retire.js component name -> npm package name, for the cases where they differ (RF-05).
 # Anything not listed is used verbatim.
@@ -375,9 +378,10 @@ class OsvProvider:
         Look up every versioned detection against OSV.dev.
 
         One ``querybatch`` filters to the packages with any advisory, then one
-        ``query`` per hit pulls the full records. A per-package ``query``
-        failure is recorded as a warning and skipped; a ``querybatch`` failure
-        raises.
+        ``query`` per hit pulls the full records, for up to ``_MAX_PACKAGE_QUERIES``
+        hits; past that a warning names how many were left out. A per-package
+        ``query`` failure is recorded as a warning and skipped; a ``querybatch``
+        failure raises.
 
         Args:
             detections (Sequence[Detection]): The fingerprint detections;
@@ -409,9 +413,14 @@ class OsvProvider:
 
         async with self._client() as client:
             batch = await self._querybatch(client, queries)
-            for (name, version), hit in zip(pairs, batch, strict=True):
-                if not hit:
-                    continue
+            hits = [pair for pair, hit in zip(pairs, batch, strict=True) if hit]
+            if len(hits) > _MAX_PACKAGE_QUERIES:
+                warnings.append(
+                    f"OSV.dev reported advisories for {len(hits)} packages; the records of the "
+                    f"first {_MAX_PACKAGE_QUERIES} were read, the rest have offline advisories only"
+                )
+                hits = hits[:_MAX_PACKAGE_QUERIES]
+            for name, version in hits:
                 npm = _npm_name(name)
                 try:
                     records = await self._query(client, npm, str(version))

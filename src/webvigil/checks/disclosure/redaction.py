@@ -17,6 +17,9 @@ _VALUE_MASK = "***"
 _LIMIT = 1024
 _JSON_LIMIT = 2000
 _MAX_LINES = 80
+# Characters of a JSON body parsed for the ``json-env`` strategy. The parsed document takes many
+# times the memory of its text; a longer body gets the generic masking of its first ``_LIMIT``.
+_JSON_PARSE_MAX = 256 * 1024
 
 # Well-known secret shapes plus a catch-all for long high-entropy tokens. The text comes from the
 # scanned site, so every repetition is bounded, and the pattern only ever reads a capped amount
@@ -81,16 +84,43 @@ def _json_env(body: str) -> str:
 
     Returns:
         str: The re-serialised JSON with secret-named keys masked and token
-            shapes scrubbed from string values; falls back to generic masking
-            when the body is not valid JSON or is nested too deep to walk.
+            shapes scrubbed from string values, up to ``_JSON_LIMIT`` characters;
+            falls back to generic masking when the body is longer than
+            ``_JSON_PARSE_MAX``, is not valid JSON or is nested too deep to walk.
     """
+    if len(body) > _JSON_PARSE_MAX:
+        return _SECRET_RE.sub(_MASK, body[:_LIMIT])
     try:
         data = json.loads(body)
-        # _scrub and json.dumps recurse too: a body just inside the parser's depth limit can
+        # _scrub and the encoder recurse too: a body just inside the parser's depth limit can
         # still exhaust the stack here.
-        return json.dumps(_scrub(data, [_JSON_LIMIT]), indent=2)[:_JSON_LIMIT]
+        return _serialised_head(_scrub(data, [_JSON_LIMIT]))
     except (ValueError, RecursionError):
         return _SECRET_RE.sub(_MASK, body[:_LIMIT])
+
+
+def _serialised_head(data: Any) -> str:
+    """
+    Serialise ``data`` as indented JSON, only as far as the kept part reaches.
+
+    The indentation of a deeply nested document grows with every level, so its whole text can be
+    hundreds of times the body it came from; the encoder yields it in pieces, and the pieces stop
+    once ``_JSON_LIMIT`` characters are there.
+
+    Args:
+        data (Any): A JSON value.
+
+    Returns:
+        str: The first ``_JSON_LIMIT`` characters of its indented serialisation.
+    """
+    pieces: list[str] = []
+    length = 0
+    for piece in json.JSONEncoder(indent=2).iterencode(data):
+        pieces.append(piece)
+        length += len(piece)
+        if length >= _JSON_LIMIT:
+            break
+    return "".join(pieces)[:_JSON_LIMIT]
 
 
 def _scrub(node: Any, budget: list[int]) -> Any:

@@ -15,11 +15,12 @@ from pathlib import Path
 import httpx2
 import pytest
 
+from webvigil.checks.deps import fingerprint
 from webvigil.checks.deps._data import Provenance
 from webvigil.checks.deps.fingerprint import _MAX_INLINE_CHARS, _MAX_RESOURCE_URLS, Fingerprinter
 from webvigil.checks.deps.rules import _BODY_MAX, RetireJsRules
 from webvigil.core.config import ScanConfig
-from webvigil.core.context import Page
+from webvigil.core.context import Detection, Page
 from webvigil.core.target import Target
 from webvigil.core.technology import DetectionMethod
 from webvigil.http.client import HttpClient
@@ -245,3 +246,94 @@ async def test_resource_urls_past_the_scan_cap_are_not_examined(
     assert any(
         f"stopped at {_MAX_RESOURCE_URLS} distinct resource URLs" in w for w in result.warnings
     )
+
+
+async def test_distinct_library_versions_past_the_scan_cap_are_dropped_with_a_warning(
+    httpx_mock: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A page naming more versions than ``_MAX_LIBRARY_VERSIONS`` keeps the first ones found."""
+    monkeypatch.setattr(fingerprint, "_MAX_LIBRARY_VERSIONS", 3)
+    refs = "".join(
+        f'<script src="https://cdn.example/1.0.{i}/jquery.min.js"></script>' for i in range(5)
+    )
+    result, _ = await _run((_page(f"<html><body>{refs}</body></html>"),), _router({}), httpx_mock)
+    assert [d.version for d in result.detections] == ["1.0.0", "1.0.1", "1.0.2"]
+    assert "dependency fingerprinting stopped at 3 distinct library versions" in result.warnings
+
+
+async def test_library_versions_up_to_the_scan_cap_are_all_kept_without_a_warning(
+    httpx_mock: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Exactly ``_MAX_LIBRARY_VERSIONS`` pairs, one of them found twice, fit the cap."""
+    monkeypatch.setattr(fingerprint, "_MAX_LIBRARY_VERSIONS", 3)
+    refs = "".join(
+        f'<script src="https://cdn.example/1.0.{i}/jquery.min.js"></script>' for i in (0, 1, 2)
+    )
+    pages = (
+        _page(f"<html><body>{refs}</body></html>"),
+        _page(f"<html><body>{refs}</body></html>", f"{_SEED}again"),
+    )
+    result, _ = await _run(pages, _router({}), httpx_mock)
+    assert [d.version for d in result.detections] == ["1.0.0", "1.0.1", "1.0.2"]
+    assert not any("distinct library versions" in w for w in result.warnings)
+
+
+async def test_a_stronger_detection_of_a_kept_pair_still_replaces_it_past_the_cap(
+    httpx_mock: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The cap turns away new pairs only: a pair already kept still takes a stronger method."""
+    monkeypatch.setattr(fingerprint, "_MAX_LIBRARY_VERSIONS", 1)
+    html = (
+        "<html><body>"
+        '<script src="https://cdn.example/3.4.1/jquery.min.js"></script>'
+        '<script src="https://cdn.example/3.5.0/jquery.min.js"></script>'
+        '<script src="/static/jquery-3.4.1.min.js"></script>'
+        "</body></html>"
+    )
+    router = _router({"https://example.com/static/jquery-3.4.1.min.js": (200, "// minified")})
+    result, _ = await _run((_page(html),), router, httpx_mock)
+    (only,) = result.detections
+    assert (only.version, only.method) == ("3.4.1", DetectionMethod.FILENAME)
+    assert "dependency fingerprinting stopped at 1 distinct library versions" in result.warnings
+
+
+def _det(name: str, version: str | None, method: DetectionMethod) -> Detection:
+    """
+    Args:
+        name (str): Library name.
+        version (str | None): Detected version, or ``None``.
+        method (DetectionMethod): How it was detected.
+
+    Returns:
+        Detection: A detection from a synthetic source.
+    """
+    return Detection(name, version, method, _SEED, f"{name}.js")
+
+
+def test_a_weaker_or_equal_detection_found_later_does_not_replace_the_kept_one() -> None:
+    """The first detection of a pair stays unless a strictly stronger method finds it again."""
+    found = fingerprint._Found()
+    found.add([_det("jquery", "3.4.1", DetectionMethod.HASH)])
+    found.add([_det("jquery", "3.4.1", DetectionMethod.URI)])
+    found.add([_det("lodash", "4.17.0", DetectionMethod.FILENAME)])
+    found.add([_det("lodash", "4.17.0", DetectionMethod.FILECONTENT)])  # the same rank
+    assert [(d.name, d.method) for d in found.winners()] == [
+        ("jquery", DetectionMethod.HASH),
+        ("lodash", DetectionMethod.FILENAME),
+    ]
+
+
+def test_a_version_less_detection_stays_only_for_a_library_with_no_version() -> None:
+    """A library found with and without a version keeps the versioned one; one without, its own."""
+    found = fingerprint._Found()
+    found.add(
+        [
+            _det("jquery", None, DetectionMethod.URI),
+            _det("jquery", "3.4.1", DetectionMethod.FILENAME),
+            _det("lodash", None, DetectionMethod.URI),
+        ]
+    )
+    assert [(d.name, d.version) for d in found.winners()] == [
+        ("jquery", "3.4.1"),
+        ("lodash", None),
+    ]

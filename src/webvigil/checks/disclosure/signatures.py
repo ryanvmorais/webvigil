@@ -8,8 +8,11 @@ blog post that quotes a traceback do not match (RNF-05).
 
 The text these patterns read comes from the scanned site, so each one is written to cost
 time proportional to the size of the body: every repetition is bounded, no two neighbouring
-repetitions can match the same characters, and a pattern that starts on a word starts on a word
-boundary. :func:`match_error` also reads only the first ``_SCAN_MAX`` characters of a body.
+repetitions can match the same characters, a pattern that starts on a word starts on a word
+boundary, and a message stops at the next heading of its own signature, so each character is read
+from one place a match could start, however many headings a body repeats. The sweep in
+``tests/unit/test_hostile_body_cost.py`` times every signature of both tables on bodies built from
+its own pieces. :func:`match_error` also reads only the first ``_SCAN_MAX`` characters of a body.
 """
 
 from __future__ import annotations
@@ -96,7 +99,8 @@ ERROR_SIGNATURES: tuple[ErrorSignature, ...] = (
         re.compile(
             r"Server Error in .{1,40} Application"
             r"|<b>\s{0,200}Exception Details:\s{0,200}</b>"
-            r"|\[[A-Za-z][\w.]{0,300}Exception:[^\]\n]{0,500}\]",
+            # The bracketed message stops at the next "[", so it is read from one bracket only.
+            r"|\[[A-Za-z][\w.]{0,300}Exception:[^\[\]\n]{0,500}\]",
         ),
         interactive=False,
         severity=Severity.MEDIUM,
@@ -104,10 +108,15 @@ ERROR_SIGNATURES: tuple[ErrorSignature, ...] = (
     ErrorSignature(
         "PHP",
         re.compile(
-            r"<b>(?:Fatal error|Parse error|Uncaught \w+)</b>:.{1,400}?"
-            r" in <b>.{1,300}?</b> on line <b>\d+</b>"
-            r"|(?:PHP )?(?:Fatal error|Parse error):.{1,400}? in .{1,300}?\.php"
-            r"(?:\(\d+\))? on line \d+",
+            # The message stops at the next "<b>" (HTML) or the next heading (plain): each
+            # character is read from one heading only, however many headings a body repeats. A
+            # real message holding another heading still matches, from that heading. The file
+            # path ends at the "<" of "</b>" (HTML), or before a newline or another " in "
+            # (plain), so it is not read again from every " in " of the message.
+            r"<b>(?:Fatal error|Parse error|Uncaught \w+)</b>:(?:(?!<b>).){1,400}?"
+            r" in <b>[^<]{1,300}</b> on line <b>\d+</b>"
+            r"|(?:PHP )?(?:Fatal error|Parse error):(?:(?!Fatal error:|Parse error:).){1,400}?"
+            r" in (?:(?! in )[^\n<]){1,300}?\.php(?:\(\d+\))? on line \d+",
             re.S,
         ),
         interactive=False,
@@ -116,8 +125,12 @@ ERROR_SIGNATURES: tuple[ErrorSignature, ...] = (
     ErrorSignature(
         "PHP",
         re.compile(
-            r"<b>(?:Warning|Notice|Deprecated)</b>:.{1,400}? in <b>.{1,300}?</b> on line <b>\d+</b>"
-            r"|(?:PHP )?(?:Warning|Notice|Deprecated):.{1,400}? in .{1,300}?\.php on line \d+",
+            # Bounded as the signature above.
+            r"<b>(?:Warning|Notice|Deprecated)</b>:(?:(?!<b>).){1,400}?"
+            r" in <b>[^<]{1,300}</b> on line <b>\d+</b>"
+            r"|(?:PHP )?(?:Warning|Notice|Deprecated):"
+            r"(?:(?!Warning:|Notice:|Deprecated:).){1,400}?"
+            r" in (?:(?! in )[^\n<]){1,300}?\.php on line \d+",
             re.S,
         ),
         interactive=False,
@@ -126,8 +139,13 @@ ERROR_SIGNATURES: tuple[ErrorSignature, ...] = (
     ErrorSignature(
         "Java",
         re.compile(
-            r"\b[a-z]\w{0,100}(?:\.\w{1,100}){0,12}\.[A-Z]\w{0,100}(?:Exception|Error)"
-            r"(?::[^\n<]{0,500})?(?:\s|<br\s*/?>|&nbsp;){0,200}"
+            # A name starts only where no dotted name runs into it, so each dotted name is read
+            # from its first segment only. The message stops at the next "Exception:" or
+            # "Error:" (a nested exception matches from its own name) and ends on a character
+            # the gap cannot start with, so each run of whitespace before "at" is read once.
+            r"(?<![\w.])[a-z]\w{0,100}(?:\.\w{1,100}){0,12}\.[A-Z]\w{0,100}(?:Exception|Error)"
+            r"(?::(?:(?:(?!Exception:|Error:)[^\n<]){0,499}[^\s<;])?)?"
+            r"(?:\s|<br\s*/?>|&nbsp;){0,200}"
             r"at [\w.$/]{1,300}\([\w. ]{1,100}\.(?:java|jsp):\d+\)",
             re.S,
         ),
@@ -137,8 +155,12 @@ ERROR_SIGNATURES: tuple[ErrorSignature, ...] = (
     ErrorSignature(
         "Node.js",
         re.compile(
-            r"(?:Error|TypeError|ReferenceError|RangeError|SyntaxError):[^\n<]{1,200}"
-            r"(?:\s|<br\s*/?>|&nbsp;){1,200}at [^\n<]{1,200}"
+            # As in the Java signature, the message stops at the next "Error:" and cannot end on
+            # whitespace, and the function name stops at the first "(", so only one "(" of the
+            # frame opens its location.
+            r"(?:Error|TypeError|ReferenceError|RangeError|SyntaxError):"
+            r"(?:(?:(?!Error:)[^\n<]){0,199}[^\s<;])?"
+            r"(?:\s|<br\s*/?>|&nbsp;){1,200}at [^\n<(]{1,200}"
             r"\([^\n<)]{0,300}:\d+(?::\d+)?\)",
             re.S,
         ),

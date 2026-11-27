@@ -507,6 +507,15 @@ class HttpClient:
             pin_proxy_trust(self._client)
         return self
 
+    @property
+    def deadline(self) -> float | None:
+        """
+        Returns:
+            float | None: The event-loop time of ``[scan] max_duration_s``, for work that does
+                not go through this client, or ``None`` with no limit or before the client opens.
+        """
+        return self._deadline
+
     def _remaining(self) -> float | None:
         """
         Returns:

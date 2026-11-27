@@ -138,3 +138,77 @@ def test_django_and_rails_chrome_still_match() -> None:
     django_hit, rails_hit = match_error(django), match_error(rails)
     assert django_hit is not None and django_hit.signature.framework == "Django"
     assert rails_hit is not None and rails_hit.signature.framework == "Ruby on Rails"
+
+
+@pytest.mark.parametrize(
+    ("body", "framework"),
+    [
+        # The message of a JSON error body holds the newline as the two characters "\n".
+        pytest.param(
+            '{"stack":"TypeError: x is not a function\n    at handler (/app/index.js:3:9)"}',
+            "Node.js",
+            id="node-json-escaped",
+        ),
+        # A message that holds another heading matches from that heading.
+        pytest.param(
+            "Error: request failed: Error: timeout\n    at fetch (/app/client.js:10:5)",
+            "Node.js",
+            id="node-nested-heading",
+        ),
+        # An eval frame nests a second location inside the first one.
+        pytest.param(
+            "Error: boom\n    at run (eval at load (/app/index.js:1:2), <anonymous>:1:1)",
+            "Node.js",
+            id="node-eval-frame",
+        ),
+        # The message ends in a space before the newline and the frame.
+        pytest.param(
+            "Error: \n    at handler (/app/index.js:3:9)",
+            "Node.js",
+            id="node-blank-message",
+        ),
+        # A nested exception: the outer message holds the inner name.
+        pytest.param(
+            "org.hibernate.exception.SQLGrammarException: could not execute; nested exception"
+            " is java.sql.SQLException: Table 'users' doesn't exist\n"
+            "\tat org.example.Repo.find(Repo.java:31)",
+            "Java",
+            id="java-nested-exception",
+        ),
+        pytest.param(
+            "java.lang.IllegalStateException: boom at org.example.App.run(App.java:9)",
+            "Java",
+            id="java-frame-on-the-same-line",
+        ),
+        # The uncaught exception of the plain form runs over several lines before its file.
+        pytest.param(
+            "PHP Fatal error:  Uncaught Exception: boom in /var/www/x.php:3\nStack trace:\n"
+            "#0 {main}\n  thrown in /var/www/x.php on line 3",
+            "PHP",
+            id="php-uncaught-plain",
+        ),
+        pytest.param(
+            "PHP Warning:  file_get_contents(): read of 8192 bytes failed in "
+            "/var/www/html/index.php on line 14",
+            "PHP",
+            id="php-warning-plain",
+        ),
+        # The HTML form links the function to its manual page inside the message.
+        pytest.param(
+            "<b>Warning</b>:  include(<a href='function.include'>function.include</a>): failed"
+            " to open stream in <b>/var/www/a.php</b> on line <b>3</b>",
+            "PHP",
+            id="php-warning-docref",
+        ),
+        pytest.param(
+            "[NullReferenceException: Object reference not set to an instance of an object.]",
+            "ASP.NET",
+            id="aspnet-bracketed",
+        ),
+    ],
+)
+def test_real_traces_still_match_the_bounded_signatures(body: str, framework: str) -> None:
+    """Traces whose message, gap or location the bounded signatures now read in one way only."""
+    hit = match_error(body)
+    assert hit is not None
+    assert hit.signature.framework == framework

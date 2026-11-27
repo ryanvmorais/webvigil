@@ -40,9 +40,10 @@ a known vulnerability.
   that appears only after that point is not recognised (the SHA-1 match still covers the whole
   file).
 - **Best effort.** Fetching is capped at 50 distinct in-scope resources per scan, each distinct
-  inline script is read once and up to 4 MiB of them in a scan, and up to 1,000 distinct script and
-  stylesheet URLs are examined; hitting a cap adds a scan warning. Minified bundles with their version banner stripped may be
-  missed unless an exact file hash matches.
+  inline script is read once and up to 4 MiB of them in a scan, up to 1,000 distinct script and
+  stylesheet URLs are examined, and up to 200 distinct library versions are kept (the technology
+  inventory holds up to 500 entries); hitting a cap adds a scan warning. Minified bundles with
+  their version banner stripped may be missed unless an exact file hash matches.
 
 ## Turning it off
 
@@ -89,6 +90,9 @@ osv_online = true
 - **On failure.** Any network error, timeout, bad status, or unparseable response is a
   scan **warning**, not an error — the scan still reports the offline results and the exit
   code is unaffected.
+- **Bounded.** The full records of up to 50 packages with advisories are read; the rest keep
+  their offline advisories, with a warning. The lookup stops at `[scan] max_duration_s` like the
+  rest of the scan, and the offline results stand.
 - **No cache.** Each opted-in scan queries OSV live (a repeated `(name, version)` within
   one scan is queried once). There is no on-disk cache and no "refresh script".
 - **Limitations.** `npm` only (no PyPI / other ecosystems); a few Retire.js library names

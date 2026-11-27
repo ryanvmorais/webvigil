@@ -12,6 +12,7 @@ import dataclasses
 
 import pytest
 
+from webvigil.core import context
 from webvigil.core.context import Detection, Observations
 from webvigil.core.technology import DetectionMethod, Technology
 
@@ -66,3 +67,28 @@ def test_detection_is_frozen_and_hashable_by_value() -> None:
     assert {d, Detection(*fields)} == {d}
     with pytest.raises(dataclasses.FrozenInstanceError):
         d.version = "9.9.9"  # type: ignore[misc]  # writing to a frozen field is the point
+
+
+def test_the_inventory_past_its_cap_turns_new_entries_away_and_warns_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Up to ``TECHNOLOGIES_CAP`` entries stay; the first one turned away queues one warning."""
+    monkeypatch.setattr(context, "TECHNOLOGIES_CAP", 2)
+    obs = Observations()
+    for version in ("1.0.0", "1.0.1", "1.0.2", "1.0.3"):
+        obs.add_technology(_tech("jquery", version))
+    obs.add_technology(_tech("jquery", "1.0.0"))  # a pair already kept is not turned away
+    assert [t.version for t in obs.technologies] == ["1.0.0", "1.0.1"]
+    assert obs.warnings == ["the technology inventory stopped at 2 entries"]
+
+
+def test_the_inventory_up_to_its_cap_keeps_every_entry_without_a_warning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """As many entries as the cap, one of them added twice, fit with no warning."""
+    monkeypatch.setattr(context, "TECHNOLOGIES_CAP", 2)
+    obs = Observations()
+    for version in ("1.0.0", "1.0.1", "1.0.1"):
+        obs.add_technology(_tech("jquery", version))
+    assert [t.version for t in obs.technologies] == ["1.0.0", "1.0.1"]
+    assert obs.warnings == []

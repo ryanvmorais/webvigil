@@ -59,7 +59,11 @@ When it is on it is the most active thing Safe Mode does.
 Any body that can carry a credential — `.env`, `/actuator/env`, `.npmrc`, a config backup —
 is redacted **before** it becomes part of a finding: keys and structure are kept, values are
 masked. The raw secret never reaches the `ScanResult`, a report, or (via the Web API) the
-database. A finding proves exposure by shape, not by quoting the secret.
+database. A finding proves exposure by shape, not by quoting the secret. A JSON body is parsed for
+this only up to 256 KiB, and only the first 2,000 characters of its indented form are built; a
+longer body gets the generic masking of token shapes in its first 1 KiB. The JSON key validator
+of the catalogue parses a body up to the same 256 KiB, and judges a longer one by its content
+patterns alone.
 
 ## What it does not do
 

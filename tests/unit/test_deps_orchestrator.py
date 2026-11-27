@@ -9,6 +9,10 @@ a counting stub when it must not run, to a canned-result stub when it must.
 
 from __future__ import annotations
 
+import asyncio
+from types import SimpleNamespace
+from typing import Any
+
 import httpx2
 import pytest
 
@@ -24,6 +28,10 @@ from webvigil.core.orchestrator import Orchestrator
 from webvigil.core.technology import DetectionMethod
 
 _TARGET = "https://example.com/"
+
+# What ``_osv_lookup`` reads of the scan's client, for the tests that call it directly: no
+# ``[scan] max_duration_s``.
+_NO_DEADLINE: Any = SimpleNamespace(deadline=None)
 _HTML = (
     "<html><head><script>/*! jQuery v3.4.1 | (c) JS Foundation */</script></head>"
     "<body>ok</body></html>"
@@ -184,9 +192,9 @@ async def test_osv_lookup_checks_for_a_deps_check_even_when_given_detections(
     detection = Detection("jquery", "3.4.1", DetectionMethod.FILENAME, _TARGET, "jquery.js")
     warnings: list[str] = []
     orchestrator = Orchestrator(cfg, check_types=[HstsCheck])
-    assert await orchestrator._osv_lookup([HstsCheck], (detection,), warnings) == {}
+    assert await orchestrator._osv_lookup([HstsCheck], _NO_DEADLINE, (detection,), warnings) == {}
     assert counting_osv.built == 0
-    await orchestrator._osv_lookup([VulnerableLibraryCheck], (detection,), warnings)
+    await orchestrator._osv_lookup([VulnerableLibraryCheck], _NO_DEADLINE, (detection,), warnings)
     assert counting_osv.built == 1
 
 
@@ -207,9 +215,9 @@ async def test_osv_lookup_asks_only_about_detections_with_a_version(
     bare = Detection("react", None, DetectionMethod.URI, _TARGET, "react.js")
     orchestrator = Orchestrator(cfg, check_types=[VulnerableLibraryCheck])
 
-    await orchestrator._osv_lookup([VulnerableLibraryCheck], (versioned, bare), [])
+    await orchestrator._osv_lookup([VulnerableLibraryCheck], _NO_DEADLINE, (versioned, bare), [])
     assert asked == [(versioned,)]
-    assert await orchestrator._osv_lookup([VulnerableLibraryCheck], (bare,), []) == {}
+    assert await orchestrator._osv_lookup([VulnerableLibraryCheck], _NO_DEADLINE, (bare,), []) == {}
     assert asked == [(versioned,)]  # nothing with a version: no lookup at all
 
 
@@ -276,3 +284,76 @@ async def test_a_raising_fingerprint_pass_becomes_a_warning_not_a_crash(
     result = await Orchestrator(ScanConfig(), check_types=[VulnerableLibraryCheck]).run(_TARGET)
     assert any("dependency fingerprint pass failed" in w for w in result.warnings)
     assert result.technologies == ()
+
+
+async def test_the_osv_lookup_stops_at_the_scan_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    The lookup has its own client, so the scan deadline is applied to it: past the deadline the
+    lookup is cancelled, the scan records that it reached it, and the offline results stand.
+    """
+    started: list[tuple[Detection, ...]] = []
+
+    class _Endless(_CountingOsv):
+        async def lookup(self, detections: tuple[Detection, ...]) -> OsvResult:
+            started.append(tuple(detections))
+            await asyncio.Event().wait()  # only the deadline ends it
+            raise AssertionError("unreachable")
+
+    monkeypatch.setattr(orch_mod, "OsvProvider", _Endless)
+    reached: list[bool] = []
+    cfg = ScanConfig.model_validate({"deps": {"osv_online": True}})
+    detection = Detection("jquery", "3.4.1", DetectionMethod.FILENAME, _TARGET, "jquery.js")
+    http: Any = SimpleNamespace(
+        deadline=asyncio.get_running_loop().time(),  # already reached: no real wait
+        past_deadline=lambda: reached.append(True) or True,
+    )
+    warnings: list[str] = []
+    orchestrator = Orchestrator(cfg, check_types=[VulnerableLibraryCheck])
+    # Without the deadline the lookup would never end: this limit fails the test instead.
+    async with asyncio.timeout(10):
+        answer = await orchestrator._osv_lookup(
+            [VulnerableLibraryCheck], http, (detection,), warnings
+        )
+    assert answer == {}
+    assert started == [(detection,)]  # the lookup ran and was stopped, not skipped
+    assert reached == [True]
+    assert warnings == [
+        "OSV.dev lookup stopped at [scan] max_duration_s; reported advisories are from the "
+        "offline database only"
+    ]
+
+
+async def test_the_osv_lookup_keeps_its_answer_before_the_scan_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A deadline still ahead lets the lookup finish, and its advisories are returned."""
+
+    class _Answering(_CountingOsv):
+        async def lookup(self, _detections: object) -> OsvResult:
+            return OsvResult(advisories={("jquery", "3.4.1"): (_OSV_ADVISORY,)})
+
+    monkeypatch.setattr(orch_mod, "OsvProvider", _Answering)
+    cfg = ScanConfig.model_validate({"deps": {"osv_online": True}})
+    detection = Detection("jquery", "3.4.1", DetectionMethod.FILENAME, _TARGET, "jquery.js")
+    http: Any = SimpleNamespace(deadline=asyncio.get_running_loop().time() + 3600)
+    warnings: list[str] = []
+    orchestrator = Orchestrator(cfg, check_types=[VulnerableLibraryCheck])
+    answer = await orchestrator._osv_lookup([VulnerableLibraryCheck], http, (detection,), warnings)
+    assert answer == {("jquery", "3.4.1"): (_OSV_ADVISORY,)}
+    assert warnings == []
+
+
+def test_warnings_past_the_cap_keep_both_ends_and_count_the_rest(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The first and last halves of ``WARNINGS_CAP`` stay, the scan-level ones at the end too."""
+    monkeypatch.setattr(orch_mod, "WARNINGS_CAP", 4)
+    warnings = [f"w{n}" for n in range(7)]
+    assert orch_mod._cap_warnings(warnings) == (
+        "w0",
+        "w1",
+        "3 more warnings were not kept",
+        "w5",
+        "w6",
+    )
+    assert orch_mod._cap_warnings(warnings[:4]) == ("w0", "w1", "w2", "w3")

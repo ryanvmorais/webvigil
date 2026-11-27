@@ -1,13 +1,16 @@
 """
-Decoding a body and reading the HTML of a page cost time proportional to them, or end in time.
+Decoding a body, reading the HTML of a page and matching the error-page signatures cost time
+proportional to them, or end in time.
 
 The charset a response declares and the markup of a page come from the scanned site. A charset
 whose codec decodes in time that grows faster than the body, markup that keeps the parser's open
 elements growing, and mis-nested forms, buttons or selects that make each one's search read the
 next ones again would each keep one response busy for hours, out of reach of every deadline the
-scan has. Each test hands the real function a real string and reads the result or the clock; the
-time limit is far above what the bounded code needs and far below what the unbounded code needed
-on the same input, so a slow CI runner cannot fail it and a regression cannot pass it.
+scan has. A signature whose neighbouring repetitions can share the same text reads it again from
+every place a match could start, on every page. Each test hands the real function a real string
+and reads the result or the clock; the time limit is far above what the bounded code needs and
+far below what the unbounded code needed on the same input, so a slow CI runner cannot fail it
+and a regression cannot pass it.
 """
 
 from __future__ import annotations
@@ -15,6 +18,7 @@ from __future__ import annotations
 import codecs
 import contextvars
 import encodings
+import itertools
 import pkgutil
 import re
 import threading
@@ -24,6 +28,12 @@ from pathlib import Path
 
 import pytest
 
+from webvigil.checks.disclosure.signatures import (
+    _SCAN_MAX,
+    ERROR_SIGNATURES,
+    LISTING_SIGNATURES,
+    match_error,
+)
 from webvigil.core import html
 from webvigil.core.target import Target
 from webvigil.crawler.forms import parse_forms_html
@@ -312,3 +322,132 @@ def test_a_select_inside_a_select_keeps_its_own_options() -> None:
     )
     (form,) = parse_forms_html(page, _URL, _TARGET)
     assert [(field.name, field.value) for field in form.fields] == [("a", "One"), ("b", "Two")]
+
+
+# ---------------------------------------------------------------------------
+# The error-page and directory-listing signatures
+# ---------------------------------------------------------------------------
+
+# Seconds one body of ``_SCAN_MAX`` characters, shaped to make a signature backtrack, may take.
+# The signatures finish each in tens of milliseconds; the ones they replaced took one to two
+# seconds, on every page of a scan.
+_SIGNATURE_BUDGET_S = 0.5
+# The sweep builds many bodies from the pieces of every signature, so each one is short, and one
+# search of it may take this long. The signatures take a few milliseconds on each.
+_SWEEP_CHARS = 16 * 1024
+_SWEEP_BUDGET_S = 0.05
+# The parse tree of a compiled pattern, where its literal runs are read. ``re`` exposes no public
+# parser; this is CPython's own (``sre_parse`` until 3.11), present in every version the CI runs.
+_PATTERN_PARSER = re._parser
+_SWEEP_FILLERS = (" ", "a", "1", ":", "(", "\n", "<", "_")
+_SIGNATURE_TABLE = [
+    pytest.param(signature.pattern, id=f"{signature.framework}-{index}")
+    for index, signature in enumerate(ERROR_SIGNATURES)
+] + [
+    pytest.param(pattern, id=f"listing-{index}") for index, pattern in enumerate(LISTING_SIGNATURES)
+]
+
+
+def _repeated(unit: str, chars: int) -> str:
+    """
+    Args:
+        unit (str): The piece to repeat.
+        chars (int): Length of the result.
+
+    Returns:
+        str: ``unit`` repeated and cut to ``chars`` characters.
+    """
+    return (unit * (chars // len(unit) + 1))[:chars]
+
+
+def _literals(pattern: re.Pattern[str]) -> list[str]:
+    """
+    Args:
+        pattern (re.Pattern[str]): A compiled signature.
+
+    Returns:
+        list[str]: Its six longest runs of literal characters (the words its matches are built
+            of), read from the parse tree of the pattern.
+    """
+    found: set[str] = set()
+    run: list[str] = []
+
+    def flush() -> None:
+        if "".join(run).strip():
+            found.add("".join(run))
+        run.clear()
+
+    def walk(items: object) -> None:
+        for op, value in items:
+            if op is _PATTERN_PARSER.LITERAL:
+                run.append(chr(value))
+                continue
+            flush()
+            if op is _PATTERN_PARSER.SUBPATTERN:
+                walk(value[-1])
+            elif op is _PATTERN_PARSER.BRANCH:
+                for branch in value[1]:
+                    walk(branch)
+                    flush()
+            elif op in (_PATTERN_PARSER.MAX_REPEAT, _PATTERN_PARSER.MIN_REPEAT):
+                walk(value[2])
+        flush()
+
+    walk(_PATTERN_PARSER.parse(pattern.pattern, pattern.flags))
+    return sorted(found, key=lambda text: (-len(text), text))[:6]
+
+
+def _shapes(pattern: re.Pattern[str]) -> list[str]:
+    """
+    Args:
+        pattern (re.Pattern[str]): A compiled signature.
+
+    Returns:
+        list[str]: Units to repeat into a body: each literal of the pattern followed by one
+            filler or a run of it, and each pair of literals with a filler or a long gap between
+            them, which is where two neighbouring repetitions could share the text.
+    """
+    pieces = _literals(pattern)
+    units = [
+        piece + filler * count for piece in pieces for filler in _SWEEP_FILLERS for count in (1, 50)
+    ]
+    for first, second in itertools.product(pieces, repeat=2):
+        for filler in (" ", "a", ":"):
+            units += [first + filler + second, first + filler * 200 + second]
+    return units
+
+
+@pytest.mark.parametrize(
+    "unit",
+    [
+        # Headings of the plain PHP form with " in " between them: the message and the file
+        # path could each start at any of them.
+        pytest.param("Fatal error: in :", id="php-fatal"),
+        pytest.param("Deprecated: in :", id="php-deprecated"),
+        # A Java exception name, then whitespace the message and the gap before "at" could
+        # share: once with no message, once with a message ending before the whitespace.
+        pytest.param("a.FooException:" + " " * 520, id="java-gap"),
+        pytest.param("a.FooException: x" + " " * 300, id="java-message-gap"),
+        # The same split for a Node.js message.
+        pytest.param("Error:" + " " * 220, id="node-gap"),
+    ],
+)
+def test_a_body_shaped_to_backtrack_a_signature_is_matched_in_time(unit: str) -> None:
+    """The longest body the signatures read, repeating a shape built against one of them."""
+    body = _repeated(unit, _SCAN_MAX)
+    assert _timed(lambda: match_error(body)) < _SIGNATURE_BUDGET_S
+
+
+@pytest.mark.parametrize("pattern", _SIGNATURE_TABLE)
+def test_every_signature_reads_bodies_built_from_its_own_pieces_in_time(
+    pattern: re.Pattern[str],
+) -> None:
+    """Each signature of both tables, on every body the sweep builds from its literals."""
+    units = _shapes(pattern)
+    assert len(units) > 20  # the pattern has literals to build from: the sweep is not empty
+    for unit in units:
+        body = _repeated(unit, _SWEEP_CHARS)
+        spent = _timed(lambda body=body: pattern.search(body))
+        if spent >= _SWEEP_BUDGET_S:  # a busy runner: the best of three decides
+            spent = min(_timed(lambda body=body: pattern.search(body)) for _ in range(3))
+        assert spent < _SWEEP_BUDGET_S, unit[:40]

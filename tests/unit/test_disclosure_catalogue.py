@@ -13,6 +13,9 @@ entry, about 75) was dropped — it was vacuous: the loader compiles each ``cont
 
 from __future__ import annotations
 
+import pytest
+
+from webvigil.checks.disclosure import catalogue
 from webvigil.checks.disclosure.catalogue import (
     PROBE_CHECK_IDS,
     Validator,
@@ -96,3 +99,15 @@ def test_json_validator_rejects_a_body_nested_past_the_parser() -> None:
     """A JSON body nested past the parser's depth fails the validator instead of raising."""
     v = Validator(json_keys=("name",))
     assert not v.passes(body="[" * 200_000, raw=b"", content_type="application/json")
+
+
+def test_json_validator_does_not_parse_a_body_past_the_scan_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A JSON body longer than ``_SCAN_MAX`` is not parsed; one at the cap still is."""
+    v = Validator(json_keys=("name",))
+    body = '{"name": "x"}'
+    monkeypatch.setattr(catalogue, "_SCAN_MAX", len(body) - 1)
+    assert not v.passes(body=body, raw=b"", content_type="application/json")
+    monkeypatch.setattr(catalogue, "_SCAN_MAX", len(body))
+    assert v.passes(body=body, raw=b"", content_type="application/json")

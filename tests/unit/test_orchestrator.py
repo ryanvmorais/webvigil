@@ -983,3 +983,23 @@ async def test_the_upload_pass_needs_active_mode_the_opt_in_and_its_check(
     checks: list[type[Check]] = [UnrestrictedUploadCheck] if selected else [ActiveOne]
     await Orchestrator(ScanConfig.model_validate(raw), check_types=checks).run(_TARGET)
     assert len(built) == (1 if runs else 0)
+
+
+async def test_the_result_keeps_the_first_and_last_warnings_past_the_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A scan with more warnings than ``WARNINGS_CAP`` reports both ends and counts the rest."""
+    raw: dict[str, object] = {
+        "injection": {"stored_xss": True, "file_upload": True, "csrf_confirm": True},
+        "scan": {"submit_post_forms": True},
+    }
+    config = ScanConfig.model_validate(raw)
+    everything = (await Orchestrator(config, check_types=[PassiveOne]).run(_TARGET)).warnings
+    assert len(everything) >= 4  # the control: four opt-ins that did not run, at least
+    monkeypatch.setattr(orch_mod, "WARNINGS_CAP", 2)
+    capped = (await Orchestrator(config, check_types=[PassiveOne]).run(_TARGET)).warnings
+    assert capped == (
+        everything[0],
+        f"{len(everything) - 2} more warnings were not kept",
+        everything[-1],
+    )

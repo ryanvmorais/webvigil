@@ -68,6 +68,9 @@ _CSRF_CHECK_ID = "csrf.form.token-not-enforced"
 # scanned site lists limits itself per page; this bounds the report and the stored scan when a
 # check does not, or when many pages each reach their own limit.
 FINDINGS_PER_CHECK_CAP = 5_000
+# Warnings one scan result keeps. Each pass warns once per limit it reaches, so a real scan has
+# a few dozen; this bounds the report and the stored scan whatever the passes queued.
+WARNINGS_CAP = 500
 
 
 class _PassFailure(str):
@@ -203,7 +206,7 @@ class Orchestrator:
                 )
             check_types = self._select_checks(warnings)
             detections = await self._fingerprint(check_types, http, target, pages, warnings)
-            osv_advisories = await self._osv_lookup(check_types, detections, warnings)
+            osv_advisories = await self._osv_lookup(check_types, http, detections, warnings)
             probe_hits = await self._probe_disclosure(check_types, http, target, pages, warnings)
             injection_hits = await self._inject(
                 check_types, http, target, pages, forms, warnings, operations
@@ -280,7 +283,7 @@ class Orchestrator:
             findings=deduped,
             technologies=technologies,
             errors=tuple(errors),
-            warnings=tuple(warnings),
+            warnings=_cap_warnings(warnings),
             pass_failed=any(isinstance(warning, _PassFailure) for warning in warnings),
         )
         # spec 019, RF-11: a target may have reflected the password, a configured cookie or
@@ -442,6 +445,7 @@ class Orchestrator:
     async def _osv_lookup(
         self,
         check_types: Sequence[type[Check]],
+        http: HttpClient,
         detections: tuple[Detection, ...],
         warnings: list[str],
     ) -> dict[tuple[str, str], tuple[Advisory, ...]]:
@@ -451,10 +455,13 @@ class Orchestrator:
         Opt-in and additive: a no-op returning ``{}`` when the flag is off, no
         DEPS check is selected, or nothing was detected with a version. On any
         lookup failure the scan keeps the offline Retire.js results and records
-        a warning (RF-01, RF-03, RF-09, ADR-2).
+        a warning (RF-01, RF-03, RF-09, ADR-2). The lookup has its own client, so the
+        scan's ``[scan] max_duration_s`` is applied to it here: past it, the lookup stops
+        the same way.
 
         Args:
             check_types (Sequence[type[Check]]): The checks selected for the run.
+            http (HttpClient): The scan's client, which holds the scan deadline.
             detections (tuple[Detection, ...]): Libraries from :meth:`_fingerprint`.
             warnings (list[str]): Scan-level warning list, appended to in place.
 
@@ -470,11 +477,19 @@ class Orchestrator:
         if not versioned:
             return {}
         try:
-            report = await OsvProvider(
-                self._config.deps.osv_base_url,
-                self._config.deps.osv_timeout_s,
-                user_agent=self._config.http.user_agent,
-            ).lookup(versioned)
+            async with asyncio.timeout_at(http.deadline):
+                report = await OsvProvider(
+                    self._config.deps.osv_base_url,
+                    self._config.deps.osv_timeout_s,
+                    user_agent=self._config.http.user_agent,
+                ).lookup(versioned)
+        except TimeoutError:
+            http.past_deadline()  # records that the scan reached its deadline
+            warnings.append(
+                "OSV.dev lookup stopped at [scan] max_duration_s; reported advisories are from "
+                "the offline database only"
+            )
+            return {}
         except OsvLookupError as exc:
             warnings.append(
                 f"OSV.dev lookup failed: {exc}; reported advisories are from the offline "
@@ -894,6 +909,27 @@ class Orchestrator:
             for check_cls in check_types:
                 group.create_task(_run_one(check_cls))
         return findings, errors
+
+
+def _cap_warnings(warnings: Sequence[str]) -> tuple[str, ...]:
+    """
+    Keep ``WARNINGS_CAP`` warnings of a scan: the first half and the last half of them.
+
+    The passes warn in the order they run, and the scan-level warnings (the deadline, a failed
+    pass, the addresses refused) come last, so both ends are kept.
+
+    Args:
+        warnings (Sequence[str]): Every warning the scan queued, in order.
+
+    Returns:
+        tuple[str, ...]: All of them when they fit; otherwise the first and the last
+            ``WARNINGS_CAP // 2``, with one line between them counting those left out.
+    """
+    if len(warnings) <= WARNINGS_CAP:
+        return tuple(warnings)
+    half = WARNINGS_CAP // 2
+    left_out = len(warnings) - 2 * half
+    return (*warnings[:half], f"{left_out} more warnings were not kept", *warnings[-half:])
 
 
 def _cap_findings(findings: Sequence[Finding]) -> tuple[list[Finding], bool]:

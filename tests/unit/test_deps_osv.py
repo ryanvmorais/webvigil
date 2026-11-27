@@ -630,3 +630,28 @@ def test_to_advisory_caps_aliases_and_references() -> None:
 def test_cvss3_base_rejects_an_overlong_vector() -> None:
     """A vector past ``_MAX_VECTOR_CHARS`` is not parsed."""
     assert _cvss3_base("CVSS:3.1/" + "X:Y/" * 1000) is None
+
+
+async def test_package_queries_past_the_cap_are_not_sent_and_are_counted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Only the first ``_MAX_PACKAGE_QUERIES`` packages with advisories have their records read."""
+    monkeypatch.setattr(osv, "_MAX_PACKAGE_QUERIES", 2)
+    mock = _Transport(batch={"results": [{"vulns": [{"id": "GHSA-x"}]}] * 3})
+    result = await _provider(mock.transport).lookup([_det("jquery", f"3.4.{n}") for n in range(3)])
+    assert [query["version"] for query in mock.package_queries] == ["3.4.0", "3.4.1"]
+    assert result.warnings == (
+        "OSV.dev reported advisories for 3 packages; the records of the first 2 were read, "
+        "the rest have offline advisories only",
+    )
+
+
+async def test_package_queries_up_to_the_cap_are_all_sent_without_a_warning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """As many packages with advisories as the cap are all queried."""
+    monkeypatch.setattr(osv, "_MAX_PACKAGE_QUERIES", 3)
+    mock = _Transport(batch={"results": [{"vulns": [{"id": "GHSA-x"}]}] * 3})
+    result = await _provider(mock.transport).lookup([_det("jquery", f"3.4.{n}") for n in range(3)])
+    assert [query["version"] for query in mock.package_queries] == ["3.4.0", "3.4.1", "3.4.2"]
+    assert result.warnings == ()

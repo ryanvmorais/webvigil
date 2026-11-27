@@ -10,12 +10,15 @@ rules to every source — the resource URL, its body, and the page's inline
 The pages come from the scanned site, which decides how many inline scripts and resource
 references they carry. The pass reads each distinct inline script once, up to
 ``_MAX_INLINE_CHARS`` characters of them in a scan, and examines up to ``_MAX_RESOURCE_URLS``
-distinct resource URLs; past either limit it stops reading that source and warns.
+distinct resource URLs; past either limit it stops reading that source and warns. Each source can
+name many libraries and versions, so detections are merged as they are found and the pass keeps
+up to ``_MAX_LIBRARY_VERSIONS`` distinct ``(name, version)`` pairs; it warns when it drops one.
 """
 
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 
 from selectolax.lexbor import LexborHTMLParser
@@ -35,6 +38,9 @@ _MAX_FETCHES = 50
 # read up to the rules' head cap), and distinct script / stylesheet URLs examined in one scan.
 _MAX_INLINE_CHARS = 4 * 1024 * 1024
 _MAX_RESOURCE_URLS = 1000
+# Distinct (library, version) pairs one scan keeps. Each becomes a technology, possibly a finding
+# and, with ``[deps] osv_online``, an OSV.dev query; a real site loads a few dozen at most.
+_MAX_LIBRARY_VERSIONS = 200
 _RESOURCE_ATTRS = (("script", "src"), ("link", "href"))
 
 
@@ -94,7 +100,7 @@ class Fingerprinter:
         """
         result = FingerprintResult()
         crawled = {normalize_url(p.url) for p in pages}
-        raw: list[Detection] = []
+        found = _Found()
 
         in_scope_queue: list[str] = []
         seen_resources: set[str] = set()
@@ -105,7 +111,7 @@ class Fingerprinter:
             if not (page.ok and page.is_html and page.text):
                 continue
             tree = parse_html(page.text)
-            raw.extend(self._from_inline_scripts(tree, page.url, inline))
+            found.add(self._from_inline_scripts(tree, page.url, inline))
             for url in self._resource_urls(tree, page.url):
                 if url in seen_resources:
                     continue
@@ -114,7 +120,7 @@ class Fingerprinter:
                     break
                 seen_resources.add(url)
                 if not may_request(self._target, url):
-                    raw.extend(self._rules.identify(url=url))  # CDN: URL only, never fetched
+                    found.add(self._rules.identify(url=url))  # CDN: URL only, never fetched
                 elif normalize_url(url) not in crawled:
                     in_scope_queue.append(url)
 
@@ -137,9 +143,14 @@ class Fingerprinter:
 
         for url in in_scope_queue:
             body = await self._fetch(url)
-            raw.extend(self._rules.identify(url=url, body=body))
+            found.add(self._rules.identify(url=url, body=body))
 
-        result.detections = _dedupe(raw)
+        if found.capped:
+            result.warnings.append(
+                "dependency fingerprinting stopped at "
+                f"{_MAX_LIBRARY_VERSIONS} distinct library versions"
+            )
+        result.detections = found.winners()
         return result
 
     def _resource_urls(self, tree: LexborHTMLParser, base: str) -> list[str]:
@@ -248,31 +259,58 @@ class _InlineBudget:
         return True
 
 
-def _dedupe(detections: list[Detection]) -> list[Detection]:
+@dataclass
+class _Found:
     """
-    Collapse to one detection per ``(name, version)``.
+    The detections of one scan, one per ``(name, version)``, merged as they are found.
 
-    A concrete version wins over a version-less one, and a stronger detection
-    method (hash > SRI > filename/content > URI) wins on ties.
+    A stronger detection method (hash > SRI > filename/content > URI) replaces a weaker one of the
+    same pair. Up to ``_MAX_LIBRARY_VERSIONS`` pairs are kept; a new pair past that is dropped.
 
-    Args:
-        detections (list[Detection]): The raw detections from every source.
-
-    Returns:
-        list[Detection]: The winners, sorted by name then version.
+    Attributes:
+        best (dict[tuple[str, str | None], Detection]): The detection kept per pair. Defaults to
+            empty.
+        capped (bool): Whether a pair was dropped for the cap. Defaults to ``False``.
     """
-    best: dict[tuple[str, str | None], Detection] = {}
-    for detection in detections:
-        key = (detection.name, detection.version)
-        current = best.get(key)
-        if current is None or _rank(detection.method) > _rank(current.method):
-            best[key] = detection
-    # Drop a version-less detection when the same library also has a versioned one.
-    versioned = {name for (name, version) in best if version is not None}
-    return sorted(
-        (d for (name, version), d in best.items() if version is not None or name not in versioned),
-        key=lambda d: (d.name, d.version or ""),
-    )
+
+    best: dict[tuple[str, str | None], Detection] = field(default_factory=dict)
+    capped: bool = False
+
+    def add(self, detections: Iterable[Detection]) -> None:
+        """
+        Merge the detections of one source into those kept.
+
+        Args:
+            detections (Iterable[Detection]): Detections from one source.
+        """
+        for detection in detections:
+            key = (detection.name, detection.version)
+            current = self.best.get(key)
+            if current is None:
+                if len(self.best) >= _MAX_LIBRARY_VERSIONS:
+                    self.capped = True
+                    continue
+                self.best[key] = detection
+            elif _rank(detection.method) > _rank(current.method):
+                self.best[key] = detection
+
+    def winners(self) -> list[Detection]:
+        """
+        The detections the scan reports.
+
+        Returns:
+            list[Detection]: The kept detections, sorted by name then version, without the
+                version-less one of a library that also has a versioned one.
+        """
+        versioned = {name for (name, version) in self.best if version is not None}
+        return sorted(
+            (
+                d
+                for (name, version), d in self.best.items()
+                if version is not None or name not in versioned
+            ),
+            key=lambda d: (d.name, d.version or ""),
+        )
 
 
 def _rank(method: DetectionMethod) -> int:
